@@ -72,6 +72,15 @@ def command_available(command:str, args:list[str], timeout:float=1.5)->bool:
  except Exception:
   return False
 
+def command_ok(command:str, args:list[str], timeout:float=1.5)->bool:
+ if not shutil.which(command):
+  return False
+ try:
+  result=subprocess.run([command,*args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout, check=False)
+  return result.returncode==0
+ except Exception:
+  return False
+
 def port_reachable(host:str, port:int, timeout:float=0.8)->bool:
  try:
   with socket.create_connection((host,port), timeout=timeout):
@@ -93,12 +102,16 @@ def ibkr_authenticated(timeout:float=1.2)->bool:
 
 @app.get('/setup/diagnostics')
 def setup_diagnostics():
+ gateway_running=port_reachable('127.0.0.1',5000,0.6)
  return {
-  'java_installed':command_available('java',['-version']),
-  'docker_installed':command_available('docker',['--version']),
-  'gateway_running':port_reachable('127.0.0.1',5000),
-  'ibkr_authenticated':ibkr_authenticated(),
   'backend_ok':True,
+  'java_installed':command_available('java',['-version'],1.0),
+  'docker_installed':command_available('docker',['--version'],1.0),
+  'docker_daemon_running':command_ok('docker',['info'],1.5),
+  'gateway_running':gateway_running,
+  'ibkr_gateway_reachable':gateway_running,
+  'ibkr_authenticated':ibkr_authenticated(1.0) if gateway_running else False,
+  'demo_mode_available':True,
   'frontend_ok':True,
  }
 
