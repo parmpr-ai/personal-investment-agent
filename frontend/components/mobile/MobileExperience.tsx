@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import {
   AlertTriangle,
   BarChart3,
   Bell,
   BriefcaseBusiness,
   ChevronRight,
+  Gauge,
   Home,
-  LineChart,
   Search,
   Settings,
   ShieldCheck,
@@ -17,11 +18,12 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
-import { Area, AreaChart, ResponsiveContainer, Tooltip } from 'recharts'
-import GlowCard from '../ui/GlowCard'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 
 const API = 'http://127.0.0.1:8000'
+
+type RailItem = Record<string, any>
+type Tone = 'good' | 'bad' | 'neutral'
 
 const money = (value: unknown) =>
   Number(value || 0).toLocaleString('en-US', {
@@ -33,10 +35,10 @@ const money = (value: unknown) =>
 const pct = (value: unknown) => `${Number(value || 0).toFixed(2)}%`
 
 const marketFallback = [
-  { name: 'S&P 500', value: '6,241.80', chg: 0.42 },
-  { name: 'Nasdaq', value: '21,108.60', chg: 0.68 },
-  { name: 'VIX', value: '14.2', chg: -2.1 },
-  { name: 'EUR/USD', value: '1.089', chg: 0.12 },
+  { name: 'S&P 500', value: '6,241.80', chg: 0.42, spark: [24, 28, 27, 32, 35, 34, 39] },
+  { name: 'Nasdaq', value: '21,108.60', chg: 0.68, spark: [18, 24, 21, 30, 33, 36, 41] },
+  { name: 'VIX', value: '14.2', chg: -2.1, spark: [44, 38, 36, 32, 29, 27, 24] },
+  { name: 'EUR/USD', value: '1.089', chg: 0.12, spark: [24, 26, 25, 27, 29, 28, 30] },
 ]
 
 const positionFallback = [
@@ -48,6 +50,8 @@ const positionFallback = [
     market_value: 24120,
     portfolio_pct: 18.4,
     risk: 72,
+    momentum: 78,
+    spark: [31, 34, 32, 41, 46, 43, 51],
     ai_view: 'AI infrastructure demand remains the core upside driver, with position sizing kept under the high-risk cap.',
   },
   {
@@ -58,6 +62,8 @@ const positionFallback = [
     market_value: 18940,
     portfolio_pct: 14.5,
     risk: 38,
+    momentum: 57,
+    spark: [35, 36, 39, 38, 42, 44, 45],
     ai_view: 'Quality compounder profile with balanced cloud, AI, and enterprise durability.',
   },
   {
@@ -68,6 +74,8 @@ const positionFallback = [
     market_value: 15110,
     portfolio_pct: 11.6,
     risk: 29,
+    momentum: 48,
+    spark: [40, 41, 39, 38, 40, 37, 36],
     ai_view: 'Core market beta sleeve. Use as liquidity buffer before adding single-name exposure.',
   },
 ]
@@ -80,6 +88,8 @@ const scannerFallback = [
     price: 162.34,
     entry_zone: '158-164',
     stop: '151',
+    score: 76,
+    spark: [22, 21, 24, 28, 27, 31, 35],
     portfolio_impact: 'Adds cyclical AI beta; keep below current NVDA exposure.',
   },
   {
@@ -89,17 +99,10 @@ const scannerFallback = [
     price: 178.42,
     entry_zone: '174-180',
     stop: '169',
+    score: 68,
+    spark: [29, 32, 31, 36, 34, 39, 42],
     portfolio_impact: 'Improves mega-cap diversification with lower portfolio risk.',
   },
-]
-
-const chartSeries = [
-  { t: '09:30', v: 100 },
-  { t: '10:30', v: 100.8 },
-  { t: '11:30', v: 100.2 },
-  { t: '12:30', v: 101.4 },
-  { t: '14:00', v: 102.1 },
-  { t: '16:00', v: 101.7 },
 ]
 
 const navItems = [
@@ -142,6 +145,112 @@ function riskTone(value: number) {
   return 'good'
 }
 
+function Sparkline({ values, tone = 'good' }: { values?: number[]; tone?: Tone }) {
+  const data = values?.length ? values : [28, 31, 29, 35, 33, 38, 42]
+  const min = Math.min(...data)
+  const max = Math.max(...data)
+  const points = data
+    .map((value, index) => {
+      const x = (index / Math.max(data.length - 1, 1)) * 132
+      const y = 48 - ((value - min) / Math.max(max - min, 1)) * 34
+      return `${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(' ')
+  const color = tone === 'bad' ? '#ff6375' : tone === 'neutral' ? '#60a5fa' : '#24d18c'
+
+  return (
+    <svg className="mobile-sparkline" viewBox="0 0 132 54" aria-hidden="true">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="0" x2="132" y1="48" y2="48" stroke="rgba(148,163,184,.16)" />
+    </svg>
+  )
+}
+
+function ProgressDots({ count, active }: { count: number; active: number }) {
+  if (count <= 1) return null
+  return (
+    <div className="mobile-rail-dots" aria-hidden="true">
+      {Array.from({ length: count }).map((_, index) => (
+        <span key={index} className={index === active ? 'active' : ''} />
+      ))}
+    </div>
+  )
+}
+
+function SwipeRail({
+  title,
+  icon,
+  items,
+  render,
+  className = '',
+}: {
+  title: string
+  icon?: ReactNode
+  items: RailItem[]
+  render: (item: RailItem, index: number) => ReactNode
+  className?: string
+}) {
+  const [active, setActive] = useState(0)
+  const railRef = useRef<HTMLDivElement>(null)
+
+  function updateActive() {
+    const node = railRef.current
+    if (!node) return
+    const width = node.firstElementChild?.clientWidth || node.clientWidth
+    const next = Math.round(node.scrollLeft / Math.max(width + 12, 1))
+    setActive(Math.max(0, Math.min(items.length - 1, next)))
+  }
+
+  return (
+    <section className={`mobile-section ${className}`.trim()}>
+      <div className="mobile-section-title">
+        <h2>{title}</h2>
+        {icon}
+      </div>
+      <div className="mobile-swipe-rail" ref={railRef} onScroll={updateActive}>
+        {items.map((item, index) => (
+          <div className="mobile-swipe-slide" key={item.symbol || item.ticker || item.name || item.title || index}>
+            {render(item, index)}
+          </div>
+        ))}
+      </div>
+      <ProgressDots count={items.length} active={active} />
+    </section>
+  )
+}
+
+function RiskMeter({ value }: { value: number }) {
+  const bounded = Math.max(0, Math.min(100, value))
+  return (
+    <div className={`mobile-risk-meter ${riskTone(bounded)}`}>
+      <span style={{ width: `${bounded}%` }} />
+    </div>
+  )
+}
+
+function ExposureGauge({ value }: { value: number }) {
+  const bounded = Math.max(0, Math.min(100, value))
+  return (
+    <div className="mobile-exposure-gauge" style={{ '--exposure-value': `${bounded * 3.6}deg` } as CSSProperties}>
+      <b>{pct(bounded)}</b>
+      <span>exposure</span>
+    </div>
+  )
+}
+
+function MomentumBar({ value }: { value: number }) {
+  const bounded = Math.max(0, Math.min(100, value))
+  return (
+    <div className="mobile-momentum">
+      <span>Momentum</span>
+      <i>
+        <em style={{ width: `${bounded}%` }} />
+      </i>
+      <b>{bounded}</b>
+    </div>
+  )
+}
+
 function MobileBottomNav({ active, setActive }: { active: string; setActive: (value: string) => void }) {
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile sections">
@@ -168,55 +277,71 @@ function SearchCommand() {
 }
 
 function MarketPulse({ items }: { items: any[] }) {
-  const rows = items.length ? items : marketFallback
+  const rows = (items.length ? items : marketFallback).map((item: any, index: number) => ({
+    ...item,
+    spark: item.spark || marketFallback[index % marketFallback.length].spark,
+  }))
+
   return (
-    <section className="mobile-pulse" aria-label="Market pulse">
-      {rows.map((item: any) => (
-        <article key={item.name} className="mobile-pulse-card">
-          <span>{item.name}</span>
-          <strong>{item.value}</strong>
-          <small className={Number(item.chg) >= 0 ? 'green' : 'red'}>{pct(item.chg)}</small>
-        </article>
-      ))}
-    </section>
+    <SwipeRail
+      title="Market Pulse"
+      icon={<BarChart3 size={18} />}
+      items={rows}
+      render={(item: any) => {
+        const tone: Tone = Number(item.chg) < 0 ? 'bad' : Number(item.chg) === 0 ? 'neutral' : 'good'
+        return (
+          <article className="mobile-visual-card mobile-market-card">
+            <div className="mobile-card-head">
+              <div>
+                <span>{item.name}</span>
+                <strong>{item.value}</strong>
+              </div>
+              <IntelligenceBadge label={pct(item.chg)} tone={tone} />
+            </div>
+            <Sparkline values={item.spark} tone={tone} />
+          </article>
+        )
+      }}
+    />
   )
 }
 
-function PortfolioSnapshot({ portfolio }: { portfolio: any }) {
+function PortfolioInsights({ portfolio, positions }: { portfolio: any; positions: any[] }) {
+  const top = positions[0] || positionFallback[0]
+  const insights = [
+    { title: 'Net Worth', value: money(portfolio.total_value || 58170), text: `${money(portfolio.daily_pnl || 420)} today`, type: 'spark' },
+    { title: 'Exposure Leader', value: top.symbol, text: `${pct(top.portfolio_pct)} of portfolio`, type: 'exposure', exposure: top.portfolio_pct || 18 },
+    {
+      title: 'Risk Posture',
+      value: portfolio.risk_mode || 'Balanced',
+      text: 'Guardrails active',
+      type: 'risk',
+      risk: Math.max(...positions.map((item: any) => Number(item.risk || 0)), 31),
+    },
+  ]
+
   return (
-    <GlowCard className="mobile-snapshot">
-      <div className="mobile-card-head">
-        <div>
-          <span>Portfolio</span>
-          <strong>{money(portfolio.total_value || 58170)}</strong>
-        </div>
-        <IntelligenceBadge label={portfolio.risk_mode || 'Balanced'} tone="neutral" />
-      </div>
-      <div className="mobile-snapshot-chart">
-        <ResponsiveContainer>
-          <AreaChart data={chartSeries}>
-            <Tooltip />
-            <Area dataKey="v" stroke="#24d18c" fill="#24d18c22" strokeWidth={2} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="mobile-snapshot-grid">
-        <span>
-          Today
-          <b className={Number(portfolio.daily_pnl || 420) >= 0 ? 'green' : 'red'}>
-            {money(portfolio.daily_pnl || 420)}
-          </b>
-        </span>
-        <span>
-          Cash
-          <b>{money(portfolio.cash || 6900)}</b>
-        </span>
-        <span>
-          Buying power
-          <b>{money(portfolio.buying_power || 18400)}</b>
-        </span>
-      </div>
-    </GlowCard>
+    <SwipeRail
+      title="Portfolio Insights"
+      icon={<ShieldCheck size={18} />}
+      items={insights}
+      render={(item: any) => (
+        <article className="mobile-visual-card mobile-insight-card">
+          <span>{item.title}</span>
+          <strong>{item.value}</strong>
+          <small>{item.text}</small>
+          {item.type === 'spark' && <Sparkline tone="good" />}
+          {item.type === 'exposure' && <ExposureGauge value={item.exposure} />}
+          {item.type === 'risk' && (
+            <div className="mobile-risk-block">
+              <Gauge size={18} />
+              <RiskMeter value={item.risk} />
+              <b>{item.risk}</b>
+            </div>
+          )}
+        </article>
+      )}
+    />
   )
 }
 
@@ -226,26 +351,25 @@ function UrgentAlerts({ portfolio }: { portfolio: any }) {
     : [
         { title: 'NVDA concentration near cap', text: 'Trim or hedge if it closes above the risk threshold.', level: 'warn' },
         { title: 'Fed minutes today', text: 'Avoid oversized entries before the macro release.', level: 'warn' },
+        { title: 'Cash buffer healthy', text: 'Buying power is available for scanner setups that pass risk checks.', level: 'good' },
       ]
 
   return (
-    <section className="mobile-section">
-      <div className="mobile-section-title">
-        <h2>Urgent Alerts</h2>
-        <Bell size={18} />
-      </div>
-      <div className="mobile-alert-list">
-        {alerts.slice(0, 3).map((alert: any, index: number) => (
-          <GlowCard className="mobile-alert" key={`${alert.title}-${index}`}>
-            <AlertTriangle size={18} className={alert.level === 'danger' ? 'red' : 'green'} />
-            <div>
-              <strong>{alert.title}</strong>
-              <span>{alert.text}</span>
-            </div>
-          </GlowCard>
-        ))}
-      </div>
-    </section>
+    <SwipeRail
+      title="Alerts"
+      icon={<Bell size={18} />}
+      items={alerts.slice(0, 5)}
+      render={(alert: any) => (
+        <article className="mobile-visual-card mobile-alert-card">
+          <AlertTriangle size={20} className={alert.level === 'danger' ? 'red' : 'green'} />
+          <div>
+            <strong>{alert.title}</strong>
+            <p>{alert.text}</p>
+          </div>
+          <span className="mobile-status-badge">{alert.level === 'danger' ? 'Action' : 'Monitor'}</span>
+        </article>
+      )}
+    />
   )
 }
 
@@ -263,78 +387,117 @@ function DailyBrief({ portfolio }: { portfolio: any }) {
         <h2>Daily Brief</h2>
         <ShieldCheck size={18} />
       </div>
-      <GlowCard className="mobile-brief">
+      <div className="mobile-brief">
         {actions.slice(0, 3).map((action: any) => (
-          <article key={action.title}>
+          <article className="mobile-brief-card" key={action.title}>
             <strong>{action.title}</strong>
             <p>{action.text}</p>
           </article>
         ))}
-      </GlowCard>
+      </div>
     </section>
   )
 }
 
-function OpportunityPreview({ scanner, onSelect }: { scanner: any[]; onSelect: (position: any) => void }) {
+function ScannerSetups({ scanner, onSelect }: { scanner: any[]; onSelect: (position: any) => void }) {
   const rows = scanner.length ? scanner : scannerFallback
   return (
-    <section className="mobile-section">
-      <div className="mobile-section-title">
-        <h2>Opportunity Scanner</h2>
-        <LineChart size={18} />
-      </div>
-      <div className="mobile-opportunities">
-        {rows.slice(0, 3).map((item: any) => (
-          <button key={item.ticker} className="mobile-opportunity" onClick={() => onSelect({ symbol: item.ticker, ...item })}>
+    <SwipeRail
+      title="Scanner Setups"
+      icon={<Sparkles size={18} />}
+      items={rows.slice(0, 5)}
+      render={(item: any) => (
+        <button className="mobile-visual-card mobile-setup-card" onClick={() => onSelect({ symbol: item.ticker, ...item })}>
+          <div className="mobile-card-head">
             <div>
+              <span>{item.label || 'Setup'}</span>
               <strong>{item.ticker}</strong>
-              <span>{item.setup}</span>
             </div>
+            <b>{money(item.price)}</b>
+          </div>
+          <Sparkline values={item.spark} tone="good" />
+          <p>{item.setup}</p>
+          <div className="mobile-setup-footer">
+            <span>Entry {item.entry_zone || 'Review'}</span>
+            <IntelligenceBadge label={`${item.score || 64} score`} tone="good" />
+          </div>
+        </button>
+      )}
+    />
+  )
+}
+
+function WatchlistMovers({ scanner, positions, onSelect }: { scanner: any[]; positions: any[]; onSelect: (position: any) => void }) {
+  const movers = [...positions.slice(0, 2), ...scanner.slice(0, 3)].map((item: any, index: number) => ({
+    symbol: item.symbol || item.ticker,
+    name: item.name || item.setup || 'Watchlist mover',
+    price: item.last || item.price || item.market_value,
+    change: item.day_change_pct || item.change_pct || (index % 2 ? -0.42 : 1.12),
+    risk: item.risk || 42,
+    spark: item.spark,
+    ...item,
+  }))
+
+  return (
+    <SwipeRail
+      title="Watchlist Movers"
+      icon={<ChevronRight size={18} />}
+      items={movers.length ? movers : positionFallback}
+      render={(item: any) => (
+        <button className="mobile-visual-card mobile-mover-card" onClick={() => onSelect(item)}>
+          <div className="mobile-card-head">
             <div>
-              <b>{money(item.price)}</b>
-              <small>{item.label}</small>
+              <span>{item.name}</span>
+              <strong>{item.symbol}</strong>
             </div>
-            <ChevronRight size={18} />
-          </button>
-        ))}
-      </div>
-    </section>
+            <div className="mobile-price-stack">
+              <b>{money(item.price)}</b>
+              <small className={Number(item.change) >= 0 ? 'green' : 'red'}>{pct(item.change)}</small>
+            </div>
+          </div>
+          <Sparkline values={item.spark} tone={Number(item.change) >= 0 ? 'good' : 'bad'} />
+          <RiskMeter value={Number(item.risk || 0)} />
+        </button>
+      )}
+    />
   )
 }
 
 function PositionCards({ rows, onSelect }: { rows: any[]; onSelect: (position: any) => void }) {
   const positions = rows.length ? rows : positionFallback
   return (
-    <section className="mobile-section">
-      <div className="mobile-section-title">
-        <h2>Positions</h2>
-        <BriefcaseBusiness size={18} />
-      </div>
-      <div className="mobile-position-list">
-        {positions.map((position: any) => {
-          const risk = Number(position.risk || 0)
-          const change = Number(position.day_change_pct || position.change_pct || 0)
-          return (
-            <button className="mobile-position-card" key={position.symbol} onClick={() => onSelect(position)}>
-              <div className="mobile-position-main">
-                <div>
-                  <strong>{position.symbol}</strong>
-                  <span>{position.name || 'Portfolio holding'}</span>
-                </div>
-                <div>
-                  <b>{money(position.last || position.price || position.market_value)}</b>
-                  <small className={change >= 0 ? 'green' : 'red'}>{pct(change)}</small>
-                </div>
+    <SwipeRail
+      title="Positions"
+      icon={<BriefcaseBusiness size={18} />}
+      items={positions}
+      className="mobile-position-rail"
+      render={(position: any) => {
+        const risk = Number(position.risk || 0)
+        const change = Number(position.day_change_pct || position.change_pct || 0)
+        return (
+          <button className="mobile-visual-card mobile-position-card" onClick={() => onSelect(position)}>
+            <div className="mobile-card-head">
+              <div>
+                <span>{position.name || 'Portfolio holding'}</span>
+                <strong>{position.symbol}</strong>
               </div>
-              <div className="mobile-position-meta">
-                <span>{pct(position.portfolio_pct)} portfolio</span>
+              <div className="mobile-price-stack">
+                <b>{money(position.last || position.price || position.market_value)}</b>
+                <small className={change >= 0 ? 'green' : 'red'}>{pct(change)}</small>
+              </div>
+            </div>
+            <Sparkline values={position.spark} tone={change >= 0 ? 'good' : 'bad'} />
+            <div className="mobile-position-footer">
+              <ExposureGauge value={Number(position.portfolio_pct || 0)} />
+              <div>
                 <IntelligenceBadge label={`${risk || 31} risk`} tone={riskTone(risk || 31)} />
+                <MomentumBar value={Number(position.momentum_score || position.momentum || 52)} />
               </div>
-            </button>
-          )
-        })}
-      </div>
-    </section>
+            </div>
+          </button>
+        )
+      }}
+    />
   )
 }
 
@@ -342,6 +505,7 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
   const [tab, setTab] = useState('AI Thesis')
   const [details, setDetails] = useState<any>(null)
   const ticker = position.symbol || position.ticker
+  const change = Number(position.day_change_pct || position.change_pct || position.change || 0)
 
   useEffect(() => {
     if (!ticker) return
@@ -355,28 +519,26 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
 
   return (
     <div className="mobile-detail" role="dialog" aria-modal="true" aria-label={`${ticker} details`}>
-      <header className="mobile-detail-header">
+      <button className="mobile-detail-close" onClick={onClose} aria-label="Close detail">
+        <X size={22} />
+      </button>
+      <header className="mobile-detail-hero">
         <div>
           <span>{position.name || 'Position detail'}</span>
           <h1>{ticker}</h1>
+          <div className="mobile-detail-price">
+            <strong>{money(position.last || position.price || details?.watch?.price || 0)}</strong>
+            <small className={change >= 0 ? 'green' : 'red'}>{pct(change)}</small>
+          </div>
         </div>
-        <button onClick={onClose} aria-label="Close detail">
-          <X size={20} />
-        </button>
+        <Sparkline values={position.spark} tone={change >= 0 ? 'good' : 'bad'} />
       </header>
-      <div className="mobile-detail-price">
-        <strong>{money(position.last || position.price || details?.watch?.price || 0)}</strong>
-        <span className={Number(position.day_change_pct || position.change_pct || 0) >= 0 ? 'green' : 'red'}>
-          {pct(position.day_change_pct || position.change_pct || 0)}
-        </span>
-      </div>
       <section className="mobile-detail-chart">
-        <ResponsiveContainer>
-          <AreaChart data={chartSeries}>
-            <Tooltip />
-            <Area dataKey="v" stroke="#60a5fa" fill="#60a5fa24" strokeWidth={2} />
-          </AreaChart>
-        </ResponsiveContainer>
+        <Sparkline values={[31, 35, 33, 42, 45, 44, 52, 57, 54]} tone={change >= 0 ? 'good' : 'bad'} />
+        <div className="mobile-detail-chart-meta">
+          <span>Chart-first view</span>
+          <b>{change >= 0 ? 'Constructive tape' : 'Pressure zone'}</b>
+        </div>
       </section>
       <div className="mobile-detail-tabs">
         {tabs.map((item) => (
@@ -432,10 +594,10 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
 function PlaceholderPanel({ title }: { title: string }) {
   return (
     <section className="mobile-section">
-      <GlowCard className="mobile-placeholder">
+      <article className="mobile-visual-card mobile-placeholder">
         <strong>{title}</strong>
         <span>Mobile shell ready. Full controls stay in the desktop dashboard for this sprint.</span>
-      </GlowCard>
+      </article>
     </section>
   )
 }
@@ -461,20 +623,26 @@ export default function MobileExperience() {
         </button>
       </header>
       <SearchCommand />
-      <MarketPulse items={dashboard?.macros?.market_strip || []} />
 
       {active === 'home' && (
         <>
-          <PortfolioSnapshot portfolio={portfolio} />
+          <MarketPulse items={dashboard?.macros?.market_strip || []} />
+          <PortfolioInsights portfolio={portfolio} positions={positions} />
           <UrgentAlerts portfolio={portfolio} />
           <DailyBrief portfolio={portfolio} />
-          <OpportunityPreview scanner={scanner} onSelect={setSelected} />
+          <ScannerSetups scanner={scanner} onSelect={setSelected} />
+          <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} />
         </>
       )}
 
       {active === 'portfolio' && <PositionCards rows={positions} onSelect={setSelected} />}
-      {active === 'scanner' && <OpportunityPreview scanner={scanner} onSelect={setSelected} />}
-      {active === 'markets' && <MarketPulse items={dashboard?.macros?.market_strip || []} />}
+      {active === 'scanner' && <ScannerSetups scanner={scanner} onSelect={setSelected} />}
+      {active === 'markets' && (
+        <>
+          <MarketPulse items={dashboard?.macros?.market_strip || []} />
+          <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} />
+        </>
+      )}
       {active === 'settings' && <PlaceholderPanel title="Settings" />}
 
       <MobileBottomNav active={active} setActive={setActive} />
