@@ -209,7 +209,7 @@ function SwipeRail({
       </div>
       <div className="mobile-swipe-rail" ref={railRef} onScroll={updateActive}>
         {items.map((item, index) => (
-          <div className="mobile-swipe-slide" key={item.symbol || item.ticker || item.name || item.title || index}>
+          <div className="mobile-swipe-slide" key={`${item.symbol || item.ticker || item.name || item.title || 'item'}-${index}`}>
             {render(item, index)}
           </div>
         ))}
