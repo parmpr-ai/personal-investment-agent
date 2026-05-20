@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, Check, Copy, Cpu, Database, Radar, ShieldCheck, Sparkles, WifiOff } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Copy, Cpu, Database, Radar, RefreshCw, ShieldCheck, Sparkles, WifiOff } from 'lucide-react'
 import GlowCard from '../ui/GlowCard'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 import RiskGauge from '../ui/RiskGauge'
@@ -13,6 +13,19 @@ import type { ConnectionMethod, LiveConnectionResult, SetupDiagnostics, SetupPre
 const API = 'http://127.0.0.1:8000'
 const totalSteps = 7
 const command = 'docker run -it --rm -p 5000:5000 voyz/ibeam'
+
+async function fetchJson<T>(path: string, timeoutMs = 3500): Promise<T> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(`${API}${path}`, { signal: controller.signal })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(typeof payload?.detail === 'string' ? payload.detail : `HTTP ${response.status}`)
+    return payload as T
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
 
 const methods = [
   {
@@ -52,8 +65,12 @@ export default function SetupWizard() {
   const [method, setMethod] = useState<ConnectionMethod | null>(null)
   const [diagnostics, setDiagnostics] = useState<SetupDiagnostics | null>(null)
   const [diagnosticsError, setDiagnosticsError] = useState(false)
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
+  const [diagnosticsRetry, setDiagnosticsRetry] = useState(0)
   const [live, setLive] = useState<LiveConnectionResult | null>(null)
   const [liveError, setLiveError] = useState(false)
+  const [liveLoading, setLiveLoading] = useState(false)
+  const [liveRetry, setLiveRetry] = useState(0)
   const [preferences, setPreferences] = useState<SetupPreferences>(defaultPreferences)
   const [copied, setCopied] = useState(false)
 
@@ -72,21 +89,29 @@ export default function SetupWizard() {
   useEffect(() => {
     if (step !== 3) return
     let active = true
+    setDiagnosticsLoading(true)
     setDiagnosticsError(false)
-    fetch(`${API}/setup/diagnostics`)
-      .then((r) => r.json())
-      .then((data) => active && setDiagnostics(data))
-      .catch(() => active && setDiagnosticsError(true))
+    fetchJson<SetupDiagnostics>('/setup/diagnostics')
+      .then((data) => {
+        if (active) setDiagnostics(data)
+      })
+      .catch(() => {
+        if (!active) return
+        setDiagnostics(null)
+        setDiagnosticsError(true)
+      })
+      .finally(() => active && setDiagnosticsLoading(false))
     return () => {
       active = false
     }
-  }, [step])
+  }, [step, diagnosticsRetry])
 
   useEffect(() => {
     if (step !== 5) return
     let active = true
+    setLiveLoading(true)
     setLiveError(false)
-    Promise.all([fetch(`${API}/health`).then((r) => r.json()), fetch(`${API}/portfolio`).then((r) => r.json())])
+    Promise.all([fetchJson<any>('/health'), fetchJson<any>('/portfolio')])
       .then(([health, portfolio]) => {
         if (!active) return
         const positions = portfolio?.positions || []
@@ -98,18 +123,23 @@ export default function SetupWizard() {
           source: portfolio?.source,
         })
       })
-      .catch(() => active && setLiveError(true))
+      .catch(() => {
+        if (!active) return
+        setLive(null)
+        setLiveError(true)
+      })
+      .finally(() => active && setLiveLoading(false))
     return () => {
       active = false
     }
-  }, [step])
+  }, [step, liveRetry])
 
   const progress = Math.round((step / totalSteps) * 100)
   const canContinue = step !== 2 || !!method
   const selectedMethod = methods.find((item) => item.id === method)
   const riskValue = useMemo(() => {
     if (!diagnostics) return 70
-    return [diagnostics.java_installed, diagnostics.docker_installed, diagnostics.gateway_running, diagnostics.ibkr_authenticated].filter(Boolean).length * 25
+    return [diagnostics.java_installed, diagnostics.docker_installed, diagnostics.docker_daemon_running, diagnostics.ibkr_gateway_reachable, diagnostics.ibkr_authenticated, diagnostics.demo_mode_available].filter(Boolean).length * 16
   }, [diagnostics])
 
   function next() {
@@ -142,9 +172,9 @@ export default function SetupWizard() {
       <div className="setup-stage">
         {step === 1 && <WelcomeStep />}
         {step === 2 && <MethodStep method={method} setMethod={setMethod} />}
-        {step === 3 && <DiagnosticsStep diagnostics={diagnostics} error={diagnosticsError} riskValue={riskValue} />}
+        {step === 3 && <DiagnosticsStep diagnostics={diagnostics} error={diagnosticsError} loading={diagnosticsLoading} riskValue={riskValue} onRetry={() => setDiagnosticsRetry((value) => value + 1)} />}
         {step === 4 && <GuideStep copied={copied} onCopy={copyCommand} />}
-        {step === 5 && <LiveTestStep live={live} error={liveError} method={selectedMethod?.title} />}
+        {step === 5 && <LiveTestStep live={live} error={liveError} loading={liveLoading} method={selectedMethod?.title} onRetry={() => setLiveRetry((value) => value + 1)} />}
         {step === 6 && <PersonalizationStep preferences={preferences} setPreferences={setPreferences} />}
         {step === 7 && <FinishStep />}
       </div>
@@ -238,28 +268,35 @@ function MethodStep({
 function DiagnosticsStep({
   diagnostics,
   error,
+  loading,
   riskValue,
+  onRetry,
 }: {
   diagnostics: SetupDiagnostics | null
   error: boolean
+  loading: boolean
   riskValue: number
+  onRetry: () => void
 }) {
   const cards = diagnostics
     ? [
+        ['Backend API', diagnostics.backend_ok, 'Start the FastAPI backend, then retry diagnostics.'],
+        ['Docker Desktop', diagnostics.docker_installed, 'Install Docker Desktop for Windows, then reopen this step.'],
+        ['Docker daemon', diagnostics.docker_daemon_running, 'Open Docker Desktop and wait until it says Docker is running.'],
         ['Java 21', diagnostics.java_installed, 'Install Java 21 before starting IBeam.'],
-        ['Docker Desktop', diagnostics.docker_installed, 'Install Docker Desktop to run IBeam.'],
-        ['Gateway reachable', diagnostics.gateway_running, 'Start IBeam and expose localhost:5000.'],
-        ['IBKR authenticated', diagnostics.ibkr_authenticated, 'Open localhost:5000 and complete login.'],
-        ['Backend API', diagnostics.backend_ok, 'Start the FastAPI backend.'],
-        ['Frontend app', diagnostics.frontend_ok, 'The setup wizard is ready.'],
+        ['IBKR gateway', diagnostics.ibkr_gateway_reachable || diagnostics.gateway_running, 'Run the IBeam command and expose localhost:5000.'],
+        ['IBKR authenticated', diagnostics.ibkr_authenticated, 'Open https://localhost:5000 and complete the IBKR login prompt.'],
+        ['Demo mode', diagnostics.demo_mode_available, 'Demo mode should always be available as a fallback.'],
       ]
     : []
+  const dockerNeedsAction = diagnostics && (!diagnostics.docker_installed || !diagnostics.docker_daemon_running)
+  const ibkrPending = diagnostics && (diagnostics.ibkr_gateway_reachable || diagnostics.gateway_running) && !diagnostics.ibkr_authenticated
 
   return (
     <section className="setup-panel">
       <SectionHeader title="Environment validation" subtitle="We check the pieces needed for a live connection." />
       {error ? (
-        <OfflineState />
+        <OfflineState onRetry={onRetry} />
       ) : !diagnostics ? (
         <GlowCard>Running diagnostics…</GlowCard>
       ) : (
@@ -267,6 +304,9 @@ function DiagnosticsStep({
           <GlowCard className="setup-readiness">
             <RiskGauge value={riskValue} label="Setup readiness" />
             <p>Green means ready. Yellow means there is one clear action left. Red means start with the installation steps below.</p>
+            <button className="tab" onClick={onRetry} disabled={loading}>
+              <RefreshCw size={16} /> {loading ? 'Checking...' : 'Retry diagnostics'}
+            </button>
           </GlowCard>
           <div className="setup-status-grid">
             {cards.map(([title, ok, guidance]) => (
@@ -274,11 +314,13 @@ function DiagnosticsStep({
                 key={String(title)}
                 title={String(title)}
                 detail={ok ? 'Detected and ready.' : String(guidance)}
-                badge={ok ? 'Ready' : title === 'IBKR authenticated' ? 'Action needed' : 'Missing'}
-                tone={ok ? 'good' : title === 'IBKR authenticated' ? 'warn' : 'bad'}
+                badge={ok ? 'Ready' : title === 'IBKR authenticated' || title === 'Docker daemon' ? 'Pending' : 'Missing'}
+                tone={ok ? 'good' : title === 'IBKR authenticated' || title === 'Docker daemon' ? 'warn' : 'bad'}
               />
             ))}
           </div>
+          {dockerNeedsAction && <DockerGuidance />}
+          {ibkrPending && <IbkrPendingGuidance />}
         </div>
       )}
     </section>
@@ -317,17 +359,21 @@ function GuideStep({ copied, onCopy }: { copied: boolean; onCopy: () => void }) 
 function LiveTestStep({
   live,
   error,
+  loading,
   method,
+  onRetry,
 }: {
   live: LiveConnectionResult | null
   error: boolean
+  loading: boolean
   method?: string
+  onRetry: () => void
 }) {
   return (
     <section className="setup-panel">
       <SectionHeader title="Live connection test" subtitle={method ? `Testing ${method}.` : 'Testing your selected connection path.'} />
       {error ? (
-        <OfflineState />
+        <OfflineState onRetry={onRetry} />
       ) : !live ? (
         <GlowCard>Checking `/health` and `/portfolio`…</GlowCard>
       ) : (
@@ -336,6 +382,10 @@ function LiveTestStep({
           <StatusCard title="Account" detail={live.accountDetected ? 'Live IBKR account detected.' : live.source ? `Current source: ${live.source}` : 'No live account detected yet.'} badge={live.accountDetected ? 'Detected' : 'Not live'} tone={live.accountDetected ? 'good' : 'warn'} />
           <StatusCard title="Positions" detail={`${live.positionsCount} positions returned.`} badge={live.positionsCount > 0 ? 'Available' : 'Empty'} tone={live.positionsCount > 0 ? 'good' : 'warn'} />
           <StatusCard title="Market data" detail={live.marketDataAvailable ? 'Price fields are populated.' : 'No priced positions detected yet.'} badge={live.marketDataAvailable ? 'Available' : 'Pending'} tone={live.marketDataAvailable ? 'good' : 'warn'} />
+          {!live.accountDetected && <IbkrPendingGuidance />}
+          <button className="tab" onClick={onRetry} disabled={loading}>
+            <RefreshCw size={16} /> {loading ? 'Checking...' : 'Retry live test'}
+          </button>
         </div>
       )}
     </section>
@@ -414,13 +464,40 @@ function FinishStep() {
   )
 }
 
-function OfflineState() {
+function DockerGuidance() {
+  return (
+    <GlowCard className="setup-offline">
+      <Database />
+      <div>
+        <b>Docker needs attention.</b>
+        <p>Install Docker Desktop, start it, and wait for the daemon to report running before launching IBeam.</p>
+      </div>
+    </GlowCard>
+  )
+}
+
+function IbkrPendingGuidance() {
+  return (
+    <GlowCard className="setup-offline">
+      <ShieldCheck />
+      <div>
+        <b>IBKR authentication is pending.</b>
+        <p>Open https://localhost:5000, complete the IBKR login flow, then retry diagnostics.</p>
+      </div>
+    </GlowCard>
+  )
+}
+
+function OfflineState({ onRetry }: { onRetry: () => void }) {
   return (
     <GlowCard className="setup-offline">
       <WifiOff />
       <div>
         <b>We couldn’t reach the backend right now.</b>
         <p>Check that the FastAPI server is running, then continue when the connection is available again.</p>
+        <button className="tab active" onClick={onRetry}>
+          <RefreshCw size={16} /> Retry
+        </button>
       </div>
     </GlowCard>
   )

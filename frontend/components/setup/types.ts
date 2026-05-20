@@ -14,8 +14,11 @@ export type SetupPreferences = {
 export type SetupDiagnostics = {
   java_installed: boolean
   docker_installed: boolean
+  docker_daemon_running: boolean
   gateway_running: boolean
+  ibkr_gateway_reachable: boolean
   ibkr_authenticated: boolean
+  demo_mode_available: boolean
   backend_ok: boolean
   frontend_ok: boolean
 }
