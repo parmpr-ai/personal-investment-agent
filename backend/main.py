@@ -11,6 +11,7 @@ from services.settings_store import get_settings, save_settings
 from services.connectors import source_health, test_source, yahoo_news, yahoo_fundamentals
 from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding
 from services.news_intelligence import get_news_intelligence
+from services.stock_intelligence import build_stock_panel_intelligence, get_ticker_news_intelligence
 load_dotenv()
 try:
  from services.ibkr_service import get_ibkr_portfolio
@@ -171,9 +172,11 @@ def rescan(): return {'ok':True,'message':'Rescan complete','dashboard':payload(
 def watchlist(): return [opportunity_for(w,macro_snapshot()) for w in WATCHLIST]
 @app.get('/stock/{ticker}')
 def stock(ticker:str):
- t=ticker.upper(); p=get_portfolio_payload(); pos=next((x for x in p.get('positions',[]) if x.get('symbol','').split()[0].upper()==t or x.get('underlying','').upper()==t),None)
+ t=ticker.upper().split()[0]; p=get_portfolio_payload(); pos=next((x for x in p.get('positions',[]) if x.get('symbol','').split()[0].upper()==t or x.get('underlying','').upper()==t),None)
  wl=next((x for x in WATCHLIST if x['symbol']==t),None)
- return {'ticker':t,'position':pos,'watch':opportunity_for(wl,macro_snapshot()) if wl else None,'news':(yahoo_news(t) or [n for n in news_items() if n.get('ticker')==t]),'thesis':THESIS_STORE.get(t,[]),'fundamentals':yahoo_fundamentals(t),'forecast':{'bull':'Momentum + positive catalysts continue','base':'Range trade until news confirms thesis','bear':'Macro/yields or thesis deterioration pressures multiple'}}
+ macro=macro_snapshot(); calendar=catalyst_calendar(); news_intel=get_ticker_news_intelligence(t)
+ forecast={'bull':'Momentum + positive catalysts continue','base':'Range trade until news confirms thesis','bear':'Macro/yields or thesis deterioration pressures multiple'}
+ return {'ticker':t,'position':pos,'watch':opportunity_for(wl,macro) if wl else None,'news':(yahoo_news(t) or [n for n in news_items() if n.get('ticker')==t]),'news_intelligence':news_intel,'intelligence':build_stock_panel_intelligence(t,pos,opportunity_for(wl,macro) if wl else None,macro,forecast,news_intel,calendar),'thesis':THESIS_STORE.get(t,[]),'fundamentals':yahoo_fundamentals(t),'forecast':forecast}
 @app.post('/thesis')
 def save_thesis(req:ThesisRequest):
  THESIS_STORE.setdefault(req.ticker.upper(),[]).append({'title':req.title,'summary':req.summary,'full_text':req.full_text})

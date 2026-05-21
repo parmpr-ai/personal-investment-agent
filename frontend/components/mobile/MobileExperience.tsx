@@ -24,6 +24,7 @@ import {
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 import SettingsPage from '../settings/SettingsWorkspace'
 import MobileReorderableSections from '../dashboard/MobileReorderableSections'
+import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
 import {
   DEFAULT_MOBILE_HOME_ORDER,
   MOBILE_HOME_LAYOUT_KEY,
@@ -660,96 +661,6 @@ function PositionCards({ rows, onSelect }: { rows: any[]; onSelect: (position: a
   )
 }
 
-function MobileDetailView({ position, onClose }: { position: any; onClose: () => void }) {
-  const [tab, setTab] = useState('AI Thesis')
-  const [details, setDetails] = useState<any>(null)
-  const ticker = position.symbol || position.ticker
-  const change = Number(position.day_change_pct || position.change_pct || position.change || 0)
-
-  useEffect(() => {
-    if (!ticker) return
-    fetch(`${API}/stock/${encodeURIComponent(ticker)}`)
-      .then((response) => response.json())
-      .then(setDetails)
-      .catch(() => {})
-  }, [ticker])
-
-  const tabs = ['AI Thesis', 'News', 'Risk']
-
-  return (
-    <div className="mobile-detail" role="dialog" aria-modal="true" aria-label={`${ticker} details`}>
-      <button className="mobile-detail-close" onClick={onClose} aria-label="Close detail">
-        <X size={22} />
-      </button>
-      <header className="mobile-detail-hero">
-        <div>
-          <span>{position.name || 'Position detail'}</span>
-          <h1>{ticker}</h1>
-          <div className="mobile-detail-price">
-            <strong>{money(position.last || position.price || details?.watch?.price || 0)}</strong>
-            <small className={change >= 0 ? 'green' : 'red'}>{pct(change)}</small>
-          </div>
-        </div>
-        <Sparkline values={position.spark} tone={change >= 0 ? 'good' : 'bad'} />
-      </header>
-      <section className="mobile-detail-chart">
-        <Sparkline values={[31, 35, 33, 42, 45, 44, 52, 57, 54]} tone={change >= 0 ? 'good' : 'bad'} />
-        <div className="mobile-detail-chart-meta">
-          <span>Chart-first view</span>
-          <b>{change >= 0 ? 'Constructive tape' : 'Pressure zone'}</b>
-        </div>
-      </section>
-      <div className="mobile-detail-tabs">
-        {tabs.map((item) => (
-          <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>
-            {item}
-          </button>
-        ))}
-      </div>
-      <section className="mobile-detail-panel">
-        {tab === 'AI Thesis' && (
-          <p>
-            {details?.position?.ai_view ||
-              position.ai_view ||
-              details?.forecast?.base ||
-              'PIA has no saved thesis yet. Treat this as a watch item until catalyst, valuation, and risk checks agree.'}
-          </p>
-        )}
-        {tab === 'News' && (
-          <div className="mobile-news-list">
-            {(details?.news?.length ? details.news : [{ title: 'No fresh news loaded', impact: 'Neutral', action: 'Monitor only' }]).map(
-              (item: any) => (
-                <article key={item.title}>
-                  <strong>{item.title}</strong>
-                  <span>
-                    {item.impact} - {item.action}
-                  </span>
-                </article>
-              ),
-            )}
-          </div>
-        )}
-        {tab === 'Risk' && (
-          <div className="mobile-risk-grid">
-            <span>
-              Portfolio weight
-              <b>{pct(position.portfolio_pct)}</b>
-            </span>
-            <span>
-              Risk score
-              <b>{position.risk || 31}</b>
-            </span>
-            <span>
-              Stop discipline
-              <b>{position.stop || 'Required'}</b>
-            </span>
-          </div>
-        )}
-      </section>
-    </div>
-  )
-}
-
 export default function MobileExperience() {
   const dashboard = useMobileDashboard()
   const [active, setActive] = useState('home')
@@ -853,7 +764,15 @@ export default function MobileExperience() {
       )}
 
       <MobileBottomNav active={active} setActive={setActive} />
-      {selected && <MobileDetailView position={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <StockIntelligenceShell
+          variant="mobile"
+          ticker={selected.symbol || selected.ticker}
+          position={selected}
+          hidden={privacyHidden}
+          onClose={() => setSelected(null)}
+        />
+      )}
       <MobileQuickControls
         open={quickOpen}
         onClose={() => setQuickOpen(false)}

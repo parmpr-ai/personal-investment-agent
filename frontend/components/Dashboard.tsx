@@ -33,6 +33,7 @@ import IntelligenceBadge from './ui/IntelligenceBadge'
 import RiskGauge from './ui/RiskGauge'
 import SettingsPage from './settings/SettingsWorkspace'
 import DashboardHome from './dashboard/DashboardHome'
+import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
 
 const API = 'http://127.0.0.1:8000'
 const WS = 'ws://127.0.0.1:8000/ws'
@@ -309,7 +310,15 @@ export default function Dashboard() {
         {active === 'about' && <AboutPage hidden={privacyHidden} />}
         {active === 'settings' && <SettingsPage hidden={privacyHidden} />}
       </main>
-      {selected && <PositionModal ticker={selected.symbol || selected.ticker} hidden={privacyHidden} onClose={() => setSelected(null)} />}
+      {selected && (
+        <StockIntelligenceShell
+          variant="desktop"
+          ticker={selected.symbol || selected.ticker}
+          position={selected}
+          hidden={privacyHidden}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   )
 }
@@ -1047,102 +1056,5 @@ function AboutPage({ hidden }: any) {
         </div>
       </Panel>
     </div>
-  )
-}
-
-function TradingViewChart({ ticker }: { ticker: string }) {
-  const sym = encodeURIComponent(`NASDAQ:${ticker.split(' ')[0]}`)
-  return (
-    <iframe
-      className="tv-frame"
-      src={`https://s.tradingview.com/widgetembed/?symbol=${sym}&interval=D&theme=dark&style=1&hide_top_toolbar=1&hide_side_toolbar=1&allow_symbol_change=0&save_image=0`}
-    />
-  )
-}
-
-function PositionModal({ ticker, hidden, onClose }: any) {
-  const [data, setData] = useState<any>(null)
-  const [tab, setTab] = useState('Overview')
-  useEffect(() => {
-    fetchJson(`/stock/${encodeURIComponent(ticker.split(' ')[0])}`).then(setData).catch(() => {})
-  }, [ticker])
-  const tabs = ['Overview', 'Chart', 'Fundamentals', 'News', 'Risk', 'AI Thesis']
-  const tabLabel = (value: string) =>
-    hidden
-      ? ({ Overview: 'Overview', Chart: 'Workspace', Fundamentals: 'Workspace', News: 'Updates', Risk: 'Controls', 'AI Thesis': 'Workspace' } as Record<string, string>)[value] || 'Workspace'
-      : value
-  return (
-    <>
-      <div className="overlay" onClick={onClose} />
-      <div className="position-modal">
-        <button className="close" onClick={onClose}>
-          <X size={16} />
-        </button>
-        <h1>{hidden ? mask : ticker}</h1>
-        <div className="tabs">
-          {tabs.map((t) => (
-            <button key={t} onClick={() => setTab(t)} className={`tab ${tab === t ? 'active' : ''}`}>
-              {tabLabel(t)}
-            </button>
-          ))}
-        </div>
-        {tab === 'Overview' && (
-          <div className="panel">
-            <h3>Snapshot</h3>
-            <p>{hidden ? mask : data?.position?.ai_view || data?.watch?.reason || 'No position. Watchlist research available.'}</p>
-            <p className="muted">{hidden ? mask : `Why moving: ${data?.position?.why_moving || 'No clear catalyst. Check news, sector and macro.'}`}</p>
-          </div>
-        )}
-        {tab === 'Chart' && !hidden && (
-          <div className="panel">
-            <h3>TradingView Chart</h3>
-            <TradingViewChart ticker={ticker} />
-          </div>
-        )}
-        {tab === 'Fundamentals' && <pre className="panel">{hidden ? mask : JSON.stringify(data?.fundamentals, null, 2)}</pre>}
-        {tab === 'News' && (
-          <div className="actions">
-            {(data?.news || []).map((n: any) => (
-              <div className="action" key={n.title}>
-                <BookOpen size={18} />
-                <div>
-                  <b>{hidden ? 'Workspace item' : n.title}</b>
-                  <div className="muted">
-                    {hidden ? mask : `${n.impact} - ${n.action}`}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        {tab === 'Risk' && (
-          <div className="panel">
-            <h3>Risk profile</h3>
-            <MetricBar label={hidden ? 'Overview' : 'Portfolio weight'} value={data?.position?.portfolio_pct || 0} hidden={hidden} />
-            <MetricBar label={hidden ? 'Controls' : 'Risk'} value={data?.position?.risk || 0} tone="red" hidden={hidden} />
-            <MetricBar label={hidden ? 'Workspace' : 'Macro sensitivity'} value={data?.position?.macro_sensitivity || 0} tone="violet" hidden={hidden} />
-          </div>
-        )}
-        {tab === 'AI Thesis' && (
-          <div className="panel">
-            <h3>AI Thesis</h3>
-            {(data?.thesis || []).length ? (
-              data.thesis.map((t: any) => (
-                <article key={t.title}>
-                  <b>{hidden ? 'Workspace item' : t.title}</b>
-                  <p>{hidden ? mask : t.summary}</p>
-                  <details>
-                    <summary>Full analysis</summary>
-                    <p>{hidden ? mask : t.full_text}</p>
-                  </details>
-                </article>
-              ))
-            ) : (
-              <p className="muted">{hidden ? mask : data?.forecast?.base || 'No saved thesis yet.'}</p>
-            )}
-          </div>
-        )}
-      </div>
-    </>
   )
 }
