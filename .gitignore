@@ -1,3 +1,29 @@
+# Next.js
+*.sqlite3
+.next/
+out/
+build/
+
+# Node
+
+node_modules/
+
+# Python
+
+**pycache**/
+*.pyc
+*.pyo
+
+# Env
+
+.env
+.env.local
+
+# OS
+
+.DS_Store
+Thumbs.db
+
 node_modules/
 .next/
 dist/
