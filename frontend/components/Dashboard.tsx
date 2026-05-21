@@ -32,6 +32,7 @@ import SectionHeader from './ui/SectionHeader'
 import IntelligenceBadge from './ui/IntelligenceBadge'
 import RiskGauge from './ui/RiskGauge'
 import SettingsPage from './settings/SettingsWorkspace'
+import DashboardHome from './dashboard/DashboardHome'
 
 const API = 'http://127.0.0.1:8000'
 const WS = 'ws://127.0.0.1:8000/ws'
@@ -280,6 +281,15 @@ export default function Dashboard() {
             setActive={setActive}
             setSelected={setSelected}
             newsIntel={newsIntel}
+            mask={mask}
+            components={{
+              PortfolioSnapshot,
+              PositionsTable,
+              RiskList,
+              NewsIntelligencePanel,
+              Exposure,
+              TradeList,
+            }}
           />
         )}
         {active === 'portfolio' && (
@@ -392,56 +402,6 @@ function MetricBar({ label, value, tone = 'blue', hidden = false }: any) {
       <i>
         <em className={tone} style={{ width: `${Math.max(0, Math.min(value, 100))}%` }} />
       </i>
-    </div>
-  )
-}
-
-function DashboardHome({ d, hidden, setActive, setSelected, newsIntel }: any) {
-  const p = d?.portfolio || {}
-  return (
-    <div className="grid">
-      <Panel title="Portfolio Snapshot" privateTitle="Overview" span="span-8" hidden={hidden}>
-        <PortfolioSnapshot p={p} hidden={hidden} />
-      </Panel>
-      <Panel title="Today's Decision Brief" privateTitle="Workspace" span="span-4" hidden={hidden}>
-        <div className="actions">
-          {(p.today_actions || []).map((a: any) => (
-            <div className="action" key={a.title}>
-              <Brain size={18} className="green" />
-              <div>
-                <b>{hidden ? 'Workspace item' : a.title}</b>
-                <div className="muted">{hidden ? mask : a.text}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Panel>
-      <Panel title="My Positions" privateTitle="Overview" span="span-8" hidden={hidden}>
-        <PositionsTable rows={(p.positions || []).slice(0, 6)} hidden={hidden} setSelected={setSelected} />
-        <button className="tab" onClick={() => setActive('portfolio')}>
-          {hidden ? 'Open overview' : 'Open full portfolio'}
-        </button>
-      </Panel>
-      <Panel title="Risk Controls" privateTitle="Controls" span="span-4" hidden={hidden}>
-        <RiskList items={p.guardrails || []} hidden={hidden} />
-      </Panel>
-      <Panel title="News Intelligence" privateTitle="Workspace" span="span-12" hidden={hidden} icon={<Newspaper size={16} />}>
-        <NewsIntelligencePanel
-          items={newsIntel?.items || []}
-          digest={newsIntel?.digest || ''}
-          isDemo={Boolean(newsIntel?.isDemo)}
-          hidden={hidden}
-        />
-      </Panel>
-      <Panel title="Exposure Map" privateTitle="Overview" span="span-6" hidden={hidden}>
-        <Exposure rows={p.exposures?.rows || []} hidden={hidden} />
-      </Panel>
-      <Panel title="Trade Radar" privateTitle="Activity" span="span-6" hidden={hidden}>
-        <TradeList items={(d?.scanner || []).slice(0, 3)} hidden={hidden} />
-        <button className="tab" onClick={() => setActive('trades')}>
-          {hidden ? 'Open activity' : 'Open Trade Radar'}
-        </button>
-      </Panel>
     </div>
   )
 }

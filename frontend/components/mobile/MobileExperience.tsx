@@ -23,6 +23,13 @@ import {
 } from 'lucide-react'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 import SettingsPage from '../settings/SettingsWorkspace'
+import MobileReorderableSections from '../dashboard/MobileReorderableSections'
+import {
+  DEFAULT_MOBILE_HOME_ORDER,
+  MOBILE_HOME_LAYOUT_KEY,
+} from '../dashboard/widgetRegistry'
+import { usePersistedLayout } from '../dashboard/usePersistedLayout'
+import type { MobileHomeSectionId } from '../dashboard/types'
 import { API, fetchJson, mask, money, pct as formatPct, safeMessage } from '../../lib/pia-api'
 
 type RailItem = Record<string, any>
@@ -759,6 +766,12 @@ export default function MobileExperience() {
   const scanner = dashboard?.scanner || scannerFallback
   const privacyHidden = mounted && hidden
   const notificationCount = buildNotificationItems(portfolio).length
+  const {
+    order: homeSectionOrder,
+    moveUp: moveHomeSectionUp,
+    moveDown: moveHomeSectionDown,
+    reset: resetHomeSections,
+  } = usePersistedLayout<MobileHomeSectionId>(MOBILE_HOME_LAYOUT_KEY, DEFAULT_MOBILE_HOME_ORDER)
 
   useEffect(() => {
     setMounted(true)
@@ -809,14 +822,20 @@ export default function MobileExperience() {
       <SearchCommand onQuickControls={() => setQuickOpen(true)} />
 
       {active === 'home' && (
-        <>
-          <MarketPulse items={dashboard?.macros?.market_strip || []} />
-          <PortfolioInsights portfolio={portfolio} positions={positions} hidden={privacyHidden} />
-          <UrgentAlerts portfolio={portfolio} />
-          <DailyBrief portfolio={portfolio} />
-          <ScannerSetups scanner={scanner} onSelect={setSelected} />
-          <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} />
-        </>
+        <MobileReorderableSections
+          order={homeSectionOrder}
+          onMoveUp={moveHomeSectionUp}
+          onMoveDown={moveHomeSectionDown}
+          onReset={resetHomeSections}
+          sections={{
+            'market-pulse': <MarketPulse items={dashboard?.macros?.market_strip || []} />,
+            'portfolio-insights': <PortfolioInsights portfolio={portfolio} positions={positions} hidden={privacyHidden} />,
+            'urgent-alerts': <UrgentAlerts portfolio={portfolio} />,
+            'daily-brief': <DailyBrief portfolio={portfolio} />,
+            'scanner-setups': <ScannerSetups scanner={scanner} onSelect={setSelected} />,
+            'watchlist-movers': <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} />,
+          }}
+        />
       )}
 
       {active === 'portfolio' && <PositionCards rows={positions} onSelect={setSelected} />}
