@@ -1,7 +1,7 @@
 import os, asyncio, csv, io, shutil, socket, ssl, subprocess, urllib.request, urllib.error
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, UploadFile, File
+from fastapi import FastAPI, WebSocket, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from services.state import portfolio_snapshot, macro_snapshot, news_items, catalyst_calendar, WATCHLIST
@@ -9,6 +9,8 @@ from services.trade_engine import scanner_items, opportunity_for
 from services.ws import manager
 from services.settings_store import get_settings, save_settings
 from services.connectors import source_health, test_source, yahoo_news, yahoo_fundamentals
+from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding
+from services.news_intelligence import get_news_intelligence
 load_dotenv()
 try:
  from services.ibkr_service import get_ibkr_portfolio
@@ -23,24 +25,35 @@ class ThesisRequest(BaseModel):
  title: str='Manual thesis'
  summary: str
  full_text: str
+class ManualHoldingRequest(BaseModel):
+ ticker: str
+ name: str
+ asset_type: str='Stock'
+ broker: str='Manual'
+ quantity: float
+ avg_price: float
+ currency: str='USD'
+ notes: str=''
 
 THESIS_STORE={}
 TRANSACTIONS=[]
 
 def get_portfolio_payload():
+ import services.state as state_module
+ macros=macro_snapshot()
  if os.getenv('IBKR_ENABLED','false').lower()=='true' and get_ibkr_portfolio:
   try:
    p=get_ibkr_portfolio()
    # enrich live with exposure/risk/trade engine compatible fields
    from services.state import compute_exposures, risk_doctor, today_actions, stress_tests
    p['exposures']=compute_exposures(p.get('positions',[]),p.get('total_value',0))
-   p['guardrails']=risk_doctor(p.get('positions',[]),macro_snapshot())
-   p['today_actions']=today_actions(p.get('positions',[]),macro_snapshot())
+   p['guardrails']=risk_doctor(p.get('positions',[]),macros)
+   p['today_actions']=today_actions(p.get('positions',[]),macros)
    p['stress_tests']=stress_tests(p.get('total_value',0))
-   return p
+   return merge_manual_holdings(p,macros,state_module)
   except Exception as e:
-   demo=portfolio_snapshot(); demo['source']='DEMO_FALLBACK'; demo['ibkr_error']=str(e); return demo
- return portfolio_snapshot()
+   demo=portfolio_snapshot(); demo['source']='DEMO_FALLBACK'; demo['ibkr_error']=str(e); return merge_manual_holdings(demo,macros,state_module)
+ return merge_manual_holdings(portfolio_snapshot(),macros,state_module)
 
 def payload():
  p=get_portfolio_payload(); m=macro_snapshot()
@@ -117,12 +130,34 @@ def setup_diagnostics():
 
 @app.get('/portfolio')
 def portfolio(): return get_portfolio_payload()
+@app.get('/manual-holdings')
+def manual_holdings(): return list_manual_holdings()
+@app.post('/manual-holdings')
+def manual_holdings_create(req:ManualHoldingRequest):
+ try:
+  return create_manual_holding(req.model_dump())
+ except ValueError as e:
+  raise HTTPException(status_code=400, detail=str(e))
+@app.put('/manual-holdings/{holding_id}')
+def manual_holdings_update(holding_id:str, req:ManualHoldingRequest):
+ try:
+  updated=update_manual_holding(holding_id, req.model_dump())
+ except ValueError as e:
+  raise HTTPException(status_code=400, detail=str(e))
+ if not updated: raise HTTPException(status_code=404, detail='Manual holding not found')
+ return updated
+@app.delete('/manual-holdings/{holding_id}')
+def manual_holdings_delete(holding_id:str):
+ if not delete_manual_holding(holding_id): raise HTTPException(status_code=404, detail='Manual holding not found')
+ return {'ok':True,'id':holding_id}
 @app.get('/dashboard')
 def dashboard(): return payload()
 @app.get('/macros')
 def macros(): return macro_snapshot()
 @app.get('/news')
 def news(): return news_items()
+@app.get('/news-intelligence')
+def news_intelligence(): return get_news_intelligence()
 @app.get('/news/{ticker}')
 def ticker_news(ticker:str): return yahoo_news(ticker.upper()) or [n for n in news_items() if n.get('ticker')==ticker.upper()]
 @app.get('/fundamentals/{ticker}')
