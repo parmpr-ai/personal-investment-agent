@@ -207,6 +207,7 @@ export default function Dashboard() {
   const dashboard = useDash()
   const newsIntelligence = useNewsIntelligence()
   const [active, setActive] = useState('dashboard')
+  const [mounted, setMounted] = useState(false)
   const [hidden, setHidden] = useState(false)
   const [selected, setSelected] = useState<any>(null)
   const [filter, setFilter] = useState('All')
@@ -214,6 +215,7 @@ export default function Dashboard() {
   const [rescanning, setRescanning] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     try {
       setHidden(localStorage.getItem('pia.hideAmounts') === 'true')
     } catch {}
@@ -241,6 +243,7 @@ export default function Dashboard() {
   }
 
   const positions = dashboard?.portfolio?.positions || []
+  const privacyHidden = mounted && hidden
   const filtered = positions.filter((p: any) =>
     filter === 'All'
       ? true
@@ -257,21 +260,22 @@ export default function Dashboard() {
 
   return (
     <div className="app">
-      <Sidebar active={active} setActive={setActive} hidden={hidden} setHidden={updateHidden} />
+      <Sidebar active={active} setActive={setActive} hidden={privacyHidden} amountHidden={hidden} setHidden={updateHidden} />
       <main className="main">
         <Top
           active={active}
-          hidden={hidden}
+          hidden={privacyHidden}
+          amountHidden={hidden}
           setHidden={updateHidden}
           rescan={rescan}
           rescanning={rescanning}
           rescanStatus={rescanStatus}
         />
-        <MarketStrip items={dashboard?.macros?.market_strip || []} hidden={hidden} />
+        <MarketStrip items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />
         {active === 'dashboard' && (
           <DashboardHome
             d={dashboard}
-            hidden={hidden}
+            hidden={privacyHidden}
             setActive={setActive}
             setSelected={setSelected}
             newsIntelligence={newsIntelligence}
@@ -280,26 +284,26 @@ export default function Dashboard() {
         {active === 'portfolio' && (
           <PortfolioPage
             d={dashboard}
-            hidden={hidden}
+            hidden={privacyHidden}
             filter={filter}
             setFilter={setFilter}
             filtered={filtered}
             setSelected={setSelected}
           />
         )}
-        {active === 'watchlist' && <WatchlistPage d={dashboard} hidden={hidden} setSelected={setSelected} />}
-        {active === 'trades' && <TradeRadar d={dashboard} hidden={hidden} />}
-        {active === 'risk' && <RiskPage d={dashboard} hidden={hidden} />}
-        {active === 'tax' && <TaxPage hidden={hidden} />}
-        {active === 'about' && <AboutPage hidden={hidden} />}
-        {active === 'settings' && <SettingsPage hidden={hidden} />}
+        {active === 'watchlist' && <WatchlistPage d={dashboard} hidden={privacyHidden} setSelected={setSelected} />}
+        {active === 'trades' && <TradeRadar d={dashboard} hidden={privacyHidden} />}
+        {active === 'risk' && <RiskPage d={dashboard} hidden={privacyHidden} />}
+        {active === 'tax' && <TaxPage hidden={privacyHidden} />}
+        {active === 'about' && <AboutPage hidden={privacyHidden} />}
+        {active === 'settings' && <SettingsPage hidden={privacyHidden} />}
       </main>
-      {selected && <PositionModal ticker={selected.symbol || selected.ticker} hidden={hidden} onClose={() => setSelected(null)} />}
+      {selected && <PositionModal ticker={selected.symbol || selected.ticker} hidden={privacyHidden} onClose={() => setSelected(null)} />}
     </div>
   )
 }
 
-function Sidebar({ active, setActive, hidden, setHidden }: any) {
+function Sidebar({ active, setActive, hidden, amountHidden, setHidden }: any) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -318,14 +322,14 @@ function Sidebar({ active, setActive, hidden, setHidden }: any) {
           </button>
         ))}
       </nav>
-      <button className="privacy" aria-pressed={hidden} onClick={() => setHidden(!hidden)}>
+      <button className="privacy" aria-pressed={amountHidden} onClick={() => setHidden(!amountHidden)}>
         {hidden ? <Eye size={16} /> : <EyeOff size={16} />} {hidden ? 'Show amounts' : 'Hide amounts'}
       </button>
     </aside>
   )
 }
 
-function Top({ active, hidden, setHidden, rescan, rescanning, rescanStatus }: any) {
+function Top({ active, hidden, amountHidden, setHidden, rescan, rescanning, rescanStatus }: any) {
   return (
     <div className="topbar">
       <div>
@@ -336,7 +340,7 @@ function Top({ active, hidden, setHidden, rescan, rescanning, rescanStatus }: an
         {rescanStatus && <div className="muted">{rescanStatus}</div>}
       </div>
       <div className="top-actions">
-        <button className="mobile-privacy" aria-pressed={hidden} onClick={() => setHidden(!hidden)}>
+        <button className="mobile-privacy" aria-pressed={amountHidden} onClick={() => setHidden(!amountHidden)}>
           {hidden ? <Eye size={16} /> : <EyeOff size={16} />} <span>{hidden ? 'Show amounts' : 'Hide amounts'}</span>
         </button>
         <div className="search">
