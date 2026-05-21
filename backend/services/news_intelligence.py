@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Literal, Protocol
+from email.utils import parsedate_to_datetime
+from typing import Any, Literal, Protocol
+
+from services.connectors import yahoo_news
+from services.state import WATCHLIST
 
 CatalystType = Literal[
     "earnings",
@@ -119,6 +123,41 @@ def _score(raw: RawNewsItem, freshness_minutes: int) -> tuple[int, int]:
     return relevance, impact
 
 
+def human_bias(sentiment: Sentiment) -> str:
+    return {
+        "positive": "Bullish",
+        "negative": "Bearish",
+        "neutral": "Neutral",
+        "mixed": "Mixed",
+    }[sentiment]
+
+
+def human_possible_move(risk: SellTheNewsRisk) -> str:
+    return {
+        "low": "Trend likely holds",
+        "medium": "Pullback risk after pop",
+        "high": "Sell-the-news fade likely",
+    }[risk]
+
+
+def human_action(action: SuggestedAction) -> str:
+    return {
+        "WATCH": "Watch for confirmation",
+        "REVIEW": "Review position sizing",
+        "AVOID": "Avoid adding exposure",
+        "ACT": "Consider acting on setup",
+    }[action]
+
+
+def build_digest(items: list[NewsIntelligenceItem]) -> str:
+    if not items:
+        return "No live headlines in the current scan window."
+    lines: list[str] = []
+    for item in items[:3]:
+        lines.append(f"{item.ticker}: {item.title}")
+    return " · ".join(lines)
+
+
 def normalize_news(raw_items: list[RawNewsItem], now: datetime | None = None) -> list[NewsIntelligenceItem]:
     now = now or _utc_now()
     items: list[NewsIntelligenceItem] = []
@@ -145,6 +184,15 @@ def normalize_news(raw_items: list[RawNewsItem], now: datetime | None = None) ->
             )
         )
     return sorted(items, key=lambda item: (item.relevance_score, item.impact_score), reverse=True)
+
+
+def serialize_item(item: NewsIntelligenceItem) -> dict[str, Any]:
+    payload = asdict(item)
+    payload["bias"] = human_bias(item.sentiment)
+    payload["confidence"] = item.impact_score
+    payload["possible_move"] = human_possible_move(item.sell_the_news_risk)
+    payload["action_label"] = human_action(item.suggested_action)
+    return payload
 
 
 class DemoNewsProvider:
@@ -196,12 +244,78 @@ class DemoNewsProvider:
         ]
 
 
-def get_news_intelligence(providers: list[NewsProvider] | None = None) -> list[dict]:
-    providers = providers or [DemoNewsProvider()]
+def _parse_published(value: str) -> datetime:
+    if not value:
+        return _utc_now()
+    try:
+        parsed = parsedate_to_datetime(value)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return _utc_now()
+
+
+def _infer_sentiment(title: str) -> Sentiment:
+    text = title.lower()
+    negative = ("down", "cut", "miss", "lawsuit", "probe", "warning", "decline", "fall", "drop")
+    positive = ("up", "beat", "raise", "upgrade", "surge", "gain", "record", "bullish", "strong")
+    if any(word in text for word in negative):
+        return "negative"
+    if any(word in text for word in positive):
+        return "positive"
+    return "neutral"
+
+
+class YahooNewsProvider:
+    name = "yahoo"
+
+    def fetch(self) -> list[RawNewsItem]:
+        tickers = list({entry["symbol"] for entry in WATCHLIST if entry.get("symbol")})
+        items: list[RawNewsItem] = []
+        for ticker in tickers[:6]:
+            for article in yahoo_news(ticker, limit=2):
+                title = str(article.get("title") or "").strip()
+                link = str(article.get("link") or "").strip()
+                if not title or not link:
+                    continue
+                published_at = _parse_published(str(article.get("published") or ""))
+                sentiment = _infer_sentiment(title)
+                items.append(
+                    RawNewsItem(
+                        ticker=ticker,
+                        title=title,
+                        source=str(article.get("source") or "Yahoo Finance"),
+                        source_url=link,
+                        published_at=published_at,
+                        catalyst_type="general",
+                        sentiment=sentiment,
+                        summary=f"Live headline for {ticker}. Confirm price action before sizing.",
+                    )
+                )
+        return items
+
+
+def get_news_intelligence(providers: list[NewsProvider] | None = None) -> dict[str, Any]:
+    live_providers: list[NewsProvider] = providers or [YahooNewsProvider()]
     raw_items: list[RawNewsItem] = []
-    for provider in providers:
+    used_demo = False
+
+    for provider in live_providers:
         try:
-            raw_items.extend(provider.fetch())
+            fetched = provider.fetch()
+            if fetched:
+                raw_items.extend(fetched)
         except Exception:
             continue
-    return [asdict(item) for item in normalize_news(raw_items)]
+
+    if not raw_items:
+        used_demo = True
+        raw_items = DemoNewsProvider().fetch()
+
+    normalized = normalize_news(raw_items)
+    return {
+        "is_demo": used_demo,
+        "digest": build_digest(normalized),
+        "items": [serialize_item(item) for item in normalized],
+    }

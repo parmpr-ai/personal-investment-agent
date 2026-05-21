@@ -186,13 +186,26 @@ function useSourceHealth() {
 }
 
 function useNewsIntelligence() {
-  const [items, setItems] = useState<any[]>([])
+  const [payload, setPayload] = useState<{ items: any[]; digest: string; isDemo: boolean }>({
+    items: [],
+    digest: '',
+    isDemo: false,
+  })
 
   useEffect(() => {
     let active = true
     fetchJson('/news-intelligence')
       .then((data) => {
-        if (active) setItems(Array.isArray(data) ? data : [])
+        if (!active) return
+        if (Array.isArray(data)) {
+          setPayload({ items: data, digest: '', isDemo: true })
+          return
+        }
+        setPayload({
+          items: Array.isArray(data?.items) ? data.items : [],
+          digest: typeof data?.digest === 'string' ? data.digest : '',
+          isDemo: Boolean(data?.is_demo),
+        })
       })
       .catch(() => {})
     return () => {
@@ -200,12 +213,12 @@ function useNewsIntelligence() {
     }
   }, [])
 
-  return items
+  return payload
 }
 
 export default function Dashboard() {
   const dashboard = useDash()
-  const newsIntelligence = useNewsIntelligence()
+  const newsIntel = useNewsIntelligence()
   const [active, setActive] = useState('dashboard')
   const [mounted, setMounted] = useState(false)
   const [hidden, setHidden] = useState(false)
@@ -278,7 +291,7 @@ export default function Dashboard() {
             hidden={privacyHidden}
             setActive={setActive}
             setSelected={setSelected}
-            newsIntelligence={newsIntelligence}
+            newsIntel={newsIntel}
           />
         )}
         {active === 'portfolio' && (
@@ -395,7 +408,7 @@ function MetricBar({ label, value, tone = 'blue', hidden = false }: any) {
   )
 }
 
-function DashboardHome({ d, hidden, setActive, setSelected, newsIntelligence }: any) {
+function DashboardHome({ d, hidden, setActive, setSelected, newsIntel }: any) {
   const p = d?.portfolio || {}
   return (
     <div className="grid">
@@ -425,7 +438,12 @@ function DashboardHome({ d, hidden, setActive, setSelected, newsIntelligence }: 
         <RiskList items={p.guardrails || []} hidden={hidden} />
       </Panel>
       <Panel title="News Intelligence" privateTitle="Workspace" span="span-12" hidden={hidden} icon={<Newspaper size={16} />}>
-        <NewsIntelligencePanel items={newsIntelligence || []} hidden={hidden} />
+        <NewsIntelligencePanel
+          items={newsIntel?.items || []}
+          digest={newsIntel?.digest || ''}
+          isDemo={Boolean(newsIntel?.isDemo)}
+          hidden={hidden}
+        />
       </Panel>
       <Panel title="Exposure Map" privateTitle="Overview" span="span-6" hidden={hidden}>
         <Exposure rows={p.exposures?.rows || []} hidden={hidden} />
@@ -440,55 +458,97 @@ function DashboardHome({ d, hidden, setActive, setSelected, newsIntelligence }: 
   )
 }
 
-function toneForSentiment(sentiment: string) {
-  if (sentiment === 'positive') return 'good'
-  if (sentiment === 'negative') return 'bad'
+function toneForBias(bias: string, sentiment?: string) {
+  const value = String(bias || sentiment || '').toLowerCase()
+  if (value.includes('bull') || value === 'positive') return 'good'
+  if (value.includes('bear') || value === 'negative') return 'bad'
   return 'warn'
 }
 
-function toneForRisk(risk: string) {
-  if (risk === 'high') return 'bad'
-  if (risk === 'medium') return 'warn'
+function toneForPossibleMove(move: string, risk?: string) {
+  const value = String(move || risk || '').toLowerCase()
+  if (value.includes('fade') || value.includes('pullback') || value === 'high') return 'bad'
+  if (value.includes('risk') || value === 'medium') return 'warn'
   return 'good'
 }
 
-function NewsIntelligencePanel({ items, hidden }: any) {
+function newsBiasLabel(item: any) {
+  return item.bias || item.sentiment || 'Neutral'
+}
+
+function newsConfidence(item: any) {
+  return item.confidence ?? item.impact_score ?? 0
+}
+
+function newsPossibleMove(item: any) {
+  return item.possible_move || item.sell_the_news_risk || 'low'
+}
+
+function newsActionLabel(item: any) {
+  return item.action_label || item.suggested_action || 'Watch for confirmation'
+}
+
+function NewsIntelligencePanel({ items, digest, isDemo, hidden }: any) {
   const rows = items.slice(0, 4)
   if (!rows.length) return <p className="muted">No structured news intelligence loaded yet.</p>
 
   return (
-    <div className="news-intel-list">
-      {rows.map((item: any) => (
-        <article className="news-intel-card" key={item.id}>
-          <div className="news-intel-main">
-            <div className="news-intel-kicker">
-              <b>{hidden ? 'ITEM' : item.ticker}</b>
-              <span>{hidden ? 'Source' : item.source}</span>
-              <span>{hidden ? mask : `${item.freshness_minutes}m ago`}</span>
-            </div>
-            <strong>{hidden ? 'Workspace intelligence item' : item.title}</strong>
-            <p>{hidden ? mask : item.summary}</p>
-          </div>
-          <div className="news-intel-meta">
-            <IntelligenceBadge label={hidden ? 'Signal' : item.sentiment} tone={toneForSentiment(item.sentiment)} />
-            <IntelligenceBadge
-              label={hidden ? 'Risk' : `Sell news ${item.sell_the_news_risk}`}
-              tone={toneForRisk(item.sell_the_news_risk)}
-            />
-            <div>
-              <span>Impact</span>
-              <b>{hidden ? mask : item.impact_score}</b>
-            </div>
-            <div>
-              <span>Action</span>
-              <b>{hidden ? mask : item.suggested_action}</b>
-            </div>
-            <a href={item.source_url} target="_blank" rel="noreferrer" aria-label={`Open source for ${item.ticker}`}>
-              <ExternalLink size={16} />
-            </a>
-          </div>
-        </article>
-      ))}
+    <div className="news-intel-stack">
+      <section className="news-intel-digest">
+        <div className="news-intel-digest-head">
+          <span className="news-intel-digest-label">{hidden ? 'Workspace brief' : 'PIA DIGEST'}</span>
+          {!hidden && isDemo ? <span className="news-intel-demo-badge">DEMO</span> : null}
+        </div>
+        <p>{hidden ? mask : digest || 'No digest available for the current scan.'}</p>
+      </section>
+      <div className="news-intel-list">
+        {rows.map((item: any) => {
+          const articleUrl = String(item.source_url || '').trim()
+          const title = hidden ? 'Workspace intelligence item' : String(item.title || 'Untitled headline')
+          return (
+            <article className="news-intel-card" key={item.id}>
+              <div className="news-intel-main">
+                <div className="news-intel-kicker">
+                  <b>{hidden ? 'ITEM' : item.ticker}</b>
+                  <span>{hidden ? 'Source' : item.source}</span>
+                  <span>{hidden ? mask : `${item.freshness_minutes}m ago`}</span>
+                </div>
+                {hidden || !articleUrl ? (
+                  <strong>{title}</strong>
+                ) : (
+                  <a className="news-intel-title" href={articleUrl} target="_blank" rel="noreferrer">
+                    {title}
+                  </a>
+                )}
+                <p>{hidden ? mask : item.summary}</p>
+              </div>
+              <div className="news-intel-meta">
+                <IntelligenceBadge
+                  label={hidden ? 'Signal' : newsBiasLabel(item)}
+                  tone={toneForBias(newsBiasLabel(item), item.sentiment)}
+                />
+                <IntelligenceBadge
+                  label={hidden ? 'Move' : newsPossibleMove(item)}
+                  tone={toneForPossibleMove(newsPossibleMove(item), item.sell_the_news_risk)}
+                />
+                <div>
+                  <span>{hidden ? 'Level' : 'Confidence'}</span>
+                  <b>{hidden ? mask : newsConfidence(item)}</b>
+                </div>
+                <div>
+                  <span>{hidden ? 'Next' : 'Action'}</span>
+                  <b>{hidden ? mask : newsActionLabel(item)}</b>
+                </div>
+                {!hidden && articleUrl ? (
+                  <a href={articleUrl} target="_blank" rel="noreferrer" aria-label={`Open article for ${item.ticker}`}>
+                    <ExternalLink size={16} />
+                  </a>
+                ) : null}
+              </div>
+            </article>
+          )
+        })}
+      </div>
     </div>
   )
 }
