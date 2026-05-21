@@ -13,13 +13,17 @@ import {
   FileText,
   Globe2,
   LayoutDashboard,
-  PlugZap,
+  Pencil,
+  Plus,
+  Newspaper,
+  ExternalLink,
   RefreshCw,
   Search,
   Settings,
   Shield,
   Target,
   TrendingUp,
+  Trash2,
   Wallet,
   X,
 } from 'lucide-react'
@@ -30,7 +34,19 @@ import RiskGauge from './ui/RiskGauge'
 
 const API = 'http://127.0.0.1:8000'
 const WS = 'ws://127.0.0.1:8000/ws'
-const mask = '******'
+const mask = '••••••'
+const assetTypes = ['Stock', 'ETF', 'Crypto', 'Option', 'Other']
+const brokers = ['IBKR', 'Freedom24', 'Revolut', 'Manual']
+const emptyHolding = {
+  ticker: '',
+  name: '',
+  asset_type: 'Stock',
+  broker: 'Manual',
+  quantity: '',
+  avg_price: '',
+  currency: 'USD',
+  notes: '',
+}
 const series = [
   { t: '09:30', v: 100 },
   { t: '10:00', v: 101 },
@@ -46,10 +62,28 @@ const nav = [
   ['trades', 'Trade Radar', Target],
   ['risk', 'Risk', Shield],
   ['tax', 'Tax Center', FileText],
-  ['integrations', 'Integrations', PlugZap],
   ['about', 'About', BookOpen],
   ['settings', 'Settings', Settings],
 ] as any[]
+const privateNavLabels: Record<string, string> = {
+  dashboard: 'Workspace',
+  portfolio: 'Overview',
+  watchlist: 'Workspace',
+  trades: 'Activity',
+  risk: 'Controls',
+  tax: 'Documents',
+  about: 'Info',
+  settings: 'Settings',
+}
+const privateTitle = (hidden: boolean, text: string, fallback = 'Overview') => (hidden ? fallback : text)
+const privateNavLabel = (hidden: boolean, id: string, label: string) => (hidden ? privateNavLabels[id] || 'Workspace' : label)
+const neutralPanelTitle = (title: string) => {
+  const text = String(title).toLowerCase()
+  if (text.includes('portfolio') || text.includes('position') || text.includes('trade') || text.includes('opportunity')) return 'Overview'
+  if (text.includes('risk') || text.includes('tax') || text.includes('stress')) return 'Controls'
+  if (text.includes('source') || text.includes('health') || text.includes('integration')) return 'Workspace'
+  return title
+}
 const legacyFragments = [
   ['connect', 'ed'],
   ['ibkr ', 'live'],
@@ -151,8 +185,27 @@ function useSourceHealth() {
   return { health, refresh }
 }
 
+function useNewsIntelligence() {
+  const [items, setItems] = useState<any[]>([])
+
+  useEffect(() => {
+    let active = true
+    fetchJson('/news-intelligence')
+      .then((data) => {
+        if (active) setItems(Array.isArray(data) ? data : [])
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  return items
+}
+
 export default function Dashboard() {
   const dashboard = useDash()
+  const newsIntelligence = useNewsIntelligence()
   const [active, setActive] = useState('dashboard')
   const [hidden, setHidden] = useState(false)
   const [selected, setSelected] = useState<any>(null)
@@ -214,9 +267,15 @@ export default function Dashboard() {
           rescanning={rescanning}
           rescanStatus={rescanStatus}
         />
-        <MarketStrip items={dashboard?.macros?.market_strip || []} />
+        <MarketStrip items={dashboard?.macros?.market_strip || []} hidden={hidden} />
         {active === 'dashboard' && (
-          <DashboardHome d={dashboard} hidden={hidden} setActive={setActive} setSelected={setSelected} />
+          <DashboardHome
+            d={dashboard}
+            hidden={hidden}
+            setActive={setActive}
+            setSelected={setSelected}
+            newsIntelligence={newsIntelligence}
+          />
         )}
         {active === 'portfolio' && (
           <PortfolioPage
@@ -228,15 +287,14 @@ export default function Dashboard() {
             setSelected={setSelected}
           />
         )}
-        {active === 'watchlist' && <WatchlistPage d={dashboard} setSelected={setSelected} />}
-        {active === 'trades' && <TradeRadar d={dashboard} />}
-        {active === 'risk' && <RiskPage d={dashboard} />}
-        {active === 'tax' && <TaxPage />}
-        {active === 'integrations' && <IntegrationCenter />}
-        {active === 'about' && <AboutPage />}
-        {active === 'settings' && <SettingsPage />}
+        {active === 'watchlist' && <WatchlistPage d={dashboard} hidden={hidden} setSelected={setSelected} />}
+        {active === 'trades' && <TradeRadar d={dashboard} hidden={hidden} />}
+        {active === 'risk' && <RiskPage d={dashboard} hidden={hidden} />}
+        {active === 'tax' && <TaxPage hidden={hidden} />}
+        {active === 'about' && <AboutPage hidden={hidden} />}
+        {active === 'settings' && <SettingsPage hidden={hidden} />}
       </main>
-      {selected && <PositionModal ticker={selected.symbol || selected.ticker} onClose={() => setSelected(null)} />}
+      {selected && <PositionModal ticker={selected.symbol || selected.ticker} hidden={hidden} onClose={() => setSelected(null)} />}
     </div>
   )
 }
@@ -245,18 +303,18 @@ function Sidebar({ active, setActive, hidden, setHidden }: any) {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="mark">PIA</div>
+        <div className="mark">{hidden ? '•••' : 'PIA'}</div>
         <div>
-          <b>PIA Dashboard</b>
+          <b>{hidden ? 'Private Mode' : 'PIA Dashboard'}</b>
           <br />
-          <span>Decision Platform</span>
+          <span>{hidden ? 'Workspace' : 'Decision Platform'}</span>
         </div>
       </div>
       <nav>
         {nav.map(([id, label, Icon]: any) => (
           <button key={id} onClick={() => setActive(id)} className={active === id ? 'active' : ''}>
             <Icon size={18} />
-            <span>{label}</span>
+            <span>{privateNavLabel(hidden, id, label)}</span>
           </button>
         ))}
       </nav>
@@ -271,8 +329,10 @@ function Top({ active, hidden, setHidden, rescan, rescanning, rescanStatus }: an
   return (
     <div className="topbar">
       <div>
-        <h1>{String(nav.find(([id]) => id === active)?.[1] || 'Dashboard')}</h1>
-        <div className="muted">Portfolio dashboard, integrations, opportunity signals and risk controls</div>
+        <h1>{privateNavLabel(hidden, active, String(nav.find(([id]) => id === active)?.[1] || 'Dashboard'))}</h1>
+        <div className="muted">
+          {hidden ? 'Private workspace overview and controls' : 'Portfolio dashboard, integrations, opportunity signals and risk controls'}
+        </div>
         {rescanStatus && <div className="muted">{rescanStatus}</div>}
       </div>
       <div className="top-actions">
@@ -281,7 +341,7 @@ function Top({ active, hidden, setHidden, rescan, rescanning, rescanStatus }: an
         </button>
         <div className="search">
           <Search size={16} />
-          <input placeholder="Search ticker, source, note..." />
+          <input placeholder={hidden ? 'Search workspace...' : 'Search ticker, source, note...'} />
         </div>
         <button className="tab" onClick={rescan} disabled={rescanning}>
           <RefreshCw size={15} /> {rescanning ? 'Rescanning' : 'Rescan'}
@@ -291,37 +351,38 @@ function Top({ active, hidden, setHidden, rescan, rescanning, rescanStatus }: an
   )
 }
 
-function MarketStrip({ items }: any) {
+function MarketStrip({ items, hidden }: any) {
   return (
     <div className="ticker">
-      {items.map((x: any) => (
-        <div className="ticker-card" key={x.name}>
-          <span className="muted">{x.name}</span>
-          <b style={{ display: 'block' }}>{x.value}</b>
-          <small className={x.chg >= 0 ? 'green' : 'red'}>{pct(x.chg)}</small>
+      {items.map((x: any, index: number) => (
+        <div className="ticker-card" key={x.name || index}>
+          <span className="muted">{hidden ? 'Workspace' : x.name}</span>
+          <b style={{ display: 'block' }}>{hidden ? mask : x.value}</b>
+          <small className={x.chg >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(x.chg)}</small>
         </div>
       ))}
     </div>
   )
 }
 
-function Panel({ title, children, span = 'span-4', icon }: any) {
+function Panel({ title, privateTitle: hiddenTitle, children, span = 'span-4', icon, hidden = false }: any) {
+  const displayTitle = hidden ? hiddenTitle || neutralPanelTitle(title) : title
   return (
     <section className={`panel ${span}`}>
       <h3>
-        {icon ? <span>{icon}</span> : null} {title}
+        {icon ? <span>{icon}</span> : null} {displayTitle}
       </h3>
       {children}
     </section>
   )
 }
 
-function MetricBar({ label, value, tone = 'blue' }: any) {
+function MetricBar({ label, value, tone = 'blue', hidden = false }: any) {
   return (
     <div className="metric-bar">
       <div>
         <span>{label}</span>
-        <b>{pct(value)}</b>
+        <b>{hidden ? mask : pct(value)}</b>
       </div>
       <i>
         <em className={tone} style={{ width: `${Math.max(0, Math.min(value, 100))}%` }} />
@@ -330,45 +391,100 @@ function MetricBar({ label, value, tone = 'blue' }: any) {
   )
 }
 
-function DashboardHome({ d, hidden, setActive, setSelected }: any) {
+function DashboardHome({ d, hidden, setActive, setSelected, newsIntelligence }: any) {
   const p = d?.portfolio || {}
   return (
     <div className="grid">
-      <Panel title="Portfolio Snapshot" span="span-8">
+      <Panel title="Portfolio Snapshot" privateTitle="Overview" span="span-8" hidden={hidden}>
         <PortfolioSnapshot p={p} hidden={hidden} />
       </Panel>
-      <Panel title="Today's Decision Brief" span="span-4">
+      <Panel title="Today's Decision Brief" privateTitle="Workspace" span="span-4" hidden={hidden}>
         <div className="actions">
           {(p.today_actions || []).map((a: any) => (
             <div className="action" key={a.title}>
               <Brain size={18} className="green" />
               <div>
-                <b>{a.title}</b>
-                <div className="muted">{a.text}</div>
+                <b>{hidden ? 'Workspace item' : a.title}</b>
+                <div className="muted">{hidden ? mask : a.text}</div>
               </div>
             </div>
           ))}
         </div>
       </Panel>
-      <Panel title="My Positions" span="span-8">
+      <Panel title="My Positions" privateTitle="Overview" span="span-8" hidden={hidden}>
         <PositionsTable rows={(p.positions || []).slice(0, 6)} hidden={hidden} setSelected={setSelected} />
         <button className="tab" onClick={() => setActive('portfolio')}>
-          Open full portfolio
+          {hidden ? 'Open overview' : 'Open full portfolio'}
         </button>
       </Panel>
-      <Panel title="Risk Controls" span="span-4">
-        <RiskList items={p.guardrails || []} />
+      <Panel title="Risk Controls" privateTitle="Controls" span="span-4" hidden={hidden}>
+        <RiskList items={p.guardrails || []} hidden={hidden} />
       </Panel>
-      <Panel title="Exposure Map" span="span-6">
-        <Exposure rows={p.exposures?.rows || []} />
+      <Panel title="News Intelligence" privateTitle="Workspace" span="span-12" hidden={hidden} icon={<Newspaper size={16} />}>
+        <NewsIntelligencePanel items={newsIntelligence || []} hidden={hidden} />
       </Panel>
-      <Panel title="Trade Radar" span="span-6">
-        <TradeList items={(d?.scanner || []).slice(0, 3)} />
+      <Panel title="Exposure Map" privateTitle="Overview" span="span-6" hidden={hidden}>
+        <Exposure rows={p.exposures?.rows || []} hidden={hidden} />
+      </Panel>
+      <Panel title="Trade Radar" privateTitle="Activity" span="span-6" hidden={hidden}>
+        <TradeList items={(d?.scanner || []).slice(0, 3)} hidden={hidden} />
         <button className="tab" onClick={() => setActive('trades')}>
-          Open Trade Radar
+          {hidden ? 'Open activity' : 'Open Trade Radar'}
         </button>
       </Panel>
-      <SourceHealthPanel />
+    </div>
+  )
+}
+
+function toneForSentiment(sentiment: string) {
+  if (sentiment === 'positive') return 'good'
+  if (sentiment === 'negative') return 'bad'
+  return 'warn'
+}
+
+function toneForRisk(risk: string) {
+  if (risk === 'high') return 'bad'
+  if (risk === 'medium') return 'warn'
+  return 'good'
+}
+
+function NewsIntelligencePanel({ items, hidden }: any) {
+  const rows = items.slice(0, 4)
+  if (!rows.length) return <p className="muted">No structured news intelligence loaded yet.</p>
+
+  return (
+    <div className="news-intel-list">
+      {rows.map((item: any) => (
+        <article className="news-intel-card" key={item.id}>
+          <div className="news-intel-main">
+            <div className="news-intel-kicker">
+              <b>{hidden ? 'ITEM' : item.ticker}</b>
+              <span>{hidden ? 'Source' : item.source}</span>
+              <span>{hidden ? mask : `${item.freshness_minutes}m ago`}</span>
+            </div>
+            <strong>{hidden ? 'Workspace intelligence item' : item.title}</strong>
+            <p>{hidden ? mask : item.summary}</p>
+          </div>
+          <div className="news-intel-meta">
+            <IntelligenceBadge label={hidden ? 'Signal' : item.sentiment} tone={toneForSentiment(item.sentiment)} />
+            <IntelligenceBadge
+              label={hidden ? 'Risk' : `Sell news ${item.sell_the_news_risk}`}
+              tone={toneForRisk(item.sell_the_news_risk)}
+            />
+            <div>
+              <span>Impact</span>
+              <b>{hidden ? mask : item.impact_score}</b>
+            </div>
+            <div>
+              <span>Action</span>
+              <b>{hidden ? mask : item.suggested_action}</b>
+            </div>
+            <a href={item.source_url} target="_blank" rel="noreferrer" aria-label={`Open source for ${item.ticker}`}>
+              <ExternalLink size={16} />
+            </a>
+          </div>
+        </article>
+      ))}
     </div>
   )
 }
@@ -386,7 +502,7 @@ function Kpis({ p, hidden }: any) {
     <div className="kpis">
       {arr.map(([title, value, secondary]: any) => (
         <div className="kpi" key={title}>
-          <span>{title}</span>
+          <span>{hidden ? 'Overview' : title}</span>
           <b>{hidden ? mask : secondary === 'pct' ? pct(value) : money(value)}</b>
           {typeof secondary === 'number' && (
             <small className={secondary >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(secondary)}</small>
@@ -411,7 +527,7 @@ function PortfolioSnapshot({ p, hidden }: any) {
         <Kpis p={p} hidden={hidden} />
       </div>
       <GlowCard className="chart-card">
-        <SectionHeader title="Portfolio evolution" subtitle="Intraday trajectory" />
+        <SectionHeader title={privateTitle(hidden, 'Portfolio evolution', 'Workspace trend')} subtitle="Intraday trajectory" />
         <div className="mini-chart">
           {mounted && (
             <ResponsiveContainer>
@@ -429,7 +545,7 @@ function PortfolioSnapshot({ p, hidden }: any) {
           <b>{pct(p.margin_used)}</b>
           <span>used</span>
         </div>
-        <MetricBar label="Buying power utilization" value={Math.min((Number(p.margin_used) || 0) * 2.2, 100)} tone="violet" />
+        <MetricBar label={hidden ? 'Overview' : 'Buying power utilization'} value={Math.min((Number(p.margin_used) || 0) * 2.2, 100)} tone="violet" hidden={hidden} />
       </GlowCard>
     </div>
   )
@@ -454,13 +570,13 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
 
   return (
     <div className="grid">
-      <Panel title="Portfolio Snapshot" span="span-12">
+      <Panel title="Portfolio Snapshot" privateTitle="Overview" span="span-12" hidden={hidden}>
         <PortfolioSnapshot p={d?.portfolio || {}} hidden={hidden} />
       </Panel>
-      <Panel title="My Positions" span="span-12">
+      <Panel title="My Positions" privateTitle="Overview" span="span-12" hidden={hidden}>
         <SectionHeader
-          title="Positions"
-          subtitle={`${rows.length} holdings across portfolio`}
+          title={privateTitle(hidden, 'Positions', 'Overview')}
+          subtitle={hidden ? `${rows.length} items` : `${rows.length} holdings across portfolio`}
           actions={
             <>
               <div className="tabs compact-tabs">
@@ -508,11 +624,11 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
           <PositionCards rows={rows} hidden={hidden} setSelected={setSelected} />
         )}
       </Panel>
-      <Panel title="Exposure Map" span="span-6">
-        <Exposure rows={d?.portfolio?.exposures?.rows || []} />
+      <Panel title="Exposure Map" privateTitle="Overview" span="span-6" hidden={hidden}>
+        <Exposure rows={d?.portfolio?.exposures?.rows || []} hidden={hidden} />
       </Panel>
-      <Panel title="Portfolio Scanner" span="span-6">
-        <PortfolioScanner d={d} />
+      <Panel title="Portfolio Scanner" privateTitle="Workspace" span="span-6" hidden={hidden}>
+        <PortfolioScanner d={d} hidden={hidden} />
       </Panel>
     </div>
   )
@@ -526,8 +642,8 @@ function PositionCards({ rows, hidden, setSelected }: any) {
           <button onClick={() => setSelected(p)}>
             <header>
               <div>
-                <b>{p.symbol}</b>
-                <span>{p.name}</span>
+                <b>{hidden ? mask : p.symbol}</b>
+                <span>{hidden ? 'Workspace item' : p.name}</span>
               </div>
               <strong>{hidden ? mask : money(p.market_value)}</strong>
             </header>
@@ -535,10 +651,10 @@ function PositionCards({ rows, hidden, setSelected }: any) {
               <span className={p.day_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.day_pnl)} today</span>
               <span className={p.unrealized >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.unrealized)} total</span>
             </div>
-            <MetricBar label="Allocation" value={p.portfolio_pct} tone="blue" />
-            <MetricBar label="Risk" value={p.risk || 0} tone="red" />
-            <MetricBar label="Momentum" value={p.momentum_score || 0} tone="green" />
-            <MetricBar label="Fundamentals" value={fundamentalsScore(p)} tone="violet" />
+            <MetricBar label={hidden ? 'Overview' : 'Allocation'} value={p.portfolio_pct} tone="blue" hidden={hidden} />
+            <MetricBar label={hidden ? 'Controls' : 'Risk'} value={p.risk || 0} tone="red" hidden={hidden} />
+            <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={p.momentum_score || 0} tone="green" hidden={hidden} />
+            <MetricBar label={hidden ? 'Workspace' : 'Fundamentals'} value={fundamentalsScore(p)} tone="violet" hidden={hidden} />
           </button>
         </GlowCard>
       ))}
@@ -546,30 +662,30 @@ function PositionCards({ rows, hidden, setSelected }: any) {
   )
 }
 
-function PortfolioScanner({ d }: any) {
+function PortfolioScanner({ d, hidden }: any) {
   const risk = d?.portfolio?.guardrails || []
   const opp = (d?.scanner || []).slice(0, 2)
   const macro = [...(d?.portfolio?.today_actions || [])].filter((x: any) => /macro|yield/i.test(`${x.title} ${x.text}`))
   const catalysts = d?.calendar || []
   return (
     <div className="scanner-grid">
-      <ScannerColumn title="Risk Alerts" items={risk.map((x: any) => ({ title: x.title, text: x.text, tone: x.level === 'danger' ? 'red' : 'amber' }))} />
-      <ScannerColumn title="Opportunity Signals" items={opp.map((x: any) => ({ title: x.ticker, text: x.setup, tone: 'green' }))} />
-      <ScannerColumn title="Macro Warnings" items={macro.map((x: any) => ({ title: x.title, text: x.text, tone: 'violet' }))} />
-      <ScannerColumn title="Catalyst Monitor" items={catalysts.map((x: any) => ({ title: x.event, text: `${x.date} - ${x.impact}`, tone: 'blue' }))} />
+      <ScannerColumn title={hidden ? 'Controls' : 'Risk Alerts'} hidden={hidden} items={risk.map((x: any) => ({ title: x.title, text: x.text, tone: x.level === 'danger' ? 'red' : 'amber' }))} />
+      <ScannerColumn title={hidden ? 'Activity' : 'Opportunity Signals'} hidden={hidden} items={opp.map((x: any) => ({ title: x.ticker, text: x.setup, tone: 'green' }))} />
+      <ScannerColumn title={hidden ? 'Workspace' : 'Macro Warnings'} hidden={hidden} items={macro.map((x: any) => ({ title: x.title, text: x.text, tone: 'violet' }))} />
+      <ScannerColumn title={hidden ? 'Calendar' : 'Catalyst Monitor'} hidden={hidden} items={catalysts.map((x: any) => ({ title: x.event, text: `${x.date} - ${x.impact}`, tone: 'blue' }))} />
     </div>
   )
 }
 
-function ScannerColumn({ title, items }: any) {
+function ScannerColumn({ title, items, hidden }: any) {
   return (
     <GlowCard className="scanner-column">
       <b>{title}</b>
       {items.length ? (
         items.map((x: any, i: number) => (
           <div className={`scanner-item ${x.tone}`} key={`${x.title}-${i}`}>
-            <strong>{x.title}</strong>
-            <span>{x.text}</span>
+            <strong>{hidden ? 'Workspace item' : x.title}</strong>
+            <span>{hidden ? mask : x.text}</span>
           </div>
         ))
       ) : (
@@ -601,27 +717,27 @@ function PositionsTable({ rows, hidden, setSelected }: any) {
               <td>
                 <div className="row-symbol">
                   <div className="logo" style={{ background: p.accent || '#60a5fa' }}>
-                    {p.logo || p.symbol?.slice(0, 2)}
+                    {hidden ? '••' : p.logo || p.symbol?.slice(0, 2)}
                   </div>
                   <div>
-                    <b>{p.symbol}</b>
-                    <div className="muted">{p.name}</div>
+                    <b>{hidden ? mask : p.symbol}</b>
+                    <div className="muted">{hidden ? 'Workspace item' : p.name}</div>
                   </div>
                 </div>
               </td>
               <td>
-                <span className="badge">{p.sec_type || 'STK'}</span>
+                <span className="badge">{hidden ? mask : p.sec_type || 'STK'}</span>
               </td>
-              <td>{p.qty}</td>
+              <td>{hidden ? mask : p.qty}</td>
               <td>{hidden ? mask : money(p.avg_price)}</td>
               <td>{hidden ? mask : money(p.last)}</td>
               <td>{hidden ? mask : money(p.market_value)}</td>
               <td className={p.unrealized >= 0 ? 'green' : 'red'}>
                 {hidden ? mask : money(p.unrealized)}
                 <br />
-                <small>{pct(p.unrealized_pct)}</small>
+                <small>{hidden ? mask : pct(p.unrealized_pct)}</small>
               </td>
-              <td>{pct(p.portfolio_pct)}</td>
+              <td>{hidden ? mask : pct(p.portfolio_pct)}</td>
             </tr>
           ))}
         </tbody>
@@ -630,37 +746,37 @@ function PositionsTable({ rows, hidden, setSelected }: any) {
   )
 }
 
-function Exposure({ rows }: any) {
+function Exposure({ rows, hidden }: any) {
   const top = rows?.[0]
   return (
     <div>
       <GlowCard className="concentration-card">
-        <span>Top concentration</span>
-        <b>{top?.name || '-'}</b>
-        <strong>{pct(top?.pct || 0)}</strong>
+        <span>{hidden ? 'Overview' : 'Top concentration'}</span>
+        <b>{hidden ? mask : top?.name || '-'}</b>
+        <strong>{hidden ? mask : pct(top?.pct || 0)}</strong>
       </GlowCard>
       {rows.map((r: any) => (
-        <div className="exposure-row" title={`${r.name}: ${pct(r.pct)} portfolio`} key={r.name}>
-          <span>{r.name}</span>
+        <div className="exposure-row" title={hidden ? 'Workspace item' : `${r.name}: ${pct(r.pct)} portfolio`} key={r.name}>
+          <span>{hidden ? 'Workspace item' : r.name}</span>
           <div className="bar">
             <i style={{ width: `${Math.min(r.pct, 100)}%` }} />
           </div>
-          <b>{pct(r.pct)}</b>
+          <b>{hidden ? mask : pct(r.pct)}</b>
         </div>
       ))}
     </div>
   )
 }
 
-function RiskList({ items }: any) {
+function RiskList({ items, hidden }: any) {
   return (
     <div className="actions">
       {items.map((x: any, i: number) => (
         <div className="action" key={i}>
           <Shield size={18} className={x.level === 'danger' ? 'red' : 'green'} />
           <div>
-            <b>{x.title}</b>
-            <div className="muted">{x.text}</div>
+            <b>{hidden ? 'Control item' : x.title}</b>
+            <div className="muted">{hidden ? mask : x.text}</div>
           </div>
         </div>
       ))}
@@ -668,14 +784,14 @@ function RiskList({ items }: any) {
   )
 }
 
-function WatchlistPage({ d, setSelected }: any) {
+function WatchlistPage({ d, hidden, setSelected }: any) {
   const [sort, setSort] = useState('opportunity')
   const rows = [...(d?.watchlist || [])].sort((a: any, b: any) =>
     String(sort) === 'name' ? a.symbol.localeCompare(b.symbol) : (b[sort] || 0) - (a[sort] || 0),
   )
   return (
     <div className="grid">
-      <Panel title="Opportunity Board" span="span-12">
+      <Panel title="Opportunity Board" privateTitle="Workspace" span="span-12" hidden={hidden}>
         <div className="tabs">
           {['name', 'change_pct', 'risk', 'opportunity', 'momentum', 'rvol'].map((s) => (
             <button className={`tab ${sort === s ? 'active' : ''}`} onClick={() => setSort(s)} key={s}>
@@ -689,33 +805,33 @@ function WatchlistPage({ d, setSelected }: any) {
               <button onClick={() => setSelected({ symbol: w.symbol })}>
                 <header>
                   <div>
-                    <b>{w.symbol}</b>
-                    <div className="muted">{w.name}</div>
+                    <b>{hidden ? mask : w.symbol}</b>
+                    <div className="muted">{hidden ? 'Workspace item' : w.name}</div>
                   </div>
-                  <span className="badge">{w.action || w.label}</span>
+                  <span className="badge">{hidden ? 'Overview' : w.action || w.label}</span>
                 </header>
                 <h2>
-                  {money(w.price)} <small className={w.change_pct >= 0 ? 'green' : 'red'}>{pct(w.change_pct)}</small>
+                  {hidden ? mask : money(w.price)} <small className={w.change_pct >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(w.change_pct)}</small>
                 </h2>
                 <div className="plan">
                   <div className="pillbox">
                     Risk
                     <br />
-                    <b>{w.risk}</b>
+                    <b>{hidden ? mask : w.risk}</b>
                   </div>
                   <div className="pillbox">
                     Opp
                     <br />
-                    <b>{w.opportunity}</b>
+                    <b>{hidden ? mask : w.opportunity}</b>
                   </div>
                   <div className="pillbox">
                     RVOL
                     <br />
-                    <b>{w.rvol}</b>
+                    <b>{hidden ? mask : w.rvol}</b>
                   </div>
                 </div>
-                <MetricBar label="Momentum" value={w.momentum || 0} tone="green" />
-                <p className="muted">{w.reason || `${w.macro_fit || 'Neutral'} macro fit - ${w.sector || 'Unclassified'}`}</p>
+                <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={w.momentum || 0} tone="green" hidden={hidden} />
+                <p className="muted">{hidden ? mask : w.reason || `${w.macro_fit || 'Neutral'} macro fit - ${w.sector || 'Unclassified'}`}</p>
               </button>
             </GlowCard>
           ))}
@@ -725,75 +841,75 @@ function WatchlistPage({ d, setSelected }: any) {
   )
 }
 
-function TradeRadar({ d }: any) {
+function TradeRadar({ d, hidden }: any) {
   return (
     <div className="grid">
-      <Panel title="AI Trade Radar - Rule Engine" span="span-12">
-        <TradeList items={d?.scanner || []} detailed />
+      <Panel title="AI Trade Radar - Rule Engine" privateTitle="Activity" span="span-12" hidden={hidden}>
+        <TradeList items={d?.scanner || []} detailed hidden={hidden} />
       </Panel>
     </div>
   )
 }
 
-function TradeList({ items, detailed }: any) {
+function TradeList({ items, detailed, hidden }: any) {
   return (
     <div className="cards">
       {items.map((x: any) => (
         <div className="stock-card" key={x.ticker}>
           <header>
             <div>
-              <b>{x.ticker}</b>
-              <div className="muted">Price {money(x.price)}</div>
+              <b>{hidden ? mask : x.ticker}</b>
+              <div className="muted">{hidden ? mask : `Price ${money(x.price)}`}</div>
             </div>
-            <span className="badge">{x.label}</span>
+            <span className="badge">{hidden ? 'Overview' : x.label}</span>
           </header>
           <p>
-            <b>{x.setup}</b>
+            <b>{hidden ? 'Workspace item' : x.setup}</b>
           </p>
           <div className="plan">
             <div className="pillbox">
               Entry
               <br />
-              <b>{x.entry_zone}</b>
+              <b>{hidden ? mask : x.entry_zone}</b>
             </div>
             <div className="pillbox">
               Stop
               <br />
-              <b>{x.stop}</b>
+              <b>{hidden ? mask : x.stop}</b>
             </div>
             <div className="pillbox">
               Targets
               <br />
-              <b>{x.targets?.join(' / ')}</b>
+              <b>{hidden ? mask : x.targets?.join(' / ')}</b>
             </div>
           </div>
-          <p className="muted">{x.portfolio_impact}</p>
-          {detailed && <ul className="muted">{(x.rationale || []).map((r: any) => <li key={r}>{r}</li>)}</ul>}
+          <p className="muted">{hidden ? mask : x.portfolio_impact}</p>
+          {detailed && !hidden && <ul className="muted">{(x.rationale || []).map((r: any) => <li key={r}>{r}</li>)}</ul>}
         </div>
       ))}
     </div>
   )
 }
 
-function RiskPage({ d }: any) {
+function RiskPage({ d, hidden }: any) {
   const topRisk = Math.max(...(d?.portfolio?.positions || []).map((p: any) => Number(p.risk || 0)), 0)
   return (
     <div className="grid">
-      <Panel title="Portfolio Risk" span="span-6">
+      <Panel title="Portfolio Risk" privateTitle="Controls" span="span-6" hidden={hidden}>
         <div className="risk-overview">
-          <RiskGauge value={topRisk} label="Highest holding risk" />
-          <RiskList items={d?.portfolio?.guardrails || []} />
+          <RiskGauge value={topRisk} label={hidden ? 'Control level' : 'Highest holding risk'} />
+          <RiskList items={d?.portfolio?.guardrails || []} hidden={hidden} />
         </div>
       </Panel>
-      <Panel title="Stress Tests" span="span-6">
+      <Panel title="Stress Tests" privateTitle="Controls" span="span-6" hidden={hidden}>
         <div className="actions">
           {(d?.portfolio?.stress_tests || []).map((s: any) => (
             <div className="action" key={s.scenario}>
               <Activity size={18} />
               <div>
-                <b>{s.scenario}</b>
+                <b>{hidden ? 'Control item' : s.scenario}</b>
                 <div className="red">
-                  {money(s.estimated_pnl)} / {pct(s.estimated_pct)}
+                  {hidden ? mask : `${money(s.estimated_pnl)} / ${pct(s.estimated_pct)}`}
                 </div>
               </div>
             </div>
@@ -804,7 +920,7 @@ function RiskPage({ d }: any) {
   )
 }
 
-function TaxPage() {
+function TaxPage({ hidden }: any) {
   const [res, setRes] = useState<any>(null)
   async function upload(e: any) {
     const file = e.target.files?.[0]
@@ -815,7 +931,7 @@ function TaxPage() {
   }
   return (
     <div className="grid">
-      <Panel title="Greek Tax Center" span="span-12">
+      <Panel title="Greek Tax Center" privateTitle="Documents" span="span-12" hidden={hidden}>
         <input type="file" onChange={upload} />
         <p className="muted">Estimate only: 15% stocks/options gains, losses offset, UCITS exempt.</p>
         {res && <pre className="panel">{JSON.stringify(res, null, 2)}</pre>}
@@ -824,18 +940,18 @@ function TaxPage() {
   )
 }
 
-function SourceHealthPanel() {
+function SourceHealthPanel({ hidden = false }: any) {
   const { health, refresh } = useSourceHealth()
   return (
-    <Panel title="Source Health" span="span-12">
+    <Panel title="Source Health" span="span-12" hidden={hidden}>
       <div className="health-grid">
         {health.map((h: any) => (
           <div className={`health ${h.status}`} key={h.source}>
             <div>
-              <b>{h.source}</b>
-              <p className="muted">{h.message}</p>
+              <b>{hidden ? 'Workspace source' : h.source}</b>
+              <p className="muted">{hidden ? mask : h.message}</p>
             </div>
-            <span>{h.data_received ? 'Data OK' : h.ok ? 'No data' : 'Failed'}</span>
+            <span>{hidden ? 'Status' : h.data_received ? 'Data OK' : h.ok ? 'No data' : 'Failed'}</span>
           </div>
         ))}
       </div>
@@ -846,7 +962,7 @@ function SourceHealthPanel() {
   )
 }
 
-function IntegrationCenter({ compact = false }: any = {}) {
+function IntegrationCenter({ compact = false, hidden = false }: any = {}) {
   const [settings, setSettings] = useState<any>(null)
   const [health, setHealth] = useState<any[]>([])
   const [testing, setTesting] = useState('')
@@ -880,40 +996,42 @@ function IntegrationCenter({ compact = false }: any = {}) {
 
   return (
     <div className={compact ? 'compact-integrations' : 'grid'}>
-      <Panel title="Integration Center" span="span-12">
-        <p className="muted">Each card has connection fields, a test action, and the latest data status.</p>
+      <Panel title="Integration Center" span="span-12" hidden={hidden}>
+        <p className="muted">
+          {hidden ? 'Each card has connection fields, a test action, and the latest workspace status.' : 'Each card has connection fields, a test action, and the latest data status.'}
+        </p>
         <div className="integration-grid">
-          <IntegrationCard title="IBKR" icon={<Wallet />} status={health.find((h: any) => h.source === 'IBKR')} doc={settings.ibkr.documentation} onTest={() => test('ibkr')} testing={testing === 'ibkr'}>
+          <IntegrationCard title="IBKR" hidden={hidden} icon={<Wallet />} status={health.find((h: any) => h.source === 'IBKR')} doc={settings.ibkr.documentation} onTest={() => test('ibkr')} testing={testing === 'ibkr'}>
             <Field label="Host" value={settings.ibkr.host} onChange={(v: any) => update('ibkr', 'host', v)} />
             <Field label="Port" value={settings.ibkr.port} onChange={(v: any) => update('ibkr', 'port', Number(v))} />
             <Field label="Client ID" value={settings.ibkr.client_id} onChange={(v: any) => update('ibkr', 'client_id', Number(v))} />
             <Toggle label="Enabled" checked={settings.ibkr.enabled} onChange={(v: any) => update('ibkr', 'enabled', v)} />
           </IntegrationCard>
-          <IntegrationCard title="Yahoo Finance" icon={<Globe2 />} status={health.find((h: any) => h.source === 'Yahoo Finance')} doc={settings.yahoo.documentation} onTest={() => test('yahoo')} testing={testing === 'yahoo'}>
+          <IntegrationCard title="Yahoo Finance" hidden={hidden} icon={<Globe2 />} status={health.find((h: any) => h.source === 'Yahoo Finance')} doc={settings.yahoo.documentation} onTest={() => test('yahoo')} testing={testing === 'yahoo'}>
             <Field label="Test ticker" value={settings.yahoo.test_ticker} onChange={(v: any) => update('yahoo', 'test_ticker', v.toUpperCase())} />
             <Toggle label="News" checked={settings.yahoo.news_enabled} onChange={(v: any) => update('yahoo', 'news_enabled', v)} />
             <Toggle label="Fundamentals" checked={settings.yahoo.fundamentals_enabled} onChange={(v: any) => update('yahoo', 'fundamentals_enabled', v)} />
           </IntegrationCard>
-          <IntegrationCard title="Seeking Alpha" icon={<BookOpen />} status={health.find((h: any) => h.source === 'Seeking Alpha')} doc={settings.seeking_alpha.documentation} onTest={() => test('seeking-alpha')} testing={testing === 'seeking-alpha'}>
+          <IntegrationCard title="Seeking Alpha" hidden={hidden} icon={<BookOpen />} status={health.find((h: any) => h.source === 'Seeking Alpha')} doc={settings.seeking_alpha.documentation} onTest={() => test('seeking-alpha')} testing={testing === 'seeking-alpha'}>
             <Toggle label="Enable RSS" checked={settings.seeking_alpha.rss_enabled} onChange={(v: any) => update('seeking_alpha', 'rss_enabled', v)} />
             <Toggle label="Authenticated deep parsing" checked={settings.seeking_alpha.authenticated_enabled} onChange={(v: any) => update('seeking_alpha', 'authenticated_enabled', v)} />
             <Field label="Test URL" value={settings.seeking_alpha.test_url} onChange={(v: any) => update('seeking_alpha', 'test_url', v)} />
             <TextArea label="Session Cookie/Header" value={settings.seeking_alpha.cookie_header} onChange={(v: any) => update('seeking_alpha', 'cookie_header', v)} placeholder="Paste your subscriber session cookie header. No password is stored." />
           </IntegrationCard>
-          <IntegrationCard title="RSS / Email Adapters" icon={<Database />} status={health.find((h: any) => h.source === 'RSS')} doc={settings.rss.documentation} onTest={() => test('rss')} testing={testing === 'rss'}>
+          <IntegrationCard title="RSS / Email Adapters" hidden={hidden} icon={<Database />} status={health.find((h: any) => h.source === 'RSS')} doc={settings.rss.documentation} onTest={() => test('rss')} testing={testing === 'rss'}>
             <TextArea label="RSS feeds JSON" value={JSON.stringify(settings.rss.feeds, null, 2)} onChange={(v: any) => { try { update('rss', 'feeds', JSON.parse(v)) } catch {} }} />
           </IntegrationCard>
-          <IntegrationCard title="FRED / Macro" icon={<BarChart3 />} status={health.find((h: any) => h.source === 'FRED/Macro')} doc={settings.fred.documentation} onTest={() => test('fred')} testing={testing === 'fred'}>
+          <IntegrationCard title="FRED / Macro" hidden={hidden} icon={<BarChart3 />} status={health.find((h: any) => h.source === 'FRED/Macro')} doc={settings.fred.documentation} onTest={() => test('fred')} testing={testing === 'fred'}>
             <Field label="API key" value={settings.fred.api_key} onChange={(v: any) => update('fred', 'api_key', v)} />
           </IntegrationCard>
-          <IntegrationCard title="Telegram / Alerts" icon={<Activity />} status={health.find((h: any) => h.source === 'Telegram')} doc={settings.telegram.documentation} onTest={() => test('telegram')} testing={testing === 'telegram'}>
+          <IntegrationCard title="Telegram / Alerts" hidden={hidden} icon={<Activity />} status={health.find((h: any) => h.source === 'Telegram')} doc={settings.telegram.documentation} onTest={() => test('telegram')} testing={testing === 'telegram'}>
             <Field label="Bot token" value={settings.telegram.bot_token} onChange={(v: any) => update('telegram', 'bot_token', v)} />
             <Field label="Chat ID" value={settings.telegram.chat_id} onChange={(v: any) => update('telegram', 'chat_id', v)} />
           </IntegrationCard>
-          <IntegrationCard title="Advisor Intel" icon={<Brain />} status={health.find((h: any) => h.source === 'Advisor Intel')} doc={settings.discord_advisor.documentation}>
+          <IntegrationCard title="Advisor Intel" hidden={hidden} icon={<Brain />} status={health.find((h: any) => h.source === 'Advisor Intel')} doc={settings.discord_advisor.documentation}>
             <Field label="Mode" value={settings.discord_advisor.mode} onChange={(v: any) => update('discord_advisor', 'mode', v)} />
           </IntegrationCard>
-          <IntegrationCard title="AI Lite" icon={<Brain />} status={{ status: 'connected_no_data', data_received: false, message: 'Optional later; rules engine active' }} doc={settings.openai.documentation}>
+          <IntegrationCard title="AI Lite" hidden={hidden} icon={<Brain />} status={{ status: 'connected_no_data', data_received: false, message: 'Optional later; rules engine active' }} doc={settings.openai.documentation}>
             <Field label="Mode" value={settings.openai.mode} onChange={(v: any) => update('openai', 'mode', v)} />
             <Field label="Daily budget EUR" value={settings.openai.daily_budget_eur} onChange={(v: any) => update('openai', 'daily_budget_eur', Number(v))} />
           </IntegrationCard>
@@ -926,7 +1044,7 @@ function IntegrationCenter({ compact = false }: any = {}) {
   )
 }
 
-function IntegrationCard({ title, icon, status, doc, onTest, testing, children }: any) {
+function IntegrationCard({ title, hidden, icon, status, doc, onTest, testing, children }: any) {
   const ok = status?.data_received
   const failed = status?.status === 'failed'
   return (
@@ -934,8 +1052,8 @@ function IntegrationCard({ title, icon, status, doc, onTest, testing, children }
       <header>
         <div className="iconbox">{icon}</div>
         <div>
-          <b>{title}</b>
-          <p className="muted">{doc}</p>
+          <b>{hidden ? 'Workspace source' : title}</b>
+          <p className="muted">{hidden ? mask : doc}</p>
         </div>
         <span className={`source-pill ${failed ? 'bad' : ok ? 'good' : 'warn'}`}>{failed ? 'Failed' : ok ? 'Data OK' : 'No data'}</span>
       </header>
@@ -945,7 +1063,7 @@ function IntegrationCard({ title, icon, status, doc, onTest, testing, children }
           {testing ? 'Checking...' : 'Check connection'}
         </button>
       )}
-      {status && <pre className="mini-log">{status.message}</pre>}
+      {status && <pre className="mini-log">{hidden ? mask : status.message}</pre>}
     </div>
   )
 }
@@ -984,7 +1102,7 @@ const releaseBacklog = [
   { item: 'Chart screenshot / OCR', status: 'Degraded', owner: 'Research', target: 'Later' },
 ]
 
-function AboutPage() {
+function AboutPage({ hidden }: any) {
   const [about, setAbout] = useState<any>(null)
   const [qa, setQa] = useState<any>(null)
   useEffect(() => {
@@ -994,28 +1112,29 @@ function AboutPage() {
 
   return (
     <div className="grid">
-      <Panel title="Release Center" span="span-12">
-        <SectionHeader title={`PIA ${cleanText(about?.version)}`.trim()} subtitle={cleanText(about?.tagline)} />
+      <Panel title="Release Center" privateTitle="Info" span="span-12" hidden={hidden}>
+        <SectionHeader
+          title={hidden ? 'Private Mode' : `PIA ${cleanText(about?.version)}`.trim()}
+          subtitle={hidden ? 'Workspace' : cleanText(about?.tagline)}
+        />
         <div className="release-meta">
           <IntelligenceBadge label="UAT ready" tone="good" />
           <IntelligenceBadge label="Rule engine active" tone="neutral" />
           <IntelligenceBadge label="3 known limitations" tone="warn" />
         </div>
       </Panel>
-      <Panel title="Changelog" span="span-7">
+      <Panel title="Changelog" span="span-7" hidden={hidden}>
         <div className="actions">
           {(about?.changelog || []).map((v: any) => (
             <GlowCard className="version-card" key={v.version}>
-              <b>
-                {v.version} - {v.title}
-              </b>
-              <ul>{cleanList(v.features || []).map((f: string) => <li key={f}>{f}</li>)}</ul>
-              <small className="muted">Deferred: {cleanList(v.deferred || []).join(', ')}</small>
+              <b>{hidden ? 'Workspace update' : `${v.version} - ${v.title}`}</b>
+              {!hidden && <ul>{cleanList(v.features || []).map((f: string) => <li key={f}>{f}</li>)}</ul>}
+              {!hidden && <small className="muted">Deferred: {cleanList(v.deferred || []).join(', ')}</small>}
             </GlowCard>
           ))}
         </div>
       </Panel>
-      <Panel title="UAT Checklist" span="span-5">
+      <Panel title="UAT Checklist" span="span-5" hidden={hidden}>
         <div className="actions">
           {(qa?.groups || []).map((g: any) => (
             <GlowCard className="version-card" key={g.name}>
@@ -1029,7 +1148,7 @@ function AboutPage() {
           ))}
         </div>
       </Panel>
-      <Panel title="Backlog" span="span-7">
+      <Panel title="Backlog" span="span-7" hidden={hidden}>
         <div className="table-wrap">
           <table className="backlog-table">
             <thead>
@@ -1043,7 +1162,7 @@ function AboutPage() {
             <tbody>
               {releaseBacklog.map((row) => (
                 <tr key={row.item}>
-                  <td>{row.item}</td>
+                  <td>{hidden ? 'Workspace item' : row.item}</td>
                   <td>
                     <IntelligenceBadge label={row.status} tone={row.status === 'Pending' ? 'warn' : row.status === 'Degraded' ? 'bad' : 'neutral'} />
                   </td>
@@ -1055,7 +1174,7 @@ function AboutPage() {
           </table>
         </div>
       </Panel>
-      <Panel title="Known limitations" span="span-5">
+      <Panel title="Known limitations" span="span-5" hidden={hidden}>
         <div className="empty-state">
           {cleanList(about?.known_issues || []).length ? (
             <ul>{cleanList(about?.known_issues || []).map((x: string) => <li key={x}>{x}</li>)}</ul>
@@ -1068,13 +1187,13 @@ function AboutPage() {
   )
 }
 
-const settingsTabs = ['General', 'Workspace', 'Integrations', 'Notifications', 'System', 'About'] as const
+const settingsTabs = ['General', 'Workspace', 'Manual Holdings', 'Integrations', 'Notifications', 'System', 'About'] as const
 
-function SettingsPage() {
+function SettingsPage({ hidden }: any) {
   const [tab, setTab] = useState<(typeof settingsTabs)[number]>('General')
   return (
     <div className="grid">
-      <Panel title="Settings" span="span-12">
+      <Panel title="Settings" span="span-12" hidden={hidden}>
         <div className="settings-tabs">
           {settingsTabs.map((item) => (
             <button key={item} className={`tab ${tab === item ? 'active' : ''}`} onClick={() => setTab(item)}>
@@ -1082,23 +1201,24 @@ function SettingsPage() {
             </button>
           ))}
         </div>
-        {tab === 'General' && <GeneralSettings />}
-        {tab === 'Workspace' && <WorkspaceSettings />}
-        {tab === 'Integrations' && <IntegrationsSettings />}
+        {tab === 'General' && <GeneralSettings hidden={hidden} />}
+        {tab === 'Workspace' && <WorkspaceSettings hidden={hidden} />}
+        {tab === 'Manual Holdings' && <ManualHoldingsSettings hidden={hidden} />}
+        {tab === 'Integrations' && <IntegrationsSettings hidden={hidden} />}
         {tab === 'Notifications' && <NotificationsSettings />}
-        {tab === 'System' && <SystemSettings />}
+        {tab === 'System' && <SystemSettings hidden={hidden} />}
         {tab === 'About' && <SettingsAbout />}
       </Panel>
     </div>
   )
 }
 
-function GeneralSettings() {
+function GeneralSettings({ hidden }: any) {
   return (
     <div className="settings-panels">
       <GlowCard>
         <h3>Profile</h3>
-        <p className="muted">Decision workspace defaults for the current user.</p>
+        <p className="muted">{hidden ? 'Workspace defaults for the current user.' : 'Decision workspace defaults for the current user.'}</p>
         <label className="toggle">
           <input type="checkbox" defaultChecked />
           <span>Use premium dark theme</span>
@@ -1119,12 +1239,12 @@ function GeneralSettings() {
   )
 }
 
-function WorkspaceSettings() {
+function WorkspaceSettings({ hidden }: any) {
   return (
     <div className="settings-panels">
       <GlowCard>
         <h3>Workspace</h3>
-        <p className="muted">Tune density without changing portfolio logic.</p>
+        <p className="muted">{hidden ? 'Tune density without changing workspace logic.' : 'Tune density without changing portfolio logic.'}</p>
         <label className="toggle">
           <input type="checkbox" defaultChecked />
           <span>Compact mobile navigation</span>
@@ -1145,11 +1265,186 @@ function WorkspaceSettings() {
   )
 }
 
-function IntegrationsSettings() {
+function ManualHoldingsSettings({ hidden }: any) {
+  const [holdings, setHoldings] = useState<any[]>([])
+  const [form, setForm] = useState<any>(emptyHolding)
+  const [editingId, setEditingId] = useState('')
+  const [status, setStatus] = useState('')
+
+  const refresh = () => fetchJson('/manual-holdings').then(setHoldings).catch(() => setStatus('Manual holdings API is unavailable.'))
+
+  useEffect(() => {
+    refresh()
+  }, [])
+
+  function updateForm(key: string, value: any) {
+    setForm((current: any) => ({ ...current, [key]: value }))
+  }
+
+  function startEdit(holding: any) {
+    setEditingId(holding.id)
+    setForm({
+      ticker: holding.ticker || '',
+      name: holding.name || '',
+      asset_type: holding.asset_type || 'Stock',
+      broker: holding.broker || 'Manual',
+      quantity: holding.quantity ?? '',
+      avg_price: holding.avg_price ?? '',
+      currency: holding.currency || 'USD',
+      notes: holding.notes || '',
+    })
+    setStatus('')
+  }
+
+  function resetForm() {
+    setEditingId('')
+    setForm(emptyHolding)
+  }
+
+  async function saveHolding(event: React.FormEvent) {
+    event.preventDefault()
+    setStatus('')
+    const payload = {
+      ...form,
+      ticker: String(form.ticker || '').toUpperCase(),
+      quantity: Number(form.quantity),
+      avg_price: Number(form.avg_price),
+      currency: String(form.currency || 'USD').toUpperCase(),
+    }
+    const path = editingId ? `/manual-holdings/${editingId}` : '/manual-holdings'
+    const method = editingId ? 'PUT' : 'POST'
+    const result = await fetchJson(path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch((error) => {
+      setStatus(safeMessage(error?.detail, 'Unable to save manual holding.'))
+      return null
+    })
+    if (!result) return
+    setStatus(editingId ? 'Manual holding updated.' : 'Manual holding added.')
+    resetForm()
+    refresh()
+  }
+
+  async function removeHolding(id: string) {
+    const result = await fetchJson(`/manual-holdings/${id}`, { method: 'DELETE' }).catch((error) => {
+      setStatus(safeMessage(error?.detail, 'Unable to delete manual holding.'))
+      return null
+    })
+    if (!result) return
+    setStatus('Manual holding deleted.')
+    if (editingId === id) resetForm()
+    refresh()
+  }
+
+  return (
+    <div className="manual-holdings">
+      <GlowCard>
+        <SectionHeader
+          title={hidden ? 'Manual Assets' : 'Manual Holdings'}
+          subtitle={hidden ? 'Manage external positions.' : 'Add Freedom24, Revolut, IBKR-adjacent, or manually tracked assets.'}
+        />
+        <form className="manual-form" onSubmit={saveHolding}>
+          <Field label="Ticker" value={form.ticker} onChange={(v: any) => updateForm('ticker', v.toUpperCase())} />
+          <Field label="Name" value={form.name} onChange={(v: any) => updateForm('name', v)} />
+          <label className="field">
+            <span>Asset Type</span>
+            <select value={form.asset_type} onChange={(e) => updateForm('asset_type', e.target.value)}>
+              {assetTypes.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Broker</span>
+            <select value={form.broker} onChange={(e) => updateForm('broker', e.target.value)}>
+              {brokers.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Field label="Quantity" value={form.quantity} onChange={(v: any) => updateForm('quantity', v)} />
+          <Field label="Average Price" value={form.avg_price} onChange={(v: any) => updateForm('avg_price', v)} />
+          <Field label="Currency" value={form.currency} onChange={(v: any) => updateForm('currency', v.toUpperCase())} />
+          <TextArea label="Notes" value={form.notes} onChange={(v: any) => updateForm('notes', v)} placeholder="Source account, thesis, or manual valuation notes." />
+          <div className="manual-actions">
+            <button className="tab active" type="submit">
+              {editingId ? <Pencil size={15} /> : <Plus size={15} />} {editingId ? 'Update holding' : 'Add holding'}
+            </button>
+            {editingId && (
+              <button className="tab" type="button" onClick={resetForm}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+        {status && <p className="muted">{status}</p>}
+      </GlowCard>
+      <GlowCard>
+        <SectionHeader
+          title={hidden ? 'External Assets' : 'Tracked Manual Holdings'}
+          subtitle={hidden ? `${holdings.length} items` : `${holdings.length} holdings merged into portfolio totals when present`}
+        />
+        <div className="table-wrap">
+          <table className="manual-table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Broker</th>
+                <th>Type</th>
+                <th>Qty</th>
+                <th>Avg</th>
+                <th>Currency</th>
+                <th>Notes</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {holdings.map((holding) => (
+                <tr key={holding.id}>
+                  <td>
+                    <b>{hidden ? mask : holding.ticker}</b>
+                    <div className="muted">{hidden ? 'Workspace item' : holding.name}</div>
+                  </td>
+                  <td>{hidden ? mask : holding.broker}</td>
+                  <td>
+                    <span className="badge">{hidden ? mask : holding.asset_type}</span>
+                  </td>
+                  <td>{hidden ? mask : holding.quantity}</td>
+                  <td>{hidden ? mask : money(holding.avg_price)}</td>
+                  <td>{hidden ? mask : holding.currency}</td>
+                  <td>{hidden ? mask : holding.notes || '-'}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-tab" type="button" onClick={() => startEdit(holding)} aria-label={`Edit ${holding.ticker}`}>
+                        <Pencil size={15} />
+                      </button>
+                      <button className="icon-tab danger" type="button" onClick={() => removeHolding(holding.id)} aria-label={`Delete ${holding.ticker}`}>
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!holdings.length && <div className="empty-state">No manual holdings yet.</div>}
+        </div>
+      </GlowCard>
+    </div>
+  )
+}
+
+function IntegrationsSettings({ hidden }: any) {
   return (
     <div>
-      <IntegrationStatusCards />
-      <IntegrationCenter compact />
+      <IntegrationStatusCards hidden={hidden} />
+      <IntegrationCenter compact hidden={hidden} />
     </div>
   )
 }
@@ -1179,21 +1474,24 @@ function NotificationsSettings() {
   )
 }
 
-function SystemSettings() {
+function SystemSettings({ hidden }: any) {
   return (
-    <div className="settings-panels">
-      <GlowCard>
-        <h3>Runtime</h3>
-        <p className="muted">Frontend build: Next.js 15</p>
-        <p className="muted">Backend API: FastAPI</p>
-      </GlowCard>
-      <GlowCard>
-        <h3>Health</h3>
-        <div className="empty-state">
-          <p>System checks use source health where available.</p>
-        </div>
-      </GlowCard>
-    </div>
+    <>
+      <div className="settings-panels">
+        <GlowCard>
+          <h3>Runtime</h3>
+          <p className="muted">Frontend build: Next.js 15</p>
+          <p className="muted">Backend API: FastAPI</p>
+        </GlowCard>
+        <GlowCard>
+          <h3>Health</h3>
+          <div className="empty-state">
+            <p>System checks use source health where available.</p>
+          </div>
+        </GlowCard>
+      </div>
+      <SourceHealthPanel hidden={hidden} />
+    </>
   )
 }
 
@@ -1208,7 +1506,7 @@ function SettingsAbout() {
   )
 }
 
-function IntegrationStatusCards() {
+function IntegrationStatusCards({ hidden = false }: any) {
   const [health, setHealth] = useState<any[]>([])
   useEffect(() => {
     fetchJson('/source-health').then(setHealth).catch(() => {})
@@ -1229,7 +1527,7 @@ function IntegrationStatusCards() {
         const tone = label === 'Data OK' ? 'good' : label === 'Pending' ? 'warn' : label === 'Degraded' ? 'bad' : 'neutral'
         return (
           <GlowCard className="status-card" key={card.name}>
-            <span>{card.name}</span>
+            <span>{hidden ? 'Workspace source' : card.name}</span>
             <IntelligenceBadge label={label} tone={tone} />
           </GlowCard>
         )
@@ -1248,13 +1546,17 @@ function TradingViewChart({ ticker }: { ticker: string }) {
   )
 }
 
-function PositionModal({ ticker, onClose }: any) {
+function PositionModal({ ticker, hidden, onClose }: any) {
   const [data, setData] = useState<any>(null)
   const [tab, setTab] = useState('Overview')
   useEffect(() => {
     fetchJson(`/stock/${encodeURIComponent(ticker.split(' ')[0])}`).then(setData).catch(() => {})
   }, [ticker])
   const tabs = ['Overview', 'Chart', 'Fundamentals', 'News', 'Risk', 'AI Thesis']
+  const tabLabel = (value: string) =>
+    hidden
+      ? ({ Overview: 'Overview', Chart: 'Workspace', Fundamentals: 'Workspace', News: 'Updates', Risk: 'Controls', 'AI Thesis': 'Workspace' } as Record<string, string>)[value] || 'Workspace'
+      : value
   return (
     <>
       <div className="overlay" onClick={onClose} />
@@ -1262,37 +1564,37 @@ function PositionModal({ ticker, onClose }: any) {
         <button className="close" onClick={onClose}>
           <X size={16} />
         </button>
-        <h1>{ticker}</h1>
+        <h1>{hidden ? mask : ticker}</h1>
         <div className="tabs">
           {tabs.map((t) => (
             <button key={t} onClick={() => setTab(t)} className={`tab ${tab === t ? 'active' : ''}`}>
-              {t}
+              {tabLabel(t)}
             </button>
           ))}
         </div>
         {tab === 'Overview' && (
           <div className="panel">
             <h3>Snapshot</h3>
-            <p>{data?.position?.ai_view || data?.watch?.reason || 'No position. Watchlist research available.'}</p>
-            <p className="muted">Why moving: {data?.position?.why_moving || 'No clear catalyst. Check news, sector and macro.'}</p>
+            <p>{hidden ? mask : data?.position?.ai_view || data?.watch?.reason || 'No position. Watchlist research available.'}</p>
+            <p className="muted">{hidden ? mask : `Why moving: ${data?.position?.why_moving || 'No clear catalyst. Check news, sector and macro.'}`}</p>
           </div>
         )}
-        {tab === 'Chart' && (
+        {tab === 'Chart' && !hidden && (
           <div className="panel">
             <h3>TradingView Chart</h3>
             <TradingViewChart ticker={ticker} />
           </div>
         )}
-        {tab === 'Fundamentals' && <pre className="panel">{JSON.stringify(data?.fundamentals, null, 2)}</pre>}
+        {tab === 'Fundamentals' && <pre className="panel">{hidden ? mask : JSON.stringify(data?.fundamentals, null, 2)}</pre>}
         {tab === 'News' && (
           <div className="actions">
             {(data?.news || []).map((n: any) => (
               <div className="action" key={n.title}>
                 <BookOpen size={18} />
                 <div>
-                  <b>{n.title}</b>
+                  <b>{hidden ? 'Workspace item' : n.title}</b>
                   <div className="muted">
-                    {n.impact} - {n.action}
+                    {hidden ? mask : `${n.impact} - ${n.action}`}
                   </div>
                 </div>
               </div>
@@ -1302,9 +1604,9 @@ function PositionModal({ ticker, onClose }: any) {
         {tab === 'Risk' && (
           <div className="panel">
             <h3>Risk profile</h3>
-            <MetricBar label="Portfolio weight" value={data?.position?.portfolio_pct || 0} />
-            <MetricBar label="Risk" value={data?.position?.risk || 0} tone="red" />
-            <MetricBar label="Macro sensitivity" value={data?.position?.macro_sensitivity || 0} tone="violet" />
+            <MetricBar label={hidden ? 'Overview' : 'Portfolio weight'} value={data?.position?.portfolio_pct || 0} hidden={hidden} />
+            <MetricBar label={hidden ? 'Controls' : 'Risk'} value={data?.position?.risk || 0} tone="red" hidden={hidden} />
+            <MetricBar label={hidden ? 'Workspace' : 'Macro sensitivity'} value={data?.position?.macro_sensitivity || 0} tone="violet" hidden={hidden} />
           </div>
         )}
         {tab === 'AI Thesis' && (
@@ -1313,16 +1615,16 @@ function PositionModal({ ticker, onClose }: any) {
             {(data?.thesis || []).length ? (
               data.thesis.map((t: any) => (
                 <article key={t.title}>
-                  <b>{t.title}</b>
-                  <p>{t.summary}</p>
+                  <b>{hidden ? 'Workspace item' : t.title}</b>
+                  <p>{hidden ? mask : t.summary}</p>
                   <details>
                     <summary>Full analysis</summary>
-                    <p>{t.full_text}</p>
+                    <p>{hidden ? mask : t.full_text}</p>
                   </details>
                 </article>
               ))
             ) : (
-              <p className="muted">{data?.forecast?.base || 'No saved thesis yet.'}</p>
+              <p className="muted">{hidden ? mask : data?.forecast?.base || 'No saved thesis yet.'}</p>
             )}
           </div>
         )}
