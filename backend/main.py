@@ -1,4 +1,4 @@
-import os, asyncio, csv, io, shutil, socket, ssl, subprocess, urllib.request, urllib.error
+﻿import os, asyncio, csv, io, shutil, socket, ssl, subprocess, urllib.request, urllib.error
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, UploadFile, File
@@ -9,6 +9,7 @@ from services.trade_engine import scanner_items, opportunity_for
 from services.ws import manager
 from services.settings_store import get_settings, save_settings
 from services.connectors import source_health, test_source, yahoo_news, yahoo_fundamentals
+from services.news_intelligence import get_news_intelligence
 load_dotenv()
 try:
  from services.ibkr_service import get_ibkr_portfolio
@@ -123,6 +124,8 @@ def dashboard(): return payload()
 def macros(): return macro_snapshot()
 @app.get('/news')
 def news(): return news_items()
+@app.get('/news-intelligence')
+def news_intelligence(): return get_news_intelligence()
 @app.get('/news/{ticker}')
 def ticker_news(ticker:str): return yahoo_news(ticker.upper()) or [n for n in news_items() if n.get('ticker')==ticker.upper()]
 @app.get('/fundamentals/{ticker}')
