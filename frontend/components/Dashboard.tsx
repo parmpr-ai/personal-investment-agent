@@ -13,13 +13,16 @@ import {
   FileText,
   Globe2,
   LayoutDashboard,
+  Pencil,
   PlugZap,
+  Plus,
   RefreshCw,
   Search,
   Settings,
   Shield,
   Target,
   TrendingUp,
+  Trash2,
   Wallet,
   X,
 } from 'lucide-react'
@@ -31,6 +34,18 @@ import RiskGauge from './ui/RiskGauge'
 const API = 'http://127.0.0.1:8000'
 const WS = 'ws://127.0.0.1:8000/ws'
 const mask = '******'
+const assetTypes = ['Stock', 'ETF', 'Crypto', 'Option', 'Other']
+const brokers = ['IBKR', 'Freedom24', 'Revolut', 'Manual']
+const emptyHolding = {
+  ticker: '',
+  name: '',
+  asset_type: 'Stock',
+  broker: 'Manual',
+  quantity: '',
+  avg_price: '',
+  currency: 'USD',
+  notes: '',
+}
 const series = [
   { t: '09:30', v: 100 },
   { t: '10:00', v: 101 },
@@ -1068,7 +1083,7 @@ function AboutPage() {
   )
 }
 
-const settingsTabs = ['General', 'Workspace', 'Integrations', 'Notifications', 'System', 'About'] as const
+const settingsTabs = ['General', 'Workspace', 'Manual Holdings', 'Integrations', 'Notifications', 'System', 'About'] as const
 
 function SettingsPage() {
   const [tab, setTab] = useState<(typeof settingsTabs)[number]>('General')
@@ -1084,6 +1099,7 @@ function SettingsPage() {
         </div>
         {tab === 'General' && <GeneralSettings />}
         {tab === 'Workspace' && <WorkspaceSettings />}
+        {tab === 'Manual Holdings' && <ManualHoldingsSettings />}
         {tab === 'Integrations' && <IntegrationsSettings />}
         {tab === 'Notifications' && <NotificationsSettings />}
         {tab === 'System' && <SystemSettings />}
@@ -1139,6 +1155,175 @@ function WorkspaceSettings() {
         <div className="empty-state">
           <p>No custom workspace presets yet.</p>
           <small className="muted">Saved views can land here in a later release.</small>
+        </div>
+      </GlowCard>
+    </div>
+  )
+}
+
+function ManualHoldingsSettings() {
+  const [holdings, setHoldings] = useState<any[]>([])
+  const [form, setForm] = useState<any>(emptyHolding)
+  const [editingId, setEditingId] = useState('')
+  const [status, setStatus] = useState('')
+
+  const refresh = () => fetchJson('/manual-holdings').then(setHoldings).catch(() => setStatus('Manual holdings API is unavailable.'))
+
+  useEffect(() => {
+    refresh()
+  }, [])
+
+  function updateForm(key: string, value: any) {
+    setForm((current: any) => ({ ...current, [key]: value }))
+  }
+
+  function startEdit(holding: any) {
+    setEditingId(holding.id)
+    setForm({
+      ticker: holding.ticker || '',
+      name: holding.name || '',
+      asset_type: holding.asset_type || 'Stock',
+      broker: holding.broker || 'Manual',
+      quantity: holding.quantity ?? '',
+      avg_price: holding.avg_price ?? '',
+      currency: holding.currency || 'USD',
+      notes: holding.notes || '',
+    })
+    setStatus('')
+  }
+
+  function resetForm() {
+    setEditingId('')
+    setForm(emptyHolding)
+  }
+
+  async function saveHolding(event: React.FormEvent) {
+    event.preventDefault()
+    setStatus('')
+    const payload = {
+      ...form,
+      ticker: String(form.ticker || '').toUpperCase(),
+      quantity: Number(form.quantity),
+      avg_price: Number(form.avg_price),
+      currency: String(form.currency || 'USD').toUpperCase(),
+    }
+    const path = editingId ? `/manual-holdings/${editingId}` : '/manual-holdings'
+    const method = editingId ? 'PUT' : 'POST'
+    const result = await fetchJson(path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch((error) => {
+      setStatus(safeMessage(error?.detail, 'Unable to save manual holding.'))
+      return null
+    })
+    if (!result) return
+    setStatus(editingId ? 'Manual holding updated.' : 'Manual holding added.')
+    resetForm()
+    refresh()
+  }
+
+  async function removeHolding(id: string) {
+    const result = await fetchJson(`/manual-holdings/${id}`, { method: 'DELETE' }).catch((error) => {
+      setStatus(safeMessage(error?.detail, 'Unable to delete manual holding.'))
+      return null
+    })
+    if (!result) return
+    setStatus('Manual holding deleted.')
+    if (editingId === id) resetForm()
+    refresh()
+  }
+
+  return (
+    <div className="manual-holdings">
+      <GlowCard>
+        <SectionHeader title="Manual Holdings" subtitle="Add Freedom24, Revolut, IBKR-adjacent, or manually tracked assets." />
+        <form className="manual-form" onSubmit={saveHolding}>
+          <Field label="Ticker" value={form.ticker} onChange={(v: any) => updateForm('ticker', v.toUpperCase())} />
+          <Field label="Name" value={form.name} onChange={(v: any) => updateForm('name', v)} />
+          <label className="field">
+            <span>Asset Type</span>
+            <select value={form.asset_type} onChange={(e) => updateForm('asset_type', e.target.value)}>
+              {assetTypes.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Broker</span>
+            <select value={form.broker} onChange={(e) => updateForm('broker', e.target.value)}>
+              {brokers.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Field label="Quantity" value={form.quantity} onChange={(v: any) => updateForm('quantity', v)} />
+          <Field label="Average Price" value={form.avg_price} onChange={(v: any) => updateForm('avg_price', v)} />
+          <Field label="Currency" value={form.currency} onChange={(v: any) => updateForm('currency', v.toUpperCase())} />
+          <TextArea label="Notes" value={form.notes} onChange={(v: any) => updateForm('notes', v)} placeholder="Source account, thesis, or manual valuation notes." />
+          <div className="manual-actions">
+            <button className="tab active" type="submit">
+              {editingId ? <Pencil size={15} /> : <Plus size={15} />} {editingId ? 'Update holding' : 'Add holding'}
+            </button>
+            {editingId && (
+              <button className="tab" type="button" onClick={resetForm}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+        {status && <p className="muted">{status}</p>}
+      </GlowCard>
+      <GlowCard>
+        <SectionHeader title="Tracked Manual Holdings" subtitle={`${holdings.length} holdings merged into portfolio totals when present`} />
+        <div className="table-wrap">
+          <table className="manual-table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Broker</th>
+                <th>Type</th>
+                <th>Qty</th>
+                <th>Avg</th>
+                <th>Currency</th>
+                <th>Notes</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {holdings.map((holding) => (
+                <tr key={holding.id}>
+                  <td>
+                    <b>{holding.ticker}</b>
+                    <div className="muted">{holding.name}</div>
+                  </td>
+                  <td>{holding.broker}</td>
+                  <td>
+                    <span className="badge">{holding.asset_type}</span>
+                  </td>
+                  <td>{holding.quantity}</td>
+                  <td>{money(holding.avg_price)}</td>
+                  <td>{holding.currency}</td>
+                  <td>{holding.notes || '-'}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-tab" type="button" onClick={() => startEdit(holding)} aria-label={`Edit ${holding.ticker}`}>
+                        <Pencil size={15} />
+                      </button>
+                      <button className="icon-tab danger" type="button" onClick={() => removeHolding(holding.id)} aria-label={`Delete ${holding.ticker}`}>
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!holdings.length && <div className="empty-state">No manual holdings yet.</div>}
         </div>
       </GlowCard>
     </div>
