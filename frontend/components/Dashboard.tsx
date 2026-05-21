@@ -523,19 +523,25 @@ function NewsIntelligencePanel({ items, digest, isDemo, hidden }: any) {
                 <p>{hidden ? mask : item.summary}</p>
               </div>
               <div className="news-intel-meta">
-                <IntelligenceBadge
-                  label={hidden ? 'Signal' : newsBiasLabel(item)}
-                  tone={toneForBias(newsBiasLabel(item), item.sentiment)}
-                />
-                <IntelligenceBadge
-                  label={hidden ? 'Move' : newsPossibleMove(item)}
-                  tone={toneForPossibleMove(newsPossibleMove(item), item.sell_the_news_risk)}
-                />
-                <div>
+                <div className="news-intel-field">
+                  <span>{hidden ? 'Signal' : 'Bias'}</span>
+                  <IntelligenceBadge
+                    label={hidden ? mask : newsBiasLabel(item)}
+                    tone={toneForBias(newsBiasLabel(item), item.sentiment)}
+                  />
+                </div>
+                <div className="news-intel-field">
+                  <span>{hidden ? 'Move' : 'Possible Move'}</span>
+                  <IntelligenceBadge
+                    label={hidden ? mask : newsPossibleMove(item)}
+                    tone={toneForPossibleMove(newsPossibleMove(item), item.sell_the_news_risk)}
+                  />
+                </div>
+                <div className="news-intel-field">
                   <span>{hidden ? 'Level' : 'Confidence'}</span>
                   <b>{hidden ? mask : newsConfidence(item)}</b>
                 </div>
-                <div>
+                <div className="news-intel-field">
                   <span>{hidden ? 'Next' : 'Action'}</span>
                   <b>{hidden ? mask : newsActionLabel(item)}</b>
                 </div>
