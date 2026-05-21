@@ -8,8 +8,11 @@ import {
   Bell,
   BriefcaseBusiness,
   ChevronRight,
+  Eye,
+  EyeOff,
   Gauge,
   Home,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
@@ -19,20 +22,13 @@ import {
   X,
 } from 'lucide-react'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
-
-const API = 'http://127.0.0.1:8000'
+import SettingsPage from '../settings/SettingsWorkspace'
+import { API, fetchJson, mask, money, pct as formatPct, safeMessage } from '../../lib/pia-api'
 
 type RailItem = Record<string, any>
 type Tone = 'good' | 'bad' | 'neutral'
 
-const money = (value: unknown) =>
-  Number(value || 0).toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 2,
-  })
-
-const pct = (value: unknown) => `${Number(value || 0).toFixed(2)}%`
+const pct = formatPct
 
 const marketFallback = [
   { name: 'S&P 500', value: '6,241.80', chg: 0.42, spark: [24, 28, 27, 32, 35, 34, 39] },
@@ -264,15 +260,160 @@ function MobileBottomNav({ active, setActive }: { active: string; setActive: (va
   )
 }
 
-function SearchCommand() {
+function SearchCommand({ onQuickControls }: { onQuickControls: () => void }) {
   return (
     <div className="mobile-search">
       <Search size={18} />
       <input placeholder="Ask PIA or search ticker..." aria-label="Ask PIA or search ticker" />
-      <button aria-label="Open filters">
+      <button type="button" aria-label="Open quick controls" onClick={onQuickControls}>
         <SlidersHorizontal size={18} />
       </button>
     </div>
+  )
+}
+
+function MobileSheet({
+  title,
+  onClose,
+  children,
+}: {
+  title: string
+  onClose: () => void
+  children: ReactNode
+}) {
+  return (
+    <div className="mobile-sheet-root" role="presentation">
+      <button type="button" className="mobile-sheet-overlay" aria-label="Close panel" onClick={onClose} />
+      <section className="mobile-sheet" role="dialog" aria-modal="true" aria-label={title}>
+        <header className="mobile-sheet-head">
+          <h2>{title}</h2>
+          <button type="button" className="mobile-sheet-close" onClick={onClose} aria-label="Close panel">
+            <X size={20} />
+          </button>
+        </header>
+        <div className="mobile-sheet-body">{children}</div>
+      </section>
+    </div>
+  )
+}
+
+function buildNotificationItems(portfolio: any) {
+  const items: { id: string; title: string; text: string; level: string; time: string }[] = []
+  for (const alert of portfolio.guardrails || []) {
+    items.push({
+      id: `guardrail-${alert.title}`,
+      title: alert.title,
+      text: alert.text,
+      level: alert.level || 'warn',
+      time: 'Now',
+    })
+  }
+  for (const action of portfolio.today_actions || []) {
+    items.push({
+      id: `action-${action.title}`,
+      title: action.title,
+      text: action.text,
+      level: 'good',
+      time: 'Today',
+    })
+  }
+  return items
+}
+
+function MobileNotificationCenter({
+  open,
+  onClose,
+  portfolio,
+}: {
+  open: boolean
+  onClose: () => void
+  portfolio: any
+}) {
+  if (!open) return null
+  const items = buildNotificationItems(portfolio)
+  return (
+    <MobileSheet title="Notifications" onClose={onClose}>
+      {items.length ? (
+        <div className="mobile-notification-list">
+          {items.map((item) => (
+            <article className="mobile-notification-item" key={item.id}>
+              <div className="mobile-notification-top">
+                <strong>{item.title}</strong>
+                <span className="mobile-notification-time">{item.time}</span>
+              </div>
+              <p>{item.text}</p>
+              <IntelligenceBadge
+                label={item.level === 'danger' ? 'Action required' : item.level === 'good' ? 'Update' : 'Monitor'}
+                tone={item.level === 'danger' ? 'bad' : item.level === 'good' ? 'good' : 'warn'}
+              />
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="mobile-notification-empty">
+          <Bell size={22} />
+          <strong>All clear</strong>
+          <p>No active guardrails or decision brief items from the current portfolio scan.</p>
+        </div>
+      )}
+    </MobileSheet>
+  )
+}
+
+function MobileQuickControls({
+  open,
+  onClose,
+  hidden,
+  onHiddenChange,
+  onRescan,
+  rescanning,
+  rescanStatus,
+  onOpenSettings,
+}: {
+  open: boolean
+  onClose: () => void
+  hidden: boolean
+  onHiddenChange: (value: boolean) => void
+  onRescan: () => void
+  rescanning: boolean
+  rescanStatus: string
+  onOpenSettings: () => void
+}) {
+  if (!open) return null
+  return (
+    <MobileSheet title="Quick Controls" onClose={onClose}>
+      <div className="mobile-controls-list">
+        <button type="button" className="mobile-control-row" onClick={() => onHiddenChange(!hidden)}>
+          {hidden ? <Eye size={18} /> : <EyeOff size={18} />}
+          <div>
+            <strong>{hidden ? 'Show amounts' : 'Hide amounts'}</strong>
+            <span>Privacy mode for portfolio values</span>
+          </div>
+        </button>
+        <button type="button" className="mobile-control-row" onClick={onRescan} disabled={rescanning}>
+          <RefreshCw size={18} />
+          <div>
+            <strong>{rescanning ? 'Rescanning…' : 'Rescan opportunity board'}</strong>
+            <span>Refresh scanner signals from backend</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          className="mobile-control-row"
+          onClick={() => {
+            onOpenSettings()
+            onClose()
+          }}
+        >
+          <Settings size={18} />
+          <div>
+            <strong>Open settings</strong>
+            <span>Integrations, holdings, health, and system</span>
+          </div>
+        </button>
+      </div>
+      {rescanStatus ? <p className="muted mobile-control-status">{rescanStatus}</p> : null}
+    </MobileSheet>
   )
 }
 
@@ -306,11 +447,22 @@ function MarketPulse({ items }: { items: any[] }) {
   )
 }
 
-function PortfolioInsights({ portfolio, positions }: { portfolio: any; positions: any[] }) {
+function PortfolioInsights({ portfolio, positions, hidden }: { portfolio: any; positions: any[]; hidden?: boolean }) {
   const top = positions[0] || positionFallback[0]
   const insights = [
-    { title: 'Net Worth', value: money(portfolio.total_value || 58170), text: `${money(portfolio.daily_pnl || 420)} today`, type: 'spark' },
-    { title: 'Exposure Leader', value: top.symbol, text: `${pct(top.portfolio_pct)} of portfolio`, type: 'exposure', exposure: top.portfolio_pct || 18 },
+    {
+      title: 'Net Worth',
+      value: hidden ? mask : money(portfolio.total_value || 58170),
+      text: hidden ? mask : `${money(portfolio.daily_pnl || 420)} today`,
+      type: 'spark',
+    },
+    {
+      title: 'Exposure Leader',
+      value: hidden ? '—' : top.symbol,
+      text: hidden ? mask : `${pct(top.portfolio_pct)} of portfolio`,
+      type: 'exposure',
+      exposure: top.portfolio_pct || 18,
+    },
     {
       title: 'Risk Posture',
       value: portfolio.risk_mode || 'Balanced',
@@ -591,43 +743,75 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
   )
 }
 
-function PlaceholderPanel({ title }: { title: string }) {
-  return (
-    <section className="mobile-section">
-      <article className="mobile-visual-card mobile-placeholder">
-        <strong>{title}</strong>
-        <span>Mobile shell ready. Full controls stay in the desktop dashboard for this sprint.</span>
-      </article>
-    </section>
-  )
-}
-
 export default function MobileExperience() {
   const dashboard = useMobileDashboard()
   const [active, setActive] = useState('home')
   const [selected, setSelected] = useState<any>(null)
+  const [mounted, setMounted] = useState(false)
+  const [hidden, setHidden] = useState(false)
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [rescanning, setRescanning] = useState(false)
+  const [rescanStatus, setRescanStatus] = useState('')
 
   const portfolio = dashboard?.portfolio || {}
   const positions = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
   const scanner = dashboard?.scanner || scannerFallback
+  const privacyHidden = mounted && hidden
+  const notificationCount = buildNotificationItems(portfolio).length
+
+  useEffect(() => {
+    setMounted(true)
+    try {
+      setHidden(localStorage.getItem('pia.hideAmounts') === 'true')
+    } catch {}
+  }, [])
+
+  function updateHidden(next: boolean) {
+    setHidden(next)
+    try {
+      localStorage.setItem('pia.hideAmounts', String(next))
+    } catch {}
+  }
+
+  async function rescan() {
+    if (rescanning) return
+    setRescanning(true)
+    setRescanStatus('')
+    try {
+      const result = await fetchJson('/scanner/rescan', { method: 'POST' })
+      setRescanStatus(safeMessage(result.message, 'Rescan complete'))
+    } catch (error: any) {
+      setRescanStatus(safeMessage(error?.detail, 'Scanner is offline. Try again when the backend is available.'))
+    } finally {
+      setRescanning(false)
+    }
+  }
 
   return (
     <main className="mobile-shell">
       <header className="mobile-top">
         <div>
           <span>Mitsos - PIA</span>
-          <h1>Mobile Command</h1>
+          <h1>{privacyHidden ? 'Private Command' : 'Mobile Command'}</h1>
         </div>
-        <button aria-label="Notifications">
+        <button
+          type="button"
+          className="mobile-icon-action"
+          aria-label="Notifications"
+          aria-expanded={notificationsOpen}
+          onClick={() => setNotificationsOpen(true)}
+        >
           <Bell size={19} />
+          {notificationCount > 0 ? <span className="mobile-icon-badge">{notificationCount}</span> : null}
         </button>
       </header>
-      <SearchCommand />
+      <SearchCommand onQuickControls={() => setQuickOpen(true)} />
 
       {active === 'home' && (
         <>
           <MarketPulse items={dashboard?.macros?.market_strip || []} />
-          <PortfolioInsights portfolio={portfolio} positions={positions} />
+          <PortfolioInsights portfolio={portfolio} positions={positions} hidden={privacyHidden} />
           <UrgentAlerts portfolio={portfolio} />
           <DailyBrief portfolio={portfolio} />
           <ScannerSetups scanner={scanner} onSelect={setSelected} />
@@ -643,10 +827,25 @@ export default function MobileExperience() {
           <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} />
         </>
       )}
-      {active === 'settings' && <PlaceholderPanel title="Settings" />}
+      {active === 'settings' && (
+        <section className="mobile-section mobile-settings-section">
+          <SettingsPage hidden={privacyHidden} variant="mobile" />
+        </section>
+      )}
 
       <MobileBottomNav active={active} setActive={setActive} />
       {selected && <MobileDetailView position={selected} onClose={() => setSelected(null)} />}
+      <MobileQuickControls
+        open={quickOpen}
+        onClose={() => setQuickOpen(false)}
+        hidden={privacyHidden}
+        onHiddenChange={updateHidden}
+        onRescan={rescan}
+        rescanning={rescanning}
+        rescanStatus={rescanStatus}
+        onOpenSettings={() => setActive('settings')}
+      />
+      <MobileNotificationCenter open={notificationsOpen} onClose={() => setNotificationsOpen(false)} portfolio={portfolio} />
     </main>
   )
 }
