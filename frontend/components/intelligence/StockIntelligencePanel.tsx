@@ -9,6 +9,8 @@ import TickerNewsList from './TickerNewsList'
 import { FUTURE_STOCK_PANEL_TABS, PRIVATE_TAB_LABELS, STOCK_PANEL_TABS, type StockPanelTab } from './panelRegistry'
 import { useStockIntelligence } from './useStockIntelligence'
 
+let lastActiveStockPanelTab: StockPanelTab = 'Overview'
+
 function MetricRow({ label, value, tone = 'blue', hidden }: { label: string; value: number; tone?: string; hidden: boolean }) {
   return (
     <div className="metric-bar">
@@ -36,7 +38,7 @@ export default function StockIntelligencePanel({
   onClose: () => void
   variant: 'desktop' | 'mobile'
 }) {
-  const [tab, setTab] = useState<StockPanelTab>('Overview')
+  const [tab, setTab] = useState<StockPanelTab>(() => lastActiveStockPanelTab)
   const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition)
 
   const symbol = String(ticker || '').split(' ')[0]
@@ -50,6 +52,10 @@ export default function StockIntelligencePanel({
   const actions = intelligence?.actions || []
 
   const tabLabel = (value: StockPanelTab) => (hidden ? PRIVATE_TAB_LABELS[value] : value)
+  const handleTabChange = (value: StockPanelTab) => {
+    lastActiveStockPanelTab = value
+    setTab(value)
+  }
 
   return (
     <div className={`stock-intel-panel ${variant === 'mobile' ? 'stock-intel-panel-mobile' : 'stock-intel-panel-desktop'}`.trim()}>
@@ -92,7 +98,7 @@ export default function StockIntelligencePanel({
 
       <div className="stock-intel-tabs">
         {STOCK_PANEL_TABS.map((item) => (
-          <button key={item} type="button" className={`tab ${tab === item ? 'active' : ''}`} onClick={() => setTab(item)}>
+          <button key={item} type="button" className={`tab ${tab === item ? 'active' : ''}`} onClick={() => handleTabChange(item)}>
             {tabLabel(item)}
           </button>
         ))}
