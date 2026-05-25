@@ -25,6 +25,25 @@ function MetricRow({ label, value, tone = 'blue', hidden }: { label: string; val
   )
 }
 
+function TradingViewChart({ ticker, hidden }: { ticker: string; hidden: boolean }) {
+  if (hidden) {
+    return (
+      <div className="stock-intel-chart-placeholder">
+        <span>{mask}</span>
+      </div>
+    )
+  }
+
+  const symbol = encodeURIComponent(`NASDAQ:${String(ticker || '').split(' ')[0]}`)
+  return (
+    <iframe
+      title={`${ticker} TradingView chart`}
+      className="stock-intel-chart-frame"
+      src={`https://s.tradingview.com/widgetembed/?symbol=${symbol}&interval=D&theme=dark&style=1&hide_top_toolbar=1&hide_side_toolbar=1&allow_symbol_change=0&save_image=0`}
+    />
+  )
+}
+
 export default function StockIntelligencePanel({
   ticker,
   seedPosition,
@@ -149,6 +168,10 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Technical' && (
           <div className="stock-intel-section">
+            <GlowCard className="stock-intel-chart-card">
+              <h3>{hidden ? 'Workspace chart' : 'TradingView chart'}</h3>
+              <TradingViewChart ticker={symbol} hidden={hidden} />
+            </GlowCard>
             <GlowCard>
               <h3>{hidden ? 'Workspace trend' : 'Technical snapshot'}</h3>
               <div className="stock-intel-tech-grid">

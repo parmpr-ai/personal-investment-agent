@@ -425,7 +425,7 @@ function MobileQuickControls({
   )
 }
 
-function MarketPulse({ items }: { items: any[] }) {
+function MarketPulse({ items, hidden = false }: { items: any[]; hidden?: boolean }) {
   const rows = (items.length ? items : marketFallback).map((item: any, index: number) => ({
     ...item,
     spark: item.spark || marketFallback[index % marketFallback.length].spark,
@@ -443,9 +443,9 @@ function MarketPulse({ items }: { items: any[] }) {
             <div className="mobile-card-head">
               <div>
                 <span>{item.name}</span>
-                <strong>{item.value}</strong>
+                <strong>{hidden ? mask : item.value}</strong>
               </div>
-              <IntelligenceBadge label={pct(item.chg)} tone={tone} />
+              <IntelligenceBadge label={hidden ? mask : pct(item.chg)} tone={tone} />
             </div>
             <Sparkline values={item.spark} tone={tone} />
           </article>
@@ -559,7 +559,7 @@ function DailyBrief({ portfolio }: { portfolio: any }) {
   )
 }
 
-function ScannerSetups({ scanner, onSelect }: { scanner: any[]; onSelect: (position: any) => void }) {
+function ScannerSetups({ scanner, onSelect, hidden = false }: { scanner: any[]; onSelect: (position: any) => void; hidden?: boolean }) {
   const rows = scanner.length ? scanner : scannerFallback
   return (
     <SwipeRail
@@ -573,13 +573,13 @@ function ScannerSetups({ scanner, onSelect }: { scanner: any[]; onSelect: (posit
               <span>{item.label || 'Setup'}</span>
               <strong>{item.ticker}</strong>
             </div>
-            <b>{money(item.price)}</b>
+            <b>{hidden ? mask : money(item.price)}</b>
           </div>
           <Sparkline values={item.spark} tone="good" />
-          <p>{item.setup}</p>
+          <p>{hidden ? mask : item.setup}</p>
           <div className="mobile-setup-footer">
-            <span>Entry {item.entry_zone || 'Review'}</span>
-            <IntelligenceBadge label={`${item.score || 64} score`} tone="good" />
+            <span>{hidden ? mask : `Entry ${item.entry_zone || 'Review'}`}</span>
+            <IntelligenceBadge label={hidden ? mask : `${item.score || 64} score`} tone="good" />
           </div>
         </button>
       )}
@@ -587,7 +587,7 @@ function ScannerSetups({ scanner, onSelect }: { scanner: any[]; onSelect: (posit
   )
 }
 
-function WatchlistMovers({ scanner, positions, onSelect }: { scanner: any[]; positions: any[]; onSelect: (position: any) => void }) {
+function WatchlistMovers({ scanner, positions, onSelect, hidden = false }: { scanner: any[]; positions: any[]; onSelect: (position: any) => void; hidden?: boolean }) {
   const movers = [...positions.slice(0, 2), ...scanner.slice(0, 3)].map((item: any, index: number) => ({
     symbol: item.symbol || item.ticker,
     name: item.name || item.setup || 'Watchlist mover',
@@ -611,19 +611,19 @@ function WatchlistMovers({ scanner, positions, onSelect }: { scanner: any[]; pos
               <strong>{item.symbol}</strong>
             </div>
             <div className="mobile-price-stack">
-              <b>{money(item.price)}</b>
-              <small className={Number(item.change) >= 0 ? 'green' : 'red'}>{pct(item.change)}</small>
+              <b>{hidden ? mask : money(item.price)}</b>
+              <small className={Number(item.change) >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(item.change)}</small>
             </div>
           </div>
           <Sparkline values={item.spark} tone={Number(item.change) >= 0 ? 'good' : 'bad'} />
-          <RiskMeter value={Number(item.risk || 0)} />
+          {hidden ? <span className="muted">{mask}</span> : <RiskMeter value={Number(item.risk || 0)} />}
         </button>
       )}
     />
   )
 }
 
-function PositionCards({ rows, onSelect }: { rows: any[]; onSelect: (position: any) => void }) {
+function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSelect: (position: any) => void; hidden?: boolean }) {
   const positions = rows.length ? rows : positionFallback
   return (
     <SwipeRail
@@ -642,16 +642,16 @@ function PositionCards({ rows, onSelect }: { rows: any[]; onSelect: (position: a
                 <strong>{position.symbol}</strong>
               </div>
               <div className="mobile-price-stack">
-                <b>{money(position.last || position.price || position.market_value)}</b>
-                <small className={change >= 0 ? 'green' : 'red'}>{pct(change)}</small>
+                <b>{hidden ? mask : money(position.last || position.price || position.market_value)}</b>
+                <small className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)}</small>
               </div>
             </div>
             <Sparkline values={position.spark} tone={change >= 0 ? 'good' : 'bad'} />
             <div className="mobile-position-footer">
-              <ExposureGauge value={Number(position.portfolio_pct || 0)} />
+              {hidden ? <span className="muted">{mask}</span> : <ExposureGauge value={Number(position.portfolio_pct || 0)} />}
               <div>
-                <IntelligenceBadge label={`${risk || 31} risk`} tone={riskTone(risk || 31)} />
-                <MomentumBar value={Number(position.momentum_score || position.momentum || 52)} />
+                <IntelligenceBadge label={hidden ? mask : `${risk || 31} risk`} tone={riskTone(risk || 31)} />
+                {hidden ? <span className="muted">{mask}</span> : <MomentumBar value={Number(position.momentum_score || position.momentum || 52)} />}
               </div>
             </div>
           </button>
@@ -739,22 +739,22 @@ export default function MobileExperience() {
           onMoveDown={moveHomeSectionDown}
           onReset={resetHomeSections}
           sections={{
-            'market-pulse': <MarketPulse items={dashboard?.macros?.market_strip || []} />,
+            'market-pulse': <MarketPulse items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />,
             'portfolio-insights': <PortfolioInsights portfolio={portfolio} positions={positions} hidden={privacyHidden} />,
             'urgent-alerts': <UrgentAlerts portfolio={portfolio} />,
             'daily-brief': <DailyBrief portfolio={portfolio} />,
-            'scanner-setups': <ScannerSetups scanner={scanner} onSelect={setSelected} />,
-            'watchlist-movers': <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} />,
+            'scanner-setups': <ScannerSetups scanner={scanner} onSelect={setSelected} hidden={privacyHidden} />,
+            'watchlist-movers': <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} hidden={privacyHidden} />,
           }}
         />
       )}
 
-      {active === 'portfolio' && <PositionCards rows={positions} onSelect={setSelected} />}
-      {active === 'scanner' && <ScannerSetups scanner={scanner} onSelect={setSelected} />}
+      {active === 'portfolio' && <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} />}
+      {active === 'scanner' && <ScannerSetups scanner={scanner} onSelect={setSelected} hidden={privacyHidden} />}
       {active === 'markets' && (
         <>
-          <MarketPulse items={dashboard?.macros?.market_strip || []} />
-          <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} />
+          <MarketPulse items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />
+          <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} hidden={privacyHidden} />
         </>
       )}
       {active === 'settings' && (
