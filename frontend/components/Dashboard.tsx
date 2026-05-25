@@ -591,10 +591,10 @@ function Kpis({ p, hidden }: any) {
   )
 }
 
-function PortfolioSnapshot({ p, hidden }: any) {
+function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
   const mounted = useMounted()
   return (
-    <div className="snapshot-grid">
+    <div className={showMarginDiscipline ? 'snapshot-grid' : 'snapshot-grid snapshot-grid-main'}>
       <div>
         <div className="hero-value">{hidden ? mask : money(p.total_value)}</div>
         <div className="hero-meta">
@@ -617,14 +617,21 @@ function PortfolioSnapshot({ p, hidden }: any) {
           )}
         </div>
       </GlowCard>
-      <GlowCard className="margin-card">
-        <SectionHeader title="Margin" subtitle="Capital discipline" />
-        <div className="margin-ring">
-          <b>{pct(p.margin_used)}</b>
-          <span>used</span>
-        </div>
-        <MetricBar label={hidden ? 'Overview' : 'Buying power utilization'} value={Math.min((Number(p.margin_used) || 0) * 2.2, 100)} tone="violet" hidden={hidden} />
-      </GlowCard>
+      {showMarginDiscipline ? (
+        <GlowCard className="margin-card">
+          <SectionHeader title="Margin" subtitle="Capital discipline" />
+          <div className="margin-ring">
+            <b>{pct(p.margin_used)}</b>
+            <span>used</span>
+          </div>
+          <MetricBar
+            label={hidden ? 'Overview' : 'Buying power utilization'}
+            value={Math.min((Number(p.margin_used) || 0) * 2.2, 100)}
+            tone="violet"
+            hidden={hidden}
+          />
+        </GlowCard>
+      ) : null}
     </div>
   )
 }

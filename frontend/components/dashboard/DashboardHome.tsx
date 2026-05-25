@@ -17,7 +17,7 @@ type DashboardHomeProps = {
   setSelected: (row: any) => void
   newsIntel: { items: any[]; digest: string; isDemo: boolean }
   components: {
-    PortfolioSnapshot: ComponentType<{ p: any; hidden: boolean }>
+    PortfolioSnapshot: ComponentType<{ p: any; hidden: boolean; showMarginDiscipline?: boolean }>
     PositionsTable: ComponentType<{ rows: any[]; hidden: boolean; setSelected: (row: any) => void }>
     RiskList: ComponentType<{ items: any[]; hidden: boolean }>
     NewsIntelligencePanel: ComponentType<any>
@@ -41,7 +41,7 @@ export default function DashboardHome({ d, hidden, setActive, setSelected, newsI
   } = components
 
   const widgets: WidgetRenderMap = {
-    'portfolio-snapshot': <PortfolioSnapshot p={p} hidden={hidden} />,
+    'portfolio-snapshot': <PortfolioSnapshot p={p} hidden={hidden} showMarginDiscipline={false} />,
     'decision-brief': (
       <div className="actions">
         {(p.today_actions || []).map((a: any) => (
