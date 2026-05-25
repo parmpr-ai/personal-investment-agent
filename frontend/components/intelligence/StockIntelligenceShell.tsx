@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import StockIntelligencePanel from './StockIntelligencePanel'
 
 export default function StockIntelligenceShell({
@@ -15,6 +16,15 @@ export default function StockIntelligenceShell({
   onClose: () => void
   variant: 'desktop' | 'mobile'
 }) {
+  useEffect(() => {
+    if (variant === 'mobile') return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose, variant])
+
   if (variant === 'mobile') {
     return (
       <div className="stock-intel-shell stock-intel-shell-mobile" role="presentation">
@@ -26,8 +36,8 @@ export default function StockIntelligenceShell({
 
   return (
     <>
-      <div className="overlay" onClick={onClose} />
-      <aside className="stock-intel-drawer" role="dialog" aria-modal="true" aria-label={`${ticker} intelligence`}>
+      <div className="stock-intel-backdrop" onClick={onClose} />
+      <aside className="stock-intel-modal" role="dialog" aria-modal="true" aria-label={`${ticker} intelligence`}>
         <StockIntelligencePanel ticker={ticker} seedPosition={position} hidden={hidden} onClose={onClose} variant="desktop" />
       </aside>
     </>
