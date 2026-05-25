@@ -7,6 +7,7 @@ import {
   BarChart3,
   Bell,
   BriefcaseBusiness,
+  ChevronLeft,
   ChevronRight,
   Eye,
   EyeOff,
@@ -205,11 +206,44 @@ function SwipeRail({
     setActive(Math.max(0, Math.min(items.length - 1, next)))
   }
 
+  function scrollToSlide(index: number) {
+    const node = railRef.current
+    if (!node) return
+    const next = Math.max(0, Math.min(items.length - 1, index))
+    const slide = node.children.item(next) as HTMLElement | null
+    node.scrollTo({ left: slide?.offsetLeft ?? 0, behavior: 'smooth' })
+    setActive(next)
+  }
+
   return (
     <section className={`mobile-section ${className}`.trim()}>
       <div className="mobile-section-title">
         <h2>{title}</h2>
-        {icon}
+        <div className="mobile-section-tools">
+          {icon}
+          {items.length > 1 ? (
+            <div className="mobile-rail-controls" aria-label={`${title} navigation`}>
+              <button
+                type="button"
+                className="mobile-rail-button"
+                onClick={() => scrollToSlide(active - 1)}
+                disabled={active === 0}
+                aria-label={`Previous ${title} item`}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                type="button"
+                className="mobile-rail-button"
+                onClick={() => scrollToSlide(active + 1)}
+                disabled={active >= items.length - 1}
+                aria-label={`Next ${title} item`}
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
       <div className="mobile-swipe-rail" ref={railRef} onScroll={updateActive}>
         {items.map((item, index) => (

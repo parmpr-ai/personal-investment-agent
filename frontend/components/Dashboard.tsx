@@ -1,12 +1,14 @@
 ﻿'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip } from 'recharts'
 import {
   Activity,
   BarChart3,
   BookOpen,
   Brain,
+  ChevronLeft,
+  ChevronRight,
   Database,
   Eye,
   EyeOff,
@@ -375,17 +377,66 @@ function Top({ active, hidden, amountHidden, setHidden, rescan, rescanning, resc
   )
 }
 
-function MarketStrip({ items, hidden }: any) {
+function MarketStrip({ items = [], hidden }: any) {
+  const railRef = useRef<HTMLDivElement>(null)
+  const [canScrollPrev, setCanScrollPrev] = useState(false)
+  const [canScrollNext, setCanScrollNext] = useState(false)
+
+  function updateScrollState() {
+    const node = railRef.current
+    if (!node) return
+    const maxScroll = node.scrollWidth - node.clientWidth
+    setCanScrollPrev(node.scrollLeft > 2)
+    setCanScrollNext(node.scrollLeft < maxScroll - 2)
+  }
+
+  function scrollMarketPulse(direction: -1 | 1) {
+    const node = railRef.current
+    if (!node) return
+    const firstCard = node.firstElementChild as HTMLElement | null
+    const distance = firstCard ? firstCard.offsetWidth + 10 : Math.max(160, Math.floor(node.clientWidth * 0.7))
+    node.scrollBy({ left: direction * distance, behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    updateScrollState()
+    const node = railRef.current
+    if (!node) return
+    const onResize = () => updateScrollState()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [items.length])
+
   return (
-    <div className="ticker">
-      {items.map((x: any, index: number) => (
-        <div className="ticker-card" key={x.name || index}>
-          <span className="muted">{hidden ? 'Workspace' : x.name}</span>
-          <b style={{ display: 'block' }}>{hidden ? mask : x.value}</b>
-          <small className={x.chg >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(x.chg)}</small>
-        </div>
-      ))}
-    </div>
+    <section className="market-strip" aria-label={hidden ? 'Workspace market indicators' : 'Market Pulse'}>
+      <button
+        type="button"
+        className="market-strip-nav"
+        onClick={() => scrollMarketPulse(-1)}
+        disabled={!canScrollPrev}
+        aria-label="Previous market indicators"
+      >
+        <ChevronLeft size={17} />
+      </button>
+      <div className="ticker" ref={railRef} onScroll={updateScrollState} tabIndex={0}>
+        {items.map((x: any, index: number) => (
+          <div className="ticker-card" key={x.name || index}>
+            <span className="muted">{hidden ? 'Workspace' : x.name}</span>
+            <b style={{ display: 'block' }}>{hidden ? mask : x.value}</b>
+            <small className={x.chg >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(x.chg)}</small>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="market-strip-nav"
+        onClick={() => scrollMarketPulse(1)}
+        disabled={!canScrollNext}
+        aria-label="Next market indicators"
+      >
+        <ChevronRight size={17} />
+      </button>
+    </section>
   )
 }
 
