@@ -6,6 +6,7 @@ import IntelligenceBadge from '../ui/IntelligenceBadge'
 import GlowCard from '../ui/GlowCard'
 import { mask, money, pct } from '../../lib/pia-api'
 import TickerNewsList from './TickerNewsList'
+import TickerVideosList from './TickerVideosList'
 import { FUTURE_STOCK_PANEL_TABS, PRIVATE_TAB_LABELS, STOCK_PANEL_TABS, type StockPanelTab } from './panelRegistry'
 import { useStockIntelligence } from './useStockIntelligence'
 
@@ -165,6 +166,8 @@ export default function StockIntelligencePanel({
             hidden={hidden}
           />
         )}
+
+        {!loading && tab === 'Videos' && <TickerVideosList ticker={symbol} companyName={name} hidden={hidden} />}
 
         {!loading && tab === 'Technical' && (
           <div className="stock-intel-section">
