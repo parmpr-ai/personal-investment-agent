@@ -1,7 +1,7 @@
 'use client'
 
 import { ExternalLink } from 'lucide-react'
-import IntelligenceBadge from '../ui/IntelligenceBadge'
+import { PiaBadge } from '../ui-v3'
 import { mask } from '../../lib/pia-api'
 import {
   newsActionLabel,
@@ -60,11 +60,15 @@ export default function TickerNewsList({
               <div className="news-intel-meta stock-news-meta">
                 <div className="news-intel-field">
                   <span>{hidden ? 'Signal' : 'Bias'}</span>
-                  <IntelligenceBadge label={hidden ? mask : newsBiasLabel(item)} tone={toneForBias(newsBiasLabel(item), item.sentiment)} />
+                  <PiaBadge variant={toneForBias(newsBiasLabel(item), item.sentiment) === 'good' ? 'bullish' : toneForBias(newsBiasLabel(item), item.sentiment) === 'bad' ? 'bearish' : 'warning'}>
+                    {hidden ? mask : newsBiasLabel(item)}
+                  </PiaBadge>
                 </div>
                 <div className="news-intel-field">
                   <span>{hidden ? 'Move' : 'Possible Move'}</span>
-                  <IntelligenceBadge label={hidden ? mask : newsPossibleMove(item)} tone={toneForPossibleMove(newsPossibleMove(item), item.sell_the_news_risk)} />
+                  <PiaBadge variant={toneForPossibleMove(newsPossibleMove(item), item.sell_the_news_risk) === 'good' ? 'bullish' : toneForPossibleMove(newsPossibleMove(item), item.sell_the_news_risk) === 'bad' ? 'danger' : 'warning'}>
+                    {hidden ? mask : newsPossibleMove(item)}
+                  </PiaBadge>
                 </div>
                 <div className="news-intel-field">
                   <span>{hidden ? 'Level' : 'Confidence'}</span>

@@ -1,6 +1,6 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 
-export type PiaEmptyStateProps = HTMLAttributes<HTMLDivElement> & {
+export type PiaEmptyStateProps = Omit<HTMLAttributes<HTMLDivElement>, 'title'> & {
   icon?: ReactNode
   title: string
   description?: ReactNode

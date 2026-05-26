@@ -2,7 +2,7 @@ import type { HTMLAttributes, ReactNode } from 'react'
 
 export type PiaCardDensity = 'compact' | 'default' | 'spacious'
 
-export type PiaCardProps = HTMLAttributes<HTMLElement> & {
+export type PiaCardProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
   as?: 'article' | 'section' | 'div'
   icon?: ReactNode
   title?: ReactNode

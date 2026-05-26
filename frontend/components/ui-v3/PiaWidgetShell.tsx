@@ -3,7 +3,7 @@ import { PiaEmptyState } from './PiaEmptyState'
 
 export type PiaWidgetShellDensity = 'compact' | 'default' | 'spacious'
 
-export type PiaWidgetShellProps = HTMLAttributes<HTMLElement> & {
+export type PiaWidgetShellProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
   icon?: ReactNode
   title: ReactNode
   subtitle?: ReactNode

@@ -33,6 +33,7 @@ import GlowCard from './ui/GlowCard'
 import SectionHeader from './ui/SectionHeader'
 import IntelligenceBadge from './ui/IntelligenceBadge'
 import RiskGauge from './ui/RiskGauge'
+import { PiaBadge, PiaButton, PiaCard, PiaInput, PiaMetric, PiaTabs, PiaWidgetShell } from './ui-v3'
 import SettingsPage from './settings/SettingsWorkspace'
 import DashboardHome from './dashboard/DashboardHome'
 import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
@@ -448,16 +449,18 @@ function Top({ workspace, activeTool, hidden, amountHidden, setHidden, rescan, r
         {rescanStatus && <div className="muted">{rescanStatus}</div>}
       </div>
       <div className="top-actions">
-        <button className="mobile-privacy" aria-pressed={amountHidden} onClick={() => setHidden(!amountHidden)}>
+        <button className="mobile-privacy pia-v3-mobile-privacy" aria-pressed={amountHidden} onClick={() => setHidden(!amountHidden)}>
           {hidden ? <Eye size={16} /> : <EyeOff size={16} />} <span>{hidden ? 'Show amounts' : 'Hide amounts'}</span>
         </button>
-        <div className="search">
-          <Search size={16} />
-          <input placeholder={hidden ? 'Search workspace...' : 'Search ticker, source, note...'} />
-        </div>
-        <button className="tab" onClick={rescan} disabled={rescanning}>
-          <RefreshCw size={15} /> {rescanning ? 'Rescanning' : 'Rescan'}
-        </button>
+        <PiaInput
+          className="top-search"
+          leadingIcon={<Search size={16} />}
+          placeholder={hidden ? 'Search workspace...' : 'Search ticker, source, note...'}
+          aria-label={hidden ? 'Search workspace' : 'Search ticker, source, note'}
+        />
+        <PiaButton variant="primary" icon={<RefreshCw size={15} />} onClick={rescan} disabled={rescanning} loading={rescanning}>
+          {rescanning ? 'Rescanning' : 'Rescan'}
+        </PiaButton>
       </div>
     </div>
   )
@@ -506,11 +509,21 @@ function MarketStrip({ items = [], hidden }: any) {
       </button>
       <div className="ticker" ref={railRef} onScroll={updateScrollState} tabIndex={0}>
         {items.map((x: any, index: number) => (
-          <div className="ticker-card" key={x.name || index}>
-            <span className="muted">{hidden ? 'Workspace' : x.name}</span>
-            <b style={{ display: 'block' }}>{hidden ? mask : x.value}</b>
-            <small className={x.chg >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(x.chg)}</small>
-          </div>
+          <PiaCard
+            className="ticker-card"
+            density="compact"
+            key={x.name || index}
+            title={<span className="muted">{hidden ? 'Workspace' : x.name}</span>}
+            metric={
+              <PiaMetric
+                density="compact"
+                label=""
+                value={hidden ? mask : x.value}
+                delta={hidden ? mask : pct(x.chg)}
+                trend={x.chg >= 0 ? 'positive' : 'negative'}
+              />
+            }
+          />
         ))}
       </div>
       <button
@@ -529,12 +542,9 @@ function MarketStrip({ items = [], hidden }: any) {
 function Panel({ title, privateTitle: hiddenTitle, children, span = 'span-4', icon, hidden = false }: any) {
   const displayTitle = hidden ? hiddenTitle || neutralPanelTitle(title) : title
   return (
-    <section className={`panel ${span}`}>
-      <h3>
-        {icon ? <span>{icon}</span> : null} {displayTitle}
-      </h3>
+    <PiaWidgetShell className={`panel ${span}`} icon={icon} title={displayTitle} density="default">
       {children}
-    </section>
+    </PiaWidgetShell>
   )
 }
 
@@ -665,13 +675,15 @@ function Kpis({ p, hidden }: any) {
   return (
     <div className="kpis">
       {arr.map(([title, value, secondary]: any) => (
-        <div className="kpi" key={title}>
-          <span>{hidden ? 'Overview' : title}</span>
-          <b>{hidden ? mask : secondary === 'pct' ? pct(value) : money(value)}</b>
-          {typeof secondary === 'number' && (
-            <small className={secondary >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(secondary)}</small>
-          )}
-        </div>
+        <PiaCard className="kpi" density="compact" key={title}>
+          <PiaMetric
+            density="compact"
+            label={hidden ? 'Overview' : title}
+            value={hidden ? mask : secondary === 'pct' ? pct(value) : money(value)}
+            delta={typeof secondary === 'number' ? (hidden ? mask : pct(secondary)) : undefined}
+            trend={typeof secondary === 'number' ? (secondary >= 0 ? 'positive' : 'negative') : 'neutral'}
+          />
+        </PiaCard>
       ))}
     </div>
   )
@@ -690,8 +702,7 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
         </div>
         <Kpis p={p} hidden={hidden} />
       </div>
-      <GlowCard className="chart-card">
-        <SectionHeader title={privateTitle(hidden, 'Portfolio evolution', 'Workspace trend')} subtitle="Intraday trajectory" />
+      <PiaCard className="chart-card" title={privateTitle(hidden, 'Portfolio evolution', 'Workspace trend')} badge={<PiaBadge variant="info">Intraday</PiaBadge>}>
         <div className="mini-chart">
           {mounted && (
             <ResponsiveContainer>
@@ -702,10 +713,9 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
             </ResponsiveContainer>
           )}
         </div>
-      </GlowCard>
+      </PiaCard>
       {showMarginDiscipline ? (
-        <GlowCard className="margin-card">
-          <SectionHeader title="Margin" subtitle="Capital discipline" />
+        <PiaCard className="margin-card" title="Margin" badge={<PiaBadge variant="ai">Discipline</PiaBadge>}>
           <div className="margin-ring">
             <b>{pct(p.margin_used)}</b>
             <span>used</span>
@@ -716,7 +726,7 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
             tone="violet"
             hidden={hidden}
           />
-        </GlowCard>
+        </PiaCard>
       ) : null}
     </div>
   )
@@ -750,13 +760,14 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
           subtitle={hidden ? `${rows.length} items` : `${rows.length} holdings across portfolio`}
           actions={
             <>
-              <div className="tabs compact-tabs">
-                {['All', 'Stocks', 'Options', 'ETFs', 'Other'].map((x) => (
-                  <button key={x} className={`tab ${filter === x ? 'active' : ''}`} onClick={() => setFilter(x)}>
-                    {x}
-                  </button>
-                ))}
-              </div>
+              <PiaTabs
+                className="compact-tabs"
+                density="compact"
+                ariaLabel="Position filter"
+                activeId={filter}
+                onChange={setFilter}
+                tabs={['All', 'Stocks', 'Options', 'ETFs', 'Other'].map((x) => ({ id: x, label: x }))}
+              />
               <div className="view-toggle">
                 <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>
                   List
@@ -785,9 +796,9 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
               </option>
             ))}
           </select>
-          <button className="tab" onClick={() => setDirection((x) => (x === 'desc' ? 'asc' : 'desc'))}>
+          <PiaButton variant="secondary" density="compact" onClick={() => setDirection((x) => (x === 'desc' ? 'asc' : 'desc'))}>
             {direction === 'desc' ? 'Descending' : 'Ascending'}
-          </button>
+          </PiaButton>
         </div>
         {view === 'list' ? (
           <PositionsTable rows={rows} hidden={hidden} setSelected={setSelected} />
@@ -809,7 +820,7 @@ function PositionCards({ rows, hidden, setSelected }: any) {
   return (
     <div className="position-cards">
       {rows.map((p: any) => (
-        <GlowCard key={p.symbol} className="position-card">
+        <PiaCard key={p.symbol} className="position-card">
           <button onClick={() => setSelected(p)}>
             <header>
               <div>
@@ -827,7 +838,7 @@ function PositionCards({ rows, hidden, setSelected }: any) {
             <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={p.momentum_score || 0} tone="green" hidden={hidden} />
             <MetricBar label={hidden ? 'Workspace' : 'Fundamentals'} value={fundamentalsScore(p)} tone="violet" hidden={hidden} />
           </button>
-        </GlowCard>
+        </PiaCard>
       ))}
     </div>
   )
@@ -850,7 +861,7 @@ function PortfolioScanner({ d, hidden }: any) {
 
 function ScannerColumn({ title, items, hidden }: any) {
   return (
-    <GlowCard className="scanner-column">
+    <PiaCard className="scanner-column">
       <b>{title}</b>
       {items.length ? (
         items.map((x: any, i: number) => (
@@ -862,7 +873,7 @@ function ScannerColumn({ title, items, hidden }: any) {
       ) : (
         <p className="muted">No active signals.</p>
       )}
-    </GlowCard>
+    </PiaCard>
   )
 }
 
@@ -897,7 +908,7 @@ function PositionsTable({ rows, hidden, setSelected }: any) {
                 </div>
               </td>
               <td>
-                <span className="badge">{hidden ? mask : p.sec_type || 'STK'}</span>
+                <PiaBadge variant="neutral" size="compact">{hidden ? mask : p.sec_type || 'STK'}</PiaBadge>
               </td>
               <td>{hidden ? mask : p.qty}</td>
               <td>{hidden ? mask : money(p.avg_price)}</td>
@@ -921,11 +932,11 @@ function Exposure({ rows, hidden }: any) {
   const top = rows?.[0]
   return (
     <div>
-      <GlowCard className="concentration-card">
+      <PiaCard className="concentration-card" density="compact">
         <span>{hidden ? 'Overview' : 'Top concentration'}</span>
         <b>{hidden ? mask : top?.name || '-'}</b>
         <strong>{hidden ? mask : pct(top?.pct || 0)}</strong>
-      </GlowCard>
+      </PiaCard>
       {rows.map((r: any) => (
         <div className="exposure-row" title={hidden ? 'Workspace item' : `${r.name}: ${pct(r.pct)} portfolio`} key={r.name}>
           <span>{hidden ? 'Workspace item' : r.name}</span>
@@ -963,23 +974,22 @@ function WatchlistPage({ d, hidden, setSelected }: any) {
   return (
     <div className="grid">
       <Panel title="Opportunity Board" privateTitle="Workspace" span="span-12" hidden={hidden}>
-        <div className="tabs">
-          {['name', 'change_pct', 'risk', 'opportunity', 'momentum', 'rvol'].map((s) => (
-            <button className={`tab ${sort === s ? 'active' : ''}`} onClick={() => setSort(s)} key={s}>
-              Sort: {s}
-            </button>
-          ))}
-        </div>
+        <PiaTabs
+          ariaLabel="Opportunity sorting"
+          activeId={sort}
+          onChange={setSort}
+          tabs={['name', 'change_pct', 'risk', 'opportunity', 'momentum', 'rvol'].map((s) => ({ id: s, label: `Sort: ${s}` }))}
+        />
         <div className="cards opportunity-cards">
           {rows.map((w: any) => (
-            <GlowCard className="stock-card opportunity-card" key={w.symbol}>
+            <PiaCard className="stock-card opportunity-card" key={w.symbol}>
               <button onClick={() => setSelected({ symbol: w.symbol })}>
                 <header>
                   <div>
                     <b>{hidden ? mask : w.symbol}</b>
                     <div className="muted">{hidden ? 'Workspace item' : w.name}</div>
                   </div>
-                  <span className="badge">{hidden ? 'Overview' : w.action || w.label}</span>
+                  <PiaBadge variant="info">{hidden ? 'Overview' : w.action || w.label}</PiaBadge>
                 </header>
                 <h2>
                   {hidden ? mask : money(w.price)} <small className={w.change_pct >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(w.change_pct)}</small>
@@ -1004,7 +1014,7 @@ function WatchlistPage({ d, hidden, setSelected }: any) {
                 <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={w.momentum || 0} tone="green" hidden={hidden} />
                 <p className="muted">{hidden ? mask : w.reason || `${w.macro_fit || 'Neutral'} macro fit - ${w.sector || 'Unclassified'}`}</p>
               </button>
-            </GlowCard>
+            </PiaCard>
           ))}
         </div>
       </Panel>
@@ -1026,13 +1036,13 @@ function TradeList({ items, detailed, hidden }: any) {
   return (
     <div className="cards">
       {items.map((x: any) => (
-        <div className="stock-card" key={x.ticker}>
+        <PiaCard className="stock-card" key={x.ticker}>
           <header>
             <div>
               <b>{hidden ? mask : x.ticker}</b>
               <div className="muted">{hidden ? mask : `Price ${money(x.price)}`}</div>
             </div>
-            <span className="badge">{hidden ? 'Overview' : x.label}</span>
+            <PiaBadge variant="ai">{hidden ? 'Overview' : x.label}</PiaBadge>
           </header>
           <p>
             <b>{hidden ? 'Workspace item' : x.setup}</b>
@@ -1056,7 +1066,7 @@ function TradeList({ items, detailed, hidden }: any) {
           </div>
           <p className="muted">{hidden ? mask : x.portfolio_impact}</p>
           {detailed && !hidden && <ul className="muted">{(x.rationale || []).map((r: any) => <li key={r}>{r}</li>)}</ul>}
-        </div>
+        </PiaCard>
       ))}
     </div>
   )

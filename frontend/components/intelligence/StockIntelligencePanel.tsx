@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { Bell, Eye, Shield, TrendingUp, X } from 'lucide-react'
-import IntelligenceBadge from '../ui/IntelligenceBadge'
-import GlowCard from '../ui/GlowCard'
+import { PiaBadge, PiaButton, PiaCard, PiaTabs, PiaWidgetShell } from '../ui-v3'
 import { mask, money, pct } from '../../lib/pia-api'
 import TickerNewsList from './TickerNewsList'
 import TickerVideosList from './TickerVideosList'
@@ -87,10 +86,9 @@ export default function StockIntelligencePanel({
             <strong>{hidden ? mask : money(last)}</strong>
             <small className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)}</small>
             {position ? (
-              <IntelligenceBadge
-                label={hidden ? mask : `${unrealized >= 0 ? '+' : ''}${money(unrealized)} P/L`}
-                tone={unrealized >= 0 ? 'good' : 'bad'}
-              />
+              <PiaBadge variant={unrealized >= 0 ? 'bullish' : 'bearish'}>
+                {hidden ? mask : `${unrealized >= 0 ? '+' : ''}${money(unrealized)} P/L`}
+              </PiaBadge>
             ) : null}
           </div>
           <div className="stock-intel-summary-row">
@@ -105,34 +103,33 @@ export default function StockIntelligencePanel({
       </header>
 
       <div className="stock-intel-quick-actions">
-        <button type="button" className="tab">
-          <Eye size={15} /> {hidden ? 'Monitor' : 'Watch'}
-        </button>
-        <button type="button" className="tab">
-          <Bell size={15} /> {hidden ? 'Alerts' : 'Set alert'}
-        </button>
-        <button type="button" className="tab">
-          <Shield size={15} /> {hidden ? 'Controls' : 'Risk check'}
-        </button>
+        <PiaButton type="button" variant="secondary" density="compact" icon={<Eye size={15} />}>
+          {hidden ? 'Monitor' : 'Watch'}
+        </PiaButton>
+        <PiaButton type="button" variant="secondary" density="compact" icon={<Bell size={15} />}>
+          {hidden ? 'Alerts' : 'Set alert'}
+        </PiaButton>
+        <PiaButton type="button" variant="secondary" density="compact" icon={<Shield size={15} />}>
+          {hidden ? 'Controls' : 'Risk check'}
+        </PiaButton>
       </div>
 
-      <div className="stock-intel-tabs">
-        {STOCK_PANEL_TABS.map((item) => (
-          <button key={item} type="button" className={`tab ${tab === item ? 'active' : ''}`} onClick={() => handleTabChange(item)}>
-            {tabLabel(item)}
-          </button>
-        ))}
-      </div>
+      <PiaTabs
+        className="stock-intel-tabs"
+        ariaLabel="Stock intelligence tabs"
+        activeId={tab}
+        onChange={(value) => handleTabChange(value as StockPanelTab)}
+        tabs={STOCK_PANEL_TABS.map((item) => ({ id: item, label: tabLabel(item) }))}
+      />
 
       <div className="stock-intel-body">
         {loading ? <p className="muted">Loading intelligence workspace…</p> : null}
 
         {!loading && tab === 'Overview' && (
           <div className="stock-intel-section">
-            <GlowCard>
-              <h3>{hidden ? 'Workspace summary' : 'AI overview'}</h3>
+            <PiaWidgetShell title={hidden ? 'Workspace summary' : 'AI overview'} statusBadge={<PiaBadge variant="ai">PIA AI</PiaBadge>} density="compact">
               <p>{hidden ? mask : overview.summary}</p>
-            </GlowCard>
+            </PiaWidgetShell>
             <div className="stock-intel-facts">
               <article>
                 <span>{hidden ? 'Signal' : 'Why moving'}</span>
@@ -171,12 +168,10 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Technical' && (
           <div className="stock-intel-section">
-            <GlowCard className="stock-intel-chart-card">
-              <h3>{hidden ? 'Workspace chart' : 'TradingView chart'}</h3>
+            <PiaCard className="stock-intel-chart-card" title={hidden ? 'Workspace chart' : 'TradingView chart'} badge={<PiaBadge variant="info">Live</PiaBadge>}>
               <TradingViewChart ticker={symbol} hidden={hidden} />
-            </GlowCard>
-            <GlowCard>
-              <h3>{hidden ? 'Workspace trend' : 'Technical snapshot'}</h3>
+            </PiaCard>
+            <PiaCard title={hidden ? 'Workspace trend' : 'Technical snapshot'}>
               <div className="stock-intel-tech-grid">
                 <span>
                   {hidden ? 'Signal' : 'Trend'}
@@ -195,7 +190,7 @@ export default function StockIntelligencePanel({
                   <b>{hidden ? mask : technical.resistance}</b>
                 </span>
               </div>
-            </GlowCard>
+            </PiaCard>
             <MetricRow label={hidden ? 'Overview' : 'Day change'} value={Math.abs(Number(technical.day_change_pct || 0))} tone={change >= 0 ? 'green' : 'red'} hidden={hidden} />
             <MetricRow label={hidden ? 'Controls' : 'Risk score'} value={Number(source.risk || 0)} tone="red" hidden={hidden} />
             <MetricRow label={hidden ? 'Workspace' : 'Macro sensitivity'} value={Number(source.macro_sensitivity || 0)} tone="violet" hidden={hidden} />
@@ -205,13 +200,15 @@ export default function StockIntelligencePanel({
         {!loading && tab === 'Scenarios' && (
           <div className="stock-intel-scenarios">
             {scenarios.map((scenario: any) => (
-              <GlowCard key={scenario.label}>
+              <PiaCard key={scenario.label}>
                 <div className="stock-intel-scenario-head">
                   <b>{hidden ? 'Workspace scenario' : scenario.label}</b>
-                  <IntelligenceBadge label={hidden ? mask : scenario.probability} tone={scenario.label === 'Bullish' ? 'good' : scenario.label === 'Bearish' ? 'bad' : 'neutral'} />
+                  <PiaBadge variant={scenario.label === 'Bullish' ? 'bullish' : scenario.label === 'Bearish' ? 'bearish' : 'neutral'}>
+                    {hidden ? mask : scenario.probability}
+                  </PiaBadge>
                 </div>
                 <p>{hidden ? mask : scenario.text}</p>
-              </GlowCard>
+              </PiaCard>
             ))}
           </div>
         )}

@@ -1,7 +1,7 @@
 'use client'
 
 import { ExternalLink, Radio, Video } from 'lucide-react'
-import IntelligenceBadge from '../ui/IntelligenceBadge'
+import { PiaBadge } from '../ui-v3'
 import { mask } from '../../lib/pia-api'
 
 type VideoSourceType = 'youtube_search' | 'channel_monitor_seed'
@@ -100,7 +100,7 @@ export default function TickerVideosList({
           <span>{hidden ? 'Workspace feed' : 'VIDEO RESEARCH'}</span>
           <h3>{hidden ? 'Research monitor' : `${String(ticker || '').split(' ')[0].toUpperCase()} video watchlist`}</h3>
         </div>
-        <IntelligenceBadge label={hidden ? mask : 'No autoplay'} tone="neutral" />
+        <PiaBadge variant="neutral">{hidden ? mask : 'No autoplay'}</PiaBadge>
       </section>
 
       <div className="stock-video-list">
@@ -112,7 +112,7 @@ export default function TickerVideosList({
             <div className="stock-video-main">
               <div className="stock-video-kicker">
                 <span>{hidden ? 'Source' : item.source}</span>
-                <IntelligenceBadge label={hidden ? mask : item.relevance} tone="neutral" />
+                <PiaBadge variant="info" size="compact">{hidden ? mask : item.relevance}</PiaBadge>
               </div>
               {hidden ? (
                 <strong>{mask}</strong>

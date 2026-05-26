@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { GripVertical } from 'lucide-react'
+import { PiaBadge, PiaButton, PiaWidgetShell } from '../ui-v3'
 import { DASHBOARD_WIDGET_MAP } from './widgetRegistry'
 import type { DashboardWidgetId, WidgetRenderMap } from './types'
 
@@ -48,9 +50,9 @@ export default function DraggableWidgetGrid({
           <b>{hidden ? 'Workspace layout' : 'Dashboard layout'}</b>
           <p className="muted">{hidden ? 'Drag sections to reorder your workspace.' : 'Drag widgets by the handle to customize your terminal.'}</p>
         </div>
-        <button type="button" className="tab" onClick={onReset}>
+        <PiaButton type="button" variant="ghost" density="compact" onClick={onReset}>
           Reset layout
-        </button>
+        </PiaButton>
       </div>
       <div className={`grid widget-grid ${layoutReady ? 'widget-grid-ready' : ''}`.trim()}>
         {order.map((id) => {
@@ -108,19 +110,12 @@ function WidgetSlot({
   onDrop: (id: DashboardWidgetId) => void
 }) {
   return (
-    <section
+    <PiaWidgetShell
       className={`panel ${span} draggable-panel ${isDragging ? 'is-dragging' : ''} ${isOver ? 'is-drop-target' : ''}`.trim()}
-      onDragOver={(event) => {
-        event.preventDefault()
-        onDragOver(id)
-      }}
-      onDragLeave={() => onDragOver(null)}
-      onDrop={(event) => {
-        event.preventDefault()
-        onDrop(id)
-      }}
-    >
-      <h3>
+      title={title}
+      icon={icon}
+      statusBadge={<PiaBadge variant="pia" size="compact">Widget</PiaBadge>}
+      actions={
         <button
           type="button"
           className="drag-handle"
@@ -133,12 +128,20 @@ function WidgetSlot({
           }}
           onDragEnd={onDragEnd}
         >
-          ⋮⋮
+          <GripVertical size={16} />
         </button>
-        {icon ? <span className="widget-title-icon">{icon}</span> : null}
-        {title}
-      </h3>
+      }
+      onDragOver={(event) => {
+        event.preventDefault()
+        onDragOver(id)
+      }}
+      onDragLeave={() => onDragOver(null)}
+      onDrop={(event) => {
+        event.preventDefault()
+        onDrop(id)
+      }}
+    >
       {children}
-    </section>
+    </PiaWidgetShell>
   )
 }

@@ -172,3 +172,54 @@
   .pia-v3-widget-header{flex-wrap:wrap}
   .pia-v3-metric-value{font-size:24px}
 }
+
+/* PIA V3 LIVE DASHBOARD MIGRATION */
+body{background:var(--pia-v3-bg-radial);color:var(--pia-v3-text-primary)}
+.app{background:linear-gradient(90deg,rgba(3,5,10,.96),rgba(4,7,16,.74));isolation:isolate}
+.sidebar{background:linear-gradient(180deg,rgba(4,7,14,.96),rgba(3,5,10,.9));border-right:1px solid rgba(148,163,184,.16);box-shadow:18px 0 70px rgba(0,0,0,.28)}
+.brand{padding:10px;border:1px solid rgba(148,163,184,.14);border-radius:22px;background:rgba(15,23,42,.42);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.mark{border-radius:16px;background:linear-gradient(135deg,var(--pia-v3-accent-blue),var(--pia-v3-accent-purple));box-shadow:0 12px 34px rgba(96,165,250,.22)}
+nav button{border-radius:16px;color:var(--pia-v3-text-muted)}
+nav button.active,nav button:hover{background:linear-gradient(135deg,rgba(37,99,235,.28),rgba(124,58,237,.22));border-color:rgba(147,197,253,.22);color:var(--pia-v3-text-primary)}
+.privacy{display:flex;align-items:center;justify-content:center;gap:8px;border-color:rgba(167,139,250,.28);background:rgba(15,23,42,.62)}
+.main{padding:24px;min-width:0}
+.topbar{position:sticky;top:0;z-index:12;margin:-6px -4px 18px;padding:10px 4px 14px;background:linear-gradient(180deg,rgba(3,5,10,.96),rgba(3,5,10,.68) 72%,transparent);backdrop-filter:blur(18px)}
+.topbar-title{min-width:0}.topbar h1{font-size:31px;letter-spacing:0;line-height:1.05;background:linear-gradient(135deg,#fff,#bfdbfe 52%,#ddd6fe);-webkit-background-clip:text;background-clip:text;color:transparent}
+.top-actions{min-width:0;flex-wrap:wrap;justify-content:flex-end}.top-search{width:min(360px,42vw)}.top-search .pia-v3-input-wrap{background:rgba(8,13,22,.78)}
+.market-strip{align-items:stretch}.market-strip-nav{border-color:rgba(148,163,184,.18);background:rgba(15,23,42,.72);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.ticker-card{background:linear-gradient(180deg,rgba(15,23,42,.86),rgba(8,13,22,.88));border-color:rgba(148,163,184,.16);box-shadow:0 14px 38px rgba(0,0,0,.25);padding:12px;min-height:96px}
+.ticker-card .pia-v3-card-header{display:block}.ticker-card .pia-v3-card-title{font-size:12px}.ticker-card .pia-v3-card-body{display:none}.ticker-card .pia-v3-metric{gap:3px}.ticker-card .pia-v3-metric-label{display:none}.ticker-card .pia-v3-metric-value{font-size:18px}
+.panel.pia-v3-widget{min-height:150px}.panel.pia-v3-widget>h3{display:none}.panel .pia-v3-widget-body{display:grid;gap:12px}
+.layout-toolbar{background:linear-gradient(135deg,rgba(96,165,250,.12),rgba(167,139,250,.08));border-color:rgba(147,197,253,.18);box-shadow:0 18px 48px rgba(0,0,0,.22)}
+.drag-handle{width:34px;height:34px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(8,13,22,.8);color:#bfdbfe;letter-spacing:0;display:grid;place-items:center}
+.draggable-panel.is-drop-target{border-color:rgba(96,165,250,.7);box-shadow:0 0 0 1px rgba(96,165,250,.42),0 26px 80px rgba(37,99,235,.18)}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(142px,1fr))}.kpi{min-height:92px}.kpi .pia-v3-card-body{display:block}.kpi .pia-v3-metric-value{font-size:20px}
+.snapshot-grid{grid-template-columns:minmax(0,1.2fr) minmax(260px,.9fr) minmax(220px,.62fr);gap:16px}.snapshot-grid-main{grid-template-columns:minmax(0,1.2fr) minmax(280px,.9fr)}
+.hero-value{font-size:42px;letter-spacing:0;background:linear-gradient(135deg,#fff,#dbeafe 58%,#c4b5fd);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero-meta{flex-wrap:wrap}.chart-card,.margin-card{min-height:100%}.chart-card .pia-v3-card-title,.margin-card .pia-v3-card-title{font-size:15px}
+.table-wrap{border-radius:20px}.table-wrap table{min-width:780px}tbody tr{cursor:pointer}td{background:rgba(9,14,24,.72);border-color:rgba(148,163,184,.13)}tbody tr:hover td{background:rgba(15,23,42,.94);border-color:rgba(96,165,250,.24)}
+.row-symbol{min-width:0}.row-symbol>div:last-child{min-width:0}.row-symbol b,.row-symbol .muted{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.logo{box-shadow:0 10px 24px rgba(0,0,0,.24)}
+.action,.news-intel-card,.stock-video-card,.pillbox{background:rgba(9,14,24,.72);border-color:rgba(148,163,184,.14)}
+.action{border-radius:18px;padding:12px}.actions{gap:10px}.metric-bar i,.bar{background:rgba(15,23,42,.95);border:1px solid rgba(148,163,184,.1)}
+.metric-bar em,.bar i{background:linear-gradient(90deg,var(--pia-v3-accent-blue),var(--pia-v3-success))}.metric-bar em.red{background:var(--pia-v3-danger)}.metric-bar em.green{background:var(--pia-v3-success)}.metric-bar em.violet{background:var(--pia-v3-accent-purple)}
+.position-card,.stock-card,.scanner-column,.concentration-card{background:linear-gradient(180deg,rgba(15,23,42,.86),rgba(7,11,18,.9));border-color:rgba(148,163,184,.16)}
+.position-card button,.opportunity-card button{border-radius:inherit}.position-card:hover,.stock-card:hover{border-color:rgba(96,165,250,.32);transform:translateY(-1px);transition:transform .16s ease,border-color .16s ease}
+.scanner-grid{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}.scanner-item{border-radius:12px;background:rgba(3,7,18,.28);padding:10px 10px 10px 12px}
+.news-intel-digest,.stock-video-brief{background:linear-gradient(135deg,rgba(37,99,235,.18),rgba(124,58,237,.12));border-color:rgba(96,165,250,.24)}
+.news-intel-card{border-radius:20px}.news-intel-title,.stock-video-title{overflow-wrap:anywhere}.news-intel-meta{align-items:start}.news-intel-field b{overflow-wrap:anywhere}
+.stock-intel-backdrop{background:rgba(0,0,0,.72);backdrop-filter:blur(10px)}
+.stock-intel-modal{background:linear-gradient(180deg,rgba(12,18,30,.98),rgba(4,7,13,.98));border-color:rgba(167,139,250,.24);box-shadow:0 36px 140px rgba(0,0,0,.72),0 0 80px rgba(96,165,250,.08)}
+.stock-intel-panel{background:radial-gradient(circle at 16% 0%,rgba(96,165,250,.12),transparent 28%),radial-gradient(circle at 88% 12%,rgba(167,139,250,.12),transparent 26%)}
+.stock-intel-header{padding-bottom:12px;border-bottom:1px solid rgba(148,163,184,.12)}.stock-intel-header h2{font-size:36px;letter-spacing:0}.stock-intel-price-row strong{font-size:22px}
+.stock-intel-close{background:rgba(15,23,42,.84);border-color:rgba(148,163,184,.18)}.stock-intel-quick-actions{gap:8px}.stock-intel-tabs{border-radius:999px;margin-bottom:8px}
+.stock-intel-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.stock-intel-facts article{background:rgba(9,14,24,.68);border-color:rgba(148,163,184,.14);border-radius:18px}.stock-intel-chart-frame{border:1px solid rgba(148,163,184,.12)}
+.stock-video-list{gap:10px}.stock-video-card{border-radius:18px}.stock-video-main{min-width:0}.stock-video-kicker{min-width:0}.stock-video-kicker span{min-width:0}
+.mobile-shell{background:var(--pia-v3-bg-radial)}.mobile-top{padding-top:4px}.mobile-search,.mobile-visual-card,.mobile-sheet,.mobile-bottom-nav{border-color:rgba(148,163,184,.18);box-shadow:0 20px 62px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.04)}
+.mobile-visual-card{background:linear-gradient(180deg,rgba(15,23,42,.9),rgba(7,11,18,.92))}.mobile-brief-card,.mobile-control-row,.mobile-notification-item{background:rgba(9,14,24,.82);border-color:rgba(148,163,184,.15)}
+.mobile-bottom-nav{background:rgba(3,5,10,.94);backdrop-filter:blur(20px)}.mobile-bottom-nav button.active{background:linear-gradient(135deg,rgba(37,99,235,.48),rgba(124,58,237,.34))}
+@media(max-width:980px){
+  .main{padding:14px}.topbar{position:relative;margin:0 0 14px;padding:0;background:transparent}.topbar h1{font-size:28px}.top-actions{justify-content:flex-start}.top-search{width:100%}
+  .snapshot-grid,.snapshot-grid-main{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.table-wrap{overflow-x:auto}
+  .stock-intel-facts{grid-template-columns:1fr}.stock-intel-header h2{font-size:30px}.stock-intel-panel-mobile{background:linear-gradient(180deg,#0c1322,#05080d)}
+}
+@media(max-width:560px){.kpis{grid-template-columns:1fr}.hero-value{font-size:34px}.top-actions .pia-v3-button{width:100%}.news-intel-meta{grid-template-columns:1fr}.cards,.position-cards{grid-template-columns:1fr}}
