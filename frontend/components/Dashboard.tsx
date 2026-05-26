@@ -36,6 +36,16 @@ import RiskGauge from './ui/RiskGauge'
 import SettingsPage from './settings/SettingsWorkspace'
 import DashboardHome from './dashboard/DashboardHome'
 import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
+import {
+  DEFAULT_WORKSPACE_ID,
+  WORKSPACE_MAP,
+  WORKSPACE_REGISTRY,
+  WorkspaceShell,
+  WorkspaceSwitcher,
+  getWorkspaceAiPromptPrefix,
+  isWorkspaceId,
+  type WorkspaceId,
+} from './workspace'
 
 const API = 'http://127.0.0.1:8000'
 const WS = 'ws://127.0.0.1:8000/ws'
@@ -101,6 +111,20 @@ const legacyFragments = [
   ['reset ', 'layout'],
   ['risk ', 'doctor'],
 ].map((parts) => parts.join(''))
+
+const ACTIVE_WORKSPACE_KEY = 'pia.activeWorkspace.v1'
+const toolNav = [
+  ['tax', 'Tax Center', FileText],
+  ['about', 'About', BookOpen],
+  ['settings', 'Settings', Settings],
+] as any[]
+const legacyWorkspaceMap: Record<string, WorkspaceId> = {
+  dashboard: 'home',
+  portfolio: 'my-portfolio',
+  watchlist: 'watchlists',
+  trades: 'scanner',
+  risk: 'my-portfolio',
+}
 
 const money = (value: any) =>
   Number(value || 0).toLocaleString('en-US', {
@@ -211,7 +235,8 @@ function useNewsIntelligence() {
 export default function Dashboard() {
   const dashboard = useDash()
   const newsIntel = useNewsIntelligence()
-  const [active, setActive] = useState('dashboard')
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<WorkspaceId>(DEFAULT_WORKSPACE_ID)
+  const [activeTool, setActiveTool] = useState<'workspace' | 'tax' | 'about' | 'settings'>('workspace')
   const [mounted, setMounted] = useState(false)
   const [hidden, setHidden] = useState(false)
   const [selected, setSelected] = useState<any>(null)
@@ -223,8 +248,36 @@ export default function Dashboard() {
     setMounted(true)
     try {
       setHidden(localStorage.getItem('pia.hideAmounts') === 'true')
+      const hashWorkspace = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('workspace')
+      const savedWorkspace = localStorage.getItem(ACTIVE_WORKSPACE_KEY)
+      const nextWorkspace = hashWorkspace && isWorkspaceId(hashWorkspace)
+        ? hashWorkspace
+        : savedWorkspace && isWorkspaceId(savedWorkspace)
+          ? savedWorkspace
+          : DEFAULT_WORKSPACE_ID
+      setActiveWorkspaceId(nextWorkspace)
     } catch {}
   }, [])
+
+  function selectWorkspace(workspaceId: WorkspaceId) {
+    setActiveWorkspaceId(workspaceId)
+    setActiveTool('workspace')
+    try {
+      localStorage.setItem(ACTIVE_WORKSPACE_KEY, workspaceId)
+      window.history.replaceState(null, '', `#workspace=${workspaceId}`)
+    } catch {}
+  }
+
+  function selectLegacyDestination(id: string) {
+    const workspaceId = legacyWorkspaceMap[id]
+    if (workspaceId) {
+      selectWorkspace(workspaceId)
+      return
+    }
+    if (id === 'tax' || id === 'about' || id === 'settings') {
+      setActiveTool(id)
+    }
+  }
 
   function updateHidden(next: boolean) {
     setHidden(next)
@@ -249,6 +302,7 @@ export default function Dashboard() {
 
   const positions = dashboard?.portfolio?.positions || []
   const privacyHidden = mounted && hidden
+  const activeWorkspace = WORKSPACE_MAP[activeWorkspaceId]
   const filtered = positions.filter((p: any) =>
     filter === 'All'
       ? true
@@ -265,10 +319,19 @@ export default function Dashboard() {
 
   return (
     <div className="app">
-      <Sidebar active={active} setActive={setActive} hidden={privacyHidden} amountHidden={hidden} setHidden={updateHidden} />
+      <Sidebar
+        activeWorkspaceId={activeWorkspaceId}
+        activeTool={activeTool}
+        selectWorkspace={selectWorkspace}
+        setActive={selectLegacyDestination}
+        hidden={privacyHidden}
+        amountHidden={hidden}
+        setHidden={updateHidden}
+      />
       <main className="main">
         <Top
-          active={active}
+          workspace={activeWorkspace}
+          activeTool={activeTool}
           hidden={privacyHidden}
           amountHidden={hidden}
           setHidden={updateHidden}
@@ -277,11 +340,11 @@ export default function Dashboard() {
           rescanStatus={rescanStatus}
         />
         <MarketStrip items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />
-        {active === 'dashboard' && (
+        {activeTool === 'workspace' && activeWorkspaceId === 'home' && (
           <DashboardHome
             d={dashboard}
             hidden={privacyHidden}
-            setActive={setActive}
+            setActive={selectLegacyDestination}
             setSelected={setSelected}
             newsIntel={newsIntel}
             mask={mask}
@@ -295,22 +358,34 @@ export default function Dashboard() {
             }}
           />
         )}
-        {active === 'portfolio' && (
-          <PortfolioPage
-            d={dashboard}
-            hidden={privacyHidden}
-            filter={filter}
-            setFilter={setFilter}
-            filtered={filtered}
-            setSelected={setSelected}
-          />
+        {activeTool === 'workspace' && activeWorkspaceId === 'my-portfolio' && (
+          <WorkspaceShell workspaceId={activeWorkspaceId} hidden={privacyHidden}>
+            <PortfolioPage
+              d={dashboard}
+              hidden={privacyHidden}
+              filter={filter}
+              setFilter={setFilter}
+              filtered={filtered}
+              setSelected={setSelected}
+            />
+          </WorkspaceShell>
         )}
-        {active === 'watchlist' && <WatchlistPage d={dashboard} hidden={privacyHidden} setSelected={setSelected} />}
-        {active === 'trades' && <TradeRadar d={dashboard} hidden={privacyHidden} />}
-        {active === 'risk' && <RiskPage d={dashboard} hidden={privacyHidden} />}
-        {active === 'tax' && <TaxPage hidden={privacyHidden} />}
-        {active === 'about' && <AboutPage hidden={privacyHidden} />}
-        {active === 'settings' && <SettingsPage hidden={privacyHidden} />}
+        {activeTool === 'workspace' && activeWorkspaceId === 'watchlists' && (
+          <WorkspaceShell workspaceId={activeWorkspaceId} hidden={privacyHidden}>
+            <WatchlistPage d={dashboard} hidden={privacyHidden} setSelected={setSelected} />
+          </WorkspaceShell>
+        )}
+        {activeTool === 'workspace' && activeWorkspaceId === 'scanner' && (
+          <WorkspaceShell workspaceId={activeWorkspaceId} hidden={privacyHidden}>
+            <TradeRadar d={dashboard} hidden={privacyHidden} />
+          </WorkspaceShell>
+        )}
+        {activeTool === 'workspace' && !['home', 'my-portfolio', 'watchlists', 'scanner'].includes(activeWorkspaceId) && (
+          <WorkspaceShell workspaceId={activeWorkspaceId} hidden={privacyHidden} />
+        )}
+        {activeTool === 'tax' && <TaxPage hidden={privacyHidden} />}
+        {activeTool === 'about' && <AboutPage hidden={privacyHidden} />}
+        {activeTool === 'settings' && <SettingsPage hidden={privacyHidden} />}
       </main>
       {selected && (
         <StockIntelligenceShell
@@ -325,25 +400,29 @@ export default function Dashboard() {
   )
 }
 
-function Sidebar({ active, setActive, hidden, amountHidden, setHidden }: any) {
+function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, hidden, amountHidden, setHidden }: any) {
   return (
     <aside className="sidebar">
       <div className="brand">
         <div className="mark">{hidden ? 'â€¢â€¢â€¢' : 'PIA'}</div>
         <div>
-          <b>{hidden ? 'Private Mode' : 'PIA Dashboard'}</b>
+          <b>{hidden ? 'Private Mode' : 'PIA Workspaces'}</b>
           <br />
           <span>{hidden ? 'Workspace' : 'Decision Platform'}</span>
         </div>
       </div>
-      <nav>
-        {nav.map(([id, label, Icon]: any) => (
-          <button key={id} onClick={() => setActive(id)} className={active === id ? 'active' : ''}>
-            <Icon size={18} />
-            <span>{privateNavLabel(hidden, id, label)}</span>
-          </button>
-        ))}
-      </nav>
+      <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onSelect={selectWorkspace} workspaces={WORKSPACE_REGISTRY} />
+      <div className="side-card">
+        <span className="muted">{hidden ? 'Controls' : 'System'}</span>
+        <nav>
+          {toolNav.map(([id, label, Icon]: any) => (
+            <button key={id} onClick={() => setActive(id)} className={activeTool === id ? 'active' : ''}>
+              <Icon size={18} />
+              <span>{privateNavLabel(hidden, id, label)}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
       <button className="privacy" aria-pressed={amountHidden} onClick={() => setHidden(!amountHidden)}>
         {hidden ? <Eye size={16} /> : <EyeOff size={16} />} {hidden ? 'Show amounts' : 'Hide amounts'}
       </button>
@@ -351,13 +430,20 @@ function Sidebar({ active, setActive, hidden, amountHidden, setHidden }: any) {
   )
 }
 
-function Top({ active, hidden, amountHidden, setHidden, rescan, rescanning, rescanStatus }: any) {
+function Top({ workspace, activeTool, hidden, amountHidden, setHidden, rescan, rescanning, rescanStatus }: any) {
+  const toolLabel = String(toolNav.find(([id]) => id === activeTool)?.[1] || 'Workspace')
+  const title = activeTool === 'workspace' ? workspace?.title || 'Home' : toolLabel
+  const subtitle =
+    activeTool === 'workspace'
+      ? getWorkspaceAiPromptPrefix(workspace?.id || DEFAULT_WORKSPACE_ID)
+      : 'System tools, settings, release notes and operational controls'
+
   return (
     <div className="topbar">
-      <div>
-        <h1>{privateNavLabel(hidden, active, String(nav.find(([id]) => id === active)?.[1] || 'Dashboard'))}</h1>
+      <div className="topbar-title">
+        <h1>{hidden ? 'Workspace' : title}</h1>
         <div className="muted">
-          {hidden ? 'Private workspace overview and controls' : 'Portfolio dashboard, integrations, opportunity signals and risk controls'}
+          {hidden ? 'Private workspace overview and controls' : subtitle}
         </div>
         {rescanStatus && <div className="muted">{rescanStatus}</div>}
       </div>

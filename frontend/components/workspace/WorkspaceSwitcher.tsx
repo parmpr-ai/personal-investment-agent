@@ -54,6 +54,7 @@ export default function WorkspaceSwitcher({
           <button
             key={workspace.id}
             type="button"
+            className={selected ? 'active' : ''}
             aria-current={selected ? 'page' : undefined}
             aria-disabled={disabled}
             disabled={disabled}

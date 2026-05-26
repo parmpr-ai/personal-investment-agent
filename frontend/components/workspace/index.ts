@@ -1,4 +1,5 @@
 export { default as WorkspaceSwitcher } from './WorkspaceSwitcher'
+export { default as WorkspaceShell } from './WorkspaceShell'
 export * from './widgetCatalog'
 export * from './workspaceAiContext'
 export * from './workspaceLayoutStorage'

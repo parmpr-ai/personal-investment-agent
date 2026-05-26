@@ -35,15 +35,12 @@ Each workspace has:
 - `mobilePriority`
 - `status`
 
-Active V3 foundation workspaces:
+Active V3 workspace navigation:
 
 - Home
 - My Portfolio
 - Watchlists
 - Scanner
-
-Planned workspaces:
-
 - Markets & Macro
 - AI Infrastructure
 - Earnings Week
@@ -52,7 +49,7 @@ Planned workspaces:
 - Trade Coach
 - Academy
 
-Planned means the workspace is registered and visible to architecture consumers, but the selector must render it disabled or coming soon until implementation lands.
+Sprint 2 activation means each workspace is selectable in the live shell. Home keeps the current dashboard. Workspaces with mature content may reuse existing modules, while future workspaces render intentional shells with catalog-filtered widget previews until their full widget implementations land.
 
 ## Widget Rules
 

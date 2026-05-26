@@ -104,7 +104,7 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceDefinition[] = [
     defaultWidgetIds: ['market-pulse', 'macro-calendar', 'sector-industry-heatmap', 'news-intelligence', 'tradingview-chart'],
     defaultAiContext: 'Summarize macro conditions, market breadth, cross-asset risk, rotation, and portfolio implications.',
     mobilePriority: 5,
-    status: 'planned',
+    status: 'active',
   },
   {
     id: 'ai-infrastructure',
@@ -115,7 +115,7 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceDefinition[] = [
     defaultWidgetIds: ['ai-infrastructure-map', 'news-intelligence', 'unified-intelligence-feed'],
     defaultAiContext: 'Track AI infrastructure supply chains, capex, demand, competitive positioning, and valuation risk.',
     mobilePriority: 8,
-    status: 'planned',
+    status: 'active',
   },
   {
     id: 'earnings-week',
@@ -126,7 +126,7 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceDefinition[] = [
     defaultWidgetIds: ['earnings-calendar', 'analyst-targets', 'news-intelligence'],
     defaultAiContext: 'Prioritize earnings events by exposure, expectations, revisions, implied move, and post-report action.',
     mobilePriority: 6,
-    status: 'planned',
+    status: 'active',
   },
   {
     id: 'swing-trades',
@@ -137,7 +137,7 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceDefinition[] = [
     defaultWidgetIds: ['scanner-setups', 'swing-trade-planner', 'trade-radar', 'tradingview-chart'],
     defaultAiContext: 'Assess swing trade readiness, entry quality, stop distance, target ladder, risk size, and invalidation.',
     mobilePriority: 7,
-    status: 'planned',
+    status: 'active',
   },
   {
     id: 'crypto',
@@ -148,7 +148,7 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceDefinition[] = [
     defaultWidgetIds: ['crypto-market-map', 'news-intelligence', 'unified-intelligence-feed', 'tradingview-chart'],
     defaultAiContext: 'Summarize crypto trend, liquidity, volatility, risk appetite, key levels, and cross-asset correlation.',
     mobilePriority: 9,
-    status: 'planned',
+    status: 'active',
   },
   {
     id: 'trade-coach',
@@ -159,7 +159,7 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceDefinition[] = [
     defaultWidgetIds: ['trade-coach', 'decision-brief', 'risk-controls', 'swing-trade-planner'],
     defaultAiContext: 'Coach the user through decision quality, sizing, thesis, invalidation, emotional state, and risk discipline.',
     mobilePriority: 10,
-    status: 'planned',
+    status: 'active',
   },
   {
     id: 'academy',
@@ -170,7 +170,7 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceDefinition[] = [
     defaultWidgetIds: ['academy-lessons'],
     defaultAiContext: 'Teach concepts with practical PIA examples, portfolio-aware lessons, and clear next exercises.',
     mobilePriority: 11,
-    status: 'planned',
+    status: 'active',
   },
 ] as const
 
