@@ -1,0 +1,5 @@
+export { default as WorkspaceSwitcher } from './WorkspaceSwitcher'
+export * from './widgetCatalog'
+export * from './workspaceAiContext'
+export * from './workspaceLayoutStorage'
+export * from './workspaceRegistry'

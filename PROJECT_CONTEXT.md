@@ -252,5 +252,57 @@ After changes:
 
 Never claim success without verification.
 
+---
+
+# PIA V3 WORKSPACE FOUNDATION
+
+PIA is evolving from a fixed dashboard into a fully custom multi-workspace platform while preserving the current dashboard and widgets.
+
+Approved primary workspace:
+
+* Home
+
+Approved workspaces:
+
+* My Portfolio
+* Watchlists
+* Scanner
+* Markets & Macro
+* AI Infrastructure
+* Earnings Week
+* Swing Trades
+* Crypto
+* Trade Coach
+* Academy
+
+Workspace source of truth:
+
+* `frontend/components/workspace/workspaceRegistry.ts`
+
+Widget catalog source of truth:
+
+* `frontend/components/workspace/widgetCatalog.ts`
+
+Workspace architecture rules:
+
+* everything is a widget
+* current dashboard widgets must be reused, not rewritten
+* mobile customization must use the same workspace/widget registry
+* local layout storage is local-first and keyed by workspace ID
+* TradingView is the planned shared chart widget
+* AI Core uses workspace redirect mode through short workspace context text
+
+V3 backlog:
+
+* Analyst Targets Intelligence Widget required per stock
+* Unified Intelligence Feed sources: Yahoo, Discord, SA, Reuters, PIA, X, IBKR
+* Watchlists add/remove/sort/company logo/mini charts
+* Sector & industry heatmap
+* Trade Coach voice mode
+* Academy workspace
+* Cloud backup/restore
+* Performance/storage efficiency requirements
+* Stock targets required per stock
+
 
 
