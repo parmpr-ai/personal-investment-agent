@@ -198,6 +198,24 @@ Videos:
   - Notification Center mobile failure.
   - Mobile performance lag.
 
+## CHANGELOG GOVERNANCE (MANDATORY)
+
+- Every approved sprint or merge must update the CHANGELOG section.
+- No integration merge is considered complete until CHANGELOG is updated.
+- After approved implementation, mandatory source-of-truth updates are:
+  - Backlog.
+  - Project status.
+  - UAT memory.
+  - Agent queue.
+  - CHANGELOG.
+
+PM operating model:
+
+- When user says "Καλημέρα PIA", assistant must:
+  - Read `docs/PIA_MASTER_BACKLOG_SOURCE_OF_TRUTH.md`.
+  - Review Current Active State, Sprint Summary, Active Backlog, Open Critical Bugs, UAT Memory, Agent Task Queue, Architecture Decisions, and CHANGELOG.
+  - Brief user with what we completed yesterday, current status, risks/blockers, recommended priorities for today, and recent release/changelog summary.
+
 ## Agent Task Queue
 
 - HERMES:
@@ -224,3 +242,33 @@ Videos:
 - Do not add duplicate widgets/pages.
 - Do not commit `.next`, sqlite files, pycache, or package-lock changes unless explicitly required.
 - Always validate route integrity and responsive behavior before release.
+
+## CHANGELOG
+
+### v0.2.0
+Date: 2026-05-27
+Status: Sprint 2B integrated; Sprint 2C planning active.
+
+Added:
+
+- Master backlog source-of-truth Markdown and workbook.
+- Sprint 2C UAT failure list and ownership.
+- Locked stock workspace structure.
+- Changelog governance and "Καλημέρα PIA" PM briefing model.
+
+Changed:
+
+- Markdown source of truth rewritten as compact operational memory.
+- Sprint 2B stock workspace and mobile/Home UX direction merged into integration.
+
+Fixed:
+
+- Integration branch now contains merged governance, stock workspace, and mobile/Home direction updates.
+
+Known limitations:
+
+- Release Center routing mismatch remains open.
+- Market Pulse swipe remains broken.
+- Home widgets are not clickable.
+- Notification Center mobile failure remains open.
+- Mobile performance lag remains open.
