@@ -1,7 +1,8 @@
 'use client'
 
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, Newspaper } from 'lucide-react'
 import { PiaBadge } from '../ui-v3'
+import type { PiaBadgeVariant } from '../ui-v3/PiaBadge'
 import { mask } from '../../lib/pia-api'
 import {
   newsActionLabel,
@@ -11,6 +12,18 @@ import {
   toneForBias,
   toneForPossibleMove,
 } from './newsFormatters'
+
+function sourceBadgeVariant(source: unknown): PiaBadgeVariant {
+  const value = String(source || '').toLowerCase()
+  if (value.includes('yahoo')) return 'yahoo'
+  if (value.includes('discord')) return 'discord'
+  if (value.includes('seeking') || value === 'sa') return 'sa'
+  if (value.includes('reuters')) return 'reuters'
+  if (value.includes('pia')) return 'pia'
+  if (value === 'x' || value.includes('twitter')) return 'x'
+  if (value.includes('ibkr') || value.includes('interactive brokers')) return 'ibkr'
+  return 'neutral'
+}
 
 export default function TickerNewsList({
   items,
@@ -41,11 +54,14 @@ export default function TickerNewsList({
         {rows.map((item: any) => {
           const articleUrl = String(item.source_url || '').trim()
           const title = hidden ? 'Workspace intelligence item' : String(item.title || 'Untitled headline')
+          const source = hidden ? 'Source' : String(item.source || 'PIA')
           return (
             <article className="news-intel-card stock-news-card" key={`${item.id}-${item.title}`}>
               <div className="news-intel-main">
                 <div className="news-intel-kicker">
-                  <span>{hidden ? 'Source' : item.source}</span>
+                  <PiaBadge variant={sourceBadgeVariant(source)} size="compact" icon={<Newspaper size={12} />}>
+                    {source}
+                  </PiaBadge>
                   <span>{hidden ? mask : `${item.freshness_minutes}m ago`}</span>
                 </div>
                 {hidden || !articleUrl ? (

@@ -99,6 +99,7 @@ export default function TickerVideosList({
         <div>
           <span>{hidden ? 'Workspace feed' : 'VIDEO RESEARCH'}</span>
           <h3>{hidden ? 'Research monitor' : `${String(ticker || '').split(' ')[0].toUpperCase()} video watchlist`}</h3>
+          <p>{hidden ? mask : 'Curated external research entry points. Links open source searches; no video data is presented as proprietary.'}</p>
         </div>
         <PiaBadge variant="neutral">{hidden ? mask : 'No autoplay'}</PiaBadge>
       </section>
@@ -132,6 +133,7 @@ export default function TickerVideosList({
             {!hidden ? (
               <a className="stock-video-link" href={item.href} target="_blank" rel="noreferrer" aria-label={`Open ${item.title}`}>
                 <ExternalLink size={16} />
+                <span>Open</span>
               </a>
             ) : null}
           </article>
