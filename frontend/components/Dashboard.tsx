@@ -233,9 +233,28 @@ function useNewsIntelligence() {
   return payload
 }
 
+function useSourceHealthDock() {
+  const [health, setHealth] = useState<any[]>([])
+
+  useEffect(() => {
+    let active = true
+    fetchJson('/source-health')
+      .then((data) => {
+        if (active && Array.isArray(data)) setHealth(data)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  return health
+}
+
 export default function Dashboard() {
   const dashboard = useDash()
   const newsIntel = useNewsIntelligence()
+  const sourceHealth = useSourceHealthDock()
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<WorkspaceId>(DEFAULT_WORKSPACE_ID)
   const [activeTool, setActiveTool] = useState<'workspace' | 'tax' | 'about' | 'settings'>('workspace')
   const [mounted, setMounted] = useState(false)
@@ -397,7 +416,53 @@ export default function Dashboard() {
           onClose={() => setSelected(null)}
         />
       )}
+      <IntegrationStatusDock health={sourceHealth} hidden={privacyHidden} />
     </div>
+  )
+}
+
+function statusLabel(status: any) {
+  if (!status) return 'Standby'
+  if (status.status === 'healthy' || status.data_received) return 'Live'
+  if (status.status === 'connected_no_data' || status.ok) return 'Ready'
+  if (status.status === 'failed') return 'Degraded'
+  return 'Standby'
+}
+
+function statusTone(label: string) {
+  if (label === 'Live') return 'good'
+  if (label === 'Ready') return 'warn'
+  if (label === 'Degraded') return 'bad'
+  return 'neutral'
+}
+
+function IntegrationStatusDock({ health = [], hidden = false }: { health?: any[]; hidden?: boolean }) {
+  const bySource = (name: string) => health.find((item: any) => item.source === name)
+  const items = [
+    { name: 'IBKR', icon: Wallet, status: bySource('IBKR') },
+    { name: 'Yahoo', icon: Globe2, status: bySource('Yahoo Finance') },
+    { name: 'Feeds', icon: Database, status: bySource('RSS') },
+  ]
+
+  return (
+    <aside className="integration-status-dock" aria-label="Connection status">
+      <div className="integration-status-head">
+        <Activity size={15} />
+        <span>{hidden ? 'Status' : 'Status Dock'}</span>
+      </div>
+      <div className="integration-status-list">
+        {items.map(({ name, icon: Icon, status }) => {
+          const label = hidden ? 'Status' : statusLabel(status)
+          return (
+            <div className="integration-status-item" key={name}>
+              <Icon size={15} />
+              <span>{hidden ? 'Source' : name}</span>
+              <b className={statusTone(label)}>{label}</b>
+            </div>
+          )
+        })}
+      </div>
+    </aside>
   )
 }
 

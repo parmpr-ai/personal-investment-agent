@@ -9,9 +9,11 @@ import {
   BriefcaseBusiness,
   ChevronLeft,
   ChevronRight,
+  Database,
   Eye,
   EyeOff,
   Gauge,
+  Globe2,
   Home,
   RefreshCw,
   Search,
@@ -299,6 +301,44 @@ function MobileBottomNav({ active, setActive }: { active: string; setActive: (va
         </button>
       ))}
     </nav>
+  )
+}
+
+function mobileStatusLabel(status: any) {
+  if (!status) return 'Standby'
+  if (status.status === 'healthy' || status.data_received) return 'Live'
+  if (status.status === 'connected_no_data' || status.ok) return 'Ready'
+  if (status.status === 'failed') return 'Degraded'
+  return 'Standby'
+}
+
+function MobileStatusDock({ health, hidden }: { health: any[]; hidden: boolean }) {
+  const bySource = (name: string) => health.find((item: any) => item.source === name)
+  const rows = [
+    { name: 'IBKR', icon: Wallet, status: bySource('IBKR') },
+    { name: 'Yahoo', icon: Globe2, status: bySource('Yahoo Finance') },
+    { name: 'Feeds', icon: Database, status: bySource('RSS') },
+  ]
+
+  return (
+    <section className="mobile-status-dock" aria-label="Connection status">
+      <div className="mobile-status-dock-head">
+        <ShieldCheck size={16} />
+        <span>{hidden ? 'Status' : 'Connection Status'}</span>
+      </div>
+      <div className="mobile-status-dock-grid">
+        {rows.map(({ name, icon: Icon, status }) => {
+          const label = hidden ? 'Status' : mobileStatusLabel(status)
+          return (
+            <div className={`mobile-status-source ${String(label).toLowerCase()}`} key={name}>
+              <Icon size={15} />
+              <span>{hidden ? 'Source' : name}</span>
+              <b>{label}</b>
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -705,6 +745,7 @@ export default function MobileExperience() {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [rescanning, setRescanning] = useState(false)
   const [rescanStatus, setRescanStatus] = useState('')
+  const [sourceHealth, setSourceHealth] = useState<any[]>([])
 
   const portfolio = dashboard?.portfolio || {}
   const positions = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
@@ -723,6 +764,11 @@ export default function MobileExperience() {
     try {
       setHidden(localStorage.getItem('pia.hideAmounts') === 'true')
     } catch {}
+    fetchJson('/source-health')
+      .then((data) => {
+        if (Array.isArray(data)) setSourceHealth(data)
+      })
+      .catch(() => {})
   }, [])
 
   function updateHidden(next: boolean) {
@@ -765,6 +811,7 @@ export default function MobileExperience() {
         </button>
       </header>
       <SearchCommand onQuickControls={() => setQuickOpen(true)} />
+      <MobileStatusDock health={sourceHealth} hidden={privacyHidden} />
 
       {active === 'home' && (
         <MobileReorderableSections
