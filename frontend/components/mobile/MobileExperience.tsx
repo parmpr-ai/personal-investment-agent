@@ -7,6 +7,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  Brain,
   BriefcaseBusiness,
   ChevronDown,
   ChevronLeft,
@@ -19,12 +20,14 @@ import {
   GripVertical,
   Home,
   Menu,
+  Plus,
   RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   Wallet,
   X,
 } from 'lucide-react'
@@ -46,6 +49,11 @@ import {
 import { usePersistedLayout } from '../dashboard/usePersistedLayout'
 import type { MobileHomeSectionId } from '../dashboard/types'
 import { API, fetchJson, mask, money, pct as formatPct, safeMessage } from '../../lib/pia-api'
+import {
+  buildWatchlistUniverse,
+  resolveWatchlistRows,
+  useCustomWatchlists,
+} from '../watchlists/customWatchlists'
 
 type RailItem = Record<string, any>
 type Tone = 'good' | 'bad' | 'neutral'
@@ -1020,6 +1028,167 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
   )
 }
 
+function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashboard: any; onSelect: (position: any) => void; hidden?: boolean }) {
+  const { lists, activeId, activeList, selectList, createList, addSymbol, removeSymbol } = useCustomWatchlists()
+  const [view, setView] = useState<PortfolioView>('cards')
+  const [newListName, setNewListName] = useState('')
+  const [newTicker, setNewTicker] = useState('')
+  const universe = useMemo(() => buildWatchlistUniverse(dashboard, [...positionFallback, ...scannerFallback]), [dashboard])
+  const rows = useMemo(() => resolveWatchlistRows(activeList?.symbols || [], universe), [activeList, universe])
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('pia.watchlistView.mobile')
+      if (saved === 'cards' || saved === 'table') setView(saved)
+    } catch {}
+  }, [])
+
+  function updateView(next: PortfolioView) {
+    setView(next)
+    try { localStorage.setItem('pia.watchlistView.mobile', next) } catch {}
+  }
+
+  function submitList(e: any) {
+    e.preventDefault()
+    createList(newListName)
+    setNewListName('')
+  }
+
+  function submitTicker(e: any) {
+    e.preventDefault()
+    if (!activeList) return
+    addSymbol(activeList.id, newTicker)
+    setNewTicker('')
+  }
+
+  return (
+    <section className="mobile-watchlist-section">
+      <div className="mobile-portfolio-header">
+        <span className="mobile-portfolio-count">{hidden ? 'Workspace' : activeList?.name || 'Watchlist'}</span>
+        <div className="portfolio-view-toggle" role="group" aria-label="Watchlist view mode">
+          <button className={view === 'cards' ? 'active' : ''} onClick={() => updateView('cards')}>Cards</button>
+          <button className={view === 'table' ? 'active' : ''} onClick={() => updateView('table')}>Table</button>
+        </div>
+      </div>
+
+      <div className="mobile-watchlist-controls">
+        <select value={activeId} onChange={(e) => selectList(e.target.value)} aria-label="Select watchlist">
+          {lists.map((list) => <option key={list.id} value={list.id}>{list.name}</option>)}
+        </select>
+        <form onSubmit={submitTicker}>
+          <input value={newTicker} onChange={(e) => setNewTicker(e.target.value)} placeholder="Add ticker" aria-label="Ticker to add" />
+          <button type="submit"><Plus size={16} /> Add</button>
+        </form>
+        <form onSubmit={submitList}>
+          <input value={newListName} onChange={(e) => setNewListName(e.target.value)} placeholder="New list" aria-label="New watchlist name" />
+          <button type="submit"><Plus size={16} /> New</button>
+        </form>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="mobile-watchlist-empty">
+          <strong>{hidden ? 'Workspace ready' : 'No tickers yet'}</strong>
+          <span>{hidden ? mask : 'Add AMD, NBIS, IREN, or any ticker to this custom watchlist.'}</span>
+        </div>
+      ) : view === 'table' ? (
+        <MobileWatchlistTable rows={rows} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} hidden={hidden} />
+      ) : (
+        <MobileWatchlistCards rows={rows} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} hidden={hidden} />
+      )}
+    </section>
+  )
+}
+
+function MobileWatchlistTable({ rows, onSelect, onRemove, hidden }: { rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean }) {
+  return (
+    <div className="mobile-terminal-wrap">
+      <table className="mobile-terminal-table mobile-watchlist-table">
+        <thead>
+          <tr>
+            <th className="mtt-col-frozen">Sym</th>
+            <th>Price</th>
+            <th>Chg %</th>
+            <th>Chg</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.symbol} onClick={() => onSelect(row)}>
+              <td className="mtt-col-frozen">
+                <div className="mtt-symbol">
+                  <div className="mtt-logo" style={{ background: row.accent || row.brand || '#60a5fa' }}>
+                    {hidden ? '-' : row.logo || String(row.symbol).slice(0, 2)}
+                  </div>
+                  <strong className="mtt-sym-label">{hidden ? mask : row.symbol}</strong>
+                </div>
+              </td>
+              <td>{hidden ? mask : money(row.last || row.price)}</td>
+              <td className={Number(row.day_change_pct) >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(row.day_change_pct)}</td>
+              <td className={Number(row.day_pnl) >= 0 ? 'green' : 'red'}>{hidden ? mask : money(row.day_pnl)}</td>
+              <td>{hidden ? mask : row.label || row.sec_type || 'Watch'}</td>
+              <td>
+                <div className="mobile-watchlist-actions">
+                  <button type="button" aria-label={`Open intelligence for ${row.symbol}`} onClick={(e) => { e.stopPropagation(); onSelect(row) }}>
+                    <Brain size={14} />
+                  </button>
+                  <button type="button" aria-label={`Remove ${row.symbol}`} onClick={(e) => { e.stopPropagation(); onRemove(row.symbol) }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function MobileWatchlistCards({ rows, onSelect, onRemove, hidden }: { rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean }) {
+  return (
+    <div className="mobile-watchlist-card-list">
+      {rows.map((row) => {
+        const change = Number(row.day_change_pct || 0)
+        const dayPnl = Number(row.day_pnl || 0)
+        return (
+          <button
+            key={row.symbol}
+            className={`mobile-visual-card mobile-position-card mobile-watchlist-card${row.brand ? ' themed' : ''}`}
+            onClick={() => onSelect(row)}
+            style={row.brand ? { borderTopColor: row.brand } as CSSProperties : undefined}
+          >
+            <div className="mobile-card-head">
+              <div>
+                <span>{hidden ? 'Workspace item' : row.name}</span>
+                <strong>{hidden ? mask : row.symbol}</strong>
+              </div>
+              <div className="mobile-price-stack">
+                <b>{hidden ? mask : money(row.last || row.price)}</b>
+                <small className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)}</small>
+              </div>
+            </div>
+            <Sparkline values={row.spark} tone={change >= 0 ? 'good' : 'bad'} />
+            <div className="mobile-position-pnl">
+              <span className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(dayPnl)}</span>
+              <small>{hidden ? mask : row.label || row.sec_type || 'Watch'}</small>
+            </div>
+            <div className="mobile-watchlist-card-actions">
+              <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(row) }}>
+                <Brain size={15} /> Intel
+              </button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(row.symbol) }} aria-label={`Remove ${row.symbol}`}>
+                <Trash2 size={15} /> Remove
+              </button>
+            </div>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 type PortfolioView = 'table' | 'cards'
 type ColKey = 'price' | 'change' | 'pnl' | 'daypnl' | 'weight' | 'risk' | 'avgcost' | 'sector' | 'macro'
 type TableSortKey = 'symbol' | 'last' | 'change' | 'pnl' | 'daypnl' | 'weight' | 'risk' | 'avgcost'
@@ -1621,7 +1790,7 @@ export default function MobileExperience() {
           </div>
         </>
       )}
-      {active === 'watchlists' && <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} hidden={privacyHidden} />}
+      {active === 'watchlists' && <MobileWatchlistManager dashboard={dashboard} onSelect={setSelected} hidden={privacyHidden} />}
       {active === 'scanner' && <ScannerSetups scanner={scanner} onSelect={setSelected} hidden={privacyHidden} />}
       {active === 'markets-macro' && (
         <>

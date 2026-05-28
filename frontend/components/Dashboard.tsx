@@ -39,6 +39,11 @@ import SettingsPage from './settings/SettingsWorkspace'
 import DashboardHome from './dashboard/DashboardHome'
 import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
 import {
+  buildWatchlistUniverse,
+  resolveWatchlistRows,
+  useCustomWatchlists,
+} from './watchlists/customWatchlists'
+import {
   DEFAULT_WORKSPACE_ID,
   WORKSPACE_MAP,
   WorkspaceManagerPanel,
@@ -155,13 +160,19 @@ const metricValue = (p: any, key: string) =>
         ? p.qty
         : key === 'daily_pnl'
           ? p.day_pnl
-          : key === 'total_pnl'
-            ? p.unrealized
-            : key === 'daily_pct'
-              ? p.day_change_pct
-              : key === 'total_pct'
-                ? p.unrealized_pct
-                : String(p.symbol || '')
+          : key === 'last'
+            ? p.last || p.price
+            : key === 'risk'
+              ? p.risk
+              : key === 'momentum'
+                ? p.momentum_score || p.momentum
+                : key === 'total_pnl'
+                  ? p.unrealized
+                  : key === 'daily_pct'
+                    ? p.day_change_pct
+                    : key === 'total_pct'
+                      ? p.unrealized_pct
+                      : String(p.symbol || '')
 
 async function fetchJson(path: string, init?: RequestInit) {
   const response = await fetch(`${API}${path}`, init)
@@ -1126,66 +1137,203 @@ function RiskList({ items, hidden }: any) {
 }
 
 function WatchlistPage({ d, hidden, setSelected }: any) {
-  const [sort, setSort] = useState('opportunity')
-  const rows = [...(d?.watchlist || [])].sort((a: any, b: any) =>
-    String(sort) === 'name' ? a.symbol.localeCompare(b.symbol) : (b[sort] || 0) - (a[sort] || 0),
-  )
+  const { lists, activeId, activeList, selectList, createList, addSymbol, removeSymbol } = useCustomWatchlists()
+  const [view, setView] = useState<'table' | 'cards'>('table')
+  const [sort, setSort] = useState('daily_pct')
+  const [direction, setDirection] = useState<'desc' | 'asc'>('desc')
+  const [newListName, setNewListName] = useState('')
+  const [newTicker, setNewTicker] = useState('')
+  const universe = useMemo(() => buildWatchlistUniverse(d), [d])
+  const rows = useMemo(() => {
+    const resolved = resolveWatchlistRows(activeList?.symbols || [], universe)
+    return resolved.sort((a: any, b: any) => {
+      const av = metricValue(a, sort)
+      const bv = metricValue(b, sort)
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return direction === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
+      }
+      return direction === 'asc' ? Number(av) - Number(bv) : Number(bv) - Number(av)
+    })
+  }, [activeList, universe, sort, direction])
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('pia.watchlistView.desktop')
+      if (saved === 'cards' || saved === 'table') setView(saved)
+    } catch {}
+  }, [])
+
+  function changeView(next: 'table' | 'cards') {
+    setView(next)
+    try { localStorage.setItem('pia.watchlistView.desktop', next) } catch {}
+  }
+
+  function submitList(e: React.FormEvent) {
+    e.preventDefault()
+    createList(newListName)
+    setNewListName('')
+  }
+
+  function submitTicker(e: React.FormEvent) {
+    e.preventDefault()
+    if (!activeList) return
+    addSymbol(activeList.id, newTicker)
+    setNewTicker('')
+  }
+
   return (
     <div className="grid">
-      <Panel title="Opportunity Board" privateTitle="Workspace" span="span-12" hidden={hidden}>
-        <PiaTabs
-          className="scanner-sort-rail"
-          density="compact"
-          ariaLabel="Opportunity sorting"
-          activeId={sort}
-          onChange={setSort}
-          tabs={[
-            ['name', 'Name'],
-            ['change_pct', 'Move'],
-            ['risk', 'Risk'],
-            ['opportunity', 'Opp'],
-            ['momentum', 'Mom'],
-            ['rvol', 'RVOL'],
-          ].map(([id, label]) => ({ id, label }))}
+      <Panel title="Watchlists" privateTitle="Workspace" span="span-12" hidden={hidden}>
+        <SectionHeader
+          title={privateTitle(hidden, 'Custom Watchlists', 'Workspace')}
+          subtitle={hidden ? `${rows.length} items` : `${activeList?.name || 'Watchlist'} - ${rows.length} tickers`}
+          actions={
+            <div className="portfolio-view-toggle" role="group" aria-label="Watchlist view mode">
+              <button className={view === 'table' ? 'active' : ''} onClick={() => changeView('table')}>Table</button>
+              <button className={view === 'cards' ? 'active' : ''} onClick={() => changeView('cards')}>Cards</button>
+            </div>
+          }
         />
-        <div className="cards opportunity-cards">
-          {rows.map((w: any) => (
-            <PiaCard className="stock-card opportunity-card" key={w.symbol}>
-              <button onClick={() => setSelected({ symbol: w.symbol })}>
-                <header>
+        <div className="watchlist-toolbar">
+          <select value={activeId} onChange={(e) => selectList(e.target.value)} aria-label="Select watchlist">
+            {lists.map((list) => (
+              <option key={list.id} value={list.id}>{list.name}</option>
+            ))}
+          </select>
+          <form onSubmit={submitList}>
+            <PiaInput value={newListName} onChange={(e) => setNewListName(e.target.value)} placeholder="New watchlist" aria-label="New watchlist name" />
+            <PiaButton type="submit" density="compact" variant="secondary"><Plus size={14} /> Create</PiaButton>
+          </form>
+          <form onSubmit={submitTicker}>
+            <PiaInput value={newTicker} onChange={(e) => setNewTicker(e.target.value)} placeholder="Add ticker" aria-label="Ticker to add" />
+            <PiaButton type="submit" density="compact"><Plus size={14} /> Add</PiaButton>
+          </form>
+        </div>
+        <div className="sort-row">
+          <select value={sort} onChange={(e) => setSort(e.target.value)}>
+            {[
+              ['daily_pct', 'Daily %'],
+              ['daily_pnl', 'Daily value'],
+              ['last', 'Price'],
+              ['risk', 'Risk'],
+              ['momentum', 'Momentum'],
+              ['alphabetical', 'Alphabetical'],
+            ].map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          <PiaButton variant="secondary" density="compact" onClick={() => setDirection((x) => (x === 'desc' ? 'asc' : 'desc'))}>
+            {direction === 'desc' ? 'Descending' : 'Ascending'}
+          </PiaButton>
+        </div>
+        {!activeList || rows.length === 0 ? (
+          <div className="empty-state watchlist-empty">
+            <b>{hidden ? 'Workspace ready' : 'No tickers in this watchlist yet.'}</b>
+            <p className="muted">{hidden ? mask : 'Add AMD, NBIS, IREN, or any ticker to start tracking it here.'}</p>
+          </div>
+        ) : view === 'table' ? (
+          <WatchlistTable rows={rows} hidden={hidden} setSelected={setSelected} onRemove={(symbol: string) => removeSymbol(activeList.id, symbol)} />
+        ) : (
+          <WatchlistCards rows={rows} hidden={hidden} setSelected={setSelected} onRemove={(symbol: string) => removeSymbol(activeList.id, symbol)} />
+        )}
+      </Panel>
+    </div>
+  )
+}
+
+function WatchlistTable({ rows, hidden, setSelected, onRemove }: any) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Status</th>
+            <th>Last</th>
+            <th>Daily %</th>
+            <th>Daily Chg</th>
+            <th>Risk</th>
+            <th>Momentum</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((p: any) => (
+            <tr key={p.symbol} onClick={() => setSelected(p)}>
+              <td>
+                <div className="row-symbol">
+                  <div className="logo" style={{ background: p.accent || p.brand || '#60a5fa' }}>
+                    {hidden ? '..' : p.logo || p.symbol?.slice(0, 2)}
+                  </div>
                   <div>
-                    <b>{hidden ? mask : w.symbol}</b>
-                    <div className="muted">{hidden ? 'Workspace item' : w.name}</div>
-                  </div>
-                  <PiaBadge variant="info">{hidden ? 'Overview' : w.action || w.label}</PiaBadge>
-                </header>
-                <h2>
-                  {hidden ? mask : money(w.price)} <small className={w.change_pct >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(w.change_pct)}</small>
-                </h2>
-                <div className="plan">
-                  <div className="pillbox">
-                    Risk
-                    <br />
-                    <b>{hidden ? mask : w.risk}</b>
-                  </div>
-                  <div className="pillbox">
-                    Opp
-                    <br />
-                    <b>{hidden ? mask : w.opportunity}</b>
-                  </div>
-                  <div className="pillbox">
-                    RVOL
-                    <br />
-                    <b>{hidden ? mask : w.rvol}</b>
+                    <b>{hidden ? mask : p.symbol}</b>
+                    <div className="muted">{hidden ? 'Workspace item' : p.name}</div>
                   </div>
                 </div>
-                <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={w.momentum || 0} tone="green" hidden={hidden} />
-                <p className="muted">{hidden ? mask : w.reason || `${w.macro_fit || 'Neutral'} macro fit - ${w.sector || 'Unclassified'}`}</p>
-              </button>
-            </PiaCard>
+              </td>
+              <td><PiaBadge variant="neutral" size="compact">{hidden ? mask : p.label || p.sec_type || 'Watch'}</PiaBadge></td>
+              <td>{hidden ? mask : money(p.last || p.price)}</td>
+              <td className={p.day_change_pct >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(p.day_change_pct)}</td>
+              <td className={p.day_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.day_pnl)}</td>
+              <td>{hidden ? mask : p.risk || '-'}</td>
+              <td>{hidden ? mask : p.momentum_score || p.momentum || '-'}</td>
+              <td>
+                <div className="watchlist-row-actions">
+                  <PiaButton density="compact" variant="secondary" onClick={(e) => { e.stopPropagation(); setSelected(p) }}>
+                    <Brain size={14} /> Intel
+                  </PiaButton>
+                  <button className="watchlist-remove" type="button" aria-label={`Remove ${p.symbol}`} onClick={(e) => { e.stopPropagation(); onRemove(p.symbol) }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </td>
+            </tr>
           ))}
-        </div>
-      </Panel>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function WatchlistCards({ rows, hidden, setSelected, onRemove }: any) {
+  return (
+    <div className="position-cards">
+      {rows.map((p: any) => {
+        const change = Number(p.day_change_pct || 0)
+        const dayPnl = Number(p.day_pnl || 0)
+        return (
+          <PiaCard
+            key={p.symbol}
+            className={`position-card watchlist-position-card${p.brand ? ' accented' : ''}`}
+            style={p.brand ? ({ '--pos-brand': p.brand } as React.CSSProperties) : undefined}
+          >
+            <button onClick={() => setSelected(p)}>
+              <header>
+                <div>
+                  <b>{hidden ? mask : p.symbol}</b>
+                  <span>{hidden ? 'Workspace item' : p.name}</span>
+                </div>
+                <strong>{hidden ? mask : money(p.last || p.price)}</strong>
+              </header>
+              <div className="position-pnl">
+                <span className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)} today</span>
+                <span className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(dayPnl)}</span>
+              </div>
+              <MetricBar label={hidden ? 'Controls' : 'Risk'} value={p.risk || 0} tone="red" hidden={hidden} />
+              <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={p.momentum_score || p.momentum || 0} tone="green" hidden={hidden} />
+              <div className="watchlist-card-actions">
+                <PiaBadge variant="info">{hidden ? 'Overview' : p.label || p.sec_type || 'Watch'}</PiaBadge>
+                <span>
+                  <PiaButton density="compact" variant="secondary" onClick={(e) => { e.stopPropagation(); setSelected(p) }}>
+                    <Brain size={14} /> Intel
+                  </PiaButton>
+                  <button className="watchlist-remove" type="button" aria-label={`Remove ${p.symbol}`} onClick={(e) => { e.stopPropagation(); onRemove(p.symbol) }}>
+                    <Trash2 size={14} />
+                  </button>
+                </span>
+              </div>
+            </button>
+          </PiaCard>
+        )
+      })}
     </div>
   )
 }
