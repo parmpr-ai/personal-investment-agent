@@ -352,6 +352,17 @@ html,body{max-width:100%;overflow-x:hidden}
   .mobile-swipe-slide{flex-basis:calc(100vw - 42px)}.mobile-card-head{gap:8px}.mobile-card-head strong{font-size:23px}.mobile-bottom-nav span{display:none}
 }
 
+/* Bug 3 — Compact action chip rail (overrides Sprint 2B padded container + ≤560px stacked layout) */
+.stock-intel-quick-actions{display:flex;flex-direction:row;flex-wrap:nowrap;gap:5px;padding:0;margin:8px 0;border:0;background:transparent;border-radius:0;align-items:center}
+.stock-intel-quick-actions .pia-v3-button{min-height:28px;padding:0 8px;font-size:11px;border-radius:999px;gap:4px;flex:0 0 auto;width:auto;min-width:auto}
+.stock-intel-action-state{font-size:9px;padding:1px 4px;margin-left:3px;letter-spacing:.03em}
+/* ≤480px: icon-only chips, hide label and badge */
+@media(max-width:480px){
+  .stock-intel-quick-actions .pia-v3-button-label{display:none}
+  .stock-intel-action-state{display:none}
+  .stock-intel-quick-actions .pia-v3-button{width:30px;min-width:30px;padding:0;justify-content:center;aspect-ratio:1}
+}
+
 /* Sprint 2C: mobile interaction stabilization */
 .pia-v3-widget,.pia-v3-widget-body,.pia-v3-card,.stock-card,.position-card,.mobile-section,.mobile-visual-card{pointer-events:auto}
 .pia-v3-widget-body{position:relative;z-index:1}
