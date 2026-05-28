@@ -367,6 +367,7 @@ A task is NOT complete until all of the following pass:
 - v0.3.10: Hotfix — restore mobile portfolio cards touch swipe (touch-action CSS bug + async isDragging state bug).
 - v0.3.11: Portfolio header IBKR alignment, risk visual system, swipe global fix — NLV hero + Day P/L %, time-range chips, 12-metric grid, RiskBar, desktop snapshot time-range chips.
 - v0.3.13: Regression fixes — portfolio search now always visible, Home rails finger swipe restored, privacy toggle accessible on Portfolio.
+- v0.3.14: Mobile top bar cleanup (PIA only), global Yahoo-style stock search, global privacy eye, Home rail swipe unification (grid blowout fix), news source parity confirmed.
 
 ## Guardrails
 
@@ -380,6 +381,40 @@ A task is NOT complete until all of the following pass:
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.14 - Mobile Top Bar + Global Search + News + Home Swipe Unification
+Date: 2026-05-28
+Status: Implemented; pending Product Owner real-device UAT (per Task Completion Rule).
+
+CR — Mobile top bar IA (Part A):
+- Removed "Mitsos - PIA" sub-label, "Mobile Command"/"Private Command" h1, and the "{n}P" count artifact from the top area.
+- Top bar now shows brand "PIA" on the left and an action cluster on the right: Search · Privacy Eye · Notification bell.
+
+CR — Global stock search belongs in top bar (Part B):
+- New `GlobalStockSearch` sheet opened from the top-bar magnifier. Auto-focused input (mobile keyboard opens), compact result cards.
+- Universe = portfolio positions + watchlist + v0.3.6 mock tickers (NVDA, AMD, SOFI, IREN, AVAV, GOOGL, TSLA, CRWV, NBIS), deduped by symbol with source priority Portfolio > Watchlist > Mock.
+- Each result shows symbol, name, price/change when available, and a source badge (Portfolio/Watchlist/Mock). Selecting opens the Stock Intelligence panel and closes search.
+- Unknown/arbitrary ticker shows an "Analyze {TICKER}" row (PIA badge) that opens the same Stock Intelligence flow gracefully (backend `/stock/{ticker}` returns a safe structure). Not Ask PIA; no external browser.
+
+CR — Privacy belongs in top bar (Part C):
+- Privacy Eye moved to the top bar, left of the bell. Always visible globally on mobile. Toggles the existing `pia.hideAmounts` state/localStorage. All surfaces already consume `privacyHidden`, so Home, Portfolio, table, cards, NLV, P/L and IBKR metrics mask.
+
+CR — Home initial rail used a grid-blowout path (Part E, root cause):
+- Home renders rails inside `MobileReorderableSections` → `.mobile-dashboard-sections{display:grid}`. Grid items default to `min-width:auto`, so the swipe rail's wide content blew out the track instead of scrolling; `body{overflow-x:hidden}` then clipped it, making the rail look frozen. The 4th/markets workspace renders the same `MarketPulse`/`SwipeRail` under a plain block parent, so it scrolled — which is why only Home appeared broken.
+- Fix: `.mobile-dashboard-sections{grid-template-columns:minmax(0,1fr)}` + `.mobile-section-slot{min-width:0}`. The rail is the same shared `SwipeRail` (native pan-x, no touch pointer-capture from v0.3.13) — now it scrolls on Home too. Applies to all Home rails (Market Pulse, Portfolio Insights, Scanner Setups, Watchlist Movers).
+
+CR — Mobile news source parity (Part D):
+- Verified: the mobile stock-workspace News tab already uses the same data path as desktop — `StockIntelligencePanel` → `/stock/{ticker}` → `get_ticker_news_intelligence` (live Yahoo RSS, demo fallback) → `TickerNewsList` with shared `sourceBadgeVariant` (Yahoo/SA/Reuters/RSS/PIA/X/Discord/IBKR). Cards are tap-to-open (no separate Open button). No mobile-only fake feed exists. Desktop behavior unchanged.
+
+Portfolio controls cleanup (Part G):
+- Removed the v0.3.13 in-Portfolio search and privacy buttons. Portfolio controls row now contains only Columns + Table/Cards.
+
+Stock actions (Part F): verified still compact (icon chips, commit 47ea325).
+
+Known limitations / remaining:
+- Mobile Home does not have a dedicated news rail (Home sections are pulse/insights/alerts/brief/scanner/watchlist). Adding a Home news feed is a future enhancement, not a regression.
+- XLSX workbook not updated this pass (MD is canonical readable source); flag if the workbook row is required.
+- NOT complete until Product Owner real-device UAT confirms.
 
 ### v0.3.13 - Open UAT Regression Fixes
 Date: 2026-05-28

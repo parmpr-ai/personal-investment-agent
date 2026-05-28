@@ -616,6 +616,85 @@ function MobileQuickControls({
   )
 }
 
+const MOCK_SEARCH_TICKERS = [
+  { symbol: 'NVDA', name: 'NVIDIA' },
+  { symbol: 'AMD', name: 'Advanced Micro Devices' },
+  { symbol: 'SOFI', name: 'SoFi Technologies' },
+  { symbol: 'IREN', name: 'Iris Energy' },
+  { symbol: 'AVAV', name: 'AeroVironment' },
+  { symbol: 'GOOGL', name: 'Alphabet' },
+  { symbol: 'TSLA', name: 'Tesla' },
+  { symbol: 'CRWV', name: 'CoreWeave' },
+  { symbol: 'NBIS', name: 'Nebius Group' },
+]
+
+function GlobalStockSearch({ universe, hidden, onSelect, onClose }: {
+  universe: any[]
+  hidden: boolean
+  onSelect: (symbol: string) => void
+  onClose: () => void
+}) {
+  const [q, setQ] = useState('')
+  const query = q.trim().toUpperCase()
+  const results = (query
+    ? universe.filter((u) => u.symbol.includes(query) || String(u.name || '').toUpperCase().includes(query))
+    : universe
+  ).slice(0, 8)
+  const exact = universe.some((u) => u.symbol === query)
+
+  return (
+    <MobileSheet title="Search" onClose={onClose}>
+      <div className="global-search-input">
+        <Search size={16} />
+        <input
+          autoFocus
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search stocks, ETFs, options…"
+          aria-label="Search stocks"
+        />
+        {q ? (
+          <button type="button" aria-label="Clear search" onClick={() => setQ('')}>
+            <X size={15} />
+          </button>
+        ) : null}
+      </div>
+      <div className="global-search-results">
+        {results.map((r) => {
+          const chg = Number(r.change ?? 0)
+          return (
+            <button key={r.symbol} type="button" className="global-search-result" onClick={() => onSelect(r.symbol)}>
+              <div className="gsr-logo" style={{ background: r.accent || '#60a5fa' }}>{r.symbol.slice(0, 2)}</div>
+              <div className="gsr-main">
+                <strong>{r.symbol}</strong>
+                <span>{r.name || '—'}</span>
+              </div>
+              {r.last != null ? (
+                <div className="gsr-price">
+                  <b>{hidden ? mask : money(r.last)}</b>
+                  {r.change != null ? <small className={chg >= 0 ? 'green' : 'red'}>{hidden ? '' : pct(chg)}</small> : null}
+                </div>
+              ) : null}
+              <span className={`gsr-source gsr-source-${String(r.source).toLowerCase()}`}>{r.source}</span>
+            </button>
+          )
+        })}
+        {query && !exact ? (
+          <button type="button" className="global-search-result gsr-analyze" onClick={() => onSelect(query)}>
+            <div className="gsr-logo gsr-logo-analyze">{query.slice(0, 2)}</div>
+            <div className="gsr-main">
+              <strong>Analyze {query}</strong>
+              <span>Open Stock Intelligence</span>
+            </div>
+            <span className="gsr-source gsr-source-pia">PIA</span>
+          </button>
+        ) : null}
+      </div>
+    </MobileSheet>
+  )
+}
+
 function MarketPulse({ items, hidden = false }: { items: any[]; hidden?: boolean }) {
   const rows = (items.length ? items : marketFallback).map((item: any, index: number) => ({
     ...item,
@@ -1251,8 +1330,7 @@ export default function MobileExperience() {
   const [portfolioView, setPortfolioView] = useState<PortfolioView>('table')
   const [headerExpanded, setHeaderExpanded] = useState(true)
   const [colMenuOpen, setColMenuOpen] = useState(false)
-  const [pfSearchOpen, setPfSearchOpen] = useState(false)
-  const [pfQuery, setPfQuery] = useState('')
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key)))
   const [colOrder, setColOrder] = useState<ColKey[]>(() => COL_DEFS.map((c) => c.key))
   const [quickOpen, setQuickOpen] = useState(false)
@@ -1265,13 +1343,26 @@ export default function MobileExperience() {
   const positions = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
   const scanner = dashboard?.scanner || scannerFallback
   const privacyHidden = mounted && hidden
-  const pfResults = useMemo(() => {
-    const q = pfQuery.trim().toUpperCase()
-    if (!q) return []
-    return positions
-      .filter((p: any) => String(p.symbol || '').toUpperCase().includes(q) || String(p.name || '').toUpperCase().includes(q))
-      .slice(0, 6)
-  }, [pfQuery, positions])
+  const searchUniverse = useMemo(() => {
+    const watchlist = dashboard?.watchlist || []
+    const bySymbol = new Map<string, any>()
+    const add = (raw: any, source: string) => {
+      const symbol = String(raw.symbol || raw.ticker || '').split(' ')[0].toUpperCase()
+      if (!symbol || bySymbol.has(symbol)) return
+      bySymbol.set(symbol, {
+        symbol,
+        name: raw.name || '',
+        last: raw.last ?? raw.price ?? null,
+        change: raw.day_change_pct ?? raw.change_pct ?? null,
+        accent: raw.accent,
+        source,
+      })
+    }
+    positions.forEach((p: any) => add(p, 'Portfolio'))
+    watchlist.forEach((w: any) => add(w, 'Watchlist'))
+    MOCK_SEARCH_TICKERS.forEach((m) => add(m, 'Mock'))
+    return Array.from(bySymbol.values())
+  }, [positions, dashboard?.watchlist])
   const notificationCount = buildNotificationItems(portfolio).length
   const {
     order: homeSectionOrder,
@@ -1356,24 +1447,38 @@ export default function MobileExperience() {
   return (
     <main className="mobile-shell">
       <header className="mobile-top">
-        <div>
-          <span>Mitsos - PIA</span>
-          <h1>{privacyHidden ? 'Private Command' : 'Mobile Command'}</h1>
+        <div className="mobile-top-brand">PIA</div>
+        <div className="mobile-top-actions">
+          <button
+            type="button"
+            className="mobile-icon-action"
+            aria-label="Search stocks"
+            aria-expanded={globalSearchOpen}
+            onClick={() => setGlobalSearchOpen(true)}
+          >
+            <Search size={18} />
+          </button>
+          <button
+            type="button"
+            className="mobile-icon-action"
+            aria-label={privacyHidden ? 'Show amounts' : 'Hide amounts'}
+            aria-pressed={privacyHidden}
+            onClick={() => updateHidden(!hidden)}
+          >
+            {privacyHidden ? <Eye size={18} /> : <EyeOff size={18} />}
+          </button>
+          <button
+            type="button"
+            className="mobile-icon-action"
+            aria-label="Notifications"
+            aria-expanded={notificationsOpen}
+            onClick={() => setNotificationsOpen(true)}
+          >
+            <Bell size={18} />
+            {notificationCount > 0 ? <span className="mobile-icon-badge">{notificationCount}</span> : null}
+          </button>
         </div>
-        <button
-          type="button"
-          className="mobile-icon-action"
-          aria-label="Notifications"
-          aria-expanded={notificationsOpen}
-          onClick={() => setNotificationsOpen(true)}
-        >
-          <Bell size={19} />
-          {notificationCount > 0 ? <span className="mobile-icon-badge">{notificationCount}</span> : null}
-        </button>
       </header>
-      {active !== 'portfolio' && active !== 'settings' && (
-        <SearchCommand onQuickControls={() => setQuickOpen(true)} />
-      )}
 
       {active === 'home' && (
         <MobileReorderableSections
@@ -1413,26 +1518,8 @@ export default function MobileExperience() {
               onToggle={toggleHeader}
             />
             <div className="mobile-portfolio-header">
-              <span className="mobile-portfolio-count">{positions.length}P</span>
+              <span className="mobile-portfolio-count">Positions</span>
               <div className="pf-header-actions">
-                <button
-                  type="button"
-                  className={`pf-icon-btn${pfSearchOpen ? ' active' : ''}`}
-                  aria-label="Search positions"
-                  aria-expanded={pfSearchOpen}
-                  onClick={() => setPfSearchOpen((v) => !v)}
-                >
-                  <Search size={15} />
-                </button>
-                <button
-                  type="button"
-                  className="pf-icon-btn"
-                  aria-label={privacyHidden ? 'Show amounts' : 'Hide amounts'}
-                  aria-pressed={privacyHidden}
-                  onClick={() => updateHidden(!hidden)}
-                >
-                  {privacyHidden ? <Eye size={15} /> : <EyeOff size={15} />}
-                </button>
                 {portfolioView === 'table' && (
                   <button type="button" className="pf-columns-btn" onClick={() => setColMenuOpen(true)}>
                     <SlidersHorizontal size={13} /> Cols
@@ -1444,43 +1531,6 @@ export default function MobileExperience() {
                 </div>
               </div>
             </div>
-            {pfSearchOpen && (
-              <div className="pf-search-panel">
-                <div className="pf-search-input-row">
-                  <Search size={15} />
-                  <input
-                    autoFocus
-                    type="search"
-                    value={pfQuery}
-                    onChange={(e) => setPfQuery(e.target.value)}
-                    placeholder="Search positions, ETFs, options…"
-                    aria-label="Search portfolio instruments"
-                  />
-                  <button type="button" aria-label="Close search" onClick={() => { setPfSearchOpen(false); setPfQuery('') }}>
-                    <X size={15} />
-                  </button>
-                </div>
-                {pfQuery.trim() && (
-                  <div className="pf-search-results">
-                    {pfResults.length ? (
-                      pfResults.map((p: any) => (
-                        <button
-                          key={p.symbol}
-                          type="button"
-                          className="pf-search-result"
-                          onClick={() => { setSelected(p); setPfSearchOpen(false); setPfQuery('') }}
-                        >
-                          <strong>{privacyHidden ? mask : p.symbol}</strong>
-                          <span>{privacyHidden ? '' : (p.name || '—')}</span>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="pf-search-empty">No matching position for “{pfQuery.trim()}”</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
             {portfolioView === 'table'
               ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} />
               : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} />
@@ -1523,6 +1573,14 @@ export default function MobileExperience() {
         onOpenSettings={() => setActive('settings')}
       />
       <MobileNotificationCenter open={notificationsOpen} onClose={() => setNotificationsOpen(false)} portfolio={portfolio} />
+      {globalSearchOpen && (
+        <GlobalStockSearch
+          universe={searchUniverse}
+          hidden={privacyHidden}
+          onSelect={(symbol) => { setSelected({ symbol }); setGlobalSearchOpen(false) }}
+          onClose={() => setGlobalSearchOpen(false)}
+        />
+      )}
     </main>
   )
 }
