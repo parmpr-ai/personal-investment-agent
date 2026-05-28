@@ -803,9 +803,26 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
 }
 
 function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: any) {
-  const [view, setView] = useState<'list' | 'card'>('list')
+  const [view, setView] = useState<'table' | 'cards'>('table')
   const [sort, setSort] = useState('allocation')
   const [direction, setDirection] = useState<'desc' | 'asc'>('desc')
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('pia.portfolioView.desktop')
+      if (saved === 'cards' || saved === 'table') setView(saved)
+    } catch {}
+  }, [])
+
+  function changeView(next: 'table' | 'cards') {
+    setView(next)
+    try { localStorage.setItem('pia.portfolioView.desktop', next) } catch {}
+  }
+
+  function handleColSort(col: string) {
+    if (sort === col) setDirection((d) => (d === 'desc' ? 'asc' : 'desc'))
+    else { setSort(col); setDirection('desc') }
+  }
   const rows = useMemo(
     () =>
       [...filtered].sort((a: any, b: any) => {
@@ -838,12 +855,12 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
                 onChange={setFilter}
                 tabs={['All', 'Stocks', 'Options', 'ETFs', 'Other'].map((x) => ({ id: x, label: x }))}
               />
-              <div className="view-toggle">
-                <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>
-                  List
+              <div className="portfolio-view-toggle" role="group" aria-label="Portfolio view mode">
+                <button className={view === 'table' ? 'active' : ''} onClick={() => changeView('table')}>
+                  Table
                 </button>
-                <button className={view === 'card' ? 'active' : ''} onClick={() => setView('card')}>
-                  Card
+                <button className={view === 'cards' ? 'active' : ''} onClick={() => changeView('cards')}>
+                  Cards
                 </button>
               </div>
             </>
@@ -870,8 +887,8 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
             {direction === 'desc' ? 'Descending' : 'Ascending'}
           </PiaButton>
         </div>
-        {view === 'list' ? (
-          <PositionsTable rows={rows} hidden={hidden} setSelected={setSelected} />
+        {view === 'table' ? (
+          <PositionsTable rows={rows} hidden={hidden} setSelected={setSelected} sort={sort} direction={direction} onColSort={handleColSort} />
         ) : (
           <PositionCards rows={rows} hidden={hidden} setSelected={setSelected} />
         )}
@@ -890,7 +907,11 @@ function PositionCards({ rows, hidden, setSelected }: any) {
   return (
     <div className="position-cards">
       {rows.map((p: any) => (
-        <PiaCard key={p.symbol} className="position-card">
+        <PiaCard
+          key={p.symbol}
+          className={`position-card${p.brand ? ' accented' : ''}`}
+          style={p.brand ? ({ '--pos-brand': p.brand } as React.CSSProperties) : undefined}
+        >
           <button onClick={() => setSelected(p)}>
             <header>
               <div>
@@ -947,20 +968,29 @@ function ScannerColumn({ title, items, hidden }: any) {
   )
 }
 
-function PositionsTable({ rows, hidden, setSelected }: any) {
+function PositionsTable({ rows, hidden, setSelected, sort, direction, onColSort }: any) {
+  function ColHead({ col, label }: { col: string; label: string }) {
+    const active = sort === col
+    return (
+      <th className={`col-sortable${active ? ' col-sorted' : ''}`} onClick={() => onColSort?.(col)}>
+        {label}{active ? <span className="sort-arrow">{direction === 'desc' ? ' ↓' : ' ↑'}</span> : null}
+      </th>
+    )
+  }
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Symbol</th>
+            <ColHead col="alphabetical" label="Symbol" />
             <th>Type</th>
-            <th>Qty</th>
+            <ColHead col="quantity" label="Qty" />
             <th>Avg</th>
             <th>Last</th>
-            <th>Mkt Value</th>
-            <th>Unrlzd</th>
-            <th>% Port</th>
+            <ColHead col="market_value" label="Mkt Value" />
+            <ColHead col="total_pnl" label="Unrlzd" />
+            <ColHead col="daily_pnl" label="Day P/L" />
+            <ColHead col="allocation" label="% Port" />
           </tr>
         </thead>
         <tbody>
@@ -988,6 +1018,9 @@ function PositionsTable({ rows, hidden, setSelected }: any) {
                 {hidden ? mask : money(p.unrealized)}
                 <br />
                 <small>{hidden ? mask : pct(p.unrealized_pct)}</small>
+              </td>
+              <td className={p.day_pnl >= 0 ? 'green' : 'red'}>
+                {hidden ? mask : money(p.day_pnl || 0)}
               </td>
               <td>{hidden ? mask : pct(p.portfolio_pct)}</td>
             </tr>

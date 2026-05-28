@@ -795,12 +795,19 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
       render={(position: any) => {
         const risk = Number(position.risk || 0)
         const change = Number(position.day_change_pct || position.change_pct || 0)
+        const unreal = Number(position.unrealized || 0)
+        const unrealPct = Number(position.unrealized_pct || 0)
+        const brandColor = position.brand || position.accent || undefined
         return (
-          <button className="mobile-visual-card mobile-position-card" onClick={() => onSelect(position)}>
+          <button
+            className={`mobile-visual-card mobile-position-card${brandColor ? ' themed' : ''}`}
+            onClick={() => onSelect(position)}
+            style={brandColor ? { borderTopColor: brandColor } as CSSProperties : undefined}
+          >
             <div className="mobile-card-head">
               <div>
                 <span>{position.name || 'Portfolio holding'}</span>
-                <strong>{position.symbol}</strong>
+                <strong>{hidden ? mask : position.symbol}</strong>
               </div>
               <div className="mobile-price-stack">
                 <b>{hidden ? mask : money(position.last || position.price || position.market_value)}</b>
@@ -808,6 +815,16 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
               </div>
             </div>
             <Sparkline values={position.spark} tone={change >= 0 ? 'good' : 'bad'} />
+            {position.unrealized !== undefined && (
+              <div className="mobile-position-pnl">
+                <span className={unreal >= 0 ? 'green' : 'red'}>
+                  {hidden ? mask : `${unreal >= 0 ? '+' : ''}${money(unreal)}`}
+                </span>
+                <small className={unrealPct >= 0 ? 'green' : 'red'}>
+                  {hidden ? mask : `${unrealPct >= 0 ? '+' : ''}${unrealPct.toFixed(1)}%`}
+                </small>
+              </div>
+            )}
             <div className="mobile-position-footer">
               {hidden ? <span className="muted">{mask}</span> : <ExposureGauge value={Number(position.portfolio_pct || 0)} />}
               <div>
@@ -822,12 +839,126 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
   )
 }
 
+type PortfolioView = 'table' | 'cards'
+type TableSortKey = 'symbol' | 'last' | 'change' | 'pnl' | 'weight' | 'risk'
+
+function MobilePortfolioTable({ rows, onSelect, hidden }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean }) {
+  const [sort, setSort] = useState<TableSortKey>('weight')
+  const [dir, setDir] = useState<'desc' | 'asc'>('desc')
+
+  function toggleSort(col: TableSortKey) {
+    if (sort === col) setDir((d) => (d === 'desc' ? 'asc' : 'desc'))
+    else { setSort(col); setDir('desc') }
+  }
+
+  const sorted = useMemo(() => {
+    const key = (p: any): string | number => {
+      if (sort === 'symbol') return String(p.symbol || '')
+      if (sort === 'last') return Number(p.last || p.price || 0)
+      if (sort === 'change') return Number(p.day_change_pct || 0)
+      if (sort === 'pnl') return Number(p.unrealized || 0)
+      if (sort === 'weight') return Number(p.portfolio_pct || 0)
+      if (sort === 'risk') return Number(p.risk || 0)
+      return 0
+    }
+    return [...rows].sort((a, b) => {
+      const av = key(a), bv = key(b)
+      if (typeof av === 'string') return dir === 'asc' ? av.localeCompare(bv as string) : (bv as string).localeCompare(av)
+      return dir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
+    })
+  }, [rows, sort, dir])
+
+  function ColHead({ col, label }: { col: TableSortKey; label: string }) {
+    const active = sort === col
+    return (
+      <th className={active ? 'col-sorted' : ''} onClick={() => toggleSort(col)}>
+        {label}{active ? <span className="sort-arrow">{dir === 'desc' ? ' ↓' : ' ↑'}</span> : null}
+      </th>
+    )
+  }
+
+  const totals = useMemo(() => ({
+    value: rows.reduce((s, p) => s + Number(p.market_value || 0), 0),
+    pnl: rows.reduce((s, p) => s + Number(p.unrealized || 0), 0),
+    dayPnl: rows.reduce((s, p) => s + Number(p.day_pnl || 0), 0),
+  }), [rows])
+
+  return (
+    <>
+      <div className="mobile-terminal-wrap">
+        <table className="mobile-terminal-table">
+          <thead>
+            <tr>
+              <ColHead col="symbol" label="Symbol" />
+              <ColHead col="last" label="Price" />
+              <ColHead col="change" label="Chg%" />
+              <ColHead col="pnl" label="Unrlzd" />
+              <ColHead col="weight" label="Wt%" />
+              <ColHead col="risk" label="Risk" />
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((position) => {
+              const change = Number(position.day_change_pct || 0)
+              const unreal = Number(position.unrealized || 0)
+              const unrealPct = Number(position.unrealized_pct || 0)
+              const risk = Number(position.risk || 0)
+              return (
+                <tr key={position.symbol} onClick={() => onSelect(position)}>
+                  <td>
+                    <div className="mtt-symbol">
+                      <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
+                        {hidden ? '●' : (position.logo || String(position.symbol || '').slice(0, 2))}
+                      </div>
+                      <div className="mtt-sym-text">
+                        <strong>{hidden ? mask : position.symbol}</strong>
+                        <span>{hidden ? 'Holding' : (position.sec_type === 'OPT' ? 'Option' : String(position.name || '').split(' ').slice(0, 2).join(' '))}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td>{hidden ? mask : money(position.last || position.price || 0)}</td>
+                  <td className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)}</td>
+                  <td className={unreal >= 0 ? 'green' : 'red'}>
+                    {hidden ? mask : `${unreal >= 0 ? '+' : ''}${money(unreal)}`}
+                    {!hidden && unrealPct !== 0 && <><br /><small style={{ fontSize: 10, opacity: .75 }}>{unrealPct >= 0 ? '+' : ''}{unrealPct.toFixed(1)}%</small></>}
+                  </td>
+                  <td>{hidden ? mask : `${Number(position.portfolio_pct || 0).toFixed(1)}%`}</td>
+                  <td>
+                    <span className={`mtt-risk ${risk >= 70 ? 'bad' : risk >= 45 ? 'warn' : 'good'}`}>
+                      {hidden ? mask : risk}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="mobile-terminal-totals">
+        <div className="mobile-terminal-total-cell">
+          <span>Portfolio value</span>
+          <b>{hidden ? mask : money(totals.value)}</b>
+        </div>
+        <div className="mobile-terminal-total-cell">
+          <b className={totals.dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : `${totals.dayPnl >= 0 ? '+' : ''}${money(totals.dayPnl)}`}</b>
+          <span>Today P/L</span>
+        </div>
+        <div className="mobile-terminal-total-cell">
+          <b className={totals.pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : `${totals.pnl >= 0 ? '+' : ''}${money(totals.pnl)}`}</b>
+          <span>Unrealized</span>
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function MobileExperience() {
   const dashboard = useMobileDashboard()
   const [active, setActive] = useState('home')
   const [selected, setSelected] = useState<any>(null)
   const [mounted, setMounted] = useState(false)
   const [hidden, setHidden] = useState(false)
+  const [portfolioView, setPortfolioView] = useState<PortfolioView>('table')
   const [quickOpen, setQuickOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [rescanning, setRescanning] = useState(false)
@@ -850,6 +981,8 @@ export default function MobileExperience() {
     setMounted(true)
     try {
       setHidden(localStorage.getItem('pia.hideAmounts') === 'true')
+      const savedView = localStorage.getItem('pia.portfolioView.mobile')
+      if (savedView === 'cards' || savedView === 'table') setPortfolioView(savedView)
     } catch {}
     fetchJson('/source-health')
       .then((data) => {
@@ -857,6 +990,11 @@ export default function MobileExperience() {
       })
       .catch(() => {})
   }, [])
+
+  function updatePortfolioView(next: PortfolioView) {
+    setPortfolioView(next)
+    try { localStorage.setItem('pia.portfolioView.mobile', next) } catch {}
+  }
 
   function updateHidden(next: boolean) {
     setHidden(next)
@@ -917,7 +1055,22 @@ export default function MobileExperience() {
         />
       )}
 
-      {active === 'portfolio' && <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} />}
+      {active === 'portfolio' && (
+        <div className="mobile-portfolio-section">
+          <div className="mobile-portfolio-header">
+            <h2>Portfolio</h2>
+            <span className="mobile-portfolio-count">{positions.length} position{positions.length !== 1 ? 's' : ''}</span>
+            <div className="portfolio-view-toggle" role="group" aria-label="Portfolio view mode">
+              <button className={portfolioView === 'table' ? 'active' : ''} onClick={() => updatePortfolioView('table')}>Table</button>
+              <button className={portfolioView === 'cards' ? 'active' : ''} onClick={() => updatePortfolioView('cards')}>Cards</button>
+            </div>
+          </div>
+          {portfolioView === 'table'
+            ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} />
+            : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} />
+          }
+        </div>
+      )}
       {active === 'scanner' && <ScannerSetups scanner={scanner} onSelect={setSelected} hidden={privacyHidden} />}
       {active === 'markets' && (
         <>

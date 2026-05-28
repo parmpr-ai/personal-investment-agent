@@ -352,6 +352,7 @@ Default behavior:
 - v0.3.4: Mobile correction mock pack for Product Owner review.
 - v0.3.5: Mock-first design governance system and locked design-system documentation.
 - v0.3.6: Hybrid mock intelligence data layer for UI evaluation across 9 tickers.
+- v0.3.7: Portfolio dual view mode — Terminal Table + Swipe Cards with localStorage persistence.
 
 ## Guardrails
 
@@ -365,6 +366,32 @@ Default behavior:
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.7 - Portfolio Dual View Mode
+Date: 2026-05-28
+Status: Implemented and validated.
+
+## Added:
+
+- Mobile (`MobileExperience.tsx`): `Table | Cards` view toggle for the Portfolio section with localStorage persistence (`pia.portfolioView.mobile`).
+- `MobilePortfolioTable`: IBKR-style compact terminal table with sortable column headers (Symbol, Price, Chg%, Unrlzd, Wt%, Risk), horizontal scroll, compact row density, and portfolio totals footer row.
+- Improved `PositionCards` (mobile): brand/accent color top border from position data; unrealized P/L row added to each card.
+- Desktop (`Dashboard.tsx`): `Table | Cards` toggle (renamed from `List | Card`) with localStorage persistence (`pia.portfolioView.desktop`).
+- Desktop `PositionsTable`: sortable column headers — Symbol, Qty, Mkt Value, Unrlzd, Day P/L, % Port. Day P/L column added.
+- Desktop `PositionCards`: brand/accent color CSS variable hook (`--pos-brand`) applied from position data.
+- CSS: `.portfolio-view-toggle`, `.mobile-terminal-table`, `.mtt-*`, `.mobile-position-pnl`, `.mobile-terminal-totals`, `th.col-sorted`, `.position-card.accented` added.
+
+## Design principle preserved:
+
+- Portfolio supports both operational terminal scanning (Table) and premium visual card exploration (Cards).
+- Neither view is removed — both are first-class.
+- Cards are future-ready: CSS variable `--pos-brand` / `--pos-accent` are the hooks for color theme variants.
+- Table column headers follow IBKR-style locked UX principle: sorting via column headers, not dropdown-only.
+
+## Known limitations:
+
+- Sparklines in mobile cards use fallback data (no live intraday feed yet).
+- Desktop Day P/L column displays `$0.00` for positions without `day_pnl` in fallback data.
 
 ### v0.3.6 - Hybrid Mock Intelligence Data Layer
 Date: 2026-05-28
