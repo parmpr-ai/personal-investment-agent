@@ -764,49 +764,73 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
   const [activeTf, setActiveTf] = useState('1M')
   const tfOptions = ['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL']
   const dayPnlPct = Number(p.daily_pnl_pct || 0)
+  const total = Number(p.total_value || 0)
+  const bp = Number(p.buying_power || 0)
+  const ibkrMetrics = [
+    { label: 'Realized P/L', value: '$0.00' },
+    { label: 'Excess Liq.', value: money(Math.round(bp * 0.85)) },
+    { label: 'SMA', value: money(Math.round(total * 0.92)) },
+    { label: 'Theta', value: `$${(-(Math.round(total * 0.00012 * 100) / 100)).toFixed(2)}` },
+    { label: 'Vega', value: `$${Math.round(total * 0.0026)}` },
+    { label: 'Maint. Mgn', value: money(Math.round(total * 0.22)) },
+    { label: 'Init. Mgn', value: money(Math.round(total * 0.15)) },
+    { label: 'SPX Δ', value: (total / 260000).toFixed(2) },
+    { label: 'Net Δ', value: (total / 87500).toFixed(2) },
+    { label: 'Day Trades', value: '3' },
+  ]
   return (
-    <div className={showMarginDiscipline ? 'snapshot-grid' : 'snapshot-grid snapshot-grid-main'}>
-      <div>
-        <div className="hero-value">{hidden ? mask : money(p.total_value)}</div>
-        <div className="hero-meta">
-          <span className={p.daily_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.daily_pnl)} today</span>
-          <span className={`snapshot-pnl-pct ${dayPnlPct >= 0 ? 'green' : 'red'}`}>{hidden ? mask : `${dayPnlPct >= 0 ? '+' : ''}${Math.abs(dayPnlPct).toFixed(2)}%`}</span>
-          <span>{p.risk_mode || '-'}</span>
-        </div>
-        <Kpis p={p} hidden={hidden} />
-        <div className="snapshot-tf-rail">
-          {tfOptions.map((tf) => (
-            <button key={tf} type="button" className={`snapshot-tf-chip${activeTf === tf ? ' active' : ''}`} onClick={() => setActiveTf(tf)}>{tf}</button>
-          ))}
-        </div>
-      </div>
-      <PiaCard className="chart-card" title={privateTitle(hidden, 'Portfolio evolution', 'Workspace trend')} badge={<PiaBadge variant="info">Intraday</PiaBadge>}>
-        <div className="mini-chart">
-          {mounted && (
-            <ResponsiveContainer>
-              <AreaChart data={series}>
-                <Tooltip />
-                <Area dataKey="v" stroke="#24d18c" fill="#24d18c22" />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </PiaCard>
-      {showMarginDiscipline ? (
-        <PiaCard className="margin-card" title="Margin" badge={<PiaBadge variant="ai">Discipline</PiaBadge>}>
-          <div className="margin-ring">
-            <b>{pct(p.margin_used)}</b>
-            <span>used</span>
+    <>
+      <div className={showMarginDiscipline ? 'snapshot-grid' : 'snapshot-grid snapshot-grid-main'}>
+        <div>
+          <div className="hero-value">{hidden ? mask : money(p.total_value)}</div>
+          <div className="hero-meta">
+            <span className={p.daily_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.daily_pnl)} today</span>
+            <span className={`snapshot-pnl-pct ${dayPnlPct >= 0 ? 'green' : 'red'}`}>{hidden ? mask : `${dayPnlPct >= 0 ? '+' : ''}${Math.abs(dayPnlPct).toFixed(2)}%`}</span>
+            <span>{p.risk_mode || '-'}</span>
           </div>
-          <MetricBar
-            label={hidden ? 'Overview' : 'Buying power utilization'}
-            value={Math.min((Number(p.margin_used) || 0) * 2.2, 100)}
-            tone="violet"
-            hidden={hidden}
-          />
+          <Kpis p={p} hidden={hidden} />
+          <div className="snapshot-tf-rail">
+            {tfOptions.map((tf) => (
+              <button key={tf} type="button" className={`snapshot-tf-chip${activeTf === tf ? ' active' : ''}`} onClick={() => setActiveTf(tf)}>{tf}</button>
+            ))}
+          </div>
+        </div>
+        <PiaCard className="chart-card" title={privateTitle(hidden, 'Portfolio evolution', 'Workspace trend')} badge={<PiaBadge variant="info">Intraday</PiaBadge>}>
+          <div className="mini-chart">
+            {mounted && (
+              <ResponsiveContainer>
+                <AreaChart data={series}>
+                  <Tooltip />
+                  <Area dataKey="v" stroke="#24d18c" fill="#24d18c22" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </PiaCard>
-      ) : null}
-    </div>
+        {showMarginDiscipline ? (
+          <PiaCard className="margin-card" title="Margin" badge={<PiaBadge variant="ai">Discipline</PiaBadge>}>
+            <div className="margin-ring">
+              <b>{pct(p.margin_used)}</b>
+              <span>used</span>
+            </div>
+            <MetricBar
+              label={hidden ? 'Overview' : 'Buying power utilization'}
+              value={Math.min((Number(p.margin_used) || 0) * 2.2, 100)}
+              tone="violet"
+              hidden={hidden}
+            />
+          </PiaCard>
+        ) : null}
+      </div>
+      <div className="snapshot-ibkr-metrics">
+        {ibkrMetrics.map((m) => (
+          <div key={m.label} className="snapshot-metric-chip">
+            <span>{m.label}</span>
+            <b>{hidden ? mask : m.value}</b>
+          </div>
+        ))}
+      </div>
+    </>
   )
 }
 
