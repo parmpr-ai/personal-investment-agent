@@ -239,7 +239,10 @@ function SwipeRail({
     dragStartRef.current = { x: event.clientX, y: event.clientY, scrollLeft: node.scrollLeft }
     isDraggingRef.current = true
     setIsDragging(true)
-    node.setPointerCapture?.(event.pointerId)
+    // Touch uses native pan-x scroll — no capture needed (capture would fight the browser's native gesture)
+    if (event.pointerType !== 'touch') {
+      node.setPointerCapture?.(event.pointerId)
+    }
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
@@ -258,6 +261,8 @@ function SwipeRail({
     isDraggingRef.current = false
     setIsDragging(false)
     node.releasePointerCapture?.(event.pointerId)
+    // pointercancel = browser took over native scroll; scroll-snap handles snapping — don't interrupt it
+    if (event.type === 'pointercancel') return
     const slides = Array.from(node.children) as HTMLElement[]
     const closest = slides.reduce(
       (current, slide, index) => {
@@ -1025,11 +1030,6 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
             ))}
           </div>
 
-          <div className="pf-portfolio-search">
-            <Search size={14} />
-            <input type="search" placeholder="Search positions, ETFs, options…" aria-label="Search portfolio instruments" />
-          </div>
-
           <div className="pf-metrics-full">
             {fullMetrics.map((m) => (
               <div key={m.label} className="pf-metric-chip">
@@ -1251,6 +1251,8 @@ export default function MobileExperience() {
   const [portfolioView, setPortfolioView] = useState<PortfolioView>('table')
   const [headerExpanded, setHeaderExpanded] = useState(true)
   const [colMenuOpen, setColMenuOpen] = useState(false)
+  const [pfSearchOpen, setPfSearchOpen] = useState(false)
+  const [pfQuery, setPfQuery] = useState('')
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key)))
   const [colOrder, setColOrder] = useState<ColKey[]>(() => COL_DEFS.map((c) => c.key))
   const [quickOpen, setQuickOpen] = useState(false)
@@ -1263,6 +1265,13 @@ export default function MobileExperience() {
   const positions = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
   const scanner = dashboard?.scanner || scannerFallback
   const privacyHidden = mounted && hidden
+  const pfResults = useMemo(() => {
+    const q = pfQuery.trim().toUpperCase()
+    if (!q) return []
+    return positions
+      .filter((p: any) => String(p.symbol || '').toUpperCase().includes(q) || String(p.name || '').toUpperCase().includes(q))
+      .slice(0, 6)
+  }, [pfQuery, positions])
   const notificationCount = buildNotificationItems(portfolio).length
   const {
     order: homeSectionOrder,
@@ -1406,6 +1415,24 @@ export default function MobileExperience() {
             <div className="mobile-portfolio-header">
               <span className="mobile-portfolio-count">{positions.length}P</span>
               <div className="pf-header-actions">
+                <button
+                  type="button"
+                  className={`pf-icon-btn${pfSearchOpen ? ' active' : ''}`}
+                  aria-label="Search positions"
+                  aria-expanded={pfSearchOpen}
+                  onClick={() => setPfSearchOpen((v) => !v)}
+                >
+                  <Search size={15} />
+                </button>
+                <button
+                  type="button"
+                  className="pf-icon-btn"
+                  aria-label={privacyHidden ? 'Show amounts' : 'Hide amounts'}
+                  aria-pressed={privacyHidden}
+                  onClick={() => updateHidden(!hidden)}
+                >
+                  {privacyHidden ? <Eye size={15} /> : <EyeOff size={15} />}
+                </button>
                 {portfolioView === 'table' && (
                   <button type="button" className="pf-columns-btn" onClick={() => setColMenuOpen(true)}>
                     <SlidersHorizontal size={13} /> Cols
@@ -1417,6 +1444,43 @@ export default function MobileExperience() {
                 </div>
               </div>
             </div>
+            {pfSearchOpen && (
+              <div className="pf-search-panel">
+                <div className="pf-search-input-row">
+                  <Search size={15} />
+                  <input
+                    autoFocus
+                    type="search"
+                    value={pfQuery}
+                    onChange={(e) => setPfQuery(e.target.value)}
+                    placeholder="Search positions, ETFs, options…"
+                    aria-label="Search portfolio instruments"
+                  />
+                  <button type="button" aria-label="Close search" onClick={() => { setPfSearchOpen(false); setPfQuery('') }}>
+                    <X size={15} />
+                  </button>
+                </div>
+                {pfQuery.trim() && (
+                  <div className="pf-search-results">
+                    {pfResults.length ? (
+                      pfResults.map((p: any) => (
+                        <button
+                          key={p.symbol}
+                          type="button"
+                          className="pf-search-result"
+                          onClick={() => { setSelected(p); setPfSearchOpen(false); setPfQuery('') }}
+                        >
+                          <strong>{privacyHidden ? mask : p.symbol}</strong>
+                          <span>{privacyHidden ? '' : (p.name || '—')}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="pf-search-empty">No matching position for “{pfQuery.trim()}”</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {portfolioView === 'table'
               ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} />
               : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} />

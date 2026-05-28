@@ -533,6 +533,24 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .pf-portfolio-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:#eef4fb;font-size:12px}
 .pf-portfolio-search input::placeholder{color:var(--muted)}
 .pf-portfolio-search svg{color:var(--muted);flex:0 0 auto}
+/* Always-visible portfolio control icons (v0.3.13: search + privacy) */
+.pf-icon-btn{display:grid;place-items:center;width:30px;height:28px;border:1px solid rgba(148,163,184,.18);border-radius:9px;background:rgba(9,14,24,.82);color:var(--muted);flex:0 0 auto;transition:color .13s ease,border-color .13s ease,background .13s ease}
+.pf-icon-btn:hover{color:#eef4fb;border-color:rgba(96,165,250,.32)}
+.pf-icon-btn.active{color:#dbeafe;border-color:rgba(96,165,250,.5);background:rgba(37,99,235,.22)}
+/* Portfolio instrument search panel */
+.pf-search-panel{margin:0 0 8px;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:rgba(3,7,18,.6);overflow:hidden}
+.pf-search-input-row{display:flex;align-items:center;gap:8px;padding:8px 10px}
+.pf-search-input-row svg{color:var(--muted);flex:0 0 auto}
+.pf-search-input-row input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:#eef4fb;font-size:13px}
+.pf-search-input-row input::placeholder{color:var(--muted)}
+.pf-search-input-row button{display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:rgba(148,163,184,.1);color:var(--muted);flex:0 0 auto}
+.pf-search-input-row button:hover{color:#eef4fb;background:rgba(148,163,184,.2)}
+.pf-search-results{display:grid;gap:2px;padding:4px;border-top:1px solid rgba(148,163,184,.12)}
+.pf-search-result{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;border:0;border-radius:10px;background:transparent;color:#eef4fb;padding:9px 10px;transition:background .12s ease}
+.pf-search-result:hover,.pf-search-result:active{background:rgba(96,165,250,.1)}
+.pf-search-result strong{font-size:13px;font-weight:800;flex:0 0 auto}
+.pf-search-result span{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-search-empty{padding:10px;color:var(--muted);font-size:12px;border-top:1px solid rgba(148,163,184,.12)}
 /* Full 12-metric grid */
 .pf-metrics-full{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:6px}
 .pf-metrics-full .pf-metric-chip{padding:6px 7px}

@@ -342,6 +342,15 @@ Default behavior:
 - Required release checks stay in UAT Memory.
 - Integration commits must preserve product continuity, route integrity, and privacy mode.
 
+## Task Completion Rule (MANDATORY)
+
+A task is NOT complete until all of the following pass:
+- Product Owner UAT passes.
+- Real-device mobile validation passes for any gesture/mobile feature (touch swipe, sheets, keyboard focus, frozen-table scroll).
+- Regression check passes (alerts visible, navigation intact, privacy masking works, no route breakage).
+
+"Implemented" does not equal "validated". A green `npm run build` and a passing route check are necessary but not sufficient. Do not mark a UAT item complete in MD/XLSX until real-device behavior is confirmed by the Product Owner.
+
 ## Version History
 
 - v0.1.0: Initial PIA dashboard and setup continuity baseline.
@@ -357,6 +366,7 @@ Default behavior:
 - v0.3.9: Portfolio IBKR alignment — collapsible hero header with evolution chart, symbol-only rows, drag-reorder columns, colOrder localStorage.
 - v0.3.10: Hotfix — restore mobile portfolio cards touch swipe (touch-action CSS bug + async isDragging state bug).
 - v0.3.11: Portfolio header IBKR alignment, risk visual system, swipe global fix — NLV hero + Day P/L %, time-range chips, 12-metric grid, RiskBar, desktop snapshot time-range chips.
+- v0.3.13: Regression fixes — portfolio search now always visible, Home rails finger swipe restored, privacy toggle accessible on Portfolio.
 
 ## Guardrails
 
@@ -370,6 +380,27 @@ Default behavior:
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.13 - Open UAT Regression Fixes
+Date: 2026-05-28
+Status: Implemented; pending Product Owner real-device UAT.
+
+These items were reported complete in prior sprints but failed Product Owner UAT. Root causes found and the actual implementation fixed.
+
+CR — Portfolio search visibility (Bug 1):
+- Root cause: the search input lived inside the `{expanded && ...}` block of `PortfolioHeader`. When `pia.portfolioHeader.expanded` was saved as `false`, the search never rendered anywhere.
+- Fix: removed the in-header search; added an always-visible magnifier icon button (`pf-icon-btn`) in the persistent portfolio controls row. Tapping it opens a compact, auto-focused search panel (mobile keyboard opens via `autoFocus`). X button or empty-close collapses it. Typing filters current positions; selecting a result opens the Stock Intelligence panel. This is instrument search, not Ask PIA.
+
+CR — Home rails finger swipe (Bug 2):
+- Root cause: `SwipeRail.handlePointerDown` called `setPointerCapture` for touch pointers. The browser's native `pan-x` scroll then fired `pointercancel`, and `handlePointerEnd` immediately called `scrollToSlide`, interrupting the native gesture mid-swipe.
+- Fix: skip `setPointerCapture` when `pointerType === 'touch'`; in `handlePointerEnd`, return early on `pointercancel` so native scroll-snap finishes the gesture. All Home rails (Market Pulse, Portfolio Insights, Scanner Setups, Watchlist Movers) share this `SwipeRail` component, so they all benefit.
+
+CR — Privacy masking accessibility (Bug 3):
+- Root cause: the privacy toggle lived only inside `SearchCommand` (via Quick Controls), and `SearchCommand` is hidden when `active === 'portfolio'` — so the toggle was unreachable on the Portfolio workspace.
+- Fix: added a dedicated privacy (Eye/EyeOff) icon button in the persistent portfolio controls row, wired to the existing `pia.hideAmounts` state/localStorage path. All portfolio surfaces already consume `privacyHidden`, so NLV, P/L, table values, card values and IBKR metrics mask correctly.
+
+Known limitations:
+- Search currently scopes to current portfolio positions; cross-universe ticker lookup is a later enhancement.
 
 ### v0.3.11 - Portfolio Header + Swipe + Risk Visual Alignment
 Date: 2026-05-28
