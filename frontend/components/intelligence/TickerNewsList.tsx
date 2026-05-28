@@ -71,7 +71,10 @@ export default function TickerNewsList({
                     {title}
                   </a>
                 )}
-                <p>{hidden ? mask : item.summary}</p>
+                <details className="news-intel-expand">
+                  <summary>{hidden ? 'Details' : 'Why it matters'}</summary>
+                  <p>{hidden ? mask : item.summary}</p>
+                </details>
               </div>
               <div className="news-intel-meta stock-news-meta">
                 <div className="news-intel-field">

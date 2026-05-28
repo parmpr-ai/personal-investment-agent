@@ -508,7 +508,7 @@ function SettingsAbout() {
       <GlowCard>
         <h3>About</h3>
         <p className="muted">Release details live in the desktop About / Release Center view.</p>
-        <a className="tab" href="/">
+        <a className="tab" href="/#tool=about">
           Open release center
         </a>
       </GlowCard>

@@ -1,6 +1,6 @@
 'use client'
 
-import { ExternalLink, Radio, Video } from 'lucide-react'
+import { ExternalLink, Play, Radio, Video } from 'lucide-react'
 import { PiaBadge } from '../ui-v3'
 import { mask } from '../../lib/pia-api'
 
@@ -19,6 +19,8 @@ type TickerVideoCard = {
   title: string
   source: string
   relevance: string
+  duration: string
+  whyItMatters: string
   href: string
   sourceType: VideoSourceType
 }
@@ -76,6 +78,15 @@ function buildTickerVideoCards(ticker: string, companyName: string): TickerVideo
               : `${symbol} long-form thesis videos`,
       source: target.channel,
       relevance: target.relevance,
+      duration: target.id === 'latest-analysis' ? '8-14 min' : target.id === 'earnings-management' ? '30-60 min' : target.id === 'market-narrative' ? '5-12 min' : '18-45 min',
+      whyItMatters:
+        target.id === 'latest-analysis'
+          ? 'Checks whether current price action is being confirmed by recent analyst and creator narratives.'
+          : target.id === 'earnings-management'
+            ? 'Primary management commentary can validate or break the investment thesis.'
+            : target.id === 'market-narrative'
+              ? 'Broadcast coverage often explains the near-term catalyst driving volume and sentiment.'
+              : 'Long-form thesis reviews help separate short-term noise from durable business drivers.',
       href: videoSearchUrl(query),
       sourceType: target.sourceType,
     }
@@ -96,6 +107,9 @@ export default function TickerVideosList({
   return (
     <div className="stock-video-stack">
       <section className="stock-video-brief">
+        <div className="stock-video-featured-thumb" aria-hidden="true">
+          <Play size={24} />
+        </div>
         <div>
           <span>{hidden ? 'Workspace feed' : 'VIDEO RESEARCH'}</span>
           <h3>{hidden ? 'Research monitor' : `${String(ticker || '').split(' ')[0].toUpperCase()} video watchlist`}</h3>
@@ -107,8 +121,9 @@ export default function TickerVideosList({
       <div className="stock-video-list">
         {rows.map((item) => (
           <article className="stock-video-card" key={item.id}>
-            <div className="stock-video-icon" aria-hidden="true">
+            <div className="stock-video-thumb" aria-hidden="true">
               {item.sourceType === 'channel_monitor_seed' ? <Radio size={18} /> : <Video size={18} />}
+              <span>{hidden ? mask : item.duration}</span>
             </div>
             <div className="stock-video-main">
               <div className="stock-video-kicker">
@@ -125,9 +140,7 @@ export default function TickerVideosList({
               <p>
                 {hidden
                   ? mask
-                  : item.sourceType === 'channel_monitor_seed'
-                    ? 'Structured as a future subscribed-channel monitoring target.'
-                    : 'Ticker-scoped external video research link.'}
+                  : item.whyItMatters}
               </p>
             </div>
             {!hidden ? (
