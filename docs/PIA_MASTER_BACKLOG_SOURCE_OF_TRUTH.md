@@ -238,6 +238,23 @@ When user says "Καλημέρα PIA", assistant must:
 - Do not turn this file into verbose process documentation.
 - Do not commit `.next`, sqlite files, pycache, package-lock changes, or Office lock files unless explicitly required.
 
+## AUTONOMOUS EXECUTION RULE (MANDATORY)
+
+- Senior developers must execute autonomously.
+- Do not ask repeated confirmations.
+- Do not ask micro-questions.
+- Do not stop for obvious implementation choices.
+- Read MD/XLSX first.
+- Update backlog, UAT, changelog after implementation.
+- Commit and push when validation passes.
+- Developers may stop only for:
+  - Destructive changes.
+  - Force push.
+  - Data deletion.
+  - Schema-breaking change.
+  - Conflicting product direction.
+  - Missing external credentials/API access.
+
 ## Release Governance
 
 - Every approved sprint or merge must update CHANGELOG.
