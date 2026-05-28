@@ -354,6 +354,7 @@ Default behavior:
 - v0.3.6: Hybrid mock intelligence data layer for UI evaluation across 9 tickers.
 - v0.3.7: Portfolio dual view mode — Terminal Table + Swipe Cards with localStorage persistence.
 - v0.3.8: Portfolio terminal density refinement — frozen column, summary strip, column settings, Home/Portfolio IA separation.
+- v0.3.9: Portfolio IBKR alignment — collapsible hero header with evolution chart, symbol-only rows, drag-reorder columns, colOrder localStorage.
 
 ## Guardrails
 
@@ -367,6 +368,31 @@ Default behavior:
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.9 - Portfolio IBKR Alignment Bugfix
+Date: 2026-05-28
+Status: Implemented and validated.
+
+## Fixed:
+
+- **Collapsible Portfolio Header (Bug 1 + 3)**: Replaced flat summary strip with a proper IBKR-style collapsible header. Expanded: hero NLV value (clamp 24–34px), Day P/L chip, evolution chart, 4-metric row (Unrealized, Cash, Buy Power, Top Exposure). Collapsed: NLV + Day P/L chip + chevron only. Persist state in localStorage (`pia.portfolioHeader.expanded`). Positions dominate screen when header is collapsed.
+
+- **Portfolio Evolution Graph (Bug 2)**: 30-point deterministic evolution chart inside the expanded header. Generated from current portfolio total (87% base → current over 30 days with sinusoidal variation). SVG line with green/red color based on direction. No empty chart — always renders.
+
+- **Symbol-only Rows (Bug 4)**: Company name removed from terminal table frozen column. Now shows: color logo mark + bold symbol only. First column min-width reduced from 120px → 64px, giving more horizontal space to metrics. IBKR-style dense row.
+
+- **Column Drag Reorder (Bug 5)**: `PortfolioColumnSheet` upgraded with pointer-based drag reorder. Each column row has a `GripVertical` drag handle (pointer capture via `setPointerCapture`). Live reorder via `data-ci` index lookup on pointer move. Order persisted in localStorage (`pia.portfolioColOrder.mobile`). Reset to defaults resets both visibility and order. Min 2 columns enforced.
+
+- **Column Order in Table (Bug 5 cont.)**: `MobilePortfolioTable` now respects `colOrder` when rendering columns — `colOrder.map → COL_DEFS.find → filter visible`. Column order and visibility are fully decoupled and independently persisted.
+
+- **Cards Gesture Swipe (Bug 6)**: Verified. `PositionCards` uses `SwipeRail` which has full pointer-capture horizontal swipe with `touch-action: pan-y pinch-zoom` at ≤560px and native scroll-snap. SwipeRail properly handles drag end → snap to nearest slide.
+
+- **Frozen Table (Bug 7)**: Preserved. `.mtt-col-frozen` with opaque background + `border-collapse: separate; border-spacing: 0` verified in build.
+
+## Known limitations:
+
+- The evolution chart uses deterministic mock history (no live historical portfolio data). A real portfolio history endpoint would replace `generatePortfolioHistory`.
+- ColOrder localStorage includes all 9 column keys including hidden extras — this is intentional so user's order preference is preserved across show/hide operations.
 
 ### v0.3.8 - Portfolio Terminal Density Refinement (Sprint 3A)
 Date: 2026-05-28
