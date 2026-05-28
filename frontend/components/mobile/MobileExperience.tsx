@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   BarChart3,
   Bell,
+  BookOpen,
   BriefcaseBusiness,
   ChevronDown,
   ChevronLeft,
@@ -17,6 +18,7 @@ import {
   Globe2,
   GripVertical,
   Home,
+  Menu,
   RefreshCw,
   Search,
   Settings,
@@ -30,6 +32,13 @@ import IntelligenceBadge from '../ui/IntelligenceBadge'
 import SettingsPage from '../settings/SettingsWorkspace'
 import MobileReorderableSections from '../dashboard/MobileReorderableSections'
 import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
+import {
+  WorkspaceManagerPanel,
+  WorkspaceShell,
+  getWorkspaceDefinition,
+  useWorkspaceConfig,
+} from '../workspace'
+import { workspaceIconMap } from '../workspace/WorkspaceSwitcher'
 import {
   DEFAULT_MOBILE_HOME_ORDER,
   MOBILE_HOME_LAYOUT_KEY,
@@ -113,14 +122,6 @@ const scannerFallback = [
     portfolio_impact: 'Improves mega-cap diversification with lower portfolio risk.',
   },
 ]
-
-const navItems = [
-  ['home', 'Home', Home],
-  ['portfolio', 'Portfolio', Wallet],
-  ['scanner', 'Scanner', Sparkles],
-  ['markets', 'Markets', BarChart3],
-  ['settings', 'Settings', Settings],
-] as const
 
 function useMobileDashboard() {
   const [dashboard, setDashboard] = useState<any>(null)
@@ -377,15 +378,29 @@ function RiskBar({ value }: { value: number }) {
   )
 }
 
-function MobileBottomNav({ active, setActive }: { active: string; setActive: (value: string) => void }) {
+function MobileBottomNav({
+  active,
+  setActive,
+  workspaces,
+  pinnedIds,
+}: {
+  active: string
+  setActive: (value: string) => void
+  workspaces: ReturnType<typeof useWorkspaceConfig>['workspaces']
+  pinnedIds: string[]
+}) {
+  const items = pinnedIds.map((id) => getWorkspaceDefinition(workspaces, id))
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile sections">
-      {navItems.map(([id, label, Icon]) => (
-        <button key={id} className={active === id ? 'active' : ''} onClick={() => setActive(id)}>
+      {items.map((workspace) => {
+        const Icon = workspaceIconMap[workspace.iconKey] || Home
+        return (
+        <button key={workspace.id} className={active === workspace.id ? 'active' : ''} onClick={() => setActive(workspace.id)}>
           <Icon size={20} />
-          <span>{label}</span>
+          <span>{workspace.title}</span>
         </button>
-      ))}
+        )
+      })}
     </nav>
   )
 }
@@ -616,6 +631,43 @@ function MobileQuickControls({
   )
 }
 
+function MobileAboutSection({ hidden = false }: { hidden?: boolean }) {
+  const [about, setAbout] = useState<any>(null)
+
+  useEffect(() => {
+    fetchJson('/about').then(setAbout).catch(() => {})
+  }, [])
+
+  const changelog = Array.isArray(about?.changelog) ? about.changelog.slice(0, 4) : []
+
+  return (
+    <section className="mobile-section">
+      <div className="mobile-section-title">
+        <div>
+          <h2>{hidden ? 'Info' : `PIA ${about?.version || ''}`.trim()}</h2>
+          <span>{hidden ? 'Release and platform status' : about?.tagline || 'Release center and platform status'}</span>
+        </div>
+        <BookOpen size={18} />
+      </div>
+      <div className="mobile-brief">
+        {changelog.length ? (
+          changelog.map((item: any) => (
+            <article className="mobile-brief-card" key={item.version || item.title}>
+              <strong>{hidden ? 'Workspace update' : `${item.version} - ${item.title}`}</strong>
+              {!hidden && Array.isArray(item.features) ? <p>{item.features.slice(0, 3).join(' ')}</p> : <p>{mask}</p>}
+            </article>
+          ))
+        ) : (
+          <article className="mobile-brief-card">
+            <strong>{hidden ? 'Workspace update' : 'Release Center'}</strong>
+            <p>{hidden ? mask : 'Release data is loading or the backend is offline.'}</p>
+          </article>
+        )}
+      </div>
+    </section>
+  )
+}
+
 const MOCK_SEARCH_TICKERS = [
   { symbol: 'NVDA', name: 'NVIDIA' },
   { symbol: 'AMD', name: 'Advanced Micro Devices' },
@@ -626,6 +678,19 @@ const MOCK_SEARCH_TICKERS = [
   { symbol: 'TSLA', name: 'Tesla' },
   { symbol: 'CRWV', name: 'CoreWeave' },
   { symbol: 'NBIS', name: 'Nebius Group' },
+  { symbol: 'AAPL', name: 'Apple' },
+  { symbol: 'MSFT', name: 'Microsoft' },
+  { symbol: 'AMZN', name: 'Amazon' },
+  { symbol: 'META', name: 'Meta Platforms' },
+  { symbol: 'SPY', name: 'SPDR S&P 500 ETF' },
+  { symbol: 'QQQ', name: 'Invesco QQQ Trust' },
+  { symbol: 'MELI', name: 'MercadoLibre' },
+  { symbol: 'NFLX', name: 'Netflix' },
+  { symbol: 'PLTR', name: 'Palantir' },
+  { symbol: 'COIN', name: 'Coinbase' },
+  { symbol: 'SMCI', name: 'Super Micro Computer' },
+  { symbol: 'MU', name: 'Micron Technology' },
+  { symbol: 'ARM', name: 'Arm Holdings' },
 ]
 
 function GlobalStockSearch({ universe, hidden, onSelect, onClose }: {
@@ -642,6 +707,12 @@ function GlobalStockSearch({ universe, hidden, onSelect, onClose }: {
   ).slice(0, 8)
   const exact = universe.some((u) => u.symbol === query)
 
+  function onEnter() {
+    if (!query) return
+    if (results.length) onSelect(results[0].symbol)
+    else onSelect(query)
+  }
+
   return (
     <MobileSheet title="Search" onClose={onClose}>
       <div className="global-search-input">
@@ -651,6 +722,7 @@ function GlobalStockSearch({ universe, hidden, onSelect, onClose }: {
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onEnter() } }}
           placeholder="Search stocks, ETFs, options…"
           aria-label="Search stocks"
         />
@@ -1323,6 +1395,7 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder }:
 
 export default function MobileExperience() {
   const dashboard = useMobileDashboard()
+  const workspaceConfig = useWorkspaceConfig()
   const [active, setActive] = useState('home')
   const [selected, setSelected] = useState<any>(null)
   const [mounted, setMounted] = useState(false)
@@ -1335,6 +1408,7 @@ export default function MobileExperience() {
   const [colOrder, setColOrder] = useState<ColKey[]>(() => COL_DEFS.map((c) => c.key))
   const [quickOpen, setQuickOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [workspaceManagerOpen, setWorkspaceManagerOpen] = useState(false)
   const [rescanning, setRescanning] = useState(false)
   const [rescanStatus, setRescanStatus] = useState('')
   const [sourceHealth, setSourceHealth] = useState<any[]>([])
@@ -1447,6 +1521,15 @@ export default function MobileExperience() {
   return (
     <main className="mobile-shell">
       <header className="mobile-top">
+        <button
+          type="button"
+          className="mobile-icon-action"
+          aria-label="Open workspace manager"
+          aria-expanded={workspaceManagerOpen}
+          onClick={() => setWorkspaceManagerOpen(true)}
+        >
+          <Menu size={18} />
+        </button>
         <div className="mobile-top-brand">PIA</div>
         <div className="mobile-top-actions">
           <button
@@ -1497,7 +1580,7 @@ export default function MobileExperience() {
         />
       )}
 
-      {active === 'portfolio' && (
+      {active === 'my-portfolio' && (
         <>
           {colMenuOpen && (
             <PortfolioColumnSheet
@@ -1538,12 +1621,16 @@ export default function MobileExperience() {
           </div>
         </>
       )}
+      {active === 'watchlists' && <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} hidden={privacyHidden} />}
       {active === 'scanner' && <ScannerSetups scanner={scanner} onSelect={setSelected} hidden={privacyHidden} />}
-      {active === 'markets' && (
+      {active === 'markets-macro' && (
         <>
           <MarketPulse items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />
           <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} hidden={privacyHidden} />
         </>
+      )}
+      {!['home', 'my-portfolio', 'watchlists', 'scanner', 'markets-macro', 'settings', 'about'].includes(active) && (
+        <WorkspaceShell workspaceId={active} workspace={getWorkspaceDefinition(workspaceConfig.workspaces, active)} hidden={privacyHidden} />
       )}
       {active === 'settings' && (
         <section className="mobile-section mobile-settings-section">
@@ -1551,8 +1638,9 @@ export default function MobileExperience() {
           <SettingsPage hidden={privacyHidden} variant="mobile" />
         </section>
       )}
+      {active === 'about' && <MobileAboutSection hidden={privacyHidden} />}
 
-      <MobileBottomNav active={active} setActive={setActive} />
+      <MobileBottomNav active={active} setActive={setActive} workspaces={workspaceConfig.workspaces} pinnedIds={workspaceConfig.pinnedMobile} />
       {selected && (
         <StockIntelligenceShell
           variant="mobile"
@@ -1573,6 +1661,40 @@ export default function MobileExperience() {
         onOpenSettings={() => setActive('settings')}
       />
       <MobileNotificationCenter open={notificationsOpen} onClose={() => setNotificationsOpen(false)} portfolio={portfolio} />
+      {workspaceManagerOpen && (
+        <MobileSheet title="Workspace Manager" onClose={() => setWorkspaceManagerOpen(false)}>
+          <div className="workspace-manager-tools">
+            <button
+              type="button"
+              onClick={() => {
+                setActive('settings')
+                setWorkspaceManagerOpen(false)
+              }}
+            >
+              <Settings size={17} />
+              <span>Settings</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActive('about')
+                setWorkspaceManagerOpen(false)
+              }}
+            >
+              <BookOpen size={17} />
+              <span>About</span>
+            </button>
+          </div>
+          <WorkspaceManagerPanel
+            config={workspaceConfig}
+            variant="mobile"
+            onSelectWorkspace={(workspaceId) => {
+              setActive(workspaceId)
+              setWorkspaceManagerOpen(false)
+            }}
+          />
+        </MobileSheet>
+      )}
       {globalSearchOpen && (
         <GlobalStockSearch
           universe={searchUniverse}

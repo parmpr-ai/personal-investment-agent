@@ -113,6 +113,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Intelligence card density refactor. Sprint 2C HERMES implementation complete for stock news cards.
   - Stock Quote / Technical IA mock created for PO review; final IA change not implemented yet.
 - P1 Workspaces:
+  - Workspace Manager + custom workspaces. DONE 2026-05-28: mobile hamburger sheet and desktop sidebar manager share localStorage-backed workspace pins, visibility, order, and custom workspace definitions.
   - Watchlists add/remove/sort/company logo/mini charts.
   - Sector and industry heatmap.
   - Opportunity Board compression.
@@ -233,6 +234,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - Everything is a widget.
 - Reuse current dashboard widgets; do not create duplicate pages/widgets.
 - Mobile customization uses the same workspace/widget registry direction.
+- Workspace customization persists through shared keys: `pia.workspaces.custom`, `pia.workspaces.pinnedMobile`, `pia.workspaces.sidebarDesktop`, and `pia.workspaces.order`.
 - Local layout storage remains local-first and keyed by workspace ID.
 - TradingView remains the planned shared chart widget.
 - AI Core uses workspace redirect mode through short workspace context.
@@ -394,7 +396,7 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - v0.3.11: Portfolio header IBKR alignment, risk visual system, swipe global fix — NLV hero + Day P/L %, time-range chips, 12-metric grid, RiskBar, desktop snapshot time-range chips.
 - v0.3.13: Regression fixes — portfolio search now always visible, Home rails finger swipe restored, privacy toggle accessible on Portfolio.
 - v0.3.14: Mobile top bar cleanup (PIA only), global Yahoo-style stock search, global privacy eye, Home rail swipe unification (grid blowout fix), news source parity confirmed.
-- v0.3.15: Runtime governance — Single Next Dev Server Rule to prevent recurring `.next` corruption / missing CSS chunks.
+- v0.3.15: Runtime governance plus Workspace Manager — Single Next Dev Server Rule, mobile hamburger manager, pinned bottom nav customization, desktop parity, and custom local workspaces.
 
 ## Guardrails
 
@@ -408,6 +410,23 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.15 - Workspace Manager + Custom Workspaces
+Date: 2026-05-28
+Status: Implemented; pending Product Owner real-device UAT (per Task Completion Rule).
+
+## Added:
+
+- Mobile top-left hamburger opens a compact Workspace Manager sheet.
+- Workspace Manager lists every workspace with direct open actions so overflow/custom workspaces remain reachable without first pinning them.
+- Settings and About/Release Center are accessible from the mobile hamburger flow.
+- Mobile bottom nav now renders only `pia.workspaces.pinnedMobile`, capped at five workspaces, with drag reorder and unpin controls.
+- Full workspace library uses the central workspace registry, extended at runtime by `pia.workspaces.custom`.
+- Custom workspace creation supports name, icon, accent color, and templates: Blank, Watchlist, Portfolio analysis, News feed, Macro dashboard, and Trade setup board.
+- Custom workspaces can be renamed and deleted locally.
+- Desktop sidebar now supports the same manager for show/hide, reorder, custom workspace CRUD, and reset to defaults.
+- Shared persistence keys: `pia.workspaces.custom`, `pia.workspaces.pinnedMobile`, `pia.workspaces.sidebarDesktop`, `pia.workspaces.order`.
+- Added mobile mock/spec docs: `07_workspace_manager_mobile.md` and `08_bottom_nav_pinning_spec.md`; updated `03_mobile_workspace_navigation.md`.
 
 ### v0.3.15 - Runtime Governance: Single Next Dev Server Rule
 Date: 2026-05-28

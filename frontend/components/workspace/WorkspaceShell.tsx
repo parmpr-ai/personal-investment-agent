@@ -5,10 +5,12 @@ import { Brain, RotateCcw } from 'lucide-react'
 import { WIDGET_CATALOG_MAP, type WidgetCatalogItem } from './widgetCatalog'
 import { getWorkspaceAiContext } from './workspaceAiContext'
 import { readWorkspaceLayout, resetWorkspaceLayout, writeWorkspaceLayout } from './workspaceLayoutStorage'
-import { WORKSPACE_MAP, type WorkspaceId } from './workspaceRegistry'
+import { WORKSPACE_MAP, type WorkspaceDefinition, type WorkspaceId } from './workspaceRegistry'
+import type { WorkspaceWidgetId } from './widgetCatalog'
 
 type WorkspaceShellProps = {
   workspaceId: WorkspaceId
+  workspace?: WorkspaceDefinition
   hidden?: boolean
   children?: ReactNode
 }
@@ -20,14 +22,25 @@ const sizeToSpan: Record<WidgetCatalogItem['defaultSize'], string> = {
   xl: 'span-12',
 }
 
-export default function WorkspaceShell({ workspaceId, hidden = false, children }: WorkspaceShellProps) {
-  const workspace = WORKSPACE_MAP[workspaceId]
-  const aiContext = getWorkspaceAiContext(workspaceId)
+export default function WorkspaceShell({ workspaceId, workspace: providedWorkspace, hidden = false, children }: WorkspaceShellProps) {
+  const workspace = providedWorkspace || WORKSPACE_MAP[workspaceId] || WORKSPACE_MAP.home
+  const aiContext = providedWorkspace ? providedWorkspace.defaultAiContext : getWorkspaceAiContext(workspaceId)
+  const isStaticWorkspace = Boolean(WORKSPACE_MAP[workspaceId])
   const [layout, setLayout] = useState(() => [...workspace.defaultWidgetIds])
 
   useEffect(() => {
-    setLayout(readWorkspaceLayout(workspaceId))
-  }, [workspaceId])
+    if (isStaticWorkspace) {
+      setLayout(readWorkspaceLayout(workspaceId))
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(`pia.workspace.layout.v1.${workspaceId}`)
+      const saved = raw ? JSON.parse(raw) : null
+      setLayout(Array.isArray(saved) ? saved : [...workspace.defaultWidgetIds])
+    } catch {
+      setLayout([...workspace.defaultWidgetIds])
+    }
+  }, [isStaticWorkspace, workspace.defaultWidgetIds, workspaceId])
 
   const widgets = useMemo(
     () => layout.map((id) => WIDGET_CATALOG_MAP[id]).filter((widget): widget is WidgetCatalogItem => Boolean(widget)),
@@ -35,12 +48,19 @@ export default function WorkspaceShell({ workspaceId, hidden = false, children }
   )
 
   function resetLayout() {
-    setLayout(resetWorkspaceLayout(workspaceId))
+    if (isStaticWorkspace) setLayout(resetWorkspaceLayout(workspaceId))
+    else setLayout([...workspace.defaultWidgetIds])
   }
 
   useEffect(() => {
-    writeWorkspaceLayout(workspaceId, layout)
-  }, [layout, workspaceId])
+    if (isStaticWorkspace) {
+      writeWorkspaceLayout(workspaceId, layout)
+      return
+    }
+    try {
+      window.localStorage.setItem(`pia.workspace.layout.v1.${workspaceId}`, JSON.stringify(layout as WorkspaceWidgetId[]))
+    } catch {}
+  }, [isStaticWorkspace, layout, workspaceId])
 
   return (
     <div className="grid" data-workspace-id={workspaceId} data-ai-context={aiContext}>

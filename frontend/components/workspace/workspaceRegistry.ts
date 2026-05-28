@@ -1,17 +1,6 @@
 import type { WorkspaceWidgetId } from './widgetCatalog'
 
-export type WorkspaceId =
-  | 'home'
-  | 'my-portfolio'
-  | 'watchlists'
-  | 'scanner'
-  | 'markets-macro'
-  | 'ai-infrastructure'
-  | 'earnings-week'
-  | 'swing-trades'
-  | 'crypto'
-  | 'trade-coach'
-  | 'academy'
+export type WorkspaceId = string
 
 export type WorkspaceCategory = 'primary' | 'portfolio' | 'research' | 'trading' | 'education' | 'alternative'
 

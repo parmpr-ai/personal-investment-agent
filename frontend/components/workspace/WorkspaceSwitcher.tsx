@@ -23,7 +23,7 @@ type WorkspaceSwitcherProps = {
   showDescriptions?: boolean
 }
 
-const iconMap: Record<WorkspaceIconKey, typeof Home> = {
+export const workspaceIconMap: Record<WorkspaceIconKey, typeof Home> = {
   home: Home,
   wallet: Wallet,
   list: List,
@@ -47,7 +47,7 @@ export default function WorkspaceSwitcher({
   return (
     <nav className={className} aria-label="Workspaces">
       {workspaces.map((workspace) => {
-        const Icon = iconMap[workspace.iconKey]
+        const Icon = workspaceIconMap[workspace.iconKey] || Home
         const disabled = workspace.status === 'planned'
         const selected = workspace.id === activeWorkspaceId
         return (

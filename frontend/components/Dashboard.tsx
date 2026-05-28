@@ -15,6 +15,7 @@ import {
   FileText,
   Globe2,
   LayoutDashboard,
+  Menu,
   Pencil,
   Plus,
   Newspaper,
@@ -40,11 +41,13 @@ import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
 import {
   DEFAULT_WORKSPACE_ID,
   WORKSPACE_MAP,
-  WORKSPACE_REGISTRY,
+  WorkspaceManagerPanel,
   WorkspaceShell,
   WorkspaceSwitcher,
+  getWorkspaceDefinition,
   getWorkspaceAiPromptPrefix,
   isWorkspaceId,
+  useWorkspaceConfig,
   type WorkspaceId,
 } from './workspace'
 
@@ -255,6 +258,7 @@ export default function Dashboard() {
   const dashboard = useDash()
   const newsIntel = useNewsIntelligence()
   const sourceHealth = useSourceHealthDock()
+  const workspaceConfig = useWorkspaceConfig()
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<WorkspaceId>(DEFAULT_WORKSPACE_ID)
   const [activeTool, setActiveTool] = useState<'workspace' | 'tax' | 'about' | 'settings'>('workspace')
   const [mounted, setMounted] = useState(false)
@@ -271,9 +275,9 @@ export default function Dashboard() {
       const hashWorkspace = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('workspace')
       const hashTool = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('tool')
       const savedWorkspace = localStorage.getItem(ACTIVE_WORKSPACE_KEY)
-      const nextWorkspace = hashWorkspace && isWorkspaceId(hashWorkspace)
+      const nextWorkspace = hashWorkspace
         ? hashWorkspace
-        : savedWorkspace && isWorkspaceId(savedWorkspace)
+        : savedWorkspace
           ? savedWorkspace
           : DEFAULT_WORKSPACE_ID
       setActiveWorkspaceId(nextWorkspace)
@@ -327,7 +331,8 @@ export default function Dashboard() {
 
   const positions = dashboard?.portfolio?.positions || []
   const privacyHidden = mounted && hidden
-  const activeWorkspace = WORKSPACE_MAP[activeWorkspaceId]
+  const activeWorkspace = getWorkspaceDefinition(workspaceConfig.workspaces, activeWorkspaceId)
+  const sidebarWorkspaces = workspaceConfig.workspaces.filter((workspace) => workspaceConfig.sidebarDesktop.includes(workspace.id))
   const filtered = positions.filter((p: any) =>
     filter === 'All'
       ? true
@@ -349,6 +354,8 @@ export default function Dashboard() {
         activeTool={activeTool}
         selectWorkspace={selectWorkspace}
         setActive={selectLegacyDestination}
+        workspaceConfig={workspaceConfig}
+        sidebarWorkspaces={sidebarWorkspaces}
         hidden={privacyHidden}
         amountHidden={hidden}
         setHidden={updateHidden}
@@ -384,7 +391,7 @@ export default function Dashboard() {
           />
         )}
         {activeTool === 'workspace' && activeWorkspaceId === 'my-portfolio' && (
-          <WorkspaceShell workspaceId={activeWorkspaceId} hidden={privacyHidden}>
+          <WorkspaceShell workspaceId={activeWorkspaceId} workspace={activeWorkspace} hidden={privacyHidden}>
             <PortfolioPage
               d={dashboard}
               hidden={privacyHidden}
@@ -396,17 +403,17 @@ export default function Dashboard() {
           </WorkspaceShell>
         )}
         {activeTool === 'workspace' && activeWorkspaceId === 'watchlists' && (
-          <WorkspaceShell workspaceId={activeWorkspaceId} hidden={privacyHidden}>
+          <WorkspaceShell workspaceId={activeWorkspaceId} workspace={activeWorkspace} hidden={privacyHidden}>
             <WatchlistPage d={dashboard} hidden={privacyHidden} setSelected={setSelected} />
           </WorkspaceShell>
         )}
         {activeTool === 'workspace' && activeWorkspaceId === 'scanner' && (
-          <WorkspaceShell workspaceId={activeWorkspaceId} hidden={privacyHidden}>
+          <WorkspaceShell workspaceId={activeWorkspaceId} workspace={activeWorkspace} hidden={privacyHidden}>
             <TradeRadar d={dashboard} hidden={privacyHidden} />
           </WorkspaceShell>
         )}
         {activeTool === 'workspace' && !['home', 'my-portfolio', 'watchlists', 'scanner'].includes(activeWorkspaceId) && (
-          <WorkspaceShell workspaceId={activeWorkspaceId} hidden={privacyHidden} />
+          <WorkspaceShell workspaceId={activeWorkspaceId} workspace={activeWorkspace} hidden={privacyHidden} />
         )}
         {activeTool === 'tax' && <TaxPage hidden={privacyHidden} />}
         {activeTool === 'about' && <AboutPage hidden={privacyHidden} />}
@@ -471,7 +478,8 @@ function IntegrationStatusDock({ health = [], hidden = false }: { health?: any[]
   )
 }
 
-function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, hidden, amountHidden, setHidden }: any) {
+function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, workspaceConfig, sidebarWorkspaces, hidden, amountHidden, setHidden }: any) {
+  const [managerOpen, setManagerOpen] = useState(false)
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -482,7 +490,23 @@ function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, hi
           <span>{hidden ? 'Workspace' : 'Decision Platform'}</span>
         </div>
       </div>
-      <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onSelect={selectWorkspace} workspaces={WORKSPACE_REGISTRY} />
+      <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onSelect={selectWorkspace} workspaces={sidebarWorkspaces} />
+      <button className="workspace-manage-trigger" type="button" onClick={() => setManagerOpen((value) => !value)}>
+        <Menu size={16} />
+        <span>Manage Workspaces</span>
+      </button>
+      {managerOpen ? (
+        <div className="desktop-workspace-manager">
+          <WorkspaceManagerPanel
+            config={workspaceConfig}
+            variant="desktop"
+            onSelectWorkspace={(workspaceId) => {
+              selectWorkspace(workspaceId)
+              setManagerOpen(false)
+            }}
+          />
+        </div>
+      ) : null}
       <div className="side-card">
         <span className="muted">{hidden ? 'Controls' : 'System'}</span>
         <nav>
