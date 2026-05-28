@@ -20,6 +20,8 @@ import {
   GripVertical,
   Home,
   Menu,
+  MoreVertical,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -59,6 +61,14 @@ type RailItem = Record<string, any>
 type Tone = 'good' | 'bad' | 'neutral'
 
 const pct = formatPct
+const compactVolume = (value: any) => {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n) || n <= 0) return '-'
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(Math.round(n))
+}
 
 const marketFallback = [
   { name: 'S&P 500', value: '6,241.80', chg: 0.42, spark: [24, 28, 27, 32, 35, 34, 39] },
@@ -1029,24 +1039,30 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
 }
 
 function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashboard: any; onSelect: (position: any) => void; hidden?: boolean }) {
-  const { lists, activeId, activeList, selectList, createList, addSymbol, removeSymbol } = useCustomWatchlists()
-  const [view, setView] = useState<PortfolioView>('cards')
+  const {
+    lists,
+    activeId,
+    activeList,
+    selectList,
+    createList,
+    renameList,
+    addSymbol,
+    removeSymbol,
+    removeSymbols,
+    setListViewMode,
+    toggleColumn,
+    reorderSymbol,
+  } = useCustomWatchlists()
+  const [adding, setAdding] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [manageColumnsOpen, setManageColumnsOpen] = useState(false)
+  const [validation, setValidation] = useState('')
   const [newListName, setNewListName] = useState('')
   const [newTicker, setNewTicker] = useState('')
   const universe = useMemo(() => buildWatchlistUniverse(dashboard, [...positionFallback, ...scannerFallback]), [dashboard])
-  const rows = useMemo(() => resolveWatchlistRows(activeList?.symbols || [], universe), [activeList, universe])
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('pia.watchlistView.mobile')
-      if (saved === 'cards' || saved === 'table') setView(saved)
-    } catch {}
-  }, [])
-
-  function updateView(next: PortfolioView) {
-    setView(next)
-    try { localStorage.setItem('pia.watchlistView.mobile', next) } catch {}
-  }
+  const rows = useMemo(() => resolveWatchlistRows(activeList?.tickers || activeList?.symbols || [], universe), [activeList, universe])
+  const view = activeList?.viewMode || 'table'
 
   function submitList(e: any) {
     e.preventDefault()
@@ -1057,33 +1073,71 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
   function submitTicker(e: any) {
     e.preventDefault()
     if (!activeList) return
-    addSymbol(activeList.id, newTicker)
+    const symbol = newTicker.trim().toUpperCase()
+    if (!symbol) return
+    if ((activeList.tickers || activeList.symbols || []).includes(symbol)) {
+      setValidation(`${symbol} is already in ${activeList.name}.`)
+      return
+    }
+    addSymbol(activeList.id, symbol)
     setNewTicker('')
+    setValidation('')
+    setAdding(false)
+  }
+
+  function createPromptList() {
+    const name = window.prompt('New watchlist name')
+    if (name) createList(name)
+  }
+
+  function renamePromptList() {
+    if (!activeList) return
+    const name = window.prompt('Rename watchlist', activeList.name)
+    if (name) renameList(activeList.id, name)
   }
 
   return (
     <section className="mobile-watchlist-section">
-      <div className="mobile-portfolio-header">
-        <span className="mobile-portfolio-count">{hidden ? 'Workspace' : activeList?.name || 'Watchlist'}</span>
-        <div className="portfolio-view-toggle" role="group" aria-label="Watchlist view mode">
-          <button className={view === 'cards' ? 'active' : ''} onClick={() => updateView('cards')}>Cards</button>
-          <button className={view === 'table' ? 'active' : ''} onClick={() => updateView('table')}>Table</button>
+      <div className="mobile-watchlist-titlebar">
+        <div>
+          <span>Watchlists</span>
+          <strong>{hidden ? 'Workspace' : activeList?.name || 'Favorites'}</strong>
+        </div>
+        <button type="button" className="mobile-icon-action" aria-label="Watchlist menu" onClick={() => setMenuOpen(true)}>
+          <MoreVertical size={18} />
+        </button>
+      </div>
+
+      <div className="mobile-watchlist-tabs" aria-label="Watchlist tabs">
+        <button type="button" className="mobile-watchlist-plus" aria-label="New watchlist" onClick={createPromptList}>
+          <Plus size={15} />
+        </button>
+        <div className="mobile-watchlist-tabrail">
+          {lists.map((list) => (
+            <button key={list.id} type="button" className={list.id === activeId ? 'active' : ''} onClick={() => selectList(list.id)}>
+              {hidden ? 'List' : list.name}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="mobile-watchlist-controls">
-        <select value={activeId} onChange={(e) => selectList(e.target.value)} aria-label="Select watchlist">
-          {lists.map((list) => <option key={list.id} value={list.id}>{list.name}</option>)}
-        </select>
-        <form onSubmit={submitTicker}>
-          <input value={newTicker} onChange={(e) => setNewTicker(e.target.value)} placeholder="Add ticker" aria-label="Ticker to add" />
-          <button type="submit"><Plus size={16} /> Add</button>
-        </form>
-        <form onSubmit={submitList}>
-          <input value={newListName} onChange={(e) => setNewListName(e.target.value)} placeholder="New list" aria-label="New watchlist name" />
-          <button type="submit"><Plus size={16} /> New</button>
-        </form>
+      <div className="mobile-watchlist-actionrow">
+        <button type="button" className="mobile-add-instrument" onClick={() => setAdding((value) => !value)}>
+          <Plus size={16} /> Add Instrument
+        </button>
+        <button type="button" aria-label="Edit instruments" onClick={() => setEditOpen(true)}><Pencil size={16} /></button>
+        <div className="mobile-watchlist-viewtoggle" role="group" aria-label="Watchlist style">
+          <button type="button" className={view === 'table' ? 'active' : ''} onClick={() => activeList && setListViewMode(activeList.id, 'table')}>Table</button>
+          <button type="button" className={view === 'list' ? 'active' : ''} onClick={() => activeList && setListViewMode(activeList.id, 'list')}>List</button>
+        </div>
       </div>
+      {adding && (
+        <form className="mobile-watchlist-addform" onSubmit={submitTicker}>
+          <input value={newTicker} onChange={(e) => { setNewTicker(e.target.value.toUpperCase()); setValidation('') }} placeholder="Ticker" aria-label="Ticker to add" autoFocus />
+          <button type="submit">Add</button>
+        </form>
+      )}
+      {validation && <div className="mobile-watchlist-validation">{validation}</div>}
 
       {rows.length === 0 ? (
         <div className="mobile-watchlist-empty">
@@ -1091,43 +1145,84 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
           <span>{hidden ? mask : 'Add AMD, NBIS, IREN, or any ticker to this custom watchlist.'}</span>
         </div>
       ) : view === 'table' ? (
-        <MobileWatchlistTable rows={rows} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} hidden={hidden} />
+        <MobileWatchlistTable rows={rows} columns={activeList?.columns} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} hidden={hidden} />
       ) : (
         <MobileWatchlistCards rows={rows} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} hidden={hidden} />
+      )}
+      {menuOpen && activeList && (
+        <MobileSheet title="Watchlist Menu" onClose={() => setMenuOpen(false)}>
+          <div className="mobile-watchlist-sheet-menu">
+            <span>Watchlist Style</span>
+            <button type="button" onClick={() => setListViewMode(activeList.id, 'list')}>List View</button>
+            <button type="button" onClick={() => setListViewMode(activeList.id, 'table')}>Table View</button>
+            <button type="button" onClick={createPromptList}>New Watchlist</button>
+            <button type="button" onClick={renamePromptList}>Rename Watchlist</button>
+            <button type="button" onClick={() => setEditOpen(true)}>Manage Watchlists</button>
+            <button type="button" onClick={() => setEditOpen(true)}>Manage Tabs</button>
+            <button type="button" onClick={() => setManageColumnsOpen(true)}>Manage Columns</button>
+            <button type="button" onClick={() => document.querySelector<HTMLButtonElement>('[aria-label="Hide amounts"],[aria-label="Show amounts"]')?.click()}>
+              Privacy Mode {hidden ? 'On' : 'Off'}
+            </button>
+          </div>
+        </MobileSheet>
+      )}
+      {editOpen && activeList && (
+        <MobileEditInstruments
+          list={activeList}
+          rows={rows}
+          hidden={hidden}
+          onClose={() => setEditOpen(false)}
+          onRemoveSelected={(symbols) => removeSymbols(activeList.id, symbols)}
+          onReorder={(from, to) => reorderSymbol(activeList.id, from, to)}
+        />
+      )}
+      {manageColumnsOpen && activeList && (
+        <MobileSheet title="Manage Columns" onClose={() => setManageColumnsOpen(false)}>
+          <div className="mobile-watchlist-sheet-menu">
+            {Object.entries(activeList.columns).map(([key, enabled]) => (
+              <button key={key} type="button" className={enabled ? 'active' : ''} onClick={() => toggleColumn(activeList.id, key as keyof typeof activeList.columns)}>
+                {enabled ? 'On' : 'Off'} {key}
+              </button>
+            ))}
+          </div>
+        </MobileSheet>
       )}
     </section>
   )
 }
 
-function MobileWatchlistTable({ rows, onSelect, onRemove, hidden }: { rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean }) {
+function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, change: true, changePercent: true, volume: true }, onSelect, onRemove, hidden }: { rows: any[]; columns?: any; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean }) {
   return (
     <div className="mobile-terminal-wrap">
       <table className="mobile-terminal-table mobile-watchlist-table">
         <thead>
           <tr>
-            <th className="mtt-col-frozen">Sym</th>
-            <th>Price</th>
-            <th>Chg %</th>
-            <th>Chg</th>
-            <th>Status</th>
+            {columns.instrument && <th className="mtt-col-frozen">INSTRMNT</th>}
+            {columns.last && <th>LAST</th>}
+            {columns.change && <th>CHNG</th>}
+            {columns.changePercent && <th>CHG%</th>}
+            {columns.volume && <th>VLM</th>}
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.symbol} onClick={() => onSelect(row)}>
-              <td className="mtt-col-frozen">
+              {columns.instrument && <td className="mtt-col-frozen">
                 <div className="mtt-symbol">
                   <div className="mtt-logo" style={{ background: row.accent || row.brand || '#60a5fa' }}>
                     {hidden ? '-' : row.logo || String(row.symbol).slice(0, 2)}
                   </div>
-                  <strong className="mtt-sym-label">{hidden ? mask : row.symbol}</strong>
+                  <span>
+                    <strong className="mtt-sym-label">{hidden ? mask : row.symbol}</strong>
+                    <small>{hidden ? 'Market' : row.exchange || 'NASDAQ'}</small>
+                  </span>
                 </div>
-              </td>
-              <td>{hidden ? mask : money(row.last || row.price)}</td>
-              <td className={Number(row.day_change_pct) >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(row.day_change_pct)}</td>
-              <td className={Number(row.day_pnl) >= 0 ? 'green' : 'red'}>{hidden ? mask : money(row.day_pnl)}</td>
-              <td>{hidden ? mask : row.label || row.sec_type || 'Watch'}</td>
+              </td>}
+              {columns.last && <td>{hidden ? mask : money(row.last || row.price)}</td>}
+              {columns.change && <td className={Number(row.day_pnl) >= 0 ? 'green' : 'red'}>{hidden ? mask : money(row.day_pnl)}</td>}
+              {columns.changePercent && <td className={Number(row.day_change_pct) >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(row.day_change_pct)}</td>}
+              {columns.volume && <td>{hidden ? mask : compactVolume(row.volume)}</td>}
               <td>
                 <div className="mobile-watchlist-actions">
                   <button type="button" aria-label={`Open intelligence for ${row.symbol}`} onClick={(e) => { e.stopPropagation(); onSelect(row) }}>
@@ -1153,16 +1248,16 @@ function MobileWatchlistCards({ rows, onSelect, onRemove, hidden }: { rows: any[
         const change = Number(row.day_change_pct || 0)
         const dayPnl = Number(row.day_pnl || 0)
         return (
-          <button
+          <article
             key={row.symbol}
             className={`mobile-visual-card mobile-position-card mobile-watchlist-card${row.brand ? ' themed' : ''}`}
-            onClick={() => onSelect(row)}
             style={row.brand ? { borderTopColor: row.brand } as CSSProperties : undefined}
           >
             <div className="mobile-card-head">
               <div>
                 <span>{hidden ? 'Workspace item' : row.name}</span>
                 <strong>{hidden ? mask : row.symbol}</strong>
+                <small>{hidden ? 'Market' : row.exchange || 'NASDAQ'}</small>
               </div>
               <div className="mobile-price-stack">
                 <b>{hidden ? mask : money(row.last || row.price)}</b>
@@ -1172,19 +1267,89 @@ function MobileWatchlistCards({ rows, onSelect, onRemove, hidden }: { rows: any[
             <Sparkline values={row.spark} tone={change >= 0 ? 'good' : 'bad'} />
             <div className="mobile-position-pnl">
               <span className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(dayPnl)}</span>
-              <small>{hidden ? mask : row.label || row.sec_type || 'Watch'}</small>
+              <small>{hidden ? mask : compactVolume(row.volume)}</small>
             </div>
             <div className="mobile-watchlist-card-actions">
-              <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(row) }}>
+              <button type="button" onClick={() => onSelect(row)}>
                 <Brain size={15} /> Intel
               </button>
-              <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(row.symbol) }} aria-label={`Remove ${row.symbol}`}>
+              <button type="button" onClick={() => onRemove(row.symbol)} aria-label={`Remove ${row.symbol}`}>
                 <Trash2 size={15} /> Remove
               </button>
             </div>
-          </button>
+          </article>
         )
       })}
+    </div>
+  )
+}
+
+function MobileEditInstruments({
+  list,
+  rows,
+  hidden,
+  onClose,
+  onRemoveSelected,
+  onReorder,
+}: {
+  list: any
+  rows: any[]
+  hidden: boolean
+  onClose: () => void
+  onRemoveSelected: (symbols: string[]) => void
+  onReorder: (from: number, to: number) => void
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const selectedSymbols = Array.from(selected)
+  return (
+    <div className="mobile-edit-instruments">
+      <header>
+        <button type="button" className="mobile-icon-action" aria-label="Back to watchlists" onClick={onClose}>
+          <ChevronLeft size={18} />
+        </button>
+        <div>
+          <span>{hidden ? 'Workspace' : list.name}</span>
+          <strong>Edit Instruments</strong>
+        </div>
+      </header>
+      <div className="mobile-edit-toolbar">
+        <button type="button" disabled={!selectedSymbols.length} onClick={() => { onRemoveSelected(selectedSymbols); setSelected(new Set()) }}>
+          <Trash2 size={15} /> Remove Selected
+        </button>
+      </div>
+      <div className="mobile-edit-list">
+        {rows.map((row, index) => (
+          <div
+            key={row.symbol}
+            className="mobile-edit-row"
+            draggable
+            onDragStart={() => setDragIndex(index)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => {
+              if (dragIndex !== null && dragIndex !== index) onReorder(dragIndex, index)
+              setDragIndex(null)
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={selected.has(row.symbol)}
+              onChange={(event) => setSelected((current) => {
+                const next = new Set(current)
+                event.target.checked ? next.add(row.symbol) : next.delete(row.symbol)
+                return next
+              })}
+              aria-label={`Select ${row.symbol}`}
+            />
+            <div className="mobile-edit-main">
+              <strong>{hidden ? mask : row.symbol}</strong>
+              <span>{hidden ? 'Market' : row.exchange || 'NASDAQ'}</span>
+              <small>{hidden ? mask : row.name}</small>
+            </div>
+            <GripVertical size={18} className="mobile-edit-grip" aria-hidden="true" />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

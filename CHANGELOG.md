@@ -1,5 +1,23 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.17 - Watchlists IBKR UX Upgrade
+Date: 2026-05-29
+Status: Implemented and locally validated.
+
+### Added
+- LocalStorage-backed custom watchlist model at `pia.watchlists.v1` with list id, name, tickers, view mode, visible columns, and order metadata.
+- Default watchlists: Favorites, Tech, Fintech, and Swing with seeded symbols across NVDA, NBIS, META, AVGO, TSM, IONQ, QBTS, INOD, SOFI, ZETA, PLTR, NKE, AMD, and IREN.
+- Mobile IBKR-style Watchlists workspace with horizontal custom tabs, Add Instrument flow, table/list toggle, dense INSTRMNT/LAST/CHNG/CHG%/VLM table, list cards, bottom sheet settings, and Edit Instruments screen.
+- Desktop Watchlists workspace with shared persistence, custom list selector/tabs, create/rename/delete list, add/remove ticker, table/card toggle, column controls, and Stock Intelligence launch from watchlist rows/cards.
+
+### Fixed / Preserved
+- Removed nested button structure from watchlist cards.
+- Preserved Portfolio, mobile shell, hamburger/workspace manager, bottom nav, privacy mode, and Stock Intelligence shell behavior.
+
+### Validation
+- `npm.cmd run build` passed.
+- `next start` smoke checks returned 200 for `/` and `/mobile`.
+
 ## v5.6 — Integration + Product Hardening
 
 ### Added

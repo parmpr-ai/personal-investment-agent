@@ -196,6 +196,11 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - All 9 tickers (NVDA, AMD, SOFI, IREN, AVAV, GOOGL, TSLA, CRWV, NBIS) return complete intelligence structure from mock layer.
   - IREN position and AVAV/TSLA watchlist items process correctly through portfolio snapshot and opportunity engine.
   - Backend Python imports clean; no route regressions.
+- Latest Watchlists v0.3.17 validation, 2026-05-29:
+  - `npm.cmd run build` passed (frontend).
+  - `next start` smoke checks returned 200 for `/` and `/mobile`.
+  - Watchlists now share localStorage key `pia.watchlists.v1` across desktop and mobile.
+  - Real-device mobile UAT remains required before marking Product Owner UAT complete.
 - Remaining failed UAT:
   - Mobile correction mock pack requires Product Owner review before final UI implementation.
   - Mobile performance lag requires deeper device profiling after first-pass render-cost reduction.
@@ -398,6 +403,8 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - v0.3.14: Mobile top bar cleanup (PIA only), global Yahoo-style stock search, global privacy eye, Home rail swipe unification (grid blowout fix), news source parity confirmed.
 - v0.3.15: Runtime governance plus Workspace Manager — Single Next Dev Server Rule, mobile hamburger manager, pinned bottom nav customization, desktop parity, and custom local workspaces.
 - v0.3.16: Global search universe expansion + Enter-to-open, and per-ticker mock news fallback so every symbol shows source-badged news (demo flag only when real provider returns nothing).
+
+- v0.3.17: Watchlists IBKR UX upgrade with custom tabs, dense table/list modes, add/remove instruments, edit instruments, settings sheet, desktop parity, shared localStorage persistence, and Stock Intelligence launch from watchlist tickers.
 
 ## Guardrails
 

@@ -142,6 +142,14 @@ const money = (value: any) =>
     maximumFractionDigits: 2,
   })
 const pct = (value: any) => `${Number(value || 0).toFixed(2)}%`
+const compactVolume = (value: any) => {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n) || n <= 0) return '-'
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(Math.round(n))
+}
 const safeMessage = (value: any, fallback: string) =>
   typeof value === 'string' ? value : typeof value?.message === 'string' ? value.message : fallback
 const cleanText = (value: any) => {
@@ -1137,15 +1145,16 @@ function RiskList({ items, hidden }: any) {
 }
 
 function WatchlistPage({ d, hidden, setSelected }: any) {
-  const { lists, activeId, activeList, selectList, createList, addSymbol, removeSymbol } = useCustomWatchlists()
-  const [view, setView] = useState<'table' | 'cards'>('table')
+  const { lists, activeId, activeList, selectList, createList, renameList, deleteList, addSymbol, removeSymbol, toggleColumn, setListViewMode } = useCustomWatchlists()
   const [sort, setSort] = useState('daily_pct')
   const [direction, setDirection] = useState<'desc' | 'asc'>('desc')
   const [newListName, setNewListName] = useState('')
   const [newTicker, setNewTicker] = useState('')
+  const [validation, setValidation] = useState('')
+  const [columnsOpen, setColumnsOpen] = useState(false)
   const universe = useMemo(() => buildWatchlistUniverse(d), [d])
   const rows = useMemo(() => {
-    const resolved = resolveWatchlistRows(activeList?.symbols || [], universe)
+    const resolved = resolveWatchlistRows(activeList?.tickers || activeList?.symbols || [], universe)
     return resolved.sort((a: any, b: any) => {
       const av = metricValue(a, sort)
       const bv = metricValue(b, sort)
@@ -1155,18 +1164,7 @@ function WatchlistPage({ d, hidden, setSelected }: any) {
       return direction === 'asc' ? Number(av) - Number(bv) : Number(bv) - Number(av)
     })
   }, [activeList, universe, sort, direction])
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('pia.watchlistView.desktop')
-      if (saved === 'cards' || saved === 'table') setView(saved)
-    } catch {}
-  }, [])
-
-  function changeView(next: 'table' | 'cards') {
-    setView(next)
-    try { localStorage.setItem('pia.watchlistView.desktop', next) } catch {}
-  }
+  const view = activeList?.viewMode || 'table'
 
   function submitList(e: React.FormEvent) {
     e.preventDefault()
@@ -1177,8 +1175,21 @@ function WatchlistPage({ d, hidden, setSelected }: any) {
   function submitTicker(e: React.FormEvent) {
     e.preventDefault()
     if (!activeList) return
-    addSymbol(activeList.id, newTicker)
+    const symbol = newTicker.trim().toUpperCase()
+    if (!symbol) return
+    if ((activeList.tickers || activeList.symbols || []).includes(symbol)) {
+      setValidation(`${symbol} is already in ${activeList.name}.`)
+      return
+    }
+    addSymbol(activeList.id, symbol)
     setNewTicker('')
+    setValidation('')
+  }
+
+  function renameActiveList() {
+    if (!activeList) return
+    const name = window.prompt('Rename watchlist', activeList.name)
+    if (name) renameList(activeList.id, name)
   }
 
   return (
@@ -1189,11 +1200,19 @@ function WatchlistPage({ d, hidden, setSelected }: any) {
           subtitle={hidden ? `${rows.length} items` : `${activeList?.name || 'Watchlist'} - ${rows.length} tickers`}
           actions={
             <div className="portfolio-view-toggle" role="group" aria-label="Watchlist view mode">
-              <button className={view === 'table' ? 'active' : ''} onClick={() => changeView('table')}>Table</button>
-              <button className={view === 'cards' ? 'active' : ''} onClick={() => changeView('cards')}>Cards</button>
+              <button className={view === 'table' ? 'active' : ''} onClick={() => activeList && setListViewMode(activeList.id, 'table')}>Table</button>
+              <button className={view === 'list' ? 'active' : ''} onClick={() => activeList && setListViewMode(activeList.id, 'list')}>Cards</button>
             </div>
           }
         />
+        <div className="desktop-watchlist-tabs">
+          {lists.map((list) => (
+            <button key={list.id} type="button" className={list.id === activeId ? 'active' : ''} onClick={() => selectList(list.id)}>
+              {hidden ? 'List' : list.name}
+            </button>
+          ))}
+          <button type="button" aria-label="New watchlist" onClick={() => createList('New Watchlist')}><Plus size={14} /></button>
+        </div>
         <div className="watchlist-toolbar">
           <select value={activeId} onChange={(e) => selectList(e.target.value)} aria-label="Select watchlist">
             {lists.map((list) => (
@@ -1205,10 +1224,11 @@ function WatchlistPage({ d, hidden, setSelected }: any) {
             <PiaButton type="submit" density="compact" variant="secondary"><Plus size={14} /> Create</PiaButton>
           </form>
           <form onSubmit={submitTicker}>
-            <PiaInput value={newTicker} onChange={(e) => setNewTicker(e.target.value)} placeholder="Add ticker" aria-label="Ticker to add" />
+            <PiaInput value={newTicker} onChange={(e) => { setNewTicker(e.target.value.toUpperCase()); setValidation('') }} placeholder="Add Instrument" aria-label="Ticker to add" />
             <PiaButton type="submit" density="compact"><Plus size={14} /> Add</PiaButton>
           </form>
         </div>
+        {validation && <div className="watchlist-validation">{validation}</div>}
         <div className="sort-row">
           <select value={sort} onChange={(e) => setSort(e.target.value)}>
             {[
@@ -1223,14 +1243,28 @@ function WatchlistPage({ d, hidden, setSelected }: any) {
           <PiaButton variant="secondary" density="compact" onClick={() => setDirection((x) => (x === 'desc' ? 'asc' : 'desc'))}>
             {direction === 'desc' ? 'Descending' : 'Ascending'}
           </PiaButton>
+          <PiaButton variant="secondary" density="compact" onClick={renameActiveList}><Pencil size={14} /> Rename</PiaButton>
+          <PiaButton variant="secondary" density="compact" onClick={() => setColumnsOpen((value) => !value)}>Manage Columns</PiaButton>
+          {activeList && lists.length > 1 && (
+            <PiaButton variant="secondary" density="compact" onClick={() => deleteList(activeList.id)}><Trash2 size={14} /> Delete List</PiaButton>
+          )}
         </div>
+        {columnsOpen && activeList && (
+          <div className="watchlist-column-panel">
+            {Object.entries(activeList.columns).map(([key, enabled]) => (
+              <button key={key} type="button" className={enabled ? 'active' : ''} onClick={() => toggleColumn(activeList.id, key as keyof typeof activeList.columns)}>
+                {enabled ? 'On' : 'Off'} {key}
+              </button>
+            ))}
+          </div>
+        )}
         {!activeList || rows.length === 0 ? (
           <div className="empty-state watchlist-empty">
             <b>{hidden ? 'Workspace ready' : 'No tickers in this watchlist yet.'}</b>
             <p className="muted">{hidden ? mask : 'Add AMD, NBIS, IREN, or any ticker to start tracking it here.'}</p>
           </div>
         ) : view === 'table' ? (
-          <WatchlistTable rows={rows} hidden={hidden} setSelected={setSelected} onRemove={(symbol: string) => removeSymbol(activeList.id, symbol)} />
+          <WatchlistTable rows={rows} columns={activeList.columns} hidden={hidden} setSelected={setSelected} onRemove={(symbol: string) => removeSymbol(activeList.id, symbol)} />
         ) : (
           <WatchlistCards rows={rows} hidden={hidden} setSelected={setSelected} onRemove={(symbol: string) => removeSymbol(activeList.id, symbol)} />
         )}
@@ -1239,42 +1273,38 @@ function WatchlistPage({ d, hidden, setSelected }: any) {
   )
 }
 
-function WatchlistTable({ rows, hidden, setSelected, onRemove }: any) {
+function WatchlistTable({ rows, columns, hidden, setSelected, onRemove }: any) {
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Symbol</th>
-            <th>Status</th>
-            <th>Last</th>
-            <th>Daily %</th>
-            <th>Daily Chg</th>
-            <th>Risk</th>
-            <th>Momentum</th>
-            <th>Action</th>
+            {columns.instrument && <th>Instrument</th>}
+            {columns.last && <th>Last</th>}
+            {columns.change && <th>Change</th>}
+            {columns.changePercent && <th>Change %</th>}
+            {columns.volume && <th>Volume</th>}
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((p: any) => (
             <tr key={p.symbol} onClick={() => setSelected(p)}>
-              <td>
+              {columns.instrument && <td>
                 <div className="row-symbol">
                   <div className="logo" style={{ background: p.accent || p.brand || '#60a5fa' }}>
                     {hidden ? '..' : p.logo || p.symbol?.slice(0, 2)}
                   </div>
                   <div>
                     <b>{hidden ? mask : p.symbol}</b>
-                    <div className="muted">{hidden ? 'Workspace item' : p.name}</div>
+                    <div className="muted">{hidden ? 'Workspace item' : `${p.exchange || 'NASDAQ'} - ${p.name}`}</div>
                   </div>
                 </div>
-              </td>
-              <td><PiaBadge variant="neutral" size="compact">{hidden ? mask : p.label || p.sec_type || 'Watch'}</PiaBadge></td>
-              <td>{hidden ? mask : money(p.last || p.price)}</td>
-              <td className={p.day_change_pct >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(p.day_change_pct)}</td>
-              <td className={p.day_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.day_pnl)}</td>
-              <td>{hidden ? mask : p.risk || '-'}</td>
-              <td>{hidden ? mask : p.momentum_score || p.momentum || '-'}</td>
+              </td>}
+              {columns.last && <td>{hidden ? mask : money(p.last || p.price)}</td>}
+              {columns.change && <td className={p.day_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.day_pnl)}</td>}
+              {columns.changePercent && <td className={p.day_change_pct >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(p.day_change_pct)}</td>}
+              {columns.volume && <td>{hidden ? mask : compactVolume(p.volume)}</td>}
               <td>
                 <div className="watchlist-row-actions">
                   <PiaButton density="compact" variant="secondary" onClick={(e) => { e.stopPropagation(); setSelected(p) }}>
@@ -1305,32 +1335,33 @@ function WatchlistCards({ rows, hidden, setSelected, onRemove }: any) {
             className={`position-card watchlist-position-card${p.brand ? ' accented' : ''}`}
             style={p.brand ? ({ '--pos-brand': p.brand } as React.CSSProperties) : undefined}
           >
-            <button onClick={() => setSelected(p)}>
-              <header>
-                <div>
-                  <b>{hidden ? mask : p.symbol}</b>
-                  <span>{hidden ? 'Workspace item' : p.name}</span>
-                </div>
-                <strong>{hidden ? mask : money(p.last || p.price)}</strong>
-              </header>
-              <div className="position-pnl">
-                <span className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)} today</span>
-                <span className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(dayPnl)}</span>
+            <header>
+              <div>
+                <b>{hidden ? mask : p.symbol}</b>
+                <span>{hidden ? 'Workspace item' : p.name}</span>
+                <small className="muted">{hidden ? 'Market' : p.exchange || 'NASDAQ'}</small>
               </div>
-              <MetricBar label={hidden ? 'Controls' : 'Risk'} value={p.risk || 0} tone="red" hidden={hidden} />
-              <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={p.momentum_score || p.momentum || 0} tone="green" hidden={hidden} />
-              <div className="watchlist-card-actions">
-                <PiaBadge variant="info">{hidden ? 'Overview' : p.label || p.sec_type || 'Watch'}</PiaBadge>
-                <span>
-                  <PiaButton density="compact" variant="secondary" onClick={(e) => { e.stopPropagation(); setSelected(p) }}>
-                    <Brain size={14} /> Intel
-                  </PiaButton>
-                  <button className="watchlist-remove" type="button" aria-label={`Remove ${p.symbol}`} onClick={(e) => { e.stopPropagation(); onRemove(p.symbol) }}>
-                    <Trash2 size={14} />
-                  </button>
-                </span>
-              </div>
-            </button>
+              <strong>{hidden ? mask : money(p.last || p.price)}</strong>
+            </header>
+            <div className="position-pnl">
+              <span className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)} today</span>
+              <span className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(dayPnl)}</span>
+            </div>
+            <div className="watchlist-card-metrics">
+              <span>Volume <b>{hidden ? mask : compactVolume(p.volume)}</b></span>
+              <span>Change <b className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(dayPnl)}</b></span>
+            </div>
+            <div className="watchlist-card-actions">
+              <PiaBadge variant="info">{hidden ? 'Overview' : p.label || p.sec_type || 'Watch'}</PiaBadge>
+              <span>
+                <PiaButton density="compact" variant="secondary" onClick={() => setSelected(p)}>
+                  <Brain size={14} /> Stock Intelligence
+                </PiaButton>
+                <button className="watchlist-remove" type="button" aria-label={`Remove ${p.symbol}`} onClick={() => onRemove(p.symbol)}>
+                  <Trash2 size={14} />
+                </button>
+              </span>
+            </div>
           </PiaCard>
         )
       })}
