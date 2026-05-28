@@ -411,10 +411,35 @@ html,body{max-width:100%;overflow-x:hidden}
   .scanner-sort-rail{max-width:100%;overflow-x:auto}
 }
 
+/* ── Portfolio Terminal: Sprint 3A Density Refinement ───────────── */
+/* Summary strip (CR-32) */
+.portfolio-summary-strip{display:flex;overflow-x:auto;margin:0 0 8px;border:1px solid rgba(148,163,184,.13);border-radius:14px;background:rgba(7,11,18,.84);scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.portfolio-summary-strip::-webkit-scrollbar{display:none}
+.pss-cell{flex:0 0 auto;display:grid;gap:2px;padding:7px 12px;border-right:1px solid rgba(148,163,184,.1);min-width:72px}
+.pss-cell:last-child{border-right:0}
+.pss-cell span{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.pss-cell b{font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.2}
+
+/* Portfolio header controls (CR-29, CR-34) */
+.pf-header-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.pf-columns-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(148,163,184,.18);border-radius:999px;background:rgba(9,14,24,.82);color:var(--muted);padding:4px 9px;font-size:11px;font-weight:700;white-space:nowrap;transition:color .13s ease,border-color .13s ease}
+.pf-columns-btn:hover{color:#eef4fb;border-color:rgba(96,165,250,.32)}
+.mobile-portfolio-header{flex-wrap:nowrap}
+.mobile-portfolio-count{font-size:11px}
+
+/* Column settings sheet (CR-29) */
+.pf-col-list{display:grid;gap:7px;padding-bottom:4px}
+.pf-col-toggle{display:flex;align-items:center;gap:10px;width:100%;border:1px solid rgba(148,163,184,.14);border-radius:14px;background:rgba(9,14,24,.82);color:#eef4fb;text-align:left;padding:10px 12px;font-size:13px;transition:border-color .14s ease,background .14s ease}
+.pf-col-toggle.active{border-color:rgba(36,209,140,.38);background:rgba(36,209,140,.07);color:#d1fae5}
+.pf-col-check{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;border:1px solid rgba(148,163,184,.28);background:rgba(3,7,18,.5);font-size:11px;font-weight:800;flex:0 0 auto;transition:inherit}
+.pf-col-toggle.active .pf-col-check{border-color:rgba(36,209,140,.5);background:rgba(36,209,140,.2);color:#bbf7d0}
+.pf-col-reset{margin-top:8px;width:100%;border:1px dashed rgba(148,163,184,.2);border-radius:12px;background:transparent;color:var(--muted);padding:9px;font-size:12px;font-weight:700}
+.pf-col-reset:hover{color:#eef4fb;border-color:rgba(148,163,184,.4)}
+
 /* ── Portfolio Dual View: Table + Cards ──────────────────────────── */
-/* View toggle pill */
-.portfolio-view-toggle{display:flex;background:rgba(9,14,24,.88);border:1px solid rgba(148,163,184,.18);border-radius:999px;padding:3px;gap:2px}
-.portfolio-view-toggle button{border:0;background:transparent;color:var(--muted);padding:5px 14px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.02em;white-space:nowrap;transition:background .15s ease,color .15s ease}
+/* View toggle pill — refined (CR-34) */
+.portfolio-view-toggle{display:flex;background:rgba(9,14,24,.88);border:1px solid rgba(148,163,184,.18);border-radius:999px;padding:2px;gap:1px}
+.portfolio-view-toggle button{border:0;background:transparent;color:var(--muted);padding:4px 11px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.02em;white-space:nowrap;transition:background .15s ease,color .15s ease}
 .portfolio-view-toggle button.active{background:linear-gradient(135deg,rgba(37,99,235,.58),rgba(124,58,237,.42));color:#fff;box-shadow:inset 0 0 0 1px rgba(191,219,254,.16)}
 
 /* Mobile portfolio section header */
@@ -422,19 +447,24 @@ html,body{max-width:100%;overflow-x:hidden}
 .mobile-portfolio-header h2{margin:0;font-size:16px;font-weight:700}
 .mobile-portfolio-count{font-size:12px;color:var(--muted);flex:1}
 
-/* Mobile IBKR terminal table */
+/* Mobile IBKR terminal table — frozen column + density (CR-30, CR-31) */
 .mobile-terminal-wrap{overflow-x:auto;overflow-y:visible;margin:0 -12px;padding:0 12px 12px;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.18) transparent}
 .mobile-terminal-wrap::-webkit-scrollbar{height:3px}.mobile-terminal-wrap::-webkit-scrollbar-thumb{background:rgba(148,163,184,.18);border-radius:999px}
-.mobile-terminal-table{width:100%;min-width:510px;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
-.mobile-terminal-table thead th{background:rgba(5,8,14,.96);backdrop-filter:blur(8px);color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:9px 10px 7px;text-align:left;border-bottom:1px solid rgba(148,163,184,.13);cursor:pointer;user-select:none;white-space:nowrap;transition:color .13s ease}
+.mobile-terminal-table{width:100%;min-width:520px;border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums}
+.mobile-terminal-table thead th{position:sticky;top:0;z-index:2;background:rgba(5,8,14,.98);color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:7px 9px 6px;text-align:left;border-bottom:1px solid rgba(148,163,184,.14);cursor:pointer;user-select:none;white-space:nowrap;transition:color .13s ease}
 .mobile-terminal-table thead th:hover{color:#eef4fb}
 .mobile-terminal-table thead th.col-sorted{color:#60a5fa}
-.mobile-terminal-table thead th .sort-arrow{font-size:9px;margin-left:3px;opacity:.85}
-.mobile-terminal-table tbody tr{border-bottom:1px solid rgba(148,163,184,.07);cursor:pointer;transition:background .1s ease}
+.mobile-terminal-table thead th .sort-arrow{font-size:9px;margin-left:2px;opacity:.85}
+.mobile-terminal-table tbody tr{cursor:pointer;transition:background .1s ease}
 .mobile-terminal-table tbody tr:hover{background:rgba(96,165,250,.05)}
 .mobile-terminal-table tbody tr:active{background:rgba(96,165,250,.09)}
-.mobile-terminal-table td{padding:9px 10px;vertical-align:middle;white-space:nowrap}
-.mobile-terminal-table td:first-child{padding-left:0;min-width:128px}
+.mobile-terminal-table td{padding:7px 9px;vertical-align:middle;white-space:nowrap;border-bottom:1px solid rgba(148,163,184,.07)}
+.mobile-terminal-table td:first-child{padding-left:0;min-width:120px}
+/* Frozen first column (CR-30) */
+.mtt-col-frozen{position:sticky !important;left:0;z-index:2;background:rgba(7,11,18,.98) !important}
+.mobile-terminal-table thead th.mtt-col-frozen{z-index:4;background:rgba(5,8,14,.98) !important;top:0}
+.mobile-terminal-table tbody tr:hover td.mtt-col-frozen{background:rgba(11,17,26,.98) !important}
+.mobile-terminal-table tbody tr:active td.mtt-col-frozen{background:rgba(15,25,40,.98) !important}
 
 /* Terminal row symbol cell */
 .mtt-symbol{display:flex;align-items:center;gap:8px}
@@ -449,11 +479,8 @@ html,body{max-width:100%;overflow-x:hidden}
 .mtt-risk.warn{color:#fde68a;background:rgba(69,41,5,.5);border-color:rgba(251,191,36,.28)}
 .mtt-risk.bad{color:#fecdd3;background:rgba(76,5,25,.5);border-color:rgba(255,99,117,.28)}
 
-/* Terminal portfolio totals footer */
-.mobile-terminal-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
-.mobile-terminal-total-cell{padding:9px;border:1px solid rgba(148,163,184,.11);border-radius:12px;background:rgba(9,14,24,.6)}
-.mobile-terminal-total-cell span{display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
-.mobile-terminal-total-cell b{font-size:13px;font-variant-numeric:tabular-nums}
+/* Old totals footer — replaced by summary strip (CR-32) */
+.mobile-terminal-totals{display:none}
 
 /* Card brand/accent color theming (future-ready CSS hooks) */
 .mobile-position-card.themed{border-top-width:2px}

@@ -840,9 +840,96 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
 }
 
 type PortfolioView = 'table' | 'cards'
-type TableSortKey = 'symbol' | 'last' | 'change' | 'pnl' | 'weight' | 'risk'
+type ColKey = 'price' | 'change' | 'pnl' | 'daypnl' | 'weight' | 'risk' | 'avgcost' | 'sector' | 'macro'
+type TableSortKey = 'symbol' | 'last' | 'change' | 'pnl' | 'daypnl' | 'weight' | 'risk' | 'avgcost'
 
-function MobilePortfolioTable({ rows, onSelect, hidden }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean }) {
+const COL_DEFS: { key: ColKey; label: string; sortKey?: TableSortKey; defaultOn: boolean }[] = [
+  { key: 'price',   label: 'Price',      sortKey: 'last',    defaultOn: true },
+  { key: 'change',  label: 'Chg %',      sortKey: 'change',  defaultOn: true },
+  { key: 'pnl',     label: 'Unrlzd',     sortKey: 'pnl',     defaultOn: true },
+  { key: 'daypnl',  label: 'Day P/L',    sortKey: 'daypnl',  defaultOn: true },
+  { key: 'weight',  label: 'Wt %',       sortKey: 'weight',  defaultOn: true },
+  { key: 'risk',    label: 'Risk',       sortKey: 'risk',    defaultOn: true },
+  { key: 'avgcost', label: 'Avg Cost',   sortKey: 'avgcost', defaultOn: false },
+  { key: 'sector',  label: 'Sector',                         defaultOn: false },
+  { key: 'macro',   label: 'Macro β',                        defaultOn: false },
+]
+const COL_LS_KEY = 'pia.portfolioColumns.mobile'
+
+function readSavedCols(): Set<ColKey> {
+  try {
+    const raw = localStorage.getItem(COL_LS_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw) as ColKey[]
+      if (Array.isArray(arr) && arr.length) return new Set(arr)
+    }
+  } catch {}
+  return new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key))
+}
+
+function PortfolioSummaryStrip({ portfolio, positions, hidden }: { portfolio: any; positions: any[]; hidden: boolean }) {
+  const total = portfolio.total_value || positions.reduce((s: number, p: any) => s + Number(p.market_value || 0), 0)
+  const dayPnl = portfolio.daily_pnl || positions.reduce((s: number, p: any) => s + Number(p.day_pnl || 0), 0)
+  const unreal = portfolio.unrealized || positions.reduce((s: number, p: any) => s + Number(p.unrealized || 0), 0)
+  const cash = Number(portfolio.cash || 0)
+  const bp = Number(portfolio.buying_power || 0)
+  const topExp = Number(portfolio.exposures?.rows?.[0]?.pct || 0)
+
+  return (
+    <div className="portfolio-summary-strip" role="region" aria-label="Portfolio summary">
+      <div className="pss-cell">
+        <span>NLV</span>
+        <b>{hidden ? mask : money(total)}</b>
+      </div>
+      <div className="pss-cell">
+        <span>Day P/L</span>
+        <b className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : `${dayPnl >= 0 ? '+' : ''}${money(dayPnl)}`}</b>
+      </div>
+      <div className="pss-cell">
+        <span>Unrealized</span>
+        <b className={unreal >= 0 ? 'green' : 'red'}>{hidden ? mask : `${unreal >= 0 ? '+' : ''}${money(unreal)}`}</b>
+      </div>
+      <div className="pss-cell">
+        <span>Cash</span>
+        <b>{hidden ? mask : money(cash)}</b>
+      </div>
+      <div className="pss-cell">
+        <span>Buy Power</span>
+        <b>{hidden ? mask : money(bp)}</b>
+      </div>
+      <div className="pss-cell">
+        <span>Top Exp</span>
+        <b>{hidden ? mask : pct(topExp)}</b>
+      </div>
+    </div>
+  )
+}
+
+function PortfolioColumnSheet({ visible, onToggle, onReset, onClose }: {
+  visible: Set<ColKey>
+  onToggle: (key: ColKey) => void
+  onReset: () => void
+  onClose: () => void
+}) {
+  return (
+    <MobileSheet title="Column Settings" onClose={onClose}>
+      <div className="pf-col-list">
+        {COL_DEFS.map((col) => {
+          const on = visible.has(col.key)
+          return (
+            <button key={col.key} type="button" className={`pf-col-toggle${on ? ' active' : ''}`} onClick={() => onToggle(col.key)}>
+              <span className="pf-col-check">{on ? '✓' : ''}</span>
+              {col.label}
+            </button>
+          )
+        })}
+        <button type="button" className="pf-col-reset" onClick={onReset}>Reset to defaults</button>
+      </div>
+    </MobileSheet>
+  )
+}
+
+function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean; visibleCols: Set<ColKey> }) {
   const [sort, setSort] = useState<TableSortKey>('weight')
   const [dir, setDir] = useState<'desc' | 'asc'>('desc')
 
@@ -853,13 +940,17 @@ function MobilePortfolioTable({ rows, onSelect, hidden }: { rows: any[]; onSelec
 
   const sorted = useMemo(() => {
     const key = (p: any): string | number => {
-      if (sort === 'symbol') return String(p.symbol || '')
-      if (sort === 'last') return Number(p.last || p.price || 0)
-      if (sort === 'change') return Number(p.day_change_pct || 0)
-      if (sort === 'pnl') return Number(p.unrealized || 0)
-      if (sort === 'weight') return Number(p.portfolio_pct || 0)
-      if (sort === 'risk') return Number(p.risk || 0)
-      return 0
+      switch (sort) {
+        case 'symbol':  return String(p.symbol || '')
+        case 'last':    return Number(p.last || p.price || 0)
+        case 'change':  return Number(p.day_change_pct || 0)
+        case 'pnl':     return Number(p.unrealized || 0)
+        case 'daypnl':  return Number(p.day_pnl || 0)
+        case 'weight':  return Number(p.portfolio_pct || 0)
+        case 'risk':    return Number(p.risk || 0)
+        case 'avgcost': return Number(p.avg_price || p.avg_cost || 0)
+        default:        return 0
+      }
     }
     return [...rows].sort((a, b) => {
       const av = key(a), bv = key(b)
@@ -868,87 +959,84 @@ function MobilePortfolioTable({ rows, onSelect, hidden }: { rows: any[]; onSelec
     })
   }, [rows, sort, dir])
 
-  function ColHead({ col, label }: { col: TableSortKey; label: string }) {
-    const active = sort === col
-    return (
-      <th className={active ? 'col-sorted' : ''} onClick={() => toggleSort(col)}>
-        {label}{active ? <span className="sort-arrow">{dir === 'desc' ? ' ↓' : ' ↑'}</span> : null}
-      </th>
-    )
+  function renderCell(col: ColKey, position: any) {
+    const change = Number(position.day_change_pct || 0)
+    const unreal = Number(position.unrealized || 0)
+    const unrealPct = Number(position.unrealized_pct || 0)
+    const dayPnl = Number(position.day_pnl || 0)
+    const risk = Number(position.risk || 0)
+    if (hidden) return <td key={col}>{mask}</td>
+    switch (col) {
+      case 'price':
+        return <td key={col}>{money(position.last || position.price || 0)}</td>
+      case 'change':
+        return <td key={col} className={change >= 0 ? 'green' : 'red'}>{pct(change)}</td>
+      case 'pnl':
+        return (
+          <td key={col} className={unreal >= 0 ? 'green' : 'red'}>
+            {`${unreal >= 0 ? '+' : ''}${money(unreal)}`}
+            {unrealPct !== 0 && <><br /><small style={{ fontSize: 10, opacity: .72 }}>{unrealPct >= 0 ? '+' : ''}{unrealPct.toFixed(1)}%</small></>}
+          </td>
+        )
+      case 'daypnl':
+        return <td key={col} className={dayPnl >= 0 ? 'green' : 'red'}>{`${dayPnl >= 0 ? '+' : ''}${money(dayPnl)}`}</td>
+      case 'weight':
+        return <td key={col}>{Number(position.portfolio_pct || 0).toFixed(1)}%</td>
+      case 'risk':
+        return (
+          <td key={col}>
+            <span className={`mtt-risk ${risk >= 70 ? 'bad' : risk >= 45 ? 'warn' : 'good'}`}>{risk}</span>
+          </td>
+        )
+      case 'avgcost':
+        return <td key={col}>{money(position.avg_price || position.avg_cost || 0)}</td>
+      case 'sector':
+        return <td key={col} className="muted" style={{ fontSize: 11 }}>{String(position.sector || '—')}</td>
+      case 'macro':
+        return <td key={col}>{Number(position.macro_sensitivity || 0)}</td>
+      default:
+        return <td key={col}>—</td>
+    }
   }
 
-  const totals = useMemo(() => ({
-    value: rows.reduce((s, p) => s + Number(p.market_value || 0), 0),
-    pnl: rows.reduce((s, p) => s + Number(p.unrealized || 0), 0),
-    dayPnl: rows.reduce((s, p) => s + Number(p.day_pnl || 0), 0),
-  }), [rows])
-
   return (
-    <>
-      <div className="mobile-terminal-wrap">
-        <table className="mobile-terminal-table">
-          <thead>
-            <tr>
-              <ColHead col="symbol" label="Symbol" />
-              <ColHead col="last" label="Price" />
-              <ColHead col="change" label="Chg%" />
-              <ColHead col="pnl" label="Unrlzd" />
-              <ColHead col="weight" label="Wt%" />
-              <ColHead col="risk" label="Risk" />
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((position) => {
-              const change = Number(position.day_change_pct || 0)
-              const unreal = Number(position.unrealized || 0)
-              const unrealPct = Number(position.unrealized_pct || 0)
-              const risk = Number(position.risk || 0)
+    <div className="mobile-terminal-wrap">
+      <table className="mobile-terminal-table">
+        <thead>
+          <tr>
+            <th className="mtt-col-frozen" onClick={() => toggleSort('symbol')}>
+              Symbol{sort === 'symbol' ? <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span> : null}
+            </th>
+            {COL_DEFS.filter((c) => visibleCols.has(c.key)).map((col) => {
+              const active = col.sortKey && sort === col.sortKey
               return (
-                <tr key={position.symbol} onClick={() => onSelect(position)}>
-                  <td>
-                    <div className="mtt-symbol">
-                      <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
-                        {hidden ? '●' : (position.logo || String(position.symbol || '').slice(0, 2))}
-                      </div>
-                      <div className="mtt-sym-text">
-                        <strong>{hidden ? mask : position.symbol}</strong>
-                        <span>{hidden ? 'Holding' : (position.sec_type === 'OPT' ? 'Option' : String(position.name || '').split(' ').slice(0, 2).join(' '))}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td>{hidden ? mask : money(position.last || position.price || 0)}</td>
-                  <td className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)}</td>
-                  <td className={unreal >= 0 ? 'green' : 'red'}>
-                    {hidden ? mask : `${unreal >= 0 ? '+' : ''}${money(unreal)}`}
-                    {!hidden && unrealPct !== 0 && <><br /><small style={{ fontSize: 10, opacity: .75 }}>{unrealPct >= 0 ? '+' : ''}{unrealPct.toFixed(1)}%</small></>}
-                  </td>
-                  <td>{hidden ? mask : `${Number(position.portfolio_pct || 0).toFixed(1)}%`}</td>
-                  <td>
-                    <span className={`mtt-risk ${risk >= 70 ? 'bad' : risk >= 45 ? 'warn' : 'good'}`}>
-                      {hidden ? mask : risk}
-                    </span>
-                  </td>
-                </tr>
+                <th key={col.key} className={active ? 'col-sorted' : ''} onClick={() => col.sortKey && toggleSort(col.sortKey)}>
+                  {col.label}{active ? <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span> : null}
+                </th>
               )
             })}
-          </tbody>
-        </table>
-      </div>
-      <div className="mobile-terminal-totals">
-        <div className="mobile-terminal-total-cell">
-          <span>Portfolio value</span>
-          <b>{hidden ? mask : money(totals.value)}</b>
-        </div>
-        <div className="mobile-terminal-total-cell">
-          <b className={totals.dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : `${totals.dayPnl >= 0 ? '+' : ''}${money(totals.dayPnl)}`}</b>
-          <span>Today P/L</span>
-        </div>
-        <div className="mobile-terminal-total-cell">
-          <b className={totals.pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : `${totals.pnl >= 0 ? '+' : ''}${money(totals.pnl)}`}</b>
-          <span>Unrealized</span>
-        </div>
-      </div>
-    </>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((position) => (
+            <tr key={position.symbol} onClick={() => onSelect(position)}>
+              <td className="mtt-col-frozen">
+                <div className="mtt-symbol">
+                  <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
+                    {hidden ? '●' : (position.logo || String(position.symbol || '').slice(0, 2))}
+                  </div>
+                  <div className="mtt-sym-text">
+                    <strong>{hidden ? mask : position.symbol}</strong>
+                    <span>{hidden ? 'Holding' : (position.sec_type === 'OPT' ? 'Option' : String(position.name || '').split(' ').slice(0, 2).join(' '))}</span>
+                  </div>
+                </div>
+              </td>
+              {COL_DEFS.filter((c) => visibleCols.has(c.key)).map((col) => renderCell(col.key, position))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -959,6 +1047,8 @@ export default function MobileExperience() {
   const [mounted, setMounted] = useState(false)
   const [hidden, setHidden] = useState(false)
   const [portfolioView, setPortfolioView] = useState<PortfolioView>('table')
+  const [colMenuOpen, setColMenuOpen] = useState(false)
+  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key)))
   const [quickOpen, setQuickOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [rescanning, setRescanning] = useState(false)
@@ -983,6 +1073,7 @@ export default function MobileExperience() {
       setHidden(localStorage.getItem('pia.hideAmounts') === 'true')
       const savedView = localStorage.getItem('pia.portfolioView.mobile')
       if (savedView === 'cards' || savedView === 'table') setPortfolioView(savedView)
+      setVisibleCols(readSavedCols())
     } catch {}
     fetchJson('/source-health')
       .then((data) => {
@@ -994,6 +1085,20 @@ export default function MobileExperience() {
   function updatePortfolioView(next: PortfolioView) {
     setPortfolioView(next)
     try { localStorage.setItem('pia.portfolioView.mobile', next) } catch {}
+  }
+
+  function toggleVisibleCol(key: ColKey) {
+    const next = new Set(visibleCols)
+    if (next.has(key) && next.size > 2) next.delete(key)
+    else next.add(key)
+    setVisibleCols(next)
+    try { localStorage.setItem(COL_LS_KEY, JSON.stringify([...next])) } catch {}
+  }
+
+  function resetVisibleCols() {
+    const def = new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key))
+    setVisibleCols(def)
+    try { localStorage.setItem(COL_LS_KEY, JSON.stringify([...def])) } catch {}
   }
 
   function updateHidden(next: boolean) {
@@ -1035,8 +1140,9 @@ export default function MobileExperience() {
           {notificationCount > 0 ? <span className="mobile-icon-badge">{notificationCount}</span> : null}
         </button>
       </header>
-      <SearchCommand onQuickControls={() => setQuickOpen(true)} />
-      <MobileStatusDock health={sourceHealth} hidden={privacyHidden} />
+      {active !== 'portfolio' && active !== 'settings' && (
+        <SearchCommand onQuickControls={() => setQuickOpen(true)} />
+      )}
 
       {active === 'home' && (
         <MobileReorderableSections
@@ -1056,20 +1162,38 @@ export default function MobileExperience() {
       )}
 
       {active === 'portfolio' && (
-        <div className="mobile-portfolio-section">
-          <div className="mobile-portfolio-header">
-            <h2>Portfolio</h2>
-            <span className="mobile-portfolio-count">{positions.length} position{positions.length !== 1 ? 's' : ''}</span>
-            <div className="portfolio-view-toggle" role="group" aria-label="Portfolio view mode">
-              <button className={portfolioView === 'table' ? 'active' : ''} onClick={() => updatePortfolioView('table')}>Table</button>
-              <button className={portfolioView === 'cards' ? 'active' : ''} onClick={() => updatePortfolioView('cards')}>Cards</button>
+        <>
+          {colMenuOpen && (
+            <PortfolioColumnSheet
+              visible={visibleCols}
+              onToggle={toggleVisibleCol}
+              onReset={resetVisibleCols}
+              onClose={() => setColMenuOpen(false)}
+            />
+          )}
+          <div className="mobile-portfolio-section">
+            <PortfolioSummaryStrip portfolio={portfolio} positions={positions} hidden={privacyHidden} />
+            <div className="mobile-portfolio-header">
+              <h2>Portfolio</h2>
+              <span className="mobile-portfolio-count">{positions.length}P</span>
+              <div className="pf-header-actions">
+                {portfolioView === 'table' && (
+                  <button type="button" className="pf-columns-btn" onClick={() => setColMenuOpen(true)}>
+                    <SlidersHorizontal size={13} /> Cols
+                  </button>
+                )}
+                <div className="portfolio-view-toggle" role="group" aria-label="Portfolio view mode">
+                  <button className={portfolioView === 'table' ? 'active' : ''} onClick={() => updatePortfolioView('table')}>Table</button>
+                  <button className={portfolioView === 'cards' ? 'active' : ''} onClick={() => updatePortfolioView('cards')}>Cards</button>
+                </div>
+              </div>
             </div>
+            {portfolioView === 'table'
+              ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} />
+              : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} />
+            }
           </div>
-          {portfolioView === 'table'
-            ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} />
-            : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} />
-          }
-        </div>
+        </>
       )}
       {active === 'scanner' && <ScannerSetups scanner={scanner} onSelect={setSelected} hidden={privacyHidden} />}
       {active === 'markets' && (
@@ -1080,6 +1204,7 @@ export default function MobileExperience() {
       )}
       {active === 'settings' && (
         <section className="mobile-section mobile-settings-section">
+          <MobileStatusDock health={sourceHealth} hidden={privacyHidden} />
           <SettingsPage hidden={privacyHidden} variant="mobile" />
         </section>
       )}

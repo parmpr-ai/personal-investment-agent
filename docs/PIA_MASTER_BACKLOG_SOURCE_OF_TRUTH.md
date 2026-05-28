@@ -353,6 +353,7 @@ Default behavior:
 - v0.3.5: Mock-first design governance system and locked design-system documentation.
 - v0.3.6: Hybrid mock intelligence data layer for UI evaluation across 9 tickers.
 - v0.3.7: Portfolio dual view mode — Terminal Table + Swipe Cards with localStorage persistence.
+- v0.3.8: Portfolio terminal density refinement — frozen column, summary strip, column settings, Home/Portfolio IA separation.
 
 ## Guardrails
 
@@ -366,6 +367,31 @@ Default behavior:
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.8 - Portfolio Terminal Density Refinement (Sprint 3A)
+Date: 2026-05-28
+Status: Implemented and validated.
+CRs closed: CR-27, CR-28, CR-29, CR-30, CR-31, CR-32, CR-33, CR-34, CR-35, CR-36, CR-37, CR-38
+
+## Closed CRs:
+
+- CR-27: Ask PIA search bar removed from Portfolio. Shown only on Home, Scanner, Markets.
+- CR-28: Connection Status dock removed from global shell. Moved into Settings top section.
+- CR-29: Column settings sheet added beside Table/Cards toggle. Show/hide 9 columns (Price, Chg%, Unrlzd, Day P/L, Wt%, Risk, Avg Cost, Sector, Macro β). Reset to defaults. Persisted in localStorage (`pia.portfolioColumns.mobile`).
+- CR-30: First column (Symbol) and header row are now frozen. Symbol stays visible during horizontal scroll. Column headers stay visible during vertical scroll. Implemented via `position: sticky; left: 0` on `.mtt-col-frozen` and `position: sticky; top: 0` on `thead th`. Uses `border-collapse: separate; border-spacing: 0` for cross-browser sticky column support.
+- CR-31: Row height tightened to 7px padding (from 9-10px). Font size reduced to 12px (from 12.5px). Header font size 10px, padding 7px. Net result: ~30% more rows visible in the same height.
+- CR-32: Large 3-cell footer metric blocks removed. Replaced with compact scrollable `PortfolioSummaryStrip` at the top of the portfolio workspace showing: NLV, Day P/L, Unrealized, Cash, Buying Power, Top Exposure %. Horizontally scrollable, 7px padding cells, 9px uppercase labels.
+- CR-33: Portfolio workspace cleaned of non-operational elements. No search bar, no status dock, no home widgets.
+- CR-34: Table/Cards toggle height reduced (padding 4px vs 5px, font 11px vs 12px). More premium proportions.
+- CR-35: Swipe Cards view fully preserved with brand color accents and P/L row. No regressions.
+- CR-36: `--pos-brand` and `--card-brand` CSS hooks maintained. Theme architecture untouched.
+- CR-37: Table now supports 9 columns: Price, Chg%, Unrlzd (with % sub-line), Day P/L, Wt%, Risk, Avg Cost, Sector, Macro β. All sortable where applicable. Default: first 6 visible.
+- CR-38: Home and Portfolio architecturally separate. Home = executive overview with market pulse, alerts, brief. Portfolio = clean operational terminal.
+
+## Known limitations:
+
+- Sticky column `position: sticky; left: 0` behavior depends on the `.mobile-terminal-wrap` being the correct overflow-x scroll ancestor. Verified with `border-collapse: separate`.
+- Sector and Macro β columns show placeholder data until live fundamentals feed is connected.
 
 ### v0.3.7 - Portfolio Dual View Mode
 Date: 2026-05-28
