@@ -502,6 +502,47 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
   .mobile-terminal-totals{grid-template-columns:1fr 1fr}
   .mobile-terminal-total-cell:last-child{grid-column:1/-1}
 }
+/* ── Portfolio IBKR Header v0.3.11 ──────────────────────────────────── */
+/* Hero P/L row */
+.pf-header-pnl-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px}
+.pf-header-day-pnl{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.pf-header-day-pct{font-size:12px;font-weight:600;opacity:.82;font-variant-numeric:tabular-nums}
+/* Secondary unrealized / realized */
+.pf-header-secondary{display:flex;gap:18px;padding:8px 0 4px;border-top:1px solid rgba(148,163,184,.1);margin-top:6px}
+.pf-header-sec-item{display:grid;gap:1px}
+.pf-header-sec-item span{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.pf-header-sec-item b{font-size:12px;font-variant-numeric:tabular-nums}
+/* Time-range chip rail */
+.pf-tf-rail{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:8px 0 2px;-webkit-overflow-scrolling:touch;touch-action:pan-x}
+.pf-tf-rail::-webkit-scrollbar{display:none}
+.pf-tf-chip{flex:0 0 auto;border:1px solid rgba(148,163,184,.15);border-radius:999px;background:rgba(9,14,24,.55);color:var(--muted);padding:4px 10px;font-size:11px;font-weight:700;transition:background .13s ease,border-color .13s ease,color .13s ease}
+.pf-tf-chip.active{background:rgba(37,99,235,.28);border-color:rgba(96,165,250,.5);color:#dbeafe}
+/* Compact portfolio instrument search */
+.pf-portfolio-search{display:flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(3,7,18,.44);padding:7px 10px;margin:8px 0 4px}
+.pf-portfolio-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:#eef4fb;font-size:12px}
+.pf-portfolio-search input::placeholder{color:var(--muted)}
+.pf-portfolio-search svg{color:var(--muted);flex:0 0 auto}
+/* Full 12-metric grid */
+.pf-metrics-full{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:6px}
+.pf-metrics-full .pf-metric-chip{padding:6px 7px}
+
+/* Risk bar color variants (Part E) */
+.mobile-momentum em.risk-bad{background:var(--red)}
+.mobile-momentum em.risk-elevated{background:#f97316}
+.mobile-momentum em.risk-medium{background:var(--amber)}
+.mobile-momentum em.risk-low{background:var(--green)}
+.risk-label-bad{color:var(--red) !important;font-size:12px}
+.risk-label-elevated{color:#f97316 !important;font-size:12px}
+.risk-label-medium{color:var(--amber) !important;font-size:12px}
+.risk-label-low{color:var(--green) !important;font-size:12px}
+
+/* Desktop time-range chips */
+.snapshot-tf-rail{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap}
+.snapshot-tf-chip{border:1px solid var(--line);border-radius:999px;background:#0b1119;color:var(--muted);padding:4px 10px;font-size:11px;font-weight:700;transition:background .13s ease,border-color .13s ease,color .13s ease}
+.snapshot-tf-chip.active{background:rgba(37,99,235,.28);border-color:rgba(96,165,250,.5);color:#dbeafe}
+.snapshot-pnl-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-top:3px}
+.snapshot-pnl-pct{font-size:13px;font-weight:600;opacity:.85}
+
 /* ── Portfolio IBKR Header (v0.3.9) ─────────────────────────────────── */
 .pf-header{border:1px solid rgba(148,163,184,.14);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.84),rgba(7,11,18,.88));margin-bottom:8px;overflow:hidden}
 .pf-header-main{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}

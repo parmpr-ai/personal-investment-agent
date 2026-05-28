@@ -761,16 +761,24 @@ function Kpis({ p, hidden }: any) {
 
 function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
   const mounted = useMounted()
+  const [activeTf, setActiveTf] = useState('1M')
+  const tfOptions = ['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL']
+  const dayPnlPct = Number(p.daily_pnl_pct || 0)
   return (
     <div className={showMarginDiscipline ? 'snapshot-grid' : 'snapshot-grid snapshot-grid-main'}>
       <div>
         <div className="hero-value">{hidden ? mask : money(p.total_value)}</div>
         <div className="hero-meta">
           <span className={p.daily_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.daily_pnl)} today</span>
-          <span>{hidden ? mask : pct(p.daily_pnl_pct)}</span>
+          <span className={`snapshot-pnl-pct ${dayPnlPct >= 0 ? 'green' : 'red'}`}>{hidden ? mask : `${dayPnlPct >= 0 ? '+' : ''}${Math.abs(dayPnlPct).toFixed(2)}%`}</span>
           <span>{p.risk_mode || '-'}</span>
         </div>
         <Kpis p={p} hidden={hidden} />
+        <div className="snapshot-tf-rail">
+          {tfOptions.map((tf) => (
+            <button key={tf} type="button" className={`snapshot-tf-chip${activeTf === tf ? ' active' : ''}`} onClick={() => setActiveTf(tf)}>{tf}</button>
+          ))}
+        </div>
       </div>
       <PiaCard className="chart-card" title={privateTitle(hidden, 'Portfolio evolution', 'Workspace trend')} badge={<PiaBadge variant="info">Intraday</PiaBadge>}>
         <div className="mini-chart">

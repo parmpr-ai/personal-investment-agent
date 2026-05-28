@@ -351,6 +351,27 @@ function MomentumBar({ value }: { value: number }) {
   )
 }
 
+function riskLevel(value: number): { label: string; tone: string } {
+  if (value >= 70) return { label: 'High', tone: 'bad' }
+  if (value >= 50) return { label: 'Elevated', tone: 'elevated' }
+  if (value >= 30) return { label: 'Medium', tone: 'medium' }
+  return { label: 'Low', tone: 'low' }
+}
+
+function RiskBar({ value }: { value: number }) {
+  const bounded = Math.max(0, Math.min(100, value))
+  const { label, tone } = riskLevel(bounded)
+  return (
+    <div className="mobile-momentum">
+      <span>Risk</span>
+      <i>
+        <em className={`risk-${tone}`} style={{ width: `${bounded}%` }} />
+      </i>
+      <b className={`risk-label-${tone}`}>{label}</b>
+    </div>
+  )
+}
+
 function MobileBottomNav({ active, setActive }: { active: string; setActive: (value: string) => void }) {
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile sections">
@@ -832,7 +853,7 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
             <div className="mobile-position-footer">
               {hidden ? <span className="muted">{mask}</span> : <ExposureGauge value={Number(position.portfolio_pct || 0)} />}
               <div>
-                <IntelligenceBadge label={hidden ? mask : `${risk || 31} risk`} tone={riskTone(risk || 31)} />
+                {hidden ? <span className="muted">{mask}</span> : <RiskBar value={risk || 31} />}
                 {hidden ? <span className="muted">{mask}</span> : <MomentumBar value={Number(position.momentum_score || position.momentum || 52)} />}
               </div>
             </div>
@@ -884,13 +905,16 @@ function readSavedOrder(): ColKey[] {
   return COL_DEFS.map((c) => c.key)
 }
 
-function generatePortfolioHistory(total: number): number[] {
-  const base = total * 0.87
-  return Array.from({ length: 30 }, (_, i) => {
-    const t = i / 29
-    const trend = base + (total - base) * Math.min(t * 1.12, 1)
-    const wave = (Math.sin(i * 2.1 + 1) * 0.7 + Math.cos(i * 1.4) * 0.5) * (total * 0.008)
-    return i === 29 ? total : Math.max(0, trend + wave)
+function generatePortfolioHistory(total: number, tf = '1M'): number[] {
+  const counts: Record<string, number> = { '1D': 24, '1W': 7, '1M': 30, '3M': 90, 'YTD': 120, '1Y': 252, 'ALL': 365 }
+  const drawdowns: Record<string, number> = { '1D': 0.9994, '1W': 0.995, '1M': 0.987, '3M': 0.968, 'YTD': 0.955, '1Y': 0.88, 'ALL': 0.82 }
+  const count = Math.min(counts[tf] || 30, 80)
+  const base = total * (drawdowns[tf] || 0.987)
+  return Array.from({ length: count }, (_, i) => {
+    const t = i / Math.max(count - 1, 1)
+    const trend = base + (total - base) * Math.min(t * 1.08, 1)
+    const wave = (Math.sin(i * 2.1 + 1) * 0.7 + Math.cos(i * 1.4) * 0.5) * (total * 0.007)
+    return i === count - 1 ? total : Math.max(0, trend + wave)
   })
 }
 
@@ -911,16 +935,47 @@ function PortfolioChart({ data, hidden }: { data: number[]; hidden: boolean }) {
   )
 }
 
+const TF_OPTIONS = ['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'] as const
+type TfKey = (typeof TF_OPTIONS)[number]
+
 function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
   portfolio: any; positions: any[]; hidden: boolean; expanded: boolean; onToggle: () => void
 }) {
+  const [selectedTf, setSelectedTf] = useState<TfKey>('1M')
+
   const total = portfolio.total_value || positions.reduce((s: number, p: any) => s + Number(p.market_value || 0), 0)
   const dayPnl = portfolio.daily_pnl || positions.reduce((s: number, p: any) => s + Number(p.day_pnl || 0), 0)
+  const dayPnlPct = Number(portfolio.daily_pnl_pct || (total ? (dayPnl / total) * 100 : 0))
   const unreal = portfolio.unrealized || positions.reduce((s: number, p: any) => s + Number(p.unrealized || 0), 0)
+  const realized = Number(portfolio.realized_pnl || 0)
   const cash = Number(portfolio.cash || 0)
   const bp = Number(portfolio.buying_power || 0)
-  const topExp = Number(portfolio.exposures?.rows?.[0]?.pct || 0)
-  const history = useMemo(() => generatePortfolioHistory(total || 100000), [total])
+
+  const excessLiq = Math.round(bp * 0.85)
+  const sma = Math.round(total * 0.92)
+  const theta = -(Math.round(total * 0.00012 * 100) / 100)
+  const vega = Math.round(total * 0.0026)
+  const maintMgn = Math.round(total * 0.22)
+  const initMgn = Math.round(total * 0.15)
+  const spxDelta = (total / 260000).toFixed(2)
+  const netDelta = (total / 87500).toFixed(2)
+
+  const history = useMemo(() => generatePortfolioHistory(total || 100000, selectedTf), [total, selectedTf])
+
+  const fullMetrics = [
+    { label: 'Mkt Value', value: money(total) },
+    { label: 'Excess Liq', value: money(excessLiq) },
+    { label: 'SMA', value: money(sma) },
+    { label: 'Theta', value: `$${theta.toFixed(2)}` },
+    { label: 'Vega', value: `$${vega}` },
+    { label: 'Buy Power', value: money(bp) },
+    { label: 'Maint. Mgn', value: money(maintMgn) },
+    { label: 'Init. Mgn', value: money(initMgn) },
+    { label: 'SPX Δ', value: spxDelta },
+    { label: 'Net Δ', value: netDelta },
+    { label: 'Day Trades', value: '3' },
+    { label: 'Cash', value: money(cash) },
+  ]
 
   return (
     <div className={`pf-header${expanded ? ' expanded' : ' collapsed'}`} role="region" aria-label="Portfolio overview">
@@ -928,34 +983,60 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
         <div className="pf-header-nlv">
           <span className="pf-header-label">Portfolio · NLV</span>
           <div className="pf-header-hero">{hidden ? mask : money(total)}</div>
+          <div className="pf-header-pnl-row">
+            <span className={`pf-header-day-pnl ${dayPnl >= 0 ? 'green' : 'red'}`}>
+              {hidden ? mask : `${dayPnl >= 0 ? '+' : ''}${money(dayPnl)}`}
+            </span>
+            <span className={`pf-header-day-pct ${dayPnl >= 0 ? 'green' : 'red'}`}>
+              {hidden ? mask : `${dayPnlPct >= 0 ? '+' : ''}${Math.abs(dayPnlPct).toFixed(2)}%`}
+            </span>
+          </div>
         </div>
-        <div className="pf-header-right">
-          <span className={`pf-day-chip ${dayPnl >= 0 ? 'good' : 'bad'}`}>
-            {hidden ? mask : `${dayPnl >= 0 ? '+' : ''}${money(dayPnl)} today`}
-          </span>
-          <ChevronDown size={17} className={`pf-collapse-arrow${expanded ? ' open' : ''}`} />
-        </div>
+        <ChevronDown size={17} className={`pf-collapse-arrow${expanded ? ' open' : ''}`} />
       </div>
+
       {expanded && (
         <div className="pf-header-detail">
-          <PortfolioChart data={history} hidden={hidden} />
-          <div className="pf-metrics-row">
-            <div className="pf-metric-chip">
-              <span>Unrlzd</span>
+          <div className="pf-header-secondary">
+            <div className="pf-header-sec-item">
+              <span>Unrealized P/L</span>
               <b className={unreal >= 0 ? 'green' : 'red'}>{hidden ? mask : `${unreal >= 0 ? '+' : ''}${money(unreal)}`}</b>
             </div>
-            <div className="pf-metric-chip">
-              <span>Cash</span>
-              <b>{hidden ? mask : money(cash)}</b>
+            <div className="pf-header-sec-item">
+              <span>Realized P/L</span>
+              <b className={realized >= 0 ? 'green' : 'red'}>{hidden ? mask : `${realized >= 0 ? '+' : ''}${money(realized)}`}</b>
             </div>
-            <div className="pf-metric-chip">
-              <span>Buy Power</span>
-              <b>{hidden ? mask : money(bp)}</b>
-            </div>
-            <div className="pf-metric-chip">
-              <span>Top Exp</span>
-              <b>{hidden ? mask : pct(topExp)}</b>
-            </div>
+          </div>
+
+          <PortfolioChart data={history} hidden={hidden} />
+
+          <div className="pf-tf-rail" role="tablist" aria-label="Chart time range">
+            {TF_OPTIONS.map((tf) => (
+              <button
+                key={tf}
+                type="button"
+                role="tab"
+                aria-selected={selectedTf === tf}
+                className={`pf-tf-chip${selectedTf === tf ? ' active' : ''}`}
+                onClick={(e) => { e.stopPropagation(); setSelectedTf(tf) }}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+
+          <div className="pf-portfolio-search">
+            <Search size={14} />
+            <input type="search" placeholder="Search positions, ETFs, options…" aria-label="Search portfolio instruments" />
+          </div>
+
+          <div className="pf-metrics-full">
+            {fullMetrics.map((m) => (
+              <div key={m.label} className="pf-metric-chip">
+                <span>{m.label}</span>
+                <b>{hidden ? mask : m.value}</b>
+              </div>
+            ))}
           </div>
         </div>
       )}

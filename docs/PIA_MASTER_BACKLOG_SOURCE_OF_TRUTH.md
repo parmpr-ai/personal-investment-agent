@@ -356,6 +356,7 @@ Default behavior:
 - v0.3.8: Portfolio terminal density refinement — frozen column, summary strip, column settings, Home/Portfolio IA separation.
 - v0.3.9: Portfolio IBKR alignment — collapsible hero header with evolution chart, symbol-only rows, drag-reorder columns, colOrder localStorage.
 - v0.3.10: Hotfix — restore mobile portfolio cards touch swipe (touch-action CSS bug + async isDragging state bug).
+- v0.3.11: Portfolio header IBKR alignment, risk visual system, swipe global fix — NLV hero + Day P/L %, time-range chips, 12-metric grid, RiskBar, desktop snapshot time-range chips.
 
 ## Guardrails
 
@@ -369,6 +370,43 @@ Default behavior:
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.11 - Portfolio Header + Swipe + Risk Visual Alignment
+Date: 2026-05-28
+Status: Implemented and validated.
+
+## Part A — Portfolio Header Redesign (mobile):
+
+- `PortfolioHeader` fully redesigned to IBKR reference standard.
+- **Hero row**: NLV + Day P/L value + Day P/L % (previously only showed a "today" chip with no %).
+- **Secondary row**: Unrealized P/L + Realized P/L side-by-side below chart divider.
+- **Portfolio evolution chart**: responds to selected timeframe (7 options).
+- **Time-range chips**: 1D · 1W · 1M · 3M · YTD · 1Y · ALL — horizontal scroll rail. Selecting a chip regenerates the chart mock data with the correct depth and starting drawdown per period.
+- **Compact portfolio instrument search**: below chart. Plain text search input, NOT the Ask PIA AI bar.
+- **Full 12-metric expanded grid** (3×4): Market Value, Excess Liquidity, SMA, Theta, Vega, Buying Power, Maintenance Margin, Initial Margin, SPX Delta, Net Delta, Day Trades Left, Cash. Deterministic mocks from portfolio total where live data unavailable.
+- Collapsed header: NLV + Day P/L + % + chevron — minimal height so positions dominate.
+
+## Part D — Swipe smoothness (global):
+
+- Already fixed in v0.3.10 (`touch-action: pan-x`). All SwipeRail-based rails — MarketPulse, WatchlistMovers, ScannerSetups, PositionCards — benefit from the same fix.
+
+## Part E — Stock Card Risk Visual:
+
+- Added `RiskBar` component matching MomentumBar structure exactly.
+- 4 labeled levels: Low (green) / Medium (amber) / Elevated (orange) / High (red).
+- Replaces `IntelligenceBadge` risk display in `PositionCards`. Risk signal now reads as a bar-with-label module, not a random badge.
+- CSS: `.mobile-momentum em.risk-*` and `.risk-label-*` classes.
+
+## Part F — Desktop Snapshot:
+
+- `PortfolioSnapshot` in Dashboard.tsx updated: Day P/L % shown alongside value.
+- Time-range chips (1D/1W/1M/3M/YTD/1Y/ALL) added below the KPI row — visual only for now.
+
+## Known limitations:
+
+- Time-range chart is deterministic mock — changes chart shape/depth but does not call a real historical endpoint.
+- Realized P/L shows $0 (no trade history in demo mode).
+- Desktop Kpis does not yet show Theta/Vega/SMA — these are in mobile only for now.
 
 ### v0.3.10 - Mobile Portfolio Cards Touch Swipe Hotfix
 Date: 2026-05-28
