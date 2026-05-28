@@ -21,13 +21,15 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - Active branch: `feat/pia-v3-foundation-integration`
 - Stable checkpoint: Sprint 2B implementation branches merged into integration.
 - Current sprint: Sprint 2C execution and UAT failure remediation.
-- Current status: Stock workspace intelligence refinement implemented; Release Center routing fixed.
+- Current status: Design governance and mock-first workflow locked before further UI implementation; mobile correction mock pack remains available for Product Owner review.
 - Current priorities:
+  - Enforce mock-first design governance before any further UI implementation.
   - Interaction stabilization on Home and mobile.
   - Mobile density refinement across cards, scanner rails, and intelligence surfaces.
   - Stock workspace expansion around Technical, Company, News, and Videos. Completed for Sprint 2C HERMES scope.
   - Notification Center refactor for mobile-safe visibility.
   - Performance smoothing for motion/render cost.
+  - Mobile correction mock review for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
 
 ## Sprint Summary
 
@@ -43,9 +45,16 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Refactor Company and Videos tabs.
   - Stabilize Notification Center.
   - Improve performance smoothness.
+  - Create mobile correction mock pack before final UI implementation.
+  - Lock design-system governance and mock-first workflow before additional UI implementation.
 
 ## Current Sprint Priorities
 
+- Design governance:
+  - Mock-first development is mandatory.
+  - Store reviewed and approved mocks under `docs/design-system/mocks/`.
+  - Every UI change must reference an approved mock, design-system rule, mobile-first principle, and changelog entry.
+  - Portfolio Snapshot redesign is blocked until an approved mobile mock exists.
 - Interaction stabilization:
   - Fix Home widget clickability.
   - Fix Market Pulse swipe gestures.
@@ -88,10 +97,12 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Human-readable actions.
   - Demo badge only for mock data.
 - P0 Mobile/Home:
+  - Portfolio Snapshot redesign requires approved mobile mock before implementation.
   - Quick controls mobile sheet stabilized.
   - Bell and Notification Center mobile bottom sheet fixed.
   - Home widget pointer/click targets stabilized.
   - Market Pulse swipe gestures fixed.
+  - Mobile correction mock pack created for PO review.
   - Keep mobile settings useful and visible.
 - P1 Stock Intelligence:
   - Analyst Targets widget per stock.
@@ -100,6 +111,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Company Research Hub refactor. Sprint 2C HERMES implementation complete with placeholder-marked fundamentals.
   - Videos Experience rework. Sprint 2C HERMES implementation complete.
   - Intelligence card density refactor. Sprint 2C HERMES implementation complete for stock news cards.
+  - Stock Quote / Technical IA mock created for PO review; final IA change not implemented yet.
 - P1 Workspaces:
   - Watchlists add/remove/sort/company logo/mini charts.
   - Sector and industry heatmap.
@@ -107,6 +119,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Trade Coach voice mode.
   - Academy workspace.
 - P2 Platform:
+  - Mock-first design governance system.
   - Cloud backup/restore.
   - Performance and storage efficiency.
 
@@ -177,17 +190,20 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Privacy mode masking preserved in touched mobile and dashboard surfaces.
   - Market Pulse swipe, notification bell sheet, compact scanner controls, and mobile wrapping stabilized in implementation.
 - Remaining failed UAT:
+  - Mobile correction mock pack requires Product Owner review before final UI implementation.
   - Mobile performance lag requires deeper device profiling after first-pass render-cost reduction.
 
 ## Agent Task Queue
 
 - HERMES:
+  - DONE 2026-05-28: Create Stock Quote / Technical IA and News/Videos mobile correction mocks.
   - DONE 2026-05-28: Fix Release Center routing mismatch.
   - DONE 2026-05-28: Refactor Company tab into research hub.
   - DONE 2026-05-28: Refine Technical tab into trade-entry decision workflow.
   - DONE 2026-05-28: Move Videos last and rework as media-first research feed.
   - PARTIAL 2026-05-28: Help reduce mobile performance lag.
 - ATHENA:
+  - DONE 2026-05-28: Create Mobile Portfolio Snapshot, Position Full Screen, Workspace Navigation, and Alerts mocks.
   - DONE 2026-05-28: Fix Market Pulse swipe gestures.
   - DONE 2026-05-28: Fix Home widget clickability.
   - DONE 2026-05-28: Compress mobile scanner and sort controls.
@@ -195,6 +211,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - ARTEMIS:
   - DONE 2026-05-28: Refactor Notification Center into a mobile-safe grouped sheet.
 - Future:
+  - Create Product Owner-reviewed mobile mock for Portfolio Snapshot before redesign.
   - News UX V2.
   - Analyst Targets widget.
   - Unified Intelligence Feed: Yahoo, Discord, Seeking Alpha, Reuters, PIA, X, IBKR.
@@ -216,6 +233,12 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - Videos tab must be media-first.
 - Notification Center must be mobile-safe and grouped.
 - Release Center uses explicit tool hash routing (`#tool=about`) so persisted workspace state cannot reopen Academy.
+- Mock-first development is mandatory for every widget, screen, workspace, navigation change, or major UI refactor.
+- Approved mocks must be stored in `docs/design-system/mocks/`.
+- No developer may redesign freely without an approved mock reference.
+- Every UI change must reference an approved mock, design-system rule, mobile-first principle, and changelog entry.
+- Portfolio Snapshot must be redesigned only after an approved mobile mock.
+- Mobile correction mock pack is the required gate before final UI corrections for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
 
 ## PM Operating Model
 
@@ -245,6 +268,9 @@ When user says "Καλημέρα PIA", assistant must:
 - Do not duplicate backlog entries.
 - Do not turn this file into verbose process documentation.
 - Do not commit `.next`, sqlite files, pycache, package-lock changes, or Office lock files unless explicitly required.
+- Follow `docs/design-system/00_READ_ME_FIRST.md` before UI implementation.
+- Mock-first development is mandatory for UI work.
+- Do not implement widget, screen, workspace, navigation, or major refactor changes without an APPROVED mock unless the work is documentation-only, test-only, or non-visual bug repair.
 
 ## AUTONOMOUS EXECUTION RULE (MANDATORY)
 
@@ -312,6 +338,8 @@ Default behavior:
 - v0.3.0: Sprint 2C governance/memory foundation, changelog rule, PM operating model, and XLSX database consolidation.
 - v0.3.1: Sprint 2C mobile stabilization for swipe, notification sheet, scanner density, and first-pass performance smoothing.
 - v0.3.2: Sprint 2C stock workspace intelligence refinement and Release Center routing fix.
+- v0.3.4: Mobile correction mock pack for Product Owner review.
+- v0.3.5: Mock-first design governance system and locked design-system documentation.
 
 ## Guardrails
 
@@ -319,10 +347,53 @@ Default behavior:
 - Do not remove working routes or widgets.
 - Do not remove privacy mode.
 - Do not add duplicate widgets/pages.
+- Do not redesign UI without approved mock reference.
+- Do not redesign Portfolio Snapshot before approved mobile mock.
 - Do not commit `.next`, sqlite files, pycache, package-lock changes, or Office lock files unless explicitly required.
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.5 - Mock-First Design Governance System
+Date: 2026-05-28
+Status: Governance locked before further UI implementation.
+
+## Added:
+
+- Design-system documentation folder at `docs/design-system/`.
+- Mock storage folders for mobile, desktop, portfolio, stock workspace, navigation, alerts, and scanner mocks.
+- Mandatory mock-first development workflow.
+- Portfolio Snapshot redesign gate requiring approved mobile mock.
+
+## Changed:
+
+- UI implementation governance now requires every UI change to reference an approved mock, design-system rule, mobile-first principle, and changelog entry.
+- Developers may not redesign freely without approved mock reference.
+
+## Known limitations:
+
+- Mock folders are governance-ready placeholders until Product Owner-reviewed mock assets are added and marked APPROVED.
+
+### v0.3.4 - Mobile Correction Mock Pack
+Date: 2026-05-28
+Status: Mock specs created for Product Owner review; final UI not implemented.
+
+## Added:
+
+- Design-system read-first and governance docs under `docs/design-system/`.
+- Mobile correction mock pack under `docs/design-system/mocks/mobile/`.
+- Mock specs for Mobile Portfolio Snapshot, Mobile My Position Full Screen, Mobile Workspace Navigation, Mobile Alerts / Notifications, Stock Quote / Technical IA, and News / Videos Cards.
+
+## Changed:
+
+- Captured the proposed Stock Quote / Technical IA direction as a mock-only Product Owner review item.
+- Documented bottom navigation limit of five pinned workspaces with overflow workspaces in top-right menu.
+- Documented no-Open-button behavior for News and Videos cards.
+
+## Known limitations:
+
+- These are specs only; final UI implementation is intentionally deferred until Product Owner approval.
+- Exact live data fields, thumbnail availability, and later workspace pin customization remain implementation-phase decisions.
 
 ### v0.3.3 - Trusted Senior Developer Mode
 Date: 2026-05-28
