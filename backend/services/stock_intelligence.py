@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from mock_intelligence_data import enrich_technical, get_mock_intelligence, get_mock_overview_hints
 from services.news_intelligence import (
     DemoNewsProvider,
     RawNewsItem,
@@ -162,13 +163,20 @@ def build_stock_panel_intelligence(
         "summary": (position or {}).get("ai_view") or (watch or {}).get("reason") or forecast.get("base") or "Rules-based view using portfolio and macro inputs.",
     }
 
-    technical = {
-        "trend": _trend_label(change_pct),
-        "momentum_state": _momentum_label(momentum),
-        "support": "Prior session low zone (placeholder — confirm on chart)",
-        "resistance": "Recent swing high zone (placeholder — confirm on chart)",
-        "day_change_pct": change_pct,
-    }
+    mock_intel = get_mock_intelligence(ticker)
+    mock_overview = get_mock_overview_hints(ticker)
+
+    technical = enrich_technical(
+        {
+            "trend": _trend_label(change_pct),
+            "momentum_state": _momentum_label(momentum),
+            "day_change_pct": change_pct,
+        },
+        ticker,
+    )
+
+    overview["why_moving"] = mock_overview.get("why_moving") or overview["why_moving"]
+    overview["summary"] = mock_overview.get("ai_view") or overview["summary"]
 
     scenarios = [
         {
@@ -193,5 +201,8 @@ def build_stock_panel_intelligence(
         "technical": technical,
         "scenarios": scenarios,
         "actions": _build_actions(position, watch, news_items),
+        "company": mock_intel.get("company"),
+        "fundamentals": mock_intel.get("fundamentals"),
+        "targets": mock_intel.get("targets"),
         "future_tabs": ["Videos", "Earnings", "Macro exposure", "Options flow"],
     }

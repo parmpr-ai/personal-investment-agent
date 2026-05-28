@@ -21,7 +21,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - Active branch: `feat/pia-v3-foundation-integration`
 - Stable checkpoint: Sprint 2B implementation branches merged into integration.
 - Current sprint: Sprint 2C execution and UAT failure remediation.
-- Current status: Design governance and mock-first workflow locked before further UI implementation; mobile correction mock pack remains available for Product Owner review.
+- Current status: Hybrid mock intelligence data layer deployed for UI evaluation; design governance and mock-first workflow locked; mobile correction mock pack available for Product Owner review.
 - Current priorities:
   - Enforce mock-first design governance before any further UI implementation.
   - Interaction stabilization on Home and mobile.
@@ -119,7 +119,8 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Trade Coach voice mode.
   - Academy workspace.
 - P2 Platform:
-  - Mock-first design governance system.
+  - Mock-first design governance system. DONE 2026-05-28.
+  - Hybrid mock intelligence data layer. DONE 2026-05-28: backend/mock_intelligence_data.py deployed for NVDA, AMD, SOFI, IREN, AVAV, GOOGL, TSLA, CRWV, NBIS.
   - Cloud backup/restore.
   - Performance and storage efficiency.
 
@@ -189,6 +190,11 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - `/setup` route returned 200.
   - Privacy mode masking preserved in touched mobile and dashboard surfaces.
   - Market Pulse swipe, notification bell sheet, compact scanner controls, and mobile wrapping stabilized in implementation.
+- Latest Sprint v0.3.6 validation, 2026-05-28:
+  - `npm run build` passed (frontend).
+  - All 9 tickers (NVDA, AMD, SOFI, IREN, AVAV, GOOGL, TSLA, CRWV, NBIS) return complete intelligence structure from mock layer.
+  - IREN position and AVAV/TSLA watchlist items process correctly through portfolio snapshot and opportunity engine.
+  - Backend Python imports clean; no route regressions.
 - Remaining failed UAT:
   - Mobile correction mock pack requires Product Owner review before final UI implementation.
   - Mobile performance lag requires deeper device profiling after first-pass render-cost reduction.
@@ -210,6 +216,11 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - PARTIAL 2026-05-28: Help reduce mobile performance lag.
 - ARTEMIS:
   - DONE 2026-05-28: Refactor Notification Center into a mobile-safe grouped sheet.
+- HEPHAESTUS + APOLLO:
+  - DONE 2026-05-28: Create backend/mock_intelligence_data.py with Bloomberg-lite mock data for NVDA, AMD, SOFI, IREN, AVAV, GOOGL, TSLA, CRWV, NBIS.
+  - DONE 2026-05-28: Integrate mock company, fundamentals, targets, technical levels into stock intelligence response.
+  - DONE 2026-05-28: Add IREN to DEMO_POSITIONS; add AVAV and TSLA to WATCHLIST.
+  - DONE 2026-05-28: Make portfolio daily P/L dynamic; enrich catalyst calendar and news items.
 - Future:
   - Create Product Owner-reviewed mobile mock for Portfolio Snapshot before redesign.
   - News UX V2.
@@ -340,6 +351,7 @@ Default behavior:
 - v0.3.2: Sprint 2C stock workspace intelligence refinement and Release Center routing fix.
 - v0.3.4: Mobile correction mock pack for Product Owner review.
 - v0.3.5: Mock-first design governance system and locked design-system documentation.
+- v0.3.6: Hybrid mock intelligence data layer for UI evaluation across 9 tickers.
 
 ## Guardrails
 
@@ -353,6 +365,34 @@ Default behavior:
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.6 - Hybrid Mock Intelligence Data Layer
+Date: 2026-05-28
+Status: Implemented and validated.
+
+## Added:
+
+- `backend/mock_intelligence_data.py`: Bloomberg-lite mock data for NVDA, AMD, SOFI, IREN, AVAV, GOOGL, TSLA, CRWV, NBIS.
+- Per-ticker data: company profile (description, sector, industry, HQ, CEO, employees, exchange), financials (revenue, net income, EBITDA, FCF, margins), key ratios (PE, forward PE, PEG, EV/EBITDA, ROE, D/E, FCF yield), earnings (EPS estimate vs actual, surprise %, next date), analyst targets (consensus, bull, base, bear, upside/downside), and technical levels (support_1/2/3, resistance_1/2/3).
+- Mock overview hints (why_moving, AI view) replace placeholder text in stock intelligence responses.
+- IREN (Iris Energy, 300 shares @ $10.50 avg) added to DEMO_POSITIONS.
+- AVAV (AeroVironment) and TSLA (Tesla) added to WATCHLIST.
+
+## Changed:
+
+- `backend/services/stock_intelligence.py`: now merges mock company, fundamentals, targets, and technical levels into the `/stock/{ticker}` intelligence response.
+- `backend/services/state.py`: portfolio daily P/L is now dynamically computed from positions; catalyst calendar enriched with AMD, AVAV, SOFI events; news items expanded with IREN.
+- `backend/main.py`: analyze endpoint recognizes AVAV and TSLA tickers.
+
+## Data Rule:
+
+- Mock data: portfolio positions, fundamentals, analyst targets, technical levels, earnings estimates, ratios, trade decision scenarios.
+- Live/preserved: Yahoo RSS news, video search links, source health, backend-supported feed endpoints.
+
+## Known limitations:
+
+- Mock prices are calibrated to 2026-05-28 session values and do not update intraday (live IBKR or Yahoo chart endpoint needed for real-time prices).
+- Tickers not in MOCK_STOCK_DB gracefully fall back to derived/placeholder values in the frontend.
 
 ### v0.3.5 - Mock-First Design Governance System
 Date: 2026-05-28

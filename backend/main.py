@@ -183,7 +183,7 @@ def save_thesis(req:ThesisRequest):
  return {'ok':True,'count':len(THESIS_STORE[req.ticker.upper()])}
 @app.post('/analyze')
 def analyze(req:AnalyzeRequest):
- upper=req.text.upper(); tickers=[t for t in ['AMD','NVDA','NBIS','SOFI','SOUN','MELI','IREN','CRWV','META','GOOGL','QQQ','SPY','BTC'] if t in upper]
+ upper=req.text.upper(); tickers=[t for t in ['AMD','NVDA','NBIS','SOFI','SOUN','MELI','IREN','AVAV','CRWV','TSLA','META','GOOGL','QQQ','SPY','BTC'] if t in upper]
  return {'source':req.source,'tickers':tickers,'urgency':'High' if tickers else 'Medium','summary':'Signal parsed and routed to Advisor Intel / Trade Radar.','action':'Check portfolio weight, macro regime and entry/stop before acting.'}
 @app.post('/tax/import')
 async def tax_import(file:UploadFile=File(...)):
