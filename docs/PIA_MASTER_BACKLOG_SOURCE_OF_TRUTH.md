@@ -351,6 +351,32 @@ A task is NOT complete until all of the following pass:
 
 "Implemented" does not equal "validated". A green `npm run build` and a passing route check are necessary but not sufficient. Do not mark a UAT item complete in MD/XLSX until real-device behavior is confirmed by the Product Owner.
 
+## Single Next Dev Server Rule (MANDATORY)
+
+Repeated mobile styling failures (white background, serif fonts, raw unstyled HTML) have been traced to a stale/corrupted `frontend/.next` directory caused by more than one Next dev server compiling into it at once, or by a production `npm run build` overwriting `.next` while a dev server is live. The served HTML links a hashed CSS chunk (e.g. `/_next/static/css/app/layout.css`) that no longer exists, so the chunk returns 404 and the page renders unstyled. This is a runtime/pipeline failure, not a UI code bug.
+
+Rules:
+- Only one Next dev server may run for the frontend at a time.
+- Before starting the frontend dev server, check port 3000 listeners.
+- Kill stale frontend node/next/npm processes before restart.
+- Delete `frontend/.next` after killing duplicate dev servers.
+- Always start the mobile UAT server LAN-bound: `npm run dev -- -H 0.0.0.0`.
+- Never run `npm run build` while a dev server is running against the same `frontend/.next` directory.
+- If mobile shows raw HTML / white background / missing styles, first suspect stale or corrupted `.next`, not UI code. Confirm by fetching the linked `/_next/static/css/...layout.css` — a 404 or tiny body proves the chunk is missing.
+- For real mobile UAT, use a single clean LAN server and hard-refresh / clear the mobile browser cache.
+
+Quick recovery commands (PowerShell):
+
+```
+Get-NetTCPConnection -LocalPort 3000 -State Listen
+Get-Process node | Stop-Process -Force
+Remove-Item frontend\.next -Recurse -Force
+cd frontend
+npm run dev -- -H 0.0.0.0
+```
+
+Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the machine — use it when no unrelated Node apps are running; otherwise kill only the PIDs whose command line references `personal-investment-agent\frontend`.
+
 ## Version History
 
 - v0.1.0: Initial PIA dashboard and setup continuity baseline.
@@ -368,6 +394,7 @@ A task is NOT complete until all of the following pass:
 - v0.3.11: Portfolio header IBKR alignment, risk visual system, swipe global fix — NLV hero + Day P/L %, time-range chips, 12-metric grid, RiskBar, desktop snapshot time-range chips.
 - v0.3.13: Regression fixes — portfolio search now always visible, Home rails finger swipe restored, privacy toggle accessible on Portfolio.
 - v0.3.14: Mobile top bar cleanup (PIA only), global Yahoo-style stock search, global privacy eye, Home rail swipe unification (grid blowout fix), news source parity confirmed.
+- v0.3.15: Runtime governance — Single Next Dev Server Rule to prevent recurring `.next` corruption / missing CSS chunks.
 
 ## Guardrails
 
@@ -381,6 +408,17 @@ A task is NOT complete until all of the following pass:
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.15 - Runtime Governance: Single Next Dev Server Rule
+Date: 2026-05-28
+Status: Documentation only.
+
+## Added:
+
+- "Single Next Dev Server Rule (MANDATORY)" section under governance.
+- Documents the root cause of recurring mobile styling failures: duplicate Next dev servers (or a production `npm run build`) corrupting/overwriting `frontend/.next`, leaving the served HTML pointing at a hashed CSS chunk that 404s → unstyled raw HTML.
+- Mandatory rules: one dev server only; check port 3000 first; kill stale node/next/npm before restart; delete `.next` after killing duplicates; LAN-bound `npm run dev -- -H 0.0.0.0`; never `npm run build` against a live dev server's `.next`; suspect stale `.next` (not UI code) when styles vanish; hard-refresh mobile cache for UAT.
+- Quick recovery command block (PowerShell), with a safety note on the broad `Get-Process node | Stop-Process -Force`.
 
 ### v0.3.14 - Mobile Top Bar + Global Search + News + Home Swipe Unification
 Date: 2026-05-28
