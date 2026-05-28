@@ -10,6 +10,7 @@ from services.news_intelligence import (
     _infer_sentiment,
     _parse_published,
     build_digest,
+    generate_mock_news,
     get_news_intelligence,
     normalize_news,
     serialize_item,
@@ -127,8 +128,15 @@ def get_ticker_news_intelligence(ticker: str) -> dict[str, Any]:
             raw_items = demo_items
         else:
             provider_items = YahooNewsProvider().fetch()
-            raw_items = [item for item in provider_items if item.ticker == symbol][:4]
-            used_demo = not raw_items
+            real_items = [item for item in provider_items if item.ticker == symbol][:4]
+            if real_items:
+                # Real Yahoo headlines for this symbol — not demo.
+                raw_items = real_items
+                used_demo = False
+            else:
+                # Final fallback: deterministic per-ticker mock so every symbol shows source-badged news.
+                raw_items = generate_mock_news(symbol)
+                used_demo = True
 
     normalized = normalize_news(raw_items)
     return {

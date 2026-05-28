@@ -244,6 +244,39 @@ class DemoNewsProvider:
         ]
 
 
+_MOCK_NEWS_TEMPLATES = [
+    ("{t} momentum builds as sector flows rotate in", "Yahoo Finance",
+     "analyst_upgrade", "positive", "Constructive tape, but confirm volume before sizing up."),
+    ("{t}: options activity points to elevated expected move", "Seeking Alpha",
+     "general", "mixed", "Positioning is two-sided; respect the wider range until it resolves."),
+    ("Analysts revisit {t} estimates ahead of next catalyst", "Reuters",
+     "guidance", "neutral", "Estimate revisions are the key driver into the next print."),
+    ("{t} chatter rises across retail and institutional desks", "RSS Monitor",
+     "sector", "positive", "Attention is increasing; watch for follow-through or a fade."),
+]
+
+
+def generate_mock_news(ticker: str) -> list[RawNewsItem]:
+    """Deterministic per-ticker fallback so every symbol surfaces source-badged news."""
+    symbol = ticker.upper().split()[0]
+    now = _utc_now()
+    items: list[RawNewsItem] = []
+    for index, (title, source, catalyst, sentiment, summary) in enumerate(_MOCK_NEWS_TEMPLATES):
+        items.append(
+            RawNewsItem(
+                ticker=symbol,
+                title=title.format(t=symbol),
+                source=source,
+                source_url=f"https://finance.yahoo.com/quote/{symbol}/news/",
+                published_at=now - timedelta(minutes=18 + index * 47),
+                catalyst_type=catalyst,  # type: ignore[arg-type]
+                sentiment=sentiment,  # type: ignore[arg-type]
+                summary=summary,
+            )
+        )
+    return items
+
+
 def _parse_published(value: str) -> datetime:
     if not value:
         return _utc_now()

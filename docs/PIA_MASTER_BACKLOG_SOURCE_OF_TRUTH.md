@@ -397,6 +397,7 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - v0.3.13: Regression fixes — portfolio search now always visible, Home rails finger swipe restored, privacy toggle accessible on Portfolio.
 - v0.3.14: Mobile top bar cleanup (PIA only), global Yahoo-style stock search, global privacy eye, Home rail swipe unification (grid blowout fix), news source parity confirmed.
 - v0.3.15: Runtime governance plus Workspace Manager — Single Next Dev Server Rule, mobile hamburger manager, pinned bottom nav customization, desktop parity, and custom local workspaces.
+- v0.3.16: Global search universe expansion + Enter-to-open, and per-ticker mock news fallback so every symbol shows source-badged news (demo flag only when real provider returns nothing).
 
 ## Guardrails
 
@@ -410,6 +411,27 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.16 - Global Search + Mobile News Regression Fix
+Date: 2026-05-28
+Status: Implemented; pending Product Owner real-device UAT.
+
+CR — Global stock search was not market-wide (Bug 1):
+- Expanded the mobile search universe beyond portfolio/watchlist/9 mock tickers to include AAPL, MSFT, AMZN, META, SPY, QQQ, MELI, NFLX, PLTR, COIN, SMCI, MU, ARM (plus the existing v0.3.6 set). Known big-cap tickers now appear as real results instead of only an Analyze fallback.
+- Added Enter-to-open: pressing Enter opens the first result, or the Analyze {TICKER} flow when there is no match. Unknown/arbitrary tickers still surface "Analyze {TICKER}" which opens Stock Intelligence gracefully via `/stock/{ticker}`.
+- Universe still merges Portfolio > Watchlist > Mock with source badges; selecting opens the Stock Intelligence panel and closes search.
+
+CR — Mobile news showed empty for most tickers (Bug 2):
+- Root cause: `DemoNewsProvider` only had mock items for AMD/SOFI/NBIS/MELI. For any other symbol (NVDA, AVAV, GOOGL, TSLA, CRWV, IREN, AAPL, …) when live Yahoo was unreachable, `get_ticker_news_intelligence` fell through to "No structured headlines" — an empty News tab.
+- Fix: added `generate_mock_news(ticker)` in `news_intelligence.py` — a deterministic per-ticker fallback producing 4 source-badged headlines (Yahoo / Seeking Alpha / Reuters / RSS) with bias/possible-move/confidence/action metadata. Wired as the final fallback in `get_ticker_news_intelligence`.
+- `used_demo` correctness: real Yahoo headlines (live or `YahooNewsProvider`) set `is_demo=False`; only the demo provider or the new mock fallback set `is_demo=True`. Verified: AVAV/GOOGL/TSLA return real Yahoo items (is_demo False); unknown ticker returns mock (is_demo True). Mobile and desktop share the same `/stock/{ticker}` → `TickerNewsList` path with consistent source badges and no separate Open button.
+
+CR — Mobile hamburger / workspace menu (Bug 3):
+- Satisfied by the v0.3.15 Workspace Manager: top-left hamburger opens the Workspace Manager sheet (workspaces + Settings + About + pin customization). Default bottom nav = Home, My Portfolio, Watchlists, Scanner, Markets & Macro. No further work required in v0.3.16; verified it builds with the search/news changes.
+
+Known limitations:
+- Mock news headlines are generic per-ticker templates (not company-specific) when no live provider returns data.
+- NOT complete until Product Owner real-device UAT confirms.
 
 ### v0.3.15 - Workspace Manager + Custom Workspaces
 Date: 2026-05-28
