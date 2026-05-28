@@ -269,6 +269,7 @@ export default function Dashboard() {
     try {
       setHidden(localStorage.getItem('pia.hideAmounts') === 'true')
       const hashWorkspace = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('workspace')
+      const hashTool = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('tool')
       const savedWorkspace = localStorage.getItem(ACTIVE_WORKSPACE_KEY)
       const nextWorkspace = hashWorkspace && isWorkspaceId(hashWorkspace)
         ? hashWorkspace
@@ -276,6 +277,7 @@ export default function Dashboard() {
           ? savedWorkspace
           : DEFAULT_WORKSPACE_ID
       setActiveWorkspaceId(nextWorkspace)
+      if (hashTool === 'about' || hashTool === 'tax' || hashTool === 'settings') setActiveTool(hashTool)
     } catch {}
   }, [])
 
@@ -296,6 +298,9 @@ export default function Dashboard() {
     }
     if (id === 'tax' || id === 'about' || id === 'settings') {
       setActiveTool(id)
+      try {
+        window.history.replaceState(null, '', `#tool=${id}`)
+      } catch {}
     }
   }
 
@@ -1040,10 +1045,19 @@ function WatchlistPage({ d, hidden, setSelected }: any) {
     <div className="grid">
       <Panel title="Opportunity Board" privateTitle="Workspace" span="span-12" hidden={hidden}>
         <PiaTabs
+          className="scanner-sort-rail"
+          density="compact"
           ariaLabel="Opportunity sorting"
           activeId={sort}
           onChange={setSort}
-          tabs={['name', 'change_pct', 'risk', 'opportunity', 'momentum', 'rvol'].map((s) => ({ id: s, label: `Sort: ${s}` }))}
+          tabs={[
+            ['name', 'Name'],
+            ['change_pct', 'Move'],
+            ['risk', 'Risk'],
+            ['opportunity', 'Opp'],
+            ['momentum', 'Mom'],
+            ['rvol', 'RVOL'],
+          ].map(([id, label]) => ({ id, label }))}
         />
         <div className="cards opportunity-cards">
           {rows.map((w: any) => (

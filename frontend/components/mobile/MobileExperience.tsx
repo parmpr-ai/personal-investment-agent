@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, PointerEvent, ReactNode } from 'react'
 import {
   AlertTriangle,
   BarChart3,
@@ -198,13 +198,25 @@ function SwipeRail({
   className?: string
 }) {
   const [active, setActive] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
   const railRef = useRef<HTMLDivElement>(null)
+  const dragStartRef = useRef({ x: 0, y: 0, scrollLeft: 0 })
+
+  useEffect(() => {
+    setActive((value) => Math.min(value, Math.max(items.length - 1, 0)))
+  }, [items.length])
 
   function updateActive() {
     const node = railRef.current
     if (!node) return
-    const width = node.firstElementChild?.clientWidth || node.clientWidth
-    const next = Math.round(node.scrollLeft / Math.max(width + 12, 1))
+    const slides = Array.from(node.children) as HTMLElement[]
+    const next = slides.reduce(
+      (closest, slide, index) => {
+        const distance = Math.abs(slide.offsetLeft - node.scrollLeft)
+        return distance < closest.distance ? { index, distance } : closest
+      },
+      { index: 0, distance: Number.POSITIVE_INFINITY },
+    ).index
     setActive(Math.max(0, Math.min(items.length - 1, next)))
   }
 
@@ -215,6 +227,42 @@ function SwipeRail({
     const slide = node.children.item(next) as HTMLElement | null
     node.scrollTo({ left: slide?.offsetLeft ?? 0, behavior: 'smooth' })
     setActive(next)
+  }
+
+  function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    const node = railRef.current
+    if (!node) return
+    dragStartRef.current = { x: event.clientX, y: event.clientY, scrollLeft: node.scrollLeft }
+    setIsDragging(true)
+    node.setPointerCapture?.(event.pointerId)
+  }
+
+  function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    const node = railRef.current
+    if (!node || !isDragging) return
+    const deltaX = event.clientX - dragStartRef.current.x
+    const deltaY = event.clientY - dragStartRef.current.y
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      node.scrollLeft = dragStartRef.current.scrollLeft - deltaX
+      event.preventDefault()
+    }
+  }
+
+  function handlePointerEnd(event: PointerEvent<HTMLDivElement>) {
+    const node = railRef.current
+    if (!node || !isDragging) return
+    setIsDragging(false)
+    node.releasePointerCapture?.(event.pointerId)
+    const slides = Array.from(node.children) as HTMLElement[]
+    const closest = slides.reduce(
+      (current, slide, index) => {
+        const distance = Math.abs(slide.offsetLeft - node.scrollLeft)
+        return distance < current.distance ? { index, distance } : current
+      },
+      { index: 0, distance: Number.POSITIVE_INFINITY },
+    ).index
+    scrollToSlide(closest)
   }
 
   return (
@@ -247,7 +295,15 @@ function SwipeRail({
           ) : null}
         </div>
       </div>
-      <div className="mobile-swipe-rail" ref={railRef} onScroll={updateActive}>
+      <div
+        className={`mobile-swipe-rail ${isDragging ? 'is-dragging' : ''}`.trim()}
+        ref={railRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
+        onScroll={updateActive}
+      >
         {items.map((item, index) => (
           <div className="mobile-swipe-slide" key={`${item.symbol || item.ticker || item.name || item.title || 'item'}-${index}`}>
             {render(item, index)}
@@ -380,7 +436,33 @@ function MobileSheet({
 }
 
 function buildNotificationItems(portfolio: any) {
-  const items: { id: string; title: string; text: string; level: string; time: string }[] = []
+  const fallback = [
+    {
+      id: 'demo-risk-review',
+      title: 'Risk review ready',
+      text: 'Portfolio guardrails are standing by. Review concentration and cash buffer before new entries.',
+      level: 'warn',
+      time: 'Now',
+      category: 'Risk',
+    },
+    {
+      id: 'demo-scanner-online',
+      title: 'Scanner watchlist refreshed',
+      text: 'Opportunity board has fallback setups available while live backend data is unavailable.',
+      level: 'good',
+      time: 'Today',
+      category: 'Scanner',
+    },
+    {
+      id: 'demo-privacy-mode',
+      title: 'Privacy mode preserved',
+      text: 'Use quick controls to mask portfolio values across the mobile command surface.',
+      level: 'neutral',
+      time: 'System',
+      category: 'System',
+    },
+  ]
+  const items: { id: string; title: string; text: string; level: string; time: string; category: string }[] = []
   for (const alert of portfolio.guardrails || []) {
     items.push({
       id: `guardrail-${alert.title}`,
@@ -388,6 +470,7 @@ function buildNotificationItems(portfolio: any) {
       text: alert.text,
       level: alert.level || 'warn',
       time: 'Now',
+      category: 'Risk',
     })
   }
   for (const action of portfolio.today_actions || []) {
@@ -397,9 +480,10 @@ function buildNotificationItems(portfolio: any) {
       text: action.text,
       level: 'good',
       time: 'Today',
+      category: 'Brief',
     })
   }
-  return items
+  return items.length ? items : fallback
 }
 
 function MobileNotificationCenter({
@@ -420,13 +504,16 @@ function MobileNotificationCenter({
           {items.map((item) => (
             <article className="mobile-notification-item" key={item.id}>
               <div className="mobile-notification-top">
-                <strong>{item.title}</strong>
+                <div>
+                  <span className="mobile-notification-category">{item.category}</span>
+                  <strong>{item.title}</strong>
+                </div>
                 <span className="mobile-notification-time">{item.time}</span>
               </div>
               <p>{item.text}</p>
               <IntelligenceBadge
-                label={item.level === 'danger' ? 'Action required' : item.level === 'good' ? 'Update' : 'Monitor'}
-                tone={item.level === 'danger' ? 'bad' : item.level === 'good' ? 'good' : 'warn'}
+                label={item.level === 'danger' ? 'Action required' : item.level === 'good' ? 'Update' : item.level === 'neutral' ? 'Info' : 'Monitor'}
+                tone={item.level === 'danger' ? 'bad' : item.level === 'good' ? 'good' : item.level === 'neutral' ? 'neutral' : 'warn'}
               />
             </article>
           ))}

@@ -347,3 +347,62 @@ html,body{max-width:100%;overflow-x:hidden}
   .mobile-shell{padding-left:10px;padding-right:10px}.mobile-swipe-rail{margin-left:-10px;margin-right:-10px;padding-left:10px;padding-right:10px}
   .mobile-swipe-slide{flex-basis:calc(100vw - 42px)}.mobile-card-head{gap:8px}.mobile-card-head strong{font-size:23px}.mobile-bottom-nav span{display:none}
 }
+
+/* Sprint 2C: mobile interaction stabilization */
+.pia-v3-widget,.pia-v3-widget-body,.pia-v3-card,.stock-card,.position-card,.mobile-section,.mobile-visual-card{pointer-events:auto}
+.pia-v3-widget-body{position:relative;z-index:1}
+.drag-handle{touch-action:none}
+.scanner-sort-rail{width:100%;max-width:max-content;margin-bottom:12px}
+.scanner-sort-rail .pia-v3-tab{min-height:32px;padding:6px 10px;font-size:11px}
+.sort-row{flex-wrap:wrap}
+.sort-row select{min-height:34px;max-width:100%;font-size:12px}
+@media(max-width:980px){
+  .layout-toolbar{position:relative;z-index:1}
+  .widget-grid,.dashboard-widget-shell{position:relative;z-index:2}
+  .panel.pia-v3-widget{box-shadow:0 12px 30px rgba(0,0,0,.24)}
+  .position-card:hover,.stock-card:hover{transform:none}
+  .section-header{display:grid;gap:10px}
+  .section-actions{width:100%;display:flex;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px;scrollbar-width:none}
+  .section-actions::-webkit-scrollbar{display:none}
+  .compact-tabs,.scanner-sort-rail{flex:0 0 auto}
+  .compact-tabs .pia-v3-tab,.scanner-sort-rail .pia-v3-tab{min-height:32px;padding:6px 10px;font-size:11px}
+  .view-toggle{flex:0 0 auto}
+  .view-toggle button{padding:6px 10px;font-size:12px}
+  .sort-row{display:flex;gap:8px;margin:10px 0;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+  .sort-row::-webkit-scrollbar{display:none}
+  .sort-row select,.sort-row .pia-v3-button{flex:0 0 auto}
+  .table-wrap{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+}
+@media(max-width:560px){
+  .mobile-shell{width:100%;max-width:none;min-height:100dvh;padding-bottom:96px;overscroll-behavior-y:contain}
+  .mobile-top{z-index:14;backdrop-filter:none;background:linear-gradient(180deg,rgba(3,5,10,.98),rgba(3,5,10,.86))}
+  .mobile-search,.mobile-status-dock,.mobile-bottom-nav,.mobile-sheet{box-shadow:0 12px 30px rgba(0,0,0,.32)}
+  .mobile-bottom-nav{z-index:28;backdrop-filter:none}
+  .mobile-icon-action{position:relative;z-index:16}
+  .mobile-sheet-root{z-index:80;padding:0;align-items:end;pointer-events:auto}
+  .mobile-sheet-overlay{background:rgba(0,0,0,.5)}
+  .mobile-sheet{width:100%;max-width:none;max-height:min(86dvh,760px);border-radius:22px 22px 0 0;border-left:0;border-right:0;border-bottom:0;box-shadow:0 -18px 44px rgba(0,0,0,.46);animation:mobile-sheet-up .18s ease-out}
+  .mobile-sheet-head{min-height:56px;padding:12px 14px}
+  .mobile-sheet-body{padding:12px 12px calc(18px + env(safe-area-inset-bottom));overscroll-behavior:contain}
+  .mobile-notification-list{gap:9px}
+  .mobile-notification-item{display:grid;grid-template-columns:1fr;gap:8px;padding:12px;border-radius:16px;overflow:hidden}
+  .mobile-notification-top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start}
+  .mobile-notification-top div{min-width:0}
+  .mobile-notification-category{display:block;color:#93c5fd;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px}
+  .mobile-notification-item strong,.mobile-notification-item p{overflow-wrap:anywhere}
+  .mobile-notification-item p{margin:0;line-height:1.42}
+  .mobile-notification-time{white-space:nowrap}
+  .mobile-swipe-rail{gap:10px;touch-action:pan-y pinch-zoom;cursor:grab;scroll-snap-type:x mandatory;will-change:scroll-position}
+  .mobile-swipe-rail.is-dragging{cursor:grabbing;scroll-snap-type:none}
+  .mobile-swipe-slide{flex:0 0 calc(100vw - 34px);max-width:none}
+  .mobile-visual-card{min-height:150px;border-radius:18px;padding:12px;box-shadow:0 10px 24px rgba(0,0,0,.22)}
+  .mobile-visual-card:before{display:none}
+  .mobile-market-card{min-height:142px}
+  .mobile-sparkline,.mobile-market-card .mobile-sparkline{height:56px}
+  .mobile-position-card{min-height:244px}
+  .mobile-exposure-gauge{width:76px;height:76px}
+  .mobile-rail-button{width:32px;height:32px}
+  .mobile-status-dock{box-shadow:none}
+  .mobile-status-source{padding:7px}
+  .scanner-sort-rail{max-width:100%;overflow-x:auto}
+}
