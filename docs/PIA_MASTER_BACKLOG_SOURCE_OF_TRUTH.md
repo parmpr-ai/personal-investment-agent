@@ -355,6 +355,7 @@ Default behavior:
 - v0.3.7: Portfolio dual view mode — Terminal Table + Swipe Cards with localStorage persistence.
 - v0.3.8: Portfolio terminal density refinement — frozen column, summary strip, column settings, Home/Portfolio IA separation.
 - v0.3.9: Portfolio IBKR alignment — collapsible hero header with evolution chart, symbol-only rows, drag-reorder columns, colOrder localStorage.
+- v0.3.10: Hotfix — restore mobile portfolio cards touch swipe (touch-action CSS bug + async isDragging state bug).
 
 ## Guardrails
 
@@ -368,6 +369,36 @@ Default behavior:
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.10 - Mobile Portfolio Cards Touch Swipe Hotfix
+Date: 2026-05-28
+Status: Fixed. Two bugs, one broken swipe.
+
+## Root Cause:
+
+**Bug 1 — CSS `touch-action` (primary blocker)**:
+`globals.css` Sprint 2C `@media(max-width:560px)` block had:
+`.mobile-swipe-rail { touch-action: pan-y pinch-zoom }`
+
+`pan-y` means "the browser handles VERTICAL pan natively; horizontal pan goes to JavaScript." On a horizontal swipe rail, this is backwards. The browser never provided native horizontal scroll, and since the JS handler was also broken (Bug 2), nothing scrolled.
+
+Fix: Changed to `touch-action: pan-x` — browser handles horizontal panning natively for elements ≤560px wide. Vertical touch passes through to the page. Native `scroll-snap-type: x mandatory` then handles snap-to-card automatically.
+
+**Bug 2 — Async `isDragging` state (desktop/JS fallback)**:
+`SwipeRail.handlePointerMove` checked `if (!isDragging) return` where `isDragging` was React state set via `setIsDragging(true)` in `handlePointerDown`. On mobile, `pointermove` fires in the same microtask frame before React processes the state update — so `isDragging` was always `false` when `handlePointerMove` ran, causing it to return immediately on every call.
+
+Fix: Added `isDraggingRef = useRef(false)`. Set `isDraggingRef.current = true` synchronously in `handlePointerDown` (before the async `setIsDragging`). Both `handlePointerMove` and `handlePointerEnd` now check `isDraggingRef.current` (sync ref) rather than `isDragging` (async state). The `isDragging` state is still maintained for the CSS `is-dragging` class.
+
+Also removed `event.preventDefault()` from `handlePointerMove` (was a no-op in passive listeners and not needed with `touch-action: pan-x` since the browser handles native scroll).
+
+## No regressions:
+
+- Table mode: unaffected
+- Arrows: still work (scrollToSlide via button click)
+- Progress dots: updated via `onScroll` (works with native scroll)
+- Brand color hooks: preserved
+- Bottom nav: preserved
+- localStorage view preference: preserved
 
 ### v0.3.9 - Portfolio IBKR Alignment Bugfix
 Date: 2026-05-28

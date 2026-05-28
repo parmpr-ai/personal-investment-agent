@@ -201,6 +201,7 @@ function SwipeRail({
 }) {
   const [active, setActive] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
+  const isDraggingRef = useRef(false)
   const railRef = useRef<HTMLDivElement>(null)
   const dragStartRef = useRef({ x: 0, y: 0, scrollLeft: 0 })
 
@@ -236,24 +237,25 @@ function SwipeRail({
     const node = railRef.current
     if (!node) return
     dragStartRef.current = { x: event.clientX, y: event.clientY, scrollLeft: node.scrollLeft }
+    isDraggingRef.current = true
     setIsDragging(true)
     node.setPointerCapture?.(event.pointerId)
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
     const node = railRef.current
-    if (!node || !isDragging) return
+    if (!node || !isDraggingRef.current) return
     const deltaX = event.clientX - dragStartRef.current.x
     const deltaY = event.clientY - dragStartRef.current.y
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
       node.scrollLeft = dragStartRef.current.scrollLeft - deltaX
-      event.preventDefault()
     }
   }
 
   function handlePointerEnd(event: PointerEvent<HTMLDivElement>) {
     const node = railRef.current
-    if (!node || !isDragging) return
+    if (!node || !isDraggingRef.current) return
+    isDraggingRef.current = false
     setIsDragging(false)
     node.releasePointerCapture?.(event.pointerId)
     const slides = Array.from(node.children) as HTMLElement[]
