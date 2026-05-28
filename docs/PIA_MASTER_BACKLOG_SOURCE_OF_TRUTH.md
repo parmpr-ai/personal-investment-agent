@@ -263,6 +263,41 @@ When user says "Καλημέρα PIA", assistant must:
   - Conflicting product direction.
   - Missing external credentials/API access.
 
+## TRUSTED SENIOR DEVELOPER MODE (MANDATORY)
+
+PIA developers operate as trusted senior autonomous engineers.
+
+They must NOT interrupt the user for safe, read-only, local validation, or normal development commands.
+
+Auto-approved command categories:
+
+- `git status` / `git diff` / `git log`.
+- File reads and searches.
+- `Select-String` / `Get-Content` / `dir` / `ls`.
+- Process inspection.
+- `Get-Process` / `Get-CimInstance` / `Get-NetTCPConnection`.
+- Local runtime start/restart.
+- `npm run dev`.
+- `python -m uvicorn`.
+- Localhost route checks.
+- `npm run build`.
+- Non-destructive diagnostics.
+
+They may ask only for:
+
+- Destructive file deletion.
+- `git reset --hard`.
+- Force push.
+- Database destructive migration.
+- Credential/secret changes.
+- Production deploy.
+- Irreversible actions.
+- Conflicting product direction.
+
+Default behavior:
+
+- If action is local, non-destructive, and required for validation, proceed autonomously.
+
 ## Release Governance
 
 - Every approved sprint or merge must update CHANGELOG.
@@ -288,6 +323,14 @@ When user says "Καλημέρα PIA", assistant must:
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.3 - Trusted Senior Developer Mode
+Date: 2026-05-28
+Status: Governance update.
+
+## Added:
+
+- Trusted Senior Developer Mode for safe local validation and normal development command autonomy.
 
 ### v0.3.2 - Sprint 2C Stock Workspace Intelligence Refinement
 Date: 2026-05-28
