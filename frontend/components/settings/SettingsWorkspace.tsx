@@ -17,8 +17,10 @@ import GlowCard from '../ui/GlowCard'
 import SectionHeader from '../ui/SectionHeader'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 import { assetTypes, brokers, emptyHolding, fetchJson, getApiBase, mask, money, safeMessage } from '../../lib/pia-api'
+import { WorkspaceManagerPanel, useWorkspaceConfig, type WorkspaceId } from '../workspace'
 
 type SettingsVariant = 'desktop' | 'mobile'
+type WorkspaceConfig = ReturnType<typeof useWorkspaceConfig>
 
 const defaultIntegrationSettings: any = {
   ibkr: {
@@ -334,28 +336,49 @@ function GeneralSettings({ hidden }: { hidden?: boolean }) {
   )
 }
 
-function WorkspaceSettings({ hidden }: { hidden?: boolean }) {
+function WorkspaceSettings({
+  hidden,
+  variant,
+  workspaceConfig,
+  onSelectWorkspace,
+}: {
+  hidden?: boolean
+  variant: SettingsVariant
+  workspaceConfig: WorkspaceConfig
+  onSelectWorkspace?: (workspaceId: WorkspaceId) => void
+}) {
+  const [managerOpen, setManagerOpen] = useState(true)
   return (
-    <div className="settings-panels">
-      <GlowCard>
-        <h3>Workspace</h3>
-        <p className="muted">{hidden ? 'Tune density without changing workspace logic.' : 'Tune density without changing portfolio logic.'}</p>
-        <label className="toggle">
-          <input type="checkbox" defaultChecked />
-          <span>Compact mobile navigation</span>
-        </label>
-        <label className="toggle">
-          <input type="checkbox" defaultChecked />
-          <span>Remember workspace layout</span>
-        </label>
-      </GlowCard>
-      <GlowCard>
-        <h3>Empty states</h3>
-        <div className="empty-state">
-          <p>No custom workspace presets yet.</p>
-          <small className="muted">Saved views can land here in a later release.</small>
+    <div className="workspace-settings-flow">
+      {managerOpen ? (
+        <WorkspaceManagerPanel
+          config={workspaceConfig}
+          variant={variant}
+          onClose={() => setManagerOpen(false)}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      ) : (
+        <div className="settings-panels">
+          <GlowCard>
+            <h3>Workspace Manager</h3>
+            <p className="muted">{hidden ? 'Manage workspace navigation and saved views.' : 'Manage desktop sidebar workspaces, mobile pinned navigation, order, and custom workspaces.'}</p>
+            <button className="tab active" type="button" onClick={() => setManagerOpen(true)}>
+              Open Workspace Manager
+            </button>
+          </GlowCard>
+          <GlowCard>
+            <h3>Workspace defaults</h3>
+            <label className="toggle">
+              <input type="checkbox" defaultChecked />
+              <span>Compact mobile navigation</span>
+            </label>
+            <label className="toggle">
+              <input type="checkbox" defaultChecked />
+              <span>Remember workspace layout</span>
+            </label>
+          </GlowCard>
         </div>
-      </GlowCard>
+      )}
     </div>
   )
 }
@@ -634,9 +657,21 @@ function IntegrationStatusCards({ hidden = false }: { hidden?: boolean }) {
   )
 }
 
-function SettingsTabPanels({ tab, hidden, variant }: { tab: (typeof settingsTabs)[number]; hidden?: boolean; variant: SettingsVariant }) {
+function SettingsTabPanels({
+  tab,
+  hidden,
+  variant,
+  workspaceConfig,
+  onSelectWorkspace,
+}: {
+  tab: (typeof settingsTabs)[number]
+  hidden?: boolean
+  variant: SettingsVariant
+  workspaceConfig: WorkspaceConfig
+  onSelectWorkspace?: (workspaceId: WorkspaceId) => void
+}) {
   if (tab === 'General') return <GeneralSettings hidden={hidden} />
-  if (tab === 'Workspace') return <WorkspaceSettings hidden={hidden} />
+  if (tab === 'Workspace') return <WorkspaceSettings hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} />
   if (tab === 'Manual Holdings') return <ManualHoldingsSettings hidden={hidden} />
   if (tab === 'Integrations') return <IntegrationsSettings hidden={hidden} variant={variant} />
   if (tab === 'Notifications') return <NotificationsSettings />
@@ -644,7 +679,19 @@ function SettingsTabPanels({ tab, hidden, variant }: { tab: (typeof settingsTabs
   return <SettingsAbout />
 }
 
-export default function SettingsPage({ hidden = false, variant = 'desktop' }: { hidden?: boolean; variant?: SettingsVariant }) {
+export default function SettingsPage({
+  hidden = false,
+  variant = 'desktop',
+  workspaceConfig: providedWorkspaceConfig,
+  onSelectWorkspace,
+}: {
+  hidden?: boolean
+  variant?: SettingsVariant
+  workspaceConfig?: WorkspaceConfig
+  onSelectWorkspace?: (workspaceId: WorkspaceId) => void
+}) {
+  const localWorkspaceConfig = useWorkspaceConfig()
+  const workspaceConfig = providedWorkspaceConfig || localWorkspaceConfig
   const [tab, setTab] = useState<(typeof settingsTabs)[number]>('General')
 
   const tabs = (
@@ -657,7 +704,7 @@ export default function SettingsPage({ hidden = false, variant = 'desktop' }: { 
     </div>
   )
 
-  const panels = <SettingsTabPanels tab={tab} hidden={hidden} variant={variant} />
+  const panels = <SettingsTabPanels tab={tab} hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} />
 
   if (variant === 'mobile') {
     return (

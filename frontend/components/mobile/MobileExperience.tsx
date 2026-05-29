@@ -38,7 +38,6 @@ import SettingsPage from '../settings/SettingsWorkspace'
 import MobileReorderableSections from '../dashboard/MobileReorderableSections'
 import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
 import {
-  WorkspaceManagerPanel,
   WorkspaceShell,
   getWorkspaceDefinition,
   useWorkspaceConfig,
@@ -1761,7 +1760,6 @@ export default function MobileExperience() {
   const [colOrder, setColOrder] = useState<ColKey[]>(() => COL_DEFS.map((c) => c.key))
   const [quickOpen, setQuickOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const [workspaceManagerOpen, setWorkspaceManagerOpen] = useState(false)
   const [rescanning, setRescanning] = useState(false)
   const [rescanStatus, setRescanStatus] = useState('')
   const [sourceHealth, setSourceHealth] = useState<any[]>([])
@@ -1879,9 +1877,8 @@ export default function MobileExperience() {
         <button
           type="button"
           className="mobile-icon-action"
-          aria-label="Open workspace manager"
-          aria-expanded={workspaceManagerOpen}
-          onClick={() => setWorkspaceManagerOpen(true)}
+          aria-label="Open settings"
+          onClick={() => setActive('settings')}
         >
           <Menu size={18} />
         </button>
@@ -1990,7 +1987,12 @@ export default function MobileExperience() {
       {active === 'settings' && (
         <section className="mobile-section mobile-settings-section">
           <MobileStatusDock health={sourceHealth} hidden={privacyHidden} />
-          <SettingsPage hidden={privacyHidden} variant="mobile" />
+          <SettingsPage
+            hidden={privacyHidden}
+            variant="mobile"
+            workspaceConfig={workspaceConfig}
+            onSelectWorkspace={(workspaceId) => setActive(workspaceId)}
+          />
         </section>
       )}
       {active === 'about' && <MobileAboutSection hidden={privacyHidden} />}
@@ -2016,41 +2018,6 @@ export default function MobileExperience() {
         onOpenSettings={() => setActive('settings')}
       />
       <MobileNotificationCenter open={notificationsOpen} onClose={() => setNotificationsOpen(false)} portfolio={portfolio} />
-      {workspaceManagerOpen && (
-        <MobileSheet title="Workspace Manager" onClose={() => setWorkspaceManagerOpen(false)} closeOnOverlay={false}>
-          <div className="workspace-manager-tools">
-            <button
-              type="button"
-              onClick={() => {
-                setActive('settings')
-                setWorkspaceManagerOpen(false)
-              }}
-            >
-              <Settings size={17} />
-              <span>Settings</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActive('about')
-                setWorkspaceManagerOpen(false)
-              }}
-            >
-              <BookOpen size={17} />
-              <span>About</span>
-            </button>
-          </div>
-          <WorkspaceManagerPanel
-            config={workspaceConfig}
-            variant="mobile"
-            onClose={() => setWorkspaceManagerOpen(false)}
-            onSelectWorkspace={(workspaceId) => {
-              setActive(workspaceId)
-              setWorkspaceManagerOpen(false)
-            }}
-          />
-        </MobileSheet>
-      )}
       {globalSearchOpen && (
         <GlobalStockSearch
           universe={searchUniverse}

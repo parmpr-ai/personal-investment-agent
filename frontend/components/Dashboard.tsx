@@ -15,7 +15,6 @@ import {
   FileText,
   Globe2,
   LayoutDashboard,
-  Menu,
   Pencil,
   Plus,
   Newspaper,
@@ -46,7 +45,6 @@ import {
 import {
   DEFAULT_WORKSPACE_ID,
   WORKSPACE_MAP,
-  WorkspaceManagerPanel,
   WorkspaceShell,
   WorkspaceSwitcher,
   getWorkspaceDefinition,
@@ -373,7 +371,6 @@ export default function Dashboard() {
         activeTool={activeTool}
         selectWorkspace={selectWorkspace}
         setActive={selectLegacyDestination}
-        workspaceConfig={workspaceConfig}
         sidebarWorkspaces={sidebarWorkspaces}
         hidden={privacyHidden}
         amountHidden={hidden}
@@ -436,7 +433,7 @@ export default function Dashboard() {
         )}
         {activeTool === 'tax' && <TaxPage hidden={privacyHidden} />}
         {activeTool === 'about' && <AboutPage hidden={privacyHidden} />}
-        {activeTool === 'settings' && <SettingsPage hidden={privacyHidden} />}
+        {activeTool === 'settings' && <SettingsPage hidden={privacyHidden} workspaceConfig={workspaceConfig} onSelectWorkspace={selectWorkspace} />}
       </main>
       {selected && (
         <StockIntelligenceShell
@@ -497,8 +494,7 @@ function IntegrationStatusDock({ health = [], hidden = false }: { health?: any[]
   )
 }
 
-function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, workspaceConfig, sidebarWorkspaces, hidden, amountHidden, setHidden }: any) {
-  const [managerOpen, setManagerOpen] = useState(false)
+function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, sidebarWorkspaces, hidden, amountHidden, setHidden }: any) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -510,26 +506,6 @@ function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, wo
         </div>
       </div>
       <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onSelect={selectWorkspace} workspaces={sidebarWorkspaces} />
-      <button className="workspace-manage-trigger" type="button" onClick={() => setManagerOpen((value) => !value)}>
-        <Menu size={16} />
-        <span>Manage Workspaces</span>
-      </button>
-      {managerOpen ? (
-        <div className="desktop-workspace-manager-layer" role="presentation">
-          <div className="desktop-workspace-manager-scrim" aria-hidden="true" />
-          <section className="desktop-workspace-manager" role="dialog" aria-modal="true" aria-label="Workspace Manager">
-            <WorkspaceManagerPanel
-              config={workspaceConfig}
-              variant="desktop"
-              onClose={() => setManagerOpen(false)}
-              onSelectWorkspace={(workspaceId) => {
-                selectWorkspace(workspaceId)
-                setManagerOpen(false)
-              }}
-            />
-          </section>
-        </div>
-      ) : null}
       <div className="side-card">
         <span className="muted">{hidden ? 'Controls' : 'System'}</span>
         <nav>
