@@ -2035,6 +2035,7 @@ export default function MobileExperience() {
           <WorkspaceManagerPanel
             config={workspaceConfig}
             variant="mobile"
+            onClose={() => setWorkspaceManagerOpen(false)}
             onSelectWorkspace={(workspaceId) => {
               setActive(workspaceId)
               setWorkspaceManagerOpen(false)

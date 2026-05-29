@@ -519,6 +519,7 @@ function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, wo
           <WorkspaceManagerPanel
             config={workspaceConfig}
             variant="desktop"
+            onClose={() => setManagerOpen(false)}
             onSelectWorkspace={(workspaceId) => {
               selectWorkspace(workspaceId)
               setManagerOpen(false)

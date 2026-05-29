@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
-import { ArrowRight, Check, GripVertical, Pencil, Pin, Plus, RotateCcw, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, GripVertical, Pencil, Pin, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { WORKSPACE_REGISTRY, type WorkspaceDefinition, type WorkspaceIconKey, type WorkspaceId } from './workspaceRegistry'
 import { workspaceIconMap } from './WorkspaceSwitcher'
 import type { WorkspaceWidgetId } from './widgetCatalog'
@@ -161,7 +161,7 @@ export function useWorkspaceConfig() {
 
   function createCustom(input: { name: string; iconKey: WorkspaceIconKey; accent: string; template: string }) {
     const title = input.name.trim()
-    if (!title) return
+    if (!title) return null
     const id = `custom-${Date.now()}`
     const nextWorkspace: CustomWorkspace = {
       id,
@@ -186,6 +186,7 @@ export function useWorkspaceConfig() {
     writeJson(WORKSPACE_ORDER_KEY, nextOrder)
     setSidebarDesktop(nextSidebar)
     writeJson(SIDEBAR_DESKTOP_KEY, nextSidebar)
+    return id
   }
 
   function renameCustom(id: WorkspaceId, title: string) {
@@ -287,10 +288,12 @@ export function WorkspaceManagerPanel({
   config,
   variant = 'mobile',
   onSelectWorkspace,
+  onClose,
 }: {
   config: ReturnType<typeof useWorkspaceConfig>
   variant?: 'mobile' | 'desktop'
   onSelectWorkspace?: (workspaceId: WorkspaceId) => void
+  onClose?: () => void
 }) {
   const [name, setName] = useState('')
   const [iconKey, setIconKey] = useState<WorkspaceIconKey>('list')
@@ -302,15 +305,34 @@ export function WorkspaceManagerPanel({
   const allIds = config.workspaces.map((workspace) => workspace.id)
 
   function submitCustom() {
-    config.createCustom({ name, iconKey, accent, template })
+    const createdId = config.createCustom({ name, iconKey, accent, template })
+    if (!createdId) return
     setName('')
     setIconKey('list')
     setAccent('#60a5fa')
     setTemplate('blank')
+    onClose?.()
   }
 
   return (
     <div className={`workspace-manager workspace-manager-${variant}`}>
+      {onClose ? (
+        <div className="workspace-manager-exit">
+          <button type="button" className="workspace-manager-back" onClick={onClose} aria-label="Back to previous screen">
+            <ArrowLeft size={15} />
+            <span>Back</span>
+          </button>
+          <div className="workspace-manager-exit-actions">
+            <button type="button" className="workspace-manager-done" onClick={onClose}>
+              Done
+            </button>
+            <button type="button" className="workspace-manager-close" onClick={onClose} aria-label="Close workspace manager">
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <section className="workspace-manager-section">
         <div className="workspace-manager-title">
           <div>
