@@ -1727,6 +1727,17 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder }:
   )
 }
 
+// Contextual header titles keyed by active workspace/view. Short, mobile-first
+// labels per PIA-UX-018; falls back to the workspace registry title otherwise.
+const HEADER_TITLE_OVERRIDES: Record<string, string> = {
+  home: 'Home',
+  'my-portfolio': 'Portfolio',
+  watchlists: 'Watchlists',
+  'markets-macro': 'Markets',
+  settings: 'Settings',
+  about: 'About',
+}
+
 export default function MobileExperience() {
   const dashboard = useMobileDashboard()
   const workspaceConfig = useWorkspaceConfig()
@@ -1772,6 +1783,8 @@ export default function MobileExperience() {
     return Array.from(bySymbol.values())
   }, [positions, dashboard?.watchlist])
   const notificationCount = buildNotificationItems(portfolio).length
+  const headerTitle =
+    HEADER_TITLE_OVERRIDES[active] || getWorkspaceDefinition(workspaceConfig.workspaces, active).title
   const {
     order: homeSectionOrder,
     moveUp: moveHomeSectionUp,
@@ -1864,7 +1877,7 @@ export default function MobileExperience() {
         >
           <Menu size={18} />
         </button>
-        <div className="mobile-top-brand">PIA</div>
+        <div className="mobile-top-brand">{headerTitle}</div>
         <div className="mobile-top-actions">
           <button
             type="button"
