@@ -1,8 +1,8 @@
-\# PIA ACTIVE CONTEXT
+# PIA ACTIVE CONTEXT
 
 
 
-\## Current Branch
+## Current Branch
 
 
 
@@ -10,7 +10,7 @@ feat/pia-v3-foundation-integration
 
 
 
-\## Current Sprint
+## Current Sprint
 
 
 
@@ -18,31 +18,31 @@ Stabilization Sprint / Mobile UAT
 
 
 
-\## Current Focus
+## Current Focus
 
 
 
-\* Mobile UAT
+* Mobile UAT
 
-\* Watchlists
+* Watchlists
 
-\* Stock Intelligence
+* Stock Intelligence
 
-\* Workspace Manager polish
+* Workspace Manager polish
 
-\* Home Dashboard refinement
-
-
-
-\## Open P0
+* Home Dashboard refinement
 
 
 
-\### Settings Integrations Configuration Missing
+## Open P0
 
 
 
-Status: OPEN
+### Settings Integrations Configuration Missing
+
+
+
+Status: IN VALIDATION
 
 
 
@@ -54,13 +54,17 @@ Impact:
 
 Cannot configure IBKR, Yahoo, Seeking Alpha, Discord, X/Twitter, RSS feeds.
 
+Commit: d2f6601
+
+Validation: npm run build passed
 
 
-\## Open P1
+
+## Open P1
 
 
 
-\### Workspace Manager UX Trap
+### Workspace Manager UX Trap
 
 
 
@@ -72,11 +76,11 @@ Observed:
 
 
 
-\* Create Workspace leaves user trapped in manager.
+* Create Workspace leaves user trapped in manager.
 
-\* No Done button.
+* No Done button.
 
-\* No Back/Close arrow.
+* No Back/Close arrow.
 
 
 
@@ -84,19 +88,19 @@ Expected:
 
 
 
-\* Done closes manager.
+* Done closes manager.
 
-\* Back closes manager.
+* Back closes manager.
 
-\* Return to dashboard after create.
-
-
-
-\---
+* Return to dashboard after create.
 
 
 
-\### Mobile Contextual Top Bar
+---
+
+
+
+### Mobile Contextual Top Bar
 
 
 
@@ -116,13 +120,13 @@ Context-aware title:
 
 
 
-\* Home
+* Home
 
-\* Portfolio
+* Portfolio
 
-\* Watchlists
+* Watchlists
 
-\* Markets
+* Markets
 
 
 
@@ -130,7 +134,7 @@ IBKR-style contextual menu.
 
 
 
-\## Latest Validated Commit
+## Latest Validated Commit
 
 
 
@@ -142,31 +146,31 @@ feat: upgrade watchlists with custom lists and IBKR-style views
 
 
 
-\## Architecture State
+## Architecture State
 
 
 
-\* Mobile shell stabilized
+* Mobile shell stabilized
 
-\* Workspace Manager implemented
+* Workspace Manager implemented
 
-\* Hamburger menu implemented
+* Hamburger menu implemented
 
-\* Bottom navigation customizable
+* Bottom navigation customizable
 
-\* Watchlists upgraded
+* Watchlists upgraded
 
-\* Portfolio table/card mode implemented
+* Portfolio table/card mode implemented
 
-\* Stock search implemented
+* Stock search implemented
 
-\* Shared news pipeline implemented
+* Shared news pipeline implemented
 
-\* Privacy mode globalized
+* Privacy mode globalized
 
 
 
-\## Governance
+## Governance
 
 
 
@@ -182,15 +186,15 @@ Before any task:
 
 
 
-1\. Read PIA\_ACTIVE\_CONTEXT.md
+1. Read PIA_ACTIVE_CONTEXT.md
 
-2\. Read 09\_Governance\_Rules.md
+2. Read 09_Governance_Rules.md
 
 
 
-Do not load full MASTER\_BACKLOG by default.
+Do not load full MASTER_BACKLOG by default.
 
-Use MASTER\_BACKLOG only for historical lookup.
+Use MASTER_BACKLOG only for historical lookup.
 
 
 
