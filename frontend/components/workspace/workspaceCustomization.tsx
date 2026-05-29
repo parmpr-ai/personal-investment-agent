@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, Check, GripVertical, Pencil, Pin, Plus, RotateCcw, Trash2, X } from 'lucide-react'
+import { ArrowRight, Check, GripVertical, Pencil, Pin, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { WORKSPACE_REGISTRY, type WorkspaceDefinition, type WorkspaceIconKey, type WorkspaceId } from './workspaceRegistry'
 import { workspaceIconMap } from './WorkspaceSwitcher'
 import type { WorkspaceWidgetId } from './widgetCatalog'
@@ -225,6 +225,7 @@ export function useWorkspaceConfig() {
     deleteCustom,
     reset,
     movePinned: (from: number, to: number) => persistPinned(moveItem(pinnedMobile, from, to)),
+    moveSidebar: (from: number, to: number) => persistSidebar(moveItem(sidebarDesktop, from, to)),
     moveOrder: (from: number, to: number) => persistOrder(moveItem(order, from, to)),
     setPinnedMobile: persistPinned,
     setSidebarDesktop: persistSidebar,
@@ -301,6 +302,7 @@ export function WorkspaceManagerPanel({
   const [template, setTemplate] = useState('blank')
   const [editingId, setEditingId] = useState<WorkspaceId | null>(null)
   const [editingName, setEditingName] = useState('')
+  const isDesktop = variant === 'desktop'
   const customIds = config.custom.map((workspace) => workspace.id)
   const allIds = config.workspaces.map((workspace) => workspace.id)
 
@@ -318,9 +320,8 @@ export function WorkspaceManagerPanel({
     <div className={`workspace-manager workspace-manager-${variant}`}>
       {onClose ? (
         <div className="workspace-manager-exit">
-          <button type="button" className="workspace-manager-back" onClick={onClose} aria-label="Back to previous screen">
-            <ArrowLeft size={15} />
-            <span>Back</span>
+          <button type="button" className="workspace-manager-cancel" onClick={onClose}>
+            Cancel
           </button>
           <div className="workspace-manager-exit-actions">
             <button type="button" className="workspace-manager-done" onClick={onClose}>
@@ -333,32 +334,66 @@ export function WorkspaceManagerPanel({
         </div>
       ) : null}
 
-      <section className="workspace-manager-section">
-        <div className="workspace-manager-title">
-          <div>
-            <h3>Pinned Bottom Navigation</h3>
-            <span>{config.pinnedMobile.length}/5 mobile buttons</span>
+      {isDesktop ? (
+        <section className="workspace-manager-section">
+          <div className="workspace-manager-title">
+            <div>
+              <h3>Desktop Sidebar</h3>
+              <span>{config.sidebarDesktop.length} visible workspaces. No mobile pin limit.</span>
+            </div>
           </div>
-          {config.warning ? <b>{config.warning}</b> : null}
-        </div>
-        <DraggableWorkspaceRows
-          ids={config.pinnedMobile}
-          workspaces={config.workspaces}
-          onMove={config.movePinned}
-          renderMeta={() => <span>Visible on mobile bottom nav</span>}
-          renderAction={(workspace) => (
-            <button type="button" className="workspace-row-action" onClick={() => config.togglePinned(workspace.id)} aria-label={`Unpin ${workspace.title}`}>
-              <X size={15} />
-            </button>
-          )}
-        />
-      </section>
+          <DraggableWorkspaceRows
+            ids={config.sidebarDesktop}
+            workspaces={config.workspaces}
+            onMove={config.moveSidebar}
+            renderMeta={(workspace) => <span>{workspace.description}</span>}
+            renderAction={(workspace) => (
+              <div className="workspace-row-actions">
+                {onSelectWorkspace ? (
+                  <button
+                    type="button"
+                    className="workspace-row-action"
+                    onClick={() => onSelectWorkspace(workspace.id)}
+                    aria-label={`Open ${workspace.title}`}
+                  >
+                    <ArrowRight size={15} />
+                  </button>
+                ) : null}
+                <button type="button" className="workspace-row-action danger" onClick={() => config.toggleSidebar(workspace.id)} aria-label={`Hide ${workspace.title} on desktop`}>
+                  <X size={15} />
+                </button>
+              </div>
+            )}
+          />
+        </section>
+      ) : (
+        <section className="workspace-manager-section">
+          <div className="workspace-manager-title">
+            <div>
+              <h3>Pinned Bottom Navigation</h3>
+              <span>{config.pinnedMobile.length}/5 mobile buttons</span>
+            </div>
+            {config.warning ? <b>{config.warning}</b> : null}
+          </div>
+          <DraggableWorkspaceRows
+            ids={config.pinnedMobile}
+            workspaces={config.workspaces}
+            onMove={config.movePinned}
+            renderMeta={() => <span>Visible on mobile bottom nav</span>}
+            renderAction={(workspace) => (
+              <button type="button" className="workspace-row-action" onClick={() => config.togglePinned(workspace.id)} aria-label={`Unpin ${workspace.title}`}>
+                <X size={15} />
+              </button>
+            )}
+          />
+        </section>
+      )}
 
       <section className="workspace-manager-section">
         <div className="workspace-manager-title">
           <div>
             <h3>All Workspaces</h3>
-            <span>Pin mobile and show desktop sidebar items</span>
+            <span>{isDesktop ? 'Show or hide desktop sidebar items' : 'Pin mobile and show desktop sidebar items'}</span>
           </div>
         </div>
         <DraggableWorkspaceRows
@@ -367,7 +402,9 @@ export function WorkspaceManagerPanel({
           onMove={config.moveOrder}
           renderMeta={(workspace) => (
             <span>
-              {config.pinnedMobile.includes(workspace.id) ? 'Pinned mobile' : 'Menu only'} / {config.sidebarDesktop.includes(workspace.id) ? 'Desktop visible' : 'Desktop hidden'}
+              {isDesktop
+                ? config.sidebarDesktop.includes(workspace.id) ? 'Desktop visible' : 'Desktop hidden'
+                : `${config.pinnedMobile.includes(workspace.id) ? 'Pinned mobile' : 'Menu only'} / ${config.sidebarDesktop.includes(workspace.id) ? 'Desktop visible' : 'Desktop hidden'}`}
             </span>
           )}
           renderAction={(workspace) => {
@@ -385,15 +422,17 @@ export function WorkspaceManagerPanel({
                     <ArrowRight size={15} />
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  className={`workspace-row-action${pinned ? ' active' : ''}`}
-                  onClick={() => config.togglePinned(workspace.id)}
-                  disabled={disablePin}
-                  aria-label={`${pinned ? 'Unpin' : 'Pin'} ${workspace.title}`}
-                >
-                  <Pin size={15} />
-                </button>
+                {!isDesktop ? (
+                  <button
+                    type="button"
+                    className={`workspace-row-action${pinned ? ' active' : ''}`}
+                    onClick={() => config.togglePinned(workspace.id)}
+                    disabled={disablePin}
+                    aria-label={`${pinned ? 'Unpin' : 'Pin'} ${workspace.title}`}
+                  >
+                    <Pin size={15} />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className={`workspace-row-action${config.sidebarDesktop.includes(workspace.id) ? ' active' : ''}`}

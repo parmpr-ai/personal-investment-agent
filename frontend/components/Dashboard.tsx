@@ -515,16 +515,19 @@ function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, wo
         <span>Manage Workspaces</span>
       </button>
       {managerOpen ? (
-        <div className="desktop-workspace-manager">
-          <WorkspaceManagerPanel
-            config={workspaceConfig}
-            variant="desktop"
-            onClose={() => setManagerOpen(false)}
-            onSelectWorkspace={(workspaceId) => {
-              selectWorkspace(workspaceId)
-              setManagerOpen(false)
-            }}
-          />
+        <div className="desktop-workspace-manager-layer" role="presentation">
+          <div className="desktop-workspace-manager-scrim" aria-hidden="true" />
+          <section className="desktop-workspace-manager" role="dialog" aria-modal="true" aria-label="Workspace Manager">
+            <WorkspaceManagerPanel
+              config={workspaceConfig}
+              variant="desktop"
+              onClose={() => setManagerOpen(false)}
+              onSelectWorkspace={(workspaceId) => {
+                selectWorkspace(workspaceId)
+                setManagerOpen(false)
+              }}
+            />
+          </section>
         </div>
       ) : null}
       <div className="side-card">

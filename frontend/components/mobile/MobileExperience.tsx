@@ -477,14 +477,22 @@ function MobileSheet({
   title,
   onClose,
   children,
+  closeOnOverlay = true,
 }: {
   title: string
   onClose: () => void
   children: ReactNode
+  closeOnOverlay?: boolean
 }) {
   return (
     <div className="mobile-sheet-root" role="presentation">
-      <button type="button" className="mobile-sheet-overlay" aria-label="Close panel" onClick={onClose} />
+      <button
+        type="button"
+        className="mobile-sheet-overlay"
+        aria-label={closeOnOverlay ? 'Close panel' : 'Panel backdrop'}
+        onClick={closeOnOverlay ? onClose : undefined}
+        tabIndex={closeOnOverlay ? 0 : -1}
+      />
       <section className="mobile-sheet" role="dialog" aria-modal="true" aria-label={title}>
         <header className="mobile-sheet-head">
           <h2>{title}</h2>
@@ -2009,7 +2017,7 @@ export default function MobileExperience() {
       />
       <MobileNotificationCenter open={notificationsOpen} onClose={() => setNotificationsOpen(false)} portfolio={portfolio} />
       {workspaceManagerOpen && (
-        <MobileSheet title="Workspace Manager" onClose={() => setWorkspaceManagerOpen(false)}>
+        <MobileSheet title="Workspace Manager" onClose={() => setWorkspaceManagerOpen(false)} closeOnOverlay={false}>
           <div className="workspace-manager-tools">
             <button
               type="button"
