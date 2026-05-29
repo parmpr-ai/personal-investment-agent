@@ -424,7 +424,7 @@ function Toggle({ label, checked, onChange }: any) {
   )
 }
 
-const settingsTabs = ['General', 'Workspace', 'Manual Holdings', 'Integrations', 'Notifications', 'System', 'About'] as const
+const settingsTabs = ['General', 'Workspaces', 'Manual Holdings', 'Integrations', 'Notifications', 'System', 'About'] as const
 
 function GeneralSettings({ hidden }: { hidden?: boolean }) {
   return (
@@ -467,19 +467,32 @@ function WorkspaceSettings({
   return (
     <div className="workspace-settings-flow">
       {managerOpen ? (
-        <WorkspaceManagerPanel
-          config={workspaceConfig}
-          variant={variant}
-          onClose={() => setManagerOpen(false)}
-          onSelectWorkspace={onSelectWorkspace}
-        />
+        <>
+          <div className="workspace-system-head">
+            <div>
+              <span className="workspace-system-kicker">{hidden ? 'Workspace' : 'Settings -> Workspaces'}</span>
+              <h3>{hidden ? 'Workspace System' : 'Workspace System'}</h3>
+              <p className="muted">
+                {hidden
+                  ? 'Configure navigation and saved views from one place.'
+                  : 'Configure navigation surfaces, workspace order, and custom workspace presets from Settings.'}
+              </p>
+            </div>
+          </div>
+          <WorkspaceManagerPanel
+            config={workspaceConfig}
+            variant={variant}
+            onClose={() => setManagerOpen(false)}
+            onSelectWorkspace={onSelectWorkspace}
+          />
+        </>
       ) : (
         <div className="settings-panels">
           <GlowCard>
-            <h3>Workspace Manager</h3>
-            <p className="muted">{hidden ? 'Manage workspace navigation and saved views.' : 'Manage desktop sidebar workspaces, mobile pinned navigation, order, and custom workspaces.'}</p>
+            <h3>Workspace System</h3>
+            <p className="muted">{hidden ? 'Manage workspace navigation and saved views.' : 'Manage desktop navigation, mobile pins, workspace order, and custom workspace presets.'}</p>
             <button className="tab active" type="button" onClick={() => setManagerOpen(true)}>
-              Open Workspace Manager
+              Open Workspace System
             </button>
           </GlowCard>
           <GlowCard>
@@ -756,7 +769,7 @@ function SettingsTabPanels({
   onSelectWorkspace?: (workspaceId: WorkspaceId) => void
 }) {
   if (tab === 'General') return <GeneralSettings hidden={hidden} />
-  if (tab === 'Workspace') return <WorkspaceSettings hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} />
+  if (tab === 'Workspaces') return <WorkspaceSettings hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} />
   if (tab === 'Manual Holdings') return <ManualHoldingsSettings hidden={hidden} />
   if (tab === 'Integrations') return <IntegrationsSettings hidden={hidden} variant={variant} />
   if (tab === 'Notifications') return <NotificationsSettings />

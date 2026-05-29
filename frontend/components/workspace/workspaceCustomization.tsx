@@ -327,7 +327,7 @@ export function WorkspaceManagerPanel({
             <button type="button" className="workspace-manager-done" onClick={onClose}>
               Done
             </button>
-            <button type="button" className="workspace-manager-close" onClick={onClose} aria-label="Close workspace manager">
+            <button type="button" className="workspace-manager-close" onClick={onClose} aria-label="Close workspace system">
               <X size={15} />
             </button>
           </div>
@@ -338,7 +338,7 @@ export function WorkspaceManagerPanel({
         <section className="workspace-manager-section">
           <div className="workspace-manager-title">
             <div>
-              <h3>Desktop Sidebar</h3>
+              <h3>Desktop Navigation</h3>
               <span>{config.sidebarDesktop.length} visible workspaces. No mobile pin limit.</span>
             </div>
           </div>
@@ -359,7 +359,7 @@ export function WorkspaceManagerPanel({
                     <ArrowRight size={15} />
                   </button>
                 ) : null}
-                <button type="button" className="workspace-row-action danger" onClick={() => config.toggleSidebar(workspace.id)} aria-label={`Hide ${workspace.title} on desktop`}>
+                <button type="button" className="workspace-row-action danger" onClick={() => config.toggleSidebar(workspace.id)} aria-label={`Hide ${workspace.title} from desktop navigation`}>
                   <X size={15} />
                 </button>
               </div>
@@ -370,8 +370,8 @@ export function WorkspaceManagerPanel({
         <section className="workspace-manager-section">
           <div className="workspace-manager-title">
             <div>
-              <h3>Pinned Bottom Navigation</h3>
-              <span>{config.pinnedMobile.length}/5 mobile buttons</span>
+              <h3>Mobile Navigation</h3>
+              <span>{config.pinnedMobile.length}/5 pinned workspaces</span>
             </div>
             {config.warning ? <b>{config.warning}</b> : null}
           </div>
@@ -392,8 +392,8 @@ export function WorkspaceManagerPanel({
       <section className="workspace-manager-section">
         <div className="workspace-manager-title">
           <div>
-            <h3>All Workspaces</h3>
-            <span>{isDesktop ? 'Show or hide desktop sidebar items' : 'Pin mobile and show desktop sidebar items'}</span>
+            <h3>Workspace Catalog</h3>
+            <span>{isDesktop ? 'Show or hide desktop navigation items' : 'Pin mobile and show desktop navigation items'}</span>
           </div>
         </div>
         <DraggableWorkspaceRows
@@ -437,7 +437,7 @@ export function WorkspaceManagerPanel({
                   type="button"
                   className={`workspace-row-action${config.sidebarDesktop.includes(workspace.id) ? ' active' : ''}`}
                   onClick={() => config.toggleSidebar(workspace.id)}
-                  aria-label={`${config.sidebarDesktop.includes(workspace.id) ? 'Hide' : 'Show'} ${workspace.title} on desktop`}
+                  aria-label={`${config.sidebarDesktop.includes(workspace.id) ? 'Hide' : 'Show'} ${workspace.title} on desktop navigation`}
                 >
                   <Check size={15} />
                 </button>
@@ -450,8 +450,8 @@ export function WorkspaceManagerPanel({
       <section className="workspace-manager-section">
         <div className="workspace-manager-title">
           <div>
-            <h3>Custom Workspaces</h3>
-            <span>Create a local workspace</span>
+            <h3>Workspace Presets</h3>
+            <span>Create a local workspace preset</span>
           </div>
         </div>
         <div className="workspace-create-grid">
@@ -468,7 +468,7 @@ export function WorkspaceManagerPanel({
             ))}
           </select>
           <button type="button" className="workspace-create-button" onClick={submitCustom}>
-            <Plus size={15} /> Add workspace
+            <Plus size={15} /> Add preset
           </button>
         </div>
         {customIds.length ? (
@@ -530,8 +530,8 @@ export function WorkspaceManagerPanel({
       <section className="workspace-manager-section">
         <div className="workspace-manager-title">
           <div>
-            <h3>Manage</h3>
-            <span>Reset workspace order, visibility, pins, and custom workspaces</span>
+            <h3>System Maintenance</h3>
+            <span>Reset workspace order, visibility, pins, and custom presets</span>
           </div>
         </div>
         <button type="button" className="workspace-reset-button" onClick={config.reset}>
