@@ -40,9 +40,13 @@ Stabilization Sprint / Mobile UAT
 
 ### Settings Integrations Configuration Missing
 
+Task ID: PIA-P0-001
+
 
 
 Status: IN VALIDATION
+
+Reason: Needs live backend verification for save, check connection, source-health.
 
 
 
@@ -66,9 +70,15 @@ Validation: npm run build passed
 
 ### Workspace Manager UX Trap
 
+Task ID: PIA-UX-019
 
 
-Status: OPEN
+
+Status: CLOSED
+
+Validated by: APOLLO
+
+Commit: b28dfa9
 
 
 
@@ -102,9 +112,15 @@ Expected:
 
 ### Mobile Contextual Top Bar
 
+Task ID: PIA-UX-018
 
 
-Status: OPEN
+
+Status: CLOSED
+
+Validated by: APOLLO
+
+Commit: 49c7e05
 
 
 
