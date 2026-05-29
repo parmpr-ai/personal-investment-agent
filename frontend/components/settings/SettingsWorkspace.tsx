@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   Activity,
   BarChart3,
@@ -16,9 +16,64 @@ import {
 import GlowCard from '../ui/GlowCard'
 import SectionHeader from '../ui/SectionHeader'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
-import { API, assetTypes, brokers, emptyHolding, fetchJson, mask, money, safeMessage } from '../../lib/pia-api'
+import { assetTypes, brokers, emptyHolding, fetchJson, getApiBase, mask, money, safeMessage } from '../../lib/pia-api'
 
 type SettingsVariant = 'desktop' | 'mobile'
+
+const defaultIntegrationSettings: any = {
+  ibkr: {
+    enabled: true,
+    host: '127.0.0.1',
+    port: 4001,
+    client_id: 21,
+    documentation: 'Open IB Gateway/TWS, enable API socket clients, set read-only API, set trusted IP 127.0.0.1, then test connection.',
+  },
+  yahoo: {
+    news_enabled: true,
+    fundamentals_enabled: true,
+    test_ticker: 'AMD',
+    documentation: 'Uses free Yahoo Finance public endpoints/RSS where available. No Yahoo login required.',
+  },
+  seeking_alpha: {
+    rss_enabled: true,
+    authenticated_enabled: false,
+    cookie_header: '',
+    test_url: 'https://seekingalpha.com/market-news',
+    documentation: 'Recommended: RSS + email alerts. Authenticated deep parsing is optional and uses your own active subscriber session cookie/header.',
+  },
+  rss: {
+    feeds: [
+      { name: 'Yahoo AMD', url: 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=AMD&region=US&lang=en-US' },
+      { name: 'Yahoo NVDA', url: 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA&region=US&lang=en-US' },
+    ],
+    documentation: 'Add ticker/news RSS URLs. Health check validates that feed items are received.',
+  },
+  fred: {
+    api_key: '',
+    documentation: 'Optional free FRED API key for macro series.',
+  },
+  telegram: {
+    bot_token: '',
+    chat_id: '',
+    documentation: 'Create a Telegram bot with BotFather, paste token and chat id, then use Send Test Alert.',
+  },
+  discord_advisor: {
+    mode: 'manual_first',
+    documentation: 'V5.6 scaffolding only. Future modes: webhook / cloud browser connector / manual paste.',
+  },
+  openai: {
+    mode: 'off',
+    daily_budget_eur: 0.5,
+    documentation: 'Optional later. Plus subscription is separate from API. V5.6 uses rule engine first.',
+  },
+}
+
+function mergeIntegrationSettings(settings: any) {
+  return Object.entries(defaultIntegrationSettings).reduce((merged: any, [section, defaults]) => {
+    merged[section] = { ...(defaults as any), ...(settings?.[section] || {}) }
+    return merged
+  }, {})
+}
 
 function useSourceHealth() {
   const [health, setHealth] = useState<any[]>([])
@@ -74,26 +129,51 @@ function SourceHealthPanel({ hidden = false, variant = 'desktop' }: { hidden?: b
 }
 
 function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop' }: { compact?: boolean; hidden?: boolean; variant?: SettingsVariant }) {
-  const [settings, setSettings] = useState<any>(null)
+  const [settings, setSettings] = useState<any>(() => mergeIntegrationSettings(null))
   const [health, setHealth] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [saveStatus, setSaveStatus] = useState('')
   const [testing, setTesting] = useState('')
 
-  useEffect(() => {
-    fetchJson('/settings/integrations').then(setSettings).catch(() => {})
-    fetchJson('/source-health').then(setHealth).catch(() => {})
+  const refreshIntegrations = useCallback(async () => {
+    setLoading(true)
+    setLoadError('')
+    const [settingsResult, healthResult] = await Promise.allSettled([
+      fetchJson('/settings/integrations'),
+      fetchJson('/source-health'),
+    ])
+    if (settingsResult.status === 'fulfilled') {
+      setSettings(mergeIntegrationSettings(settingsResult.value))
+    } else {
+      setLoadError('Unable to load saved integrations. Editable defaults are shown until the API responds.')
+    }
+    if (healthResult.status === 'fulfilled') setHealth(healthResult.value)
+    setLoading(false)
   }, [])
+
+  useEffect(() => {
+    refreshIntegrations()
+  }, [refreshIntegrations])
 
   function update(section: string, key: string, value: any) {
     setSettings((s: any) => ({ ...s, [section]: { ...(s?.[section] || {}), [key]: value } }))
   }
 
   async function save() {
+    setSaveStatus('')
     const result = await fetchJson('/settings/integrations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
-    }).catch(() => null)
-    if (result?.settings) setSettings(result.settings)
+    }).catch((error) => {
+      setSaveStatus(safeMessage(error?.detail, 'Unable to save integrations.'))
+      return null
+    })
+    if (result?.settings) {
+      setSettings(mergeIntegrationSettings(result.settings))
+      setSaveStatus('Integrations saved.')
+    }
   }
 
   async function test(src: string) {
@@ -103,10 +183,17 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
     setTesting('')
   }
 
-  if (!settings) return <div className="panel">Loading integrations...</div>
-
   const cards = (
     <>
+      {loadError && (
+        <div className="empty-state settings-error-state" role="alert">
+          <p>{hidden ? 'Integration settings are temporarily unavailable.' : loadError}</p>
+          <button className="tab" type="button" onClick={refreshIntegrations}>
+            Retry
+          </button>
+        </div>
+      )}
+      {loading && <p className="muted">Loading integrations...</p>}
       <p className="muted">
         {hidden
           ? 'Each card has connection fields, a test action, and the latest workspace status.'
@@ -151,6 +238,7 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
       <button className="tab active" type="button" onClick={save}>
         Save all integrations
       </button>
+      {saveStatus && <p className="muted">{saveStatus}</p>}
     </>
   )
 
@@ -488,7 +576,7 @@ function SystemSettings({ hidden, variant }: { hidden?: boolean; variant?: Setti
         <GlowCard>
           <h3>Runtime</h3>
           <p className="muted">Frontend build: Next.js 15</p>
-          <p className="muted">Backend API: FastAPI ({API})</p>
+          <p className="muted">Backend API: FastAPI ({getApiBase()})</p>
         </GlowCard>
         <GlowCard>
           <h3>Health</h3>

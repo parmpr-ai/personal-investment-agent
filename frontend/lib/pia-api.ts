@@ -1,4 +1,12 @@
-export const API = 'http://127.0.0.1:8000'
+const configuredApi = process.env.NEXT_PUBLIC_PIA_API?.trim().replace(/\/$/, '')
+
+export const getApiBase = () => {
+  if (configuredApi) return configuredApi
+  if (typeof window !== 'undefined') return `${window.location.protocol}//${window.location.hostname}:8000`
+  return ''
+}
+
+export const API = getApiBase()
 
 export const mask = '••••••'
 
@@ -29,7 +37,7 @@ export const safeMessage = (value: unknown, fallback: string) =>
   typeof value === 'string' ? value : typeof (value as { message?: string })?.message === 'string' ? (value as { message: string }).message : fallback
 
 export async function fetchJson(path: string, init?: RequestInit) {
-  const response = await fetch(`${API}${path}`, init)
+  const response = await fetch(`${getApiBase()}${path}`, init)
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw body
   return body
