@@ -15,7 +15,6 @@ import {
 } from 'lucide-react'
 import GlowCard from '../ui/GlowCard'
 import SectionHeader from '../ui/SectionHeader'
-import IntelligenceBadge from '../ui/IntelligenceBadge'
 import { assetTypes, brokers, emptyHolding, fetchJson, getApiBase, mask, money, safeMessage } from '../../lib/pia-api'
 import { WorkspaceManagerPanel, useWorkspaceConfig, type WorkspaceId } from '../workspace'
 
@@ -130,6 +129,123 @@ function SourceHealthPanel({ hidden = false, variant = 'desktop' }: { hidden?: b
   )
 }
 
+type IntegrationDef = {
+  id: string
+  title: string
+  icon: React.ReactNode
+  statusSource?: string
+  testSrc?: string
+  staticStatus?: any
+  fields: (settings: any, update: (section: string, key: string, value: any) => void) => React.ReactNode
+}
+
+const INTEGRATION_DEFS: IntegrationDef[] = [
+  {
+    id: 'ibkr',
+    title: 'IBKR',
+    icon: <Wallet />,
+    statusSource: 'IBKR',
+    testSrc: 'ibkr',
+    fields: (s, update) => (
+      <>
+        <Field label="Host" value={s.ibkr.host} onChange={(v: any) => update('ibkr', 'host', v)} />
+        <Field label="Port" value={s.ibkr.port} onChange={(v: any) => update('ibkr', 'port', Number(v))} />
+        <Field label="Client ID" value={s.ibkr.client_id} onChange={(v: any) => update('ibkr', 'client_id', Number(v))} />
+        <Toggle label="Enabled" checked={s.ibkr.enabled} onChange={(v: any) => update('ibkr', 'enabled', v)} />
+      </>
+    ),
+  },
+  {
+    id: 'yahoo',
+    title: 'Yahoo',
+    icon: <Globe2 />,
+    statusSource: 'Yahoo Finance',
+    testSrc: 'yahoo',
+    fields: (s, update) => (
+      <>
+        <Field label="Test ticker" value={s.yahoo.test_ticker} onChange={(v: any) => update('yahoo', 'test_ticker', v.toUpperCase())} />
+        <Toggle label="News" checked={s.yahoo.news_enabled} onChange={(v: any) => update('yahoo', 'news_enabled', v)} />
+        <Toggle label="Fundamentals" checked={s.yahoo.fundamentals_enabled} onChange={(v: any) => update('yahoo', 'fundamentals_enabled', v)} />
+      </>
+    ),
+  },
+  {
+    id: 'seeking_alpha',
+    title: 'Seeking Alpha',
+    icon: <BookOpen />,
+    statusSource: 'Seeking Alpha',
+    testSrc: 'seeking-alpha',
+    fields: (s, update) => (
+      <>
+        <Toggle label="Enable RSS" checked={s.seeking_alpha.rss_enabled} onChange={(v: any) => update('seeking_alpha', 'rss_enabled', v)} />
+        <Toggle label="Authenticated deep parsing" checked={s.seeking_alpha.authenticated_enabled} onChange={(v: any) => update('seeking_alpha', 'authenticated_enabled', v)} />
+        <Field label="Test URL" value={s.seeking_alpha.test_url} onChange={(v: any) => update('seeking_alpha', 'test_url', v)} />
+        <TextArea label="Session Cookie/Header" value={s.seeking_alpha.cookie_header} onChange={(v: any) => update('seeking_alpha', 'cookie_header', v)} placeholder="Paste your subscriber session cookie header. No password is stored." />
+      </>
+    ),
+  },
+  {
+    id: 'rss',
+    title: 'RSS / News Feeds',
+    icon: <Database />,
+    statusSource: 'RSS',
+    testSrc: 'rss',
+    fields: (s, update) => (
+      <TextArea label="RSS feeds JSON" value={JSON.stringify(s.rss.feeds, null, 2)} onChange={(v: any) => { try { update('rss', 'feeds', JSON.parse(v)) } catch {} }} />
+    ),
+  },
+  {
+    id: 'fred',
+    title: 'FRED',
+    icon: <BarChart3 />,
+    statusSource: 'FRED/Macro',
+    testSrc: 'fred',
+    fields: (s, update) => (
+      <Field label="API key" value={s.fred.api_key} onChange={(v: any) => update('fred', 'api_key', v)} />
+    ),
+  },
+  {
+    id: 'telegram',
+    title: 'Telegram',
+    icon: <Activity />,
+    statusSource: 'Telegram',
+    testSrc: 'telegram',
+    fields: (s, update) => (
+      <>
+        <Field label="Bot token" value={s.telegram.bot_token} onChange={(v: any) => update('telegram', 'bot_token', v)} />
+        <Field label="Chat ID" value={s.telegram.chat_id} onChange={(v: any) => update('telegram', 'chat_id', v)} />
+      </>
+    ),
+  },
+  {
+    id: 'discord_advisor',
+    title: 'Advisor',
+    icon: <Brain />,
+    statusSource: 'Advisor Intel',
+    fields: (s, update) => (
+      <Field label="Mode" value={s.discord_advisor.mode} onChange={(v: any) => update('discord_advisor', 'mode', v)} />
+    ),
+  },
+  {
+    id: 'openai',
+    title: 'AI',
+    icon: <Brain />,
+    staticStatus: { status: 'connected_no_data', data_received: false, message: 'Optional later; rules engine active' },
+    fields: (s, update) => (
+      <>
+        <Field label="Mode" value={s.openai.mode} onChange={(v: any) => update('openai', 'mode', v)} />
+        <Field label="Daily budget EUR" value={s.openai.daily_budget_eur} onChange={(v: any) => update('openai', 'daily_budget_eur', Number(v))} />
+      </>
+    ),
+  },
+]
+
+function integrationNavTone(status: any): 'good' | 'warn' | 'bad' {
+  if (status?.status === 'failed') return 'bad'
+  if (status?.data_received) return 'good'
+  return 'warn'
+}
+
 function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop' }: { compact?: boolean; hidden?: boolean; variant?: SettingsVariant }) {
   const [settings, setSettings] = useState<any>(() => mergeIntegrationSettings(null))
   const [health, setHealth] = useState<any[]>([])
@@ -137,6 +253,7 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
   const [loadError, setLoadError] = useState('')
   const [saveStatus, setSaveStatus] = useState('')
   const [testing, setTesting] = useState('')
+  const [selected, setSelected] = useState<string>(INTEGRATION_DEFS[0].id)
 
   const refreshIntegrations = useCallback(async () => {
     setLoading(true)
@@ -185,7 +302,12 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
     setTesting('')
   }
 
-  const cards = (
+  const statusFor = (def: IntegrationDef) =>
+    def.staticStatus || (def.statusSource ? health.find((h: any) => h.source === def.statusSource) : undefined)
+
+  const active = INTEGRATION_DEFS.find((def) => def.id === selected) || INTEGRATION_DEFS[0]
+
+  const layout = (
     <>
       {loadError && (
         <div className="empty-state settings-error-state" role="alert">
@@ -196,62 +318,56 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
         </div>
       )}
       {loading && <p className="muted">Loading integrations...</p>}
-      <p className="muted">
-        {hidden
-          ? 'Each card has connection fields, a test action, and the latest workspace status.'
-          : 'Each card has connection fields, a test action, and the latest data status.'}
-      </p>
-      <div className="integration-grid">
-        <IntegrationCard title="IBKR" hidden={hidden} icon={<Wallet />} status={health.find((h: any) => h.source === 'IBKR')} doc={settings.ibkr.documentation} onTest={() => test('ibkr')} testing={testing === 'ibkr'}>
-          <Field label="Host" value={settings.ibkr.host} onChange={(v: any) => update('ibkr', 'host', v)} />
-          <Field label="Port" value={settings.ibkr.port} onChange={(v: any) => update('ibkr', 'port', Number(v))} />
-          <Field label="Client ID" value={settings.ibkr.client_id} onChange={(v: any) => update('ibkr', 'client_id', Number(v))} />
-          <Toggle label="Enabled" checked={settings.ibkr.enabled} onChange={(v: any) => update('ibkr', 'enabled', v)} />
-        </IntegrationCard>
-        <IntegrationCard title="Yahoo Finance" hidden={hidden} icon={<Globe2 />} status={health.find((h: any) => h.source === 'Yahoo Finance')} doc={settings.yahoo.documentation} onTest={() => test('yahoo')} testing={testing === 'yahoo'}>
-          <Field label="Test ticker" value={settings.yahoo.test_ticker} onChange={(v: any) => update('yahoo', 'test_ticker', v.toUpperCase())} />
-          <Toggle label="News" checked={settings.yahoo.news_enabled} onChange={(v: any) => update('yahoo', 'news_enabled', v)} />
-          <Toggle label="Fundamentals" checked={settings.yahoo.fundamentals_enabled} onChange={(v: any) => update('yahoo', 'fundamentals_enabled', v)} />
-        </IntegrationCard>
-        <IntegrationCard title="Seeking Alpha" hidden={hidden} icon={<BookOpen />} status={health.find((h: any) => h.source === 'Seeking Alpha')} doc={settings.seeking_alpha.documentation} onTest={() => test('seeking-alpha')} testing={testing === 'seeking-alpha'}>
-          <Toggle label="Enable RSS" checked={settings.seeking_alpha.rss_enabled} onChange={(v: any) => update('seeking_alpha', 'rss_enabled', v)} />
-          <Toggle label="Authenticated deep parsing" checked={settings.seeking_alpha.authenticated_enabled} onChange={(v: any) => update('seeking_alpha', 'authenticated_enabled', v)} />
-          <Field label="Test URL" value={settings.seeking_alpha.test_url} onChange={(v: any) => update('seeking_alpha', 'test_url', v)} />
-          <TextArea label="Session Cookie/Header" value={settings.seeking_alpha.cookie_header} onChange={(v: any) => update('seeking_alpha', 'cookie_header', v)} placeholder="Paste your subscriber session cookie header. No password is stored." />
-        </IntegrationCard>
-        <IntegrationCard title="RSS / Email Adapters" hidden={hidden} icon={<Database />} status={health.find((h: any) => h.source === 'RSS')} doc={settings.rss.documentation} onTest={() => test('rss')} testing={testing === 'rss'}>
-          <TextArea label="RSS feeds JSON" value={JSON.stringify(settings.rss.feeds, null, 2)} onChange={(v: any) => { try { update('rss', 'feeds', JSON.parse(v)) } catch {} }} />
-        </IntegrationCard>
-        <IntegrationCard title="FRED / Macro" hidden={hidden} icon={<BarChart3 />} status={health.find((h: any) => h.source === 'FRED/Macro')} doc={settings.fred.documentation} onTest={() => test('fred')} testing={testing === 'fred'}>
-          <Field label="API key" value={settings.fred.api_key} onChange={(v: any) => update('fred', 'api_key', v)} />
-        </IntegrationCard>
-        <IntegrationCard title="Telegram / Alerts" hidden={hidden} icon={<Activity />} status={health.find((h: any) => h.source === 'Telegram')} doc={settings.telegram.documentation} onTest={() => test('telegram')} testing={testing === 'telegram'}>
-          <Field label="Bot token" value={settings.telegram.bot_token} onChange={(v: any) => update('telegram', 'bot_token', v)} />
-          <Field label="Chat ID" value={settings.telegram.chat_id} onChange={(v: any) => update('telegram', 'chat_id', v)} />
-        </IntegrationCard>
-        <IntegrationCard title="Advisor Intel" hidden={hidden} icon={<Brain />} status={health.find((h: any) => h.source === 'Advisor Intel')} doc={settings.discord_advisor.documentation}>
-          <Field label="Mode" value={settings.discord_advisor.mode} onChange={(v: any) => update('discord_advisor', 'mode', v)} />
-        </IntegrationCard>
-        <IntegrationCard title="AI Lite" hidden={hidden} icon={<Brain />} status={{ status: 'connected_no_data', data_received: false, message: 'Optional later; rules engine active' }} doc={settings.openai.documentation}>
-          <Field label="Mode" value={settings.openai.mode} onChange={(v: any) => update('openai', 'mode', v)} />
-          <Field label="Daily budget EUR" value={settings.openai.daily_budget_eur} onChange={(v: any) => update('openai', 'daily_budget_eur', Number(v))} />
-        </IntegrationCard>
+      <div className="integration-layout">
+        <nav className="integration-nav" aria-label="Integrations">
+          {INTEGRATION_DEFS.map((def) => {
+            const status = statusFor(def)
+            return (
+              <button
+                key={def.id}
+                type="button"
+                className={`integration-nav-item${selected === def.id ? ' active' : ''}`}
+                onClick={() => setSelected(def.id)}
+                aria-current={selected === def.id}
+              >
+                <span className="integration-nav-icon" aria-hidden="true">{def.icon}</span>
+                <span className="integration-nav-label">{hidden ? 'Workspace source' : def.title}</span>
+                <span className={`integration-nav-dot ${integrationNavTone(status)}`} aria-hidden="true" />
+              </button>
+            )
+          })}
+        </nav>
+        <div className="integration-detail">
+          <IntegrationCard
+            title={active.title}
+            hidden={hidden}
+            icon={active.icon}
+            status={statusFor(active)}
+            doc={settings[active.id]?.documentation}
+            onTest={active.testSrc ? () => test(active.testSrc as string) : undefined}
+            testing={testing === active.testSrc}
+          >
+            {active.fields(settings, update)}
+          </IntegrationCard>
+          <div className="integration-detail-actions">
+            <button className="tab active" type="button" onClick={save}>
+              Save all integrations
+            </button>
+            {saveStatus && <p className="muted">{saveStatus}</p>}
+          </div>
+        </div>
       </div>
-      <button className="tab active" type="button" onClick={save}>
-        Save all integrations
-      </button>
-      {saveStatus && <p className="muted">{saveStatus}</p>}
     </>
   )
 
   if (variant === 'mobile') {
-    return <div className={compact ? 'compact-integrations mobile-integration-center' : 'mobile-integration-center'}>{cards}</div>
+    return <div className={compact ? 'compact-integrations mobile-integration-center' : 'mobile-integration-center'}>{layout}</div>
   }
 
   return (
     <div className={compact ? 'compact-integrations' : 'grid'}>
       <SettingsPanel title="Integration Center" span="span-12" hidden={hidden}>
-        {cards}
+        {layout}
       </SettingsPanel>
     </div>
   )
@@ -561,7 +677,6 @@ function ManualHoldingsSettings({ hidden }: { hidden?: boolean }) {
 function IntegrationsSettings({ hidden, variant }: { hidden?: boolean; variant?: SettingsVariant }) {
   return (
     <div>
-      <IntegrationStatusCards hidden={hidden} />
       <IntegrationCenter compact hidden={hidden} variant={variant} />
     </div>
   )
@@ -623,36 +738,6 @@ function SettingsAbout() {
           Open release center
         </a>
       </GlowCard>
-    </div>
-  )
-}
-
-function IntegrationStatusCards({ hidden = false }: { hidden?: boolean }) {
-  const [health, setHealth] = useState<any[]>([])
-  useEffect(() => {
-    fetchJson('/source-health').then(setHealth).catch(() => {})
-  }, [])
-  const bySource = (name: string) => health.find((item: any) => item.source === name)
-  const cards: any[] = [
-    { name: 'IBKR', status: bySource('IBKR') },
-    { name: 'Yahoo', status: bySource('Yahoo Finance') },
-    { name: 'Seeking Alpha', status: bySource('Seeking Alpha') },
-    { name: 'Discord', label: 'Pending' },
-    { name: 'X / Twitter', label: 'Not configured' },
-    { name: 'News feeds', status: bySource('RSS') },
-  ]
-  return (
-    <div className="status-grid">
-      {cards.map((card) => {
-        const label = card.label || (card.status?.status === 'healthy' ? 'Data OK' : card.status?.status === 'connected_no_data' ? 'Pending' : card.status?.status === 'failed' ? 'Degraded' : 'Not configured')
-        const tone = label === 'Data OK' ? 'good' : label === 'Pending' ? 'warn' : label === 'Degraded' ? 'bad' : 'neutral'
-        return (
-          <GlowCard className="status-card" key={card.name}>
-            <span>{hidden ? 'Workspace source' : card.name}</span>
-            <IntelligenceBadge label={label} tone={tone} />
-          </GlowCard>
-        )
-      })}
     </div>
   )
 }
