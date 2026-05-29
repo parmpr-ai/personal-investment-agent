@@ -205,6 +205,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - PIA-P0-001 Settings Integrations Configuration Missing: Status remains IN VALIDATION. Reason: needs live backend verification for save, check connection, source-health.
   - PIA-UX-018 Mobile Contextual Top Bar: Status CLOSED. Validated by APOLLO. Commit: 49c7e05.
   - PIA-UX-019 Workspace Manager Escape Flow: Status CLOSED. Validated by APOLLO. Commit: b28dfa9.
+  - PIA-BUG-024 Watchlist Mobile Scroll Lock: Status CLOSED. Implementation Commit: 3a8284d. QA: PIA-QA-006 PASS. Reason: APOLLO validated all acceptance criteria and recommended closure.
 - Remaining failed UAT:
   - Mobile correction mock pack requires Product Owner review before final UI implementation.
   - Mobile performance lag requires deeper device profiling after first-pass render-cost reduction.

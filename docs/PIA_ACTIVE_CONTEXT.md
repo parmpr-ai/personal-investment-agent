@@ -149,6 +149,25 @@ Context-aware title:
 IBKR-style contextual menu.
 
 
+---
+
+
+
+### Watchlist Mobile Scroll Lock
+
+Task ID: PIA-BUG-024
+
+
+
+Status: CLOSED
+
+Implementation Commit: 3a8284d
+
+QA: PIA-QA-006 PASS
+
+Reason: APOLLO validated all acceptance criteria and recommended closure.
+
+
 
 ## Latest Validated Commit
 
