@@ -21,6 +21,7 @@ import {
   Home,
   Menu,
   MoreVertical,
+  Newspaper,
   Pencil,
   Plus,
   RefreshCw,
@@ -82,10 +83,17 @@ const positionFallback = [
     name: 'NVIDIA Corp.',
     last: 126.8,
     day_change_pct: 1.84,
+    quantity: 190,
+    avg_price: 84.2,
     market_value: 24120,
+    day_pnl: 436,
+    unrealized: 8090,
+    unrealized_pct: 50.4,
     portfolio_pct: 18.4,
     risk: 72,
     momentum: 78,
+    macro_sensitivity: 62,
+    news_count: 4,
     spark: [31, 34, 32, 41, 46, 43, 51],
     ai_view: 'AI infrastructure demand remains the core upside driver, with position sizing kept under the high-risk cap.',
   },
@@ -94,10 +102,17 @@ const positionFallback = [
     name: 'Microsoft',
     last: 451.2,
     day_change_pct: 0.46,
+    quantity: 42,
+    avg_price: 388.5,
     market_value: 18940,
+    day_pnl: 86,
+    unrealized: 2633,
+    unrealized_pct: 16.1,
     portfolio_pct: 14.5,
     risk: 38,
     momentum: 57,
+    macro_sensitivity: 41,
+    news_count: 2,
     spark: [35, 36, 39, 38, 42, 44, 45],
     ai_view: 'Quality compounder profile with balanced cloud, AI, and enterprise durability.',
   },
@@ -106,10 +121,16 @@ const positionFallback = [
     name: 'S&P 500 ETF',
     last: 624.1,
     day_change_pct: -0.18,
+    quantity: 24,
+    avg_price: 571.0,
     market_value: 15110,
+    day_pnl: -27,
+    unrealized: 1274,
+    unrealized_pct: 9.3,
     portfolio_pct: 11.6,
     risk: 29,
     momentum: 48,
+    macro_sensitivity: 33,
     spark: [40, 41, 39, 38, 40, 37, 36],
     ai_view: 'Core market beta sleeve. Use as liquidity buffer before adding single-name exposure.',
   },
@@ -1000,43 +1021,72 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
       className="mobile-position-rail"
       render={(position: any) => {
         const risk = Number(position.risk || 0)
+        const momentum = Number(position.momentum_score || position.momentum || 52)
         const change = Number(position.day_change_pct || position.change_pct || 0)
+        const shares = Number(position.quantity ?? position.qty ?? 0)
+        const last = Number(position.last || position.price || 0)
+        const avgCost = Number(position.avg_price ?? position.avg_cost ?? 0)
+        const marketValue = Number(position.market_value ?? last * shares)
+        const dayPnl = Number(position.day_pnl || 0)
         const unreal = Number(position.unrealized || 0)
-        const unrealPct = Number(position.unrealized_pct || 0)
+        const unrealPct = Number(
+          position.unrealized_pct != null ? position.unrealized_pct : avgCost > 0 ? ((last - avgCost) / avgCost) * 100 : 0,
+        )
+        const macro = position.macro_sensitivity
+        const newsCount = Number(position.news_count ?? position.news ?? 0)
+        const hasAi = Boolean(position.ai_view || position.ai_score != null)
         const brandColor = position.brand || position.accent || undefined
+        const signed = (value: number, format: (n: number) => string) => `${value >= 0 ? '+' : ''}${format(value)}`
         return (
           <button
             className={`mobile-visual-card mobile-position-card${brandColor ? ' themed' : ''}`}
             onClick={() => onSelect(position)}
             style={brandColor ? { borderTopColor: brandColor } as CSSProperties : undefined}
           >
+            {/* Header — ticker, company, daily % */}
             <div className="mobile-card-head">
               <div>
                 <span>{position.name || 'Portfolio holding'}</span>
-                <strong>{hidden ? mask : position.symbol}</strong>
+                <strong>{position.symbol}</strong>
               </div>
-              <div className="mobile-price-stack">
-                <b>{hidden ? mask : money(position.last || position.price || position.market_value)}</b>
-                <small className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)}</small>
+              <IntelligenceBadge label={pct(change)} tone={change >= 0 ? 'good' : 'bad'} />
+            </div>
+
+            <Sparkline values={position.spark} tone={change >= 0 ? 'good' : 'bad'} />
+
+            {/* Position summary, price, performance */}
+            <div className="mobile-position-stats">
+              <div className="mps-cell"><span>Shares</span><b>{hidden ? mask : shares.toLocaleString('en-US')}</b></div>
+              <div className="mps-cell"><span>Mkt Value</span><b>{hidden ? mask : money(marketValue)}</b></div>
+              <div className="mps-cell"><span>Last</span><b>{hidden ? mask : money(last)}</b></div>
+              <div className="mps-cell"><span>Avg Cost</span><b>{hidden ? mask : money(avgCost)}</b></div>
+              <div className="mps-cell">
+                <span>Today P&amp;L</span>
+                <b className={dayPnl >= 0 ? 'green' : 'red'}>
+                  {hidden ? mask : `${signed(dayPnl, money)} (${signed(change, (n) => `${n.toFixed(2)}%`)})`}
+                </b>
+              </div>
+              <div className="mps-cell">
+                <span>Unrealized</span>
+                <b className={unreal >= 0 ? 'green' : 'red'}>
+                  {hidden ? mask : `${signed(unreal, money)} (${signed(unrealPct, (n) => `${n.toFixed(1)}%`)})`}
+                </b>
               </div>
             </div>
-            <Sparkline values={position.spark} tone={change >= 0 ? 'good' : 'bad'} />
-            {position.unrealized !== undefined && (
-              <div className="mobile-position-pnl">
-                <span className={unreal >= 0 ? 'green' : 'red'}>
-                  {hidden ? mask : `${unreal >= 0 ? '+' : ''}${money(unreal)}`}
-                </span>
-                <small className={unrealPct >= 0 ? 'green' : 'red'}>
-                  {hidden ? mask : `${unrealPct >= 0 ? '+' : ''}${unrealPct.toFixed(1)}%`}
-                </small>
+
+            {/* Intelligence — momentum, risk, news, macro, AI (visible in privacy mode) */}
+            <div className="mobile-position-intel">
+              <div className="mps-bars">
+                <RiskBar value={risk || 31} />
+                <MomentumBar value={momentum} />
               </div>
-            )}
-            <div className="mobile-position-footer">
-              {hidden ? <span className="muted">{mask}</span> : <ExposureGauge value={Number(position.portfolio_pct || 0)} />}
-              <div>
-                {hidden ? <span className="muted">{mask}</span> : <RiskBar value={risk || 31} />}
-                {hidden ? <span className="muted">{mask}</span> : <MomentumBar value={Number(position.momentum_score || position.momentum || 52)} />}
-              </div>
+              {(newsCount > 0 || macro != null || hasAi) && (
+                <div className="mps-chips">
+                  {newsCount > 0 ? <span className="mps-chip"><Newspaper size={12} />{newsCount}</span> : null}
+                  {macro != null ? <span className="mps-chip">Macro β {Number(macro)}</span> : null}
+                  {hasAi ? <span className="mps-chip mps-chip-ai"><Brain size={12} />AI</span> : null}
+                </div>
+              )}
             </div>
           </button>
         )
