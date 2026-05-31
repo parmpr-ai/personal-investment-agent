@@ -30,6 +30,8 @@ Stabilization Sprint / Mobile UAT
 
 * Workspace Manager polish
 
+* Governance artifact sync and branch finalization
+
 * Home Dashboard refinement
 
 
@@ -64,6 +66,20 @@ Validation: npm run build passed
 
 
 
+### Custom Workspaces Lose Widgets
+
+Task ID: PIA-BUG-027
+
+Status: OPEN (2026-05-30)
+
+Area: Workspace layout normalization
+
+Root cause: normalizeWorkspaceLayout intersects saved widgets with supportedWorkspaces; custom workspace ids match no catalog widget, so template-seeded widgets are filtered out.
+
+Fix defined in: docs/PIA_WORKSPACE_ARCHITECTURE_FINAL.md (PIA-ARCH-001-C).
+
+
+
 ## Open P1
 
 
@@ -75,6 +91,43 @@ Task ID: PIA-UX-019
 
 
 Status: CLOSED
+
+
+---
+
+
+### News Intelligence overflow
+
+Task ID: PIA-BUG-028
+
+
+Status: OPEN
+
+Area: News Intelligence
+
+Impact:
+
+Desktop News cards may overflow or clip action text when density is high.
+
+
+---
+
+
+### Stock Intelligence News Compact Redesign
+
+Task ID: PIA-UX-029
+
+
+Status: OPEN
+
+Area: Stock Intelligence
+
+Impact:
+
+Stock news cards are too wide and require tighter premium hierarchy for mobile/desktop.
+
+
+---
 
 Validated by: APOLLO
 

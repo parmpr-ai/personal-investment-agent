@@ -1,5 +1,45 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.18 - Portfolio Mobile Card V2
+
+Date: 2026-05-30
+Status: Implemented and validated.
+
+### Added
+
+* Enhanced Portfolio mobile cards with institutional-style position details.
+* Added Shares display.
+* Added Market Value display.
+* Added Last Price display.
+* Added Avg Cost display.
+* Added Today P&L ($ and %).
+* Added Unrealized P&L ($ and %).
+* Added fallback calculations for unrealized percentage when not supplied by the backend.
+
+### Enhanced
+
+* Preserved Momentum indicator.
+* Preserved Risk indicator.
+* Preserved Sparkline visualization.
+* Preserved Stock Intelligence launch on card tap.
+* Added optional News Intelligence, Macro Sensitivity, and AI indicator chips when data is available.
+
+### Fixed / Improved
+
+* Improved mobile portfolio information density without changing interaction patterns.
+* Improved visibility of position performance metrics on smaller screens.
+* Preserved privacy mode masking behavior.
+
+### Validation
+
+* Mobile portfolio cards render correctly.
+* Stock Intelligence navigation preserved.
+* Privacy mode preserved.
+* No Desktop Experience changes.
+* No Workspace System changes.
+* No Workspace Architecture changes.
+
+
 ## v0.3.17 - Watchlists IBKR UX Upgrade
 Date: 2026-05-29
 Status: Implemented and locally validated.

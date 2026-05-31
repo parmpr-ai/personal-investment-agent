@@ -112,7 +112,10 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Videos Experience rework. Sprint 2C HERMES implementation complete.
   - Intelligence card density refactor. Sprint 2C HERMES implementation complete for stock news cards.
   - Stock Quote / Technical IA mock created for PO review; final IA change not implemented yet.
+- P0 Workspaces:
+  - PIA-BUG-027 Custom workspaces lose widgets via `supportedWorkspaces` filtering. OPEN 2026-05-30. Owner ATHENA. Fix defined in PIA-ARCH-001-C final spec.
 - P1 Workspaces:
+  - Workspace Architecture Refactor (PIA-ARCH-001 / -B / -C). Final spec APPROVED 2026-05-30: docs/PIA_WORKSPACE_ARCHITECTURE_FINAL.md is the implementation source of truth.
   - Workspace Manager + custom workspaces. DONE 2026-05-28: mobile hamburger sheet and desktop sidebar manager share localStorage-backed workspace pins, visibility, order, and custom workspace definitions.
   - Watchlists add/remove/sort/company logo/mini charts.
   - Sector and industry heatmap.
@@ -134,6 +137,9 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 | Home widgets not clickable | ATHENA | CRITICAL | 2C | FIXED 2026-05-28: widget/card pointer targets and mobile stacking stabilized |
 | Notification Center mobile failure | ARTEMIS | CRITICAL | 2C | FIXED 2026-05-28: mobile-safe bottom sheet, stacked cards, and fallback notifications added |
 | Performance lag | ATHENA + HERMES | HIGH | 2C | PARTIAL 2026-05-28: reduced mobile blur/shadow/hover cost; deeper profiling remains |
+| PIA-BUG-027 Custom workspaces lose widgets | ATHENA | CRITICAL (P0) | Stabilization | OPEN 2026-05-30: `normalizeWorkspaceLayout` intersects saved widgets with `supportedWorkspaces`; custom `custom-*` ids match no catalog widget, so the supported set is empty and template-seeded widgets are filtered out. Fix per PIA-ARCH-001-C (demote `supportedWorkspaces` to a non-filtering hint). Spec: docs/PIA_WORKSPACE_ARCHITECTURE_FINAL.md |
+| PIA-BUG-028 News Intelligence overflow | UNASSIGNED | HIGH (P1) | Stabilization | OPEN 2026-05-30: News Intelligence cards may overflow or clip text at desktop widths when action columns are dense. |
+| PIA-UX-029 Stock Intelligence News Compact Redesign | UNASSIGNED | HIGH (P1) | Stabilization | OPEN 2026-05-30: Stock news cards need a tighter premium hierarchy and compact layout for mobile/desktop usage. |
 
 ## Locked UX Decisions
 
