@@ -231,12 +231,14 @@ function SwipeRail({
   items,
   render,
   className = '',
+  hideHeader = false,
 }: {
   title: string
   icon?: ReactNode
   items: RailItem[]
   render: (item: RailItem, index: number) => ReactNode
   className?: string
+  hideHeader?: boolean
 }) {
   const [active, setActive] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
@@ -315,34 +317,36 @@ function SwipeRail({
 
   return (
     <section className={`mobile-section ${className}`.trim()}>
-      <div className="mobile-section-title">
-        <h2>{title}</h2>
-        <div className="mobile-section-tools">
-          {icon}
-          {items.length > 1 ? (
-            <div className="mobile-rail-controls" aria-label={`${title} navigation`}>
-              <button
-                type="button"
-                className="mobile-rail-button"
-                onClick={() => scrollToSlide(active - 1)}
-                disabled={active === 0}
-                aria-label={`Previous ${title} item`}
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                type="button"
-                className="mobile-rail-button"
-                onClick={() => scrollToSlide(active + 1)}
-                disabled={active >= items.length - 1}
-                aria-label={`Next ${title} item`}
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          ) : null}
+      {!hideHeader && (
+        <div className="mobile-section-title">
+          <h2>{title}</h2>
+          <div className="mobile-section-tools">
+            {icon}
+            {items.length > 1 ? (
+              <div className="mobile-rail-controls" aria-label={`${title} navigation`}>
+                <button
+                  type="button"
+                  className="mobile-rail-button"
+                  onClick={() => scrollToSlide(active - 1)}
+                  disabled={active === 0}
+                  aria-label={`Previous ${title} item`}
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="mobile-rail-button"
+                  onClick={() => scrollToSlide(active + 1)}
+                  disabled={active >= items.length - 1}
+                  aria-label={`Next ${title} item`}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
       <div
         className={`mobile-swipe-rail ${isDragging ? 'is-dragging' : ''}`.trim()}
         ref={railRef}
@@ -1019,6 +1023,7 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
       icon={<BriefcaseBusiness size={18} />}
       items={positions}
       className="mobile-position-rail"
+      hideHeader
       render={(position: any) => {
         const risk = Number(position.risk || 0)
         const momentum = Number(position.momentum_score || position.momentum || 52)
@@ -1074,12 +1079,22 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
               </div>
             </div>
 
-            {/* Intelligence — momentum, risk, news, macro, AI (visible in privacy mode) */}
-            <div className="mobile-position-intel">
-              <div className="mps-bars">
-                <RiskBar value={risk || 31} />
-                <MomentumBar value={momentum} />
-              </div>
+            {/* Intelligence bars — risk & momentum (visible in privacy mode) */}
+            <div className="mps-bars">
+              <RiskBar value={risk || 31} />
+              <MomentumBar value={momentum} />
+            </div>
+
+            {/* Bottom info row — exposure mini visual + macro / AI / news */}
+            <div className="mobile-position-bottom">
+              {hidden ? (
+                <div className="mobile-exposure-gauge" style={{ '--exposure-value': '0deg' } as CSSProperties}>
+                  <b>••</b>
+                  <span>exposure</span>
+                </div>
+              ) : (
+                <ExposureGauge value={Number(position.portfolio_pct || 0)} />
+              )}
               {(newsCount > 0 || macro != null || hasAi) && (
                 <div className="mps-chips">
                   {newsCount > 0 ? <span className="mps-chip"><Newspaper size={12} />{newsCount}</span> : null}
