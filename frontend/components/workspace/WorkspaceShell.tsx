@@ -6,7 +6,6 @@ import { WIDGET_CATALOG_MAP, type WidgetCatalogItem } from './widgetCatalog'
 import { getWorkspaceAiContext } from './workspaceAiContext'
 import { readWorkspaceLayout, resetWorkspaceLayout, writeWorkspaceLayout } from './workspaceLayoutStorage'
 import { WORKSPACE_MAP, type WorkspaceDefinition, type WorkspaceId } from './workspaceRegistry'
-import type { WorkspaceWidgetId } from './widgetCatalog'
 
 type WorkspaceShellProps = {
   workspaceId: WorkspaceId
@@ -25,22 +24,15 @@ const sizeToSpan: Record<WidgetCatalogItem['defaultSize'], string> = {
 export default function WorkspaceShell({ workspaceId, workspace: providedWorkspace, hidden = false, children }: WorkspaceShellProps) {
   const workspace = providedWorkspace || WORKSPACE_MAP[workspaceId] || WORKSPACE_MAP.home
   const aiContext = providedWorkspace ? providedWorkspace.defaultAiContext : getWorkspaceAiContext(workspaceId)
-  const isStaticWorkspace = Boolean(WORKSPACE_MAP[workspaceId])
-  const [layout, setLayout] = useState(() => [...workspace.defaultWidgetIds])
+  // PIA-BUG-027: system and custom workspaces share one safe storage path. Custom workspaces
+  // (whose ids are absent from WORKSPACE_MAP) pass their own seed widgets via fallbackDefaults,
+  // and no widget is dropped by a per-workspace allowlist during normalization.
+  const defaultWidgetIds = workspace.defaultWidgetIds
+  const [layout, setLayout] = useState(() => [...defaultWidgetIds])
 
   useEffect(() => {
-    if (isStaticWorkspace) {
-      setLayout(readWorkspaceLayout(workspaceId))
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(`pia.workspace.layout.v1.${workspaceId}`)
-      const saved = raw ? JSON.parse(raw) : null
-      setLayout(Array.isArray(saved) ? saved : [...workspace.defaultWidgetIds])
-    } catch {
-      setLayout([...workspace.defaultWidgetIds])
-    }
-  }, [isStaticWorkspace, workspace.defaultWidgetIds, workspaceId])
+    setLayout(readWorkspaceLayout(workspaceId, defaultWidgetIds))
+  }, [defaultWidgetIds, workspaceId])
 
   const widgets = useMemo(
     () => layout.map((id) => WIDGET_CATALOG_MAP[id]).filter((widget): widget is WidgetCatalogItem => Boolean(widget)),
@@ -48,19 +40,12 @@ export default function WorkspaceShell({ workspaceId, workspace: providedWorkspa
   )
 
   function resetLayout() {
-    if (isStaticWorkspace) setLayout(resetWorkspaceLayout(workspaceId))
-    else setLayout([...workspace.defaultWidgetIds])
+    setLayout(resetWorkspaceLayout(workspaceId, defaultWidgetIds))
   }
 
   useEffect(() => {
-    if (isStaticWorkspace) {
-      writeWorkspaceLayout(workspaceId, layout)
-      return
-    }
-    try {
-      window.localStorage.setItem(`pia.workspace.layout.v1.${workspaceId}`, JSON.stringify(layout as WorkspaceWidgetId[]))
-    } catch {}
-  }, [isStaticWorkspace, layout, workspaceId])
+    writeWorkspaceLayout(workspaceId, layout, defaultWidgetIds)
+  }, [defaultWidgetIds, layout, workspaceId])
 
   return (
     <div className="grid" data-workspace-id={workspaceId} data-ai-context={aiContext}>
