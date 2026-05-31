@@ -589,6 +589,9 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .risk-label-elevated{color:#f97316 !important;font-size:12px}
 .risk-label-medium{color:var(--amber) !important;font-size:12px}
 .risk-label-low{color:var(--green) !important;font-size:12px}
+.mobile-position-card .mobile-momentum{grid-template-columns:58px minmax(0,1fr) minmax(42px,52px)}
+.mobile-position-card .mobile-momentum i{min-width:0}
+.mobile-position-card .mobile-momentum b{min-width:0;max-width:52px;justify-self:end;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:11px}
 
 /* Desktop time-range chips */
 .snapshot-tf-rail{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap}
