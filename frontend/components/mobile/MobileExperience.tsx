@@ -1015,8 +1015,9 @@ function WatchlistMovers({ scanner, positions, onSelect, hidden = false }: { sca
   )
 }
 
-function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSelect: (position: any) => void; hidden?: boolean }) {
+function PositionCards({ rows, onSelect, hidden = false, fields, tf }: { rows: any[]; onSelect: (position: any) => void; hidden?: boolean; fields: Set<CardFieldKey>; tf: SparkTf }) {
   const positions = rows.length ? rows : positionFallback
+  const show = (key: CardFieldKey) => fields.has(key)
   return (
     <SwipeRail
       title="Positions"
@@ -1042,6 +1043,9 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
         const hasAi = Boolean(position.ai_view || position.ai_score != null)
         const brandColor = position.brand || position.accent || undefined
         const signed = (value: number, format: (n: number) => string) => `${value >= 0 ? '+' : ''}${format(value)}`
+        const showBars = show('risk') || show('momentum')
+        const showChips = (show('news') && newsCount > 0) || (show('macro') && macro != null) || (show('ai') && hasAi)
+        const showBottom = show('weight') || showChips
         return (
           <button
             className={`mobile-visual-card mobile-position-card${brandColor ? ' themed' : ''}`}
@@ -1057,52 +1061,69 @@ function PositionCards({ rows, onSelect, hidden = false }: { rows: any[]; onSele
               <IntelligenceBadge label={pct(change)} tone={change >= 0 ? 'good' : 'bad'} />
             </div>
 
-            <Sparkline values={position.spark} tone={change >= 0 ? 'good' : 'bad'} />
+            {show('sparkline') && (
+              <div className="mobile-position-spark">
+                <Sparkline values={resolveSpark(position, tf)} tone={change >= 0 ? 'good' : 'bad'} />
+                <span className="mobile-spark-tf">{tf}</span>
+              </div>
+            )}
 
             {/* Position summary, price, performance */}
-            <div className="mobile-position-stats">
-              <div className="mps-cell"><span>Shares</span><b>{hidden ? mask : shares.toLocaleString('en-US')}</b></div>
-              <div className="mps-cell"><span>Mkt Value</span><b>{hidden ? mask : money(marketValue)}</b></div>
-              <div className="mps-cell"><span>Last</span><b>{hidden ? mask : money(last)}</b></div>
-              <div className="mps-cell"><span>Avg Cost</span><b>{hidden ? mask : money(avgCost)}</b></div>
-              <div className="mps-cell">
-                <span>Today P&amp;L</span>
-                <b className={dayPnl >= 0 ? 'green' : 'red'}>
-                  {hidden ? mask : `${signed(dayPnl, money)} (${signed(change, (n) => `${n.toFixed(2)}%`)})`}
-                </b>
+            {(show('shares') || show('mktvalue') || show('last') || show('avgcost') || show('daypnl') || show('unrealized')) && (
+              <div className="mobile-position-stats">
+                {show('shares') && <div className="mps-cell"><span>Shares</span><b>{hidden ? mask : shares.toLocaleString('en-US')}</b></div>}
+                {show('mktvalue') && <div className="mps-cell"><span>Mkt Value</span><b>{hidden ? mask : money(marketValue)}</b></div>}
+                {show('last') && <div className="mps-cell"><span>Last</span><b>{hidden ? mask : money(last)}</b></div>}
+                {show('avgcost') && <div className="mps-cell"><span>Avg Cost</span><b>{hidden ? mask : money(avgCost)}</b></div>}
+                {show('daypnl') && (
+                  <div className="mps-cell">
+                    <span>Today P&amp;L</span>
+                    <b className={dayPnl >= 0 ? 'green' : 'red'}>
+                      {hidden ? mask : `${signed(dayPnl, money)} (${signed(change, (n) => `${n.toFixed(2)}%`)})`}
+                    </b>
+                  </div>
+                )}
+                {show('unrealized') && (
+                  <div className="mps-cell">
+                    <span>Unrealized</span>
+                    <b className={unreal >= 0 ? 'green' : 'red'}>
+                      {hidden ? mask : `${signed(unreal, money)} (${signed(unrealPct, (n) => `${n.toFixed(1)}%`)})`}
+                    </b>
+                  </div>
+                )}
               </div>
-              <div className="mps-cell">
-                <span>Unrealized</span>
-                <b className={unreal >= 0 ? 'green' : 'red'}>
-                  {hidden ? mask : `${signed(unreal, money)} (${signed(unrealPct, (n) => `${n.toFixed(1)}%`)})`}
-                </b>
-              </div>
-            </div>
+            )}
 
             {/* Intelligence bars — risk & momentum (visible in privacy mode) */}
-            <div className="mps-bars">
-              <RiskBar value={risk || 31} />
-              <MomentumBar value={momentum} />
-            </div>
+            {showBars && (
+              <div className="mps-bars">
+                {show('risk') && <RiskBar value={risk || 31} />}
+                {show('momentum') && <MomentumBar value={momentum} />}
+              </div>
+            )}
 
             {/* Bottom info row — exposure mini visual + macro / AI / news */}
-            <div className="mobile-position-bottom">
-              {hidden ? (
-                <div className="mobile-exposure-gauge" style={{ '--exposure-value': '0deg' } as CSSProperties}>
-                  <b>••</b>
-                  <span>exposure</span>
-                </div>
-              ) : (
-                <ExposureGauge value={Number(position.portfolio_pct || 0)} />
-              )}
-              {(newsCount > 0 || macro != null || hasAi) && (
-                <div className="mps-chips">
-                  {newsCount > 0 ? <span className="mps-chip"><Newspaper size={12} />{newsCount}</span> : null}
-                  {macro != null ? <span className="mps-chip">Macro β {Number(macro)}</span> : null}
-                  {hasAi ? <span className="mps-chip mps-chip-ai"><Brain size={12} />AI</span> : null}
-                </div>
-              )}
-            </div>
+            {showBottom && (
+              <div className="mobile-position-bottom">
+                {show('weight') ? (
+                  hidden ? (
+                    <div className="mobile-exposure-gauge" style={{ '--exposure-value': '0deg' } as CSSProperties}>
+                      <b>••</b>
+                      <span>exposure</span>
+                    </div>
+                  ) : (
+                    <ExposureGauge value={Number(position.portfolio_pct || 0)} />
+                  )
+                ) : <span />}
+                {showChips && (
+                  <div className="mps-chips">
+                    {show('news') && newsCount > 0 ? <span className="mps-chip"><Newspaper size={12} />{newsCount}</span> : null}
+                    {show('macro') && macro != null ? <span className="mps-chip">Macro β {Number(macro)}</span> : null}
+                    {show('ai') && hasAi ? <span className="mps-chip mps-chip-ai"><Brain size={12} />AI</span> : null}
+                  </div>
+                )}
+              </div>
+            )}
           </button>
         )
       }}
@@ -1427,23 +1448,88 @@ function MobileEditInstruments({
 }
 
 type PortfolioView = 'table' | 'cards'
-type ColKey = 'price' | 'change' | 'pnl' | 'daypnl' | 'weight' | 'risk' | 'avgcost' | 'sector' | 'macro'
-type TableSortKey = 'symbol' | 'last' | 'change' | 'pnl' | 'daypnl' | 'weight' | 'risk' | 'avgcost'
+type ColKey =
+  | 'ticker' | 'company' | 'shares' | 'mktvalue' | 'last' | 'avgcost'
+  | 'daypnl' | 'daypnlpct' | 'unrealized' | 'unrealizedpct'
+  | 'risk' | 'momentum' | 'weight' | 'sparkline'
+type TableSortKey =
+  | 'symbol' | 'shares' | 'mktvalue' | 'last' | 'avgcost'
+  | 'daypnl' | 'daypnlpct' | 'unrealized' | 'unrealizedpct' | 'risk' | 'momentum' | 'weight'
 
-const COL_DEFS: { key: ColKey; label: string; sortKey?: TableSortKey; defaultOn: boolean }[] = [
-  { key: 'price',   label: 'Price',      sortKey: 'last',    defaultOn: true },
-  { key: 'change',  label: 'Chg %',      sortKey: 'change',  defaultOn: true },
-  { key: 'pnl',     label: 'Unrlzd',     sortKey: 'pnl',     defaultOn: true },
-  { key: 'daypnl',  label: 'Day P/L',    sortKey: 'daypnl',  defaultOn: true },
-  { key: 'weight',  label: 'Wt %',       sortKey: 'weight',  defaultOn: true },
-  { key: 'risk',    label: 'Risk',       sortKey: 'risk',    defaultOn: true },
-  { key: 'avgcost', label: 'Avg Cost',   sortKey: 'avgcost', defaultOn: false },
-  { key: 'sector',  label: 'Sector',                         defaultOn: false },
-  { key: 'macro',   label: 'Macro β',                        defaultOn: false },
+const COL_DEFS: { key: ColKey; label: string; sortKey?: TableSortKey; defaultOn: boolean; frozen?: boolean }[] = [
+  { key: 'ticker',        label: 'Ticker',       sortKey: 'symbol',        defaultOn: true, frozen: true },
+  { key: 'company',       label: 'Company',                                defaultOn: false },
+  { key: 'shares',        label: 'Shares',       sortKey: 'shares',        defaultOn: false },
+  { key: 'mktvalue',      label: 'Mkt Value',    sortKey: 'mktvalue',      defaultOn: true },
+  { key: 'last',          label: 'Last',         sortKey: 'last',          defaultOn: true },
+  { key: 'avgcost',       label: 'Avg Cost',     sortKey: 'avgcost',       defaultOn: false },
+  { key: 'daypnl',        label: 'Day P/L $',    sortKey: 'daypnl',        defaultOn: true },
+  { key: 'daypnlpct',     label: 'Day P/L %',    sortKey: 'daypnlpct',     defaultOn: true },
+  { key: 'unrealized',    label: 'Unrlzd $',     sortKey: 'unrealized',    defaultOn: true },
+  { key: 'unrealizedpct', label: 'Unrlzd %',     sortKey: 'unrealizedpct', defaultOn: false },
+  { key: 'risk',          label: 'Risk',         sortKey: 'risk',          defaultOn: true },
+  { key: 'momentum',      label: 'Momentum',     sortKey: 'momentum',      defaultOn: false },
+  { key: 'weight',        label: 'Portfolio %',  sortKey: 'weight',        defaultOn: true },
+  { key: 'sparkline',     label: 'Sparkline',                              defaultOn: false },
 ]
-const COL_LS_KEY = 'pia.portfolioColumns.mobile'
+const COL_LS_KEY = 'pia.portfolioColumns.mobile.v2'
 
-const COL_ORDER_LS_KEY = 'pia.portfolioColOrder.mobile'
+const COL_ORDER_LS_KEY = 'pia.portfolioColOrder.mobile.v2'
+
+// Card field visibility (independent from table columns)
+type CardFieldKey =
+  | 'shares' | 'mktvalue' | 'last' | 'avgcost' | 'daypnl' | 'unrealized'
+  | 'weight' | 'risk' | 'momentum' | 'sparkline' | 'macro' | 'ai' | 'news'
+const CARD_FIELD_DEFS: { key: CardFieldKey; label: string }[] = [
+  { key: 'shares', label: 'Shares' },
+  { key: 'mktvalue', label: 'Market Value' },
+  { key: 'last', label: 'Last Price' },
+  { key: 'avgcost', label: 'Avg Cost' },
+  { key: 'daypnl', label: 'Today P&L' },
+  { key: 'unrealized', label: 'Unrealized P&L' },
+  { key: 'weight', label: 'Portfolio %' },
+  { key: 'risk', label: 'Risk' },
+  { key: 'momentum', label: 'Momentum' },
+  { key: 'sparkline', label: 'Sparkline' },
+  { key: 'macro', label: 'Macro β' },
+  { key: 'ai', label: 'AI' },
+  { key: 'news', label: 'News' },
+]
+const CARD_FIELDS_LS_KEY = 'pia.portfolioCardFields.mobile'
+
+// Sparkline timeframe (shared across portfolio positions view)
+const SPARK_TF_OPTIONS = ['1H', '4H', '1D', '5D', '1M', '3M', '6M', '1Y'] as const
+type SparkTf = (typeof SPARK_TF_OPTIONS)[number]
+const DEFAULT_SPARK_TF: SparkTf = '5D'
+const SPARK_TF_LS_KEY = 'pia.portfolioSparkTf.mobile'
+
+// Resolve per-timeframe spark series when the backend provides it; otherwise
+// fall back to the existing normalized series. State contract is ready for
+// real timeframe data via position.sparks[tf] or position.spark_<tf>.
+function resolveSpark(position: any, tf: SparkTf): number[] | undefined {
+  const series = position?.sparks?.[tf] ?? position?.[`spark_${tf}`]
+  if (Array.isArray(series) && series.length) return series
+  return position?.spark
+}
+
+function readSavedCardFields(): Set<CardFieldKey> {
+  try {
+    const raw = localStorage.getItem(CARD_FIELDS_LS_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw) as CardFieldKey[]
+      if (Array.isArray(arr)) return new Set(arr)
+    }
+  } catch {}
+  return new Set(CARD_FIELD_DEFS.map((c) => c.key))
+}
+
+function readSavedSparkTf(): SparkTf {
+  try {
+    const raw = localStorage.getItem(SPARK_TF_LS_KEY)
+    if (raw && (SPARK_TF_OPTIONS as readonly string[]).includes(raw)) return raw as SparkTf
+  } catch {}
+  return DEFAULT_SPARK_TF
+}
 
 function readSavedCols(): Set<ColKey> {
   try {
@@ -1601,12 +1687,68 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
   )
 }
 
-function PortfolioColumnSheet({ visible, order, onToggle, onReorder, onReset, onClose }: {
+function SparkTfRail({ value, onChange }: { value: SparkTf; onChange: (tf: SparkTf) => void }) {
+  return (
+    <div className="pf-display-tf">
+      <span className="pf-display-tf-label">Sparkline timeframe</span>
+      <div className="pf-tf-rail" role="group" aria-label="Sparkline timeframe">
+        {SPARK_TF_OPTIONS.map((tf) => (
+          <button
+            key={tf}
+            type="button"
+            className={`pf-tf-chip${value === tf ? ' active' : ''}`}
+            aria-pressed={value === tf}
+            onClick={() => onChange(tf)}
+          >
+            {tf}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MobileCardOptions({ visible, onToggle, onReset, sparkTf, onSparkTf, onClose }: {
+  visible: Set<CardFieldKey>
+  onToggle: (key: CardFieldKey) => void
+  onReset: () => void
+  sparkTf: SparkTf
+  onSparkTf: (tf: SparkTf) => void
+  onClose: () => void
+}) {
+  return (
+    <MobileSheet title="Card Display Options" onClose={onClose}>
+      <div className="pf-col-list">
+        {CARD_FIELD_DEFS.map((field) => {
+          const on = visible.has(field.key)
+          return (
+            <div key={field.key} className="pf-col-row">
+              <button
+                type="button"
+                className={`pf-col-toggle${on ? ' active' : ''}`}
+                onClick={() => onToggle(field.key)}
+              >
+                <span className="pf-col-check">{on ? '✓' : ''}</span>
+                {field.label}
+              </button>
+            </div>
+          )
+        })}
+        <button type="button" className="pf-col-reset" onClick={onReset}>Reset to defaults</button>
+      </div>
+      <SparkTfRail value={sparkTf} onChange={onSparkTf} />
+    </MobileSheet>
+  )
+}
+
+function PortfolioColumnSheet({ visible, order, onToggle, onReorder, onReset, sparkTf, onSparkTf, onClose }: {
   visible: Set<ColKey>
   order: ColKey[]
   onToggle: (key: ColKey) => void
   onReorder: (next: ColKey[]) => void
   onReset: () => void
+  sparkTf: SparkTf
+  onSparkTf: (tf: SparkTf) => void
   onClose: () => void
 }) {
   const [activeIdx, setActiveIdx] = useState<number | null>(null)
@@ -1651,7 +1793,7 @@ function PortfolioColumnSheet({ visible, order, onToggle, onReorder, onReset, on
   }
 
   return (
-    <MobileSheet title="Columns" onClose={onClose}>
+    <MobileSheet title="Table Display Options" onClose={onClose}>
       <div
         ref={listRef}
         className="pf-col-list"
@@ -1683,11 +1825,12 @@ function PortfolioColumnSheet({ visible, order, onToggle, onReorder, onReset, on
         })}
         <button type="button" className="pf-col-reset" onClick={onReset}>Reset to defaults</button>
       </div>
+      <SparkTfRail value={sparkTf} onChange={onSparkTf} />
     </MobileSheet>
   )
 }
 
-function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean; visibleCols: Set<ColKey>; colOrder: ColKey[] }) {
+function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, sparkTf }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean; visibleCols: Set<ColKey>; colOrder: ColKey[]; sparkTf: SparkTf }) {
   const [sort, setSort] = useState<TableSortKey>('weight')
   const [dir, setDir] = useState<'desc' | 'asc'>('desc')
 
@@ -1698,16 +1841,22 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder }:
 
   const sorted = useMemo(() => {
     const key = (p: any): string | number => {
+      const shares = Number(p.quantity ?? p.qty ?? 0)
+      const last = Number(p.last || p.price || 0)
       switch (sort) {
-        case 'symbol':  return String(p.symbol || '')
-        case 'last':    return Number(p.last || p.price || 0)
-        case 'change':  return Number(p.day_change_pct || 0)
-        case 'pnl':     return Number(p.unrealized || 0)
-        case 'daypnl':  return Number(p.day_pnl || 0)
-        case 'weight':  return Number(p.portfolio_pct || 0)
-        case 'risk':    return Number(p.risk || 0)
-        case 'avgcost': return Number(p.avg_price || p.avg_cost || 0)
-        default:        return 0
+        case 'symbol':        return String(p.symbol || '')
+        case 'shares':        return shares
+        case 'mktvalue':      return Number(p.market_value ?? last * shares)
+        case 'last':          return last
+        case 'avgcost':       return Number(p.avg_price || p.avg_cost || 0)
+        case 'daypnl':        return Number(p.day_pnl || 0)
+        case 'daypnlpct':     return Number(p.day_change_pct || 0)
+        case 'unrealized':    return Number(p.unrealized || 0)
+        case 'unrealizedpct': return Number(p.unrealized_pct || 0)
+        case 'risk':          return Number(p.risk || 0)
+        case 'momentum':      return Number(p.momentum_score || p.momentum || 0)
+        case 'weight':        return Number(p.portfolio_pct || 0)
+        default:              return 0
       }
     }
     return [...rows].sort((a, b) => {
@@ -1723,52 +1872,61 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder }:
     const unrealPct = Number(position.unrealized_pct || 0)
     const dayPnl = Number(position.day_pnl || 0)
     const risk = Number(position.risk || 0)
+    const shares = Number(position.quantity ?? position.qty ?? 0)
+    const last = Number(position.last || position.price || 0)
+    const marketValue = Number(position.market_value ?? last * shares)
     if (hidden) return <td key={col}>{mask}</td>
     switch (col) {
-      case 'price':
-        return <td key={col}>{money(position.last || position.price || 0)}</td>
-      case 'change':
-        return <td key={col} className={change >= 0 ? 'green' : 'red'}>{pct(change)}</td>
-      case 'pnl':
-        return (
-          <td key={col} className={unreal >= 0 ? 'green' : 'red'}>
-            {`${unreal >= 0 ? '+' : ''}${money(unreal)}`}
-            {unrealPct !== 0 && <><br /><small style={{ fontSize: 10, opacity: .72 }}>{unrealPct >= 0 ? '+' : ''}{unrealPct.toFixed(1)}%</small></>}
-          </td>
-        )
+      case 'company':
+        return <td key={col} className="muted mtt-company">{position.name || '—'}</td>
+      case 'shares':
+        return <td key={col}>{shares.toLocaleString('en-US')}</td>
+      case 'mktvalue':
+        return <td key={col}>{money(marketValue)}</td>
+      case 'last':
+        return <td key={col}>{money(last)}</td>
+      case 'avgcost':
+        return <td key={col}>{money(position.avg_price || position.avg_cost || 0)}</td>
       case 'daypnl':
         return <td key={col} className={dayPnl >= 0 ? 'green' : 'red'}>{`${dayPnl >= 0 ? '+' : ''}${money(dayPnl)}`}</td>
-      case 'weight':
-        return <td key={col}>{Number(position.portfolio_pct || 0).toFixed(1)}%</td>
+      case 'daypnlpct':
+        return <td key={col} className={change >= 0 ? 'green' : 'red'}>{`${change >= 0 ? '+' : ''}${change.toFixed(2)}%`}</td>
+      case 'unrealized':
+        return <td key={col} className={unreal >= 0 ? 'green' : 'red'}>{`${unreal >= 0 ? '+' : ''}${money(unreal)}`}</td>
+      case 'unrealizedpct':
+        return <td key={col} className={unrealPct >= 0 ? 'green' : 'red'}>{`${unrealPct >= 0 ? '+' : ''}${unrealPct.toFixed(1)}%`}</td>
       case 'risk':
         return (
           <td key={col}>
             <span className={`mtt-risk ${risk >= 70 ? 'bad' : risk >= 45 ? 'warn' : 'good'}`}>{risk}</span>
           </td>
         )
-      case 'avgcost':
-        return <td key={col}>{money(position.avg_price || position.avg_cost || 0)}</td>
-      case 'sector':
-        return <td key={col} className="muted" style={{ fontSize: 11 }}>{String(position.sector || '—')}</td>
-      case 'macro':
-        return <td key={col}>{Number(position.macro_sensitivity || 0)}</td>
+      case 'momentum':
+        return <td key={col}>{Number(position.momentum_score || position.momentum || 0)}</td>
+      case 'weight':
+        return <td key={col}>{Number(position.portfolio_pct || 0).toFixed(1)}%</td>
+      case 'sparkline':
+        return <td key={col} className="mtt-spark-cell"><Sparkline values={resolveSpark(position, sparkTf)} tone={change >= 0 ? 'good' : 'bad'} /></td>
       default:
         return <td key={col}>—</td>
     }
   }
 
+  const showTicker = visibleCols.has('ticker')
   const orderedCols = colOrder
     .map((k) => COL_DEFS.find((c) => c.key === k))
-    .filter((c): c is (typeof COL_DEFS)[number] => !!c && visibleCols.has(c.key))
+    .filter((c): c is (typeof COL_DEFS)[number] => !!c && c.key !== 'ticker' && visibleCols.has(c.key))
 
   return (
     <div className="mobile-terminal-wrap">
       <table className="mobile-terminal-table">
         <thead>
           <tr>
-            <th className="mtt-col-frozen" onClick={() => toggleSort('symbol')}>
-              {sort === 'symbol' ? <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span> : null}Sym
-            </th>
+            {showTicker && (
+              <th className="mtt-col-frozen" onClick={() => toggleSort('symbol')}>
+                {sort === 'symbol' ? <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span> : null}Ticker
+              </th>
+            )}
             {orderedCols.map((col) => {
               const active = col.sortKey && sort === col.sortKey
               return (
@@ -1782,14 +1940,16 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder }:
         <tbody>
           {sorted.map((position) => (
             <tr key={position.symbol} onClick={() => onSelect(position)}>
-              <td className="mtt-col-frozen">
-                <div className="mtt-symbol">
-                  <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
-                    {hidden ? '●' : (position.logo || String(position.symbol || '').slice(0, 2))}
+              {showTicker && (
+                <td className="mtt-col-frozen">
+                  <div className="mtt-symbol">
+                    <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
+                      {hidden ? '●' : (position.logo || String(position.symbol || '').slice(0, 2))}
+                    </div>
+                    <strong className="mtt-sym-label">{hidden ? mask : position.symbol}</strong>
                   </div>
-                  <strong className="mtt-sym-label">{hidden ? mask : position.symbol}</strong>
-                </div>
-              </td>
+                </td>
+              )}
               {orderedCols.map((col) => renderCell(col.key, position))}
             </tr>
           ))}
@@ -1823,6 +1983,8 @@ export default function MobileExperience() {
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key)))
   const [colOrder, setColOrder] = useState<ColKey[]>(() => COL_DEFS.map((c) => c.key))
+  const [cardFields, setCardFields] = useState<Set<CardFieldKey>>(() => new Set(CARD_FIELD_DEFS.map((c) => c.key)))
+  const [sparkTf, setSparkTf] = useState<SparkTf>(DEFAULT_SPARK_TF)
   const [quickOpen, setQuickOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [rescanning, setRescanning] = useState(false)
@@ -1872,6 +2034,8 @@ export default function MobileExperience() {
       if (localStorage.getItem('pia.portfolioHeader.expanded') === 'false') setHeaderExpanded(false)
       setVisibleCols(readSavedCols())
       setColOrder(readSavedOrder())
+      setCardFields(readSavedCardFields())
+      setSparkTf(readSavedSparkTf())
     } catch {}
     fetchJson('/source-health')
       .then((data) => {
@@ -1907,6 +2071,25 @@ export default function MobileExperience() {
   function updateColOrder(next: ColKey[]) {
     setColOrder(next)
     try { localStorage.setItem(COL_ORDER_LS_KEY, JSON.stringify(next)) } catch {}
+  }
+
+  function toggleCardField(key: CardFieldKey) {
+    const next = new Set(cardFields)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setCardFields(next)
+    try { localStorage.setItem(CARD_FIELDS_LS_KEY, JSON.stringify([...next])) } catch {}
+  }
+
+  function resetCardFields() {
+    const def = new Set(CARD_FIELD_DEFS.map((c) => c.key))
+    setCardFields(def)
+    try { localStorage.setItem(CARD_FIELDS_LS_KEY, JSON.stringify([...def])) } catch {}
+  }
+
+  function updateSparkTf(next: SparkTf) {
+    setSparkTf(next)
+    try { localStorage.setItem(SPARK_TF_LS_KEY, next) } catch {}
   }
 
   function toggleHeader() {
@@ -1999,16 +2182,27 @@ export default function MobileExperience() {
 
       {active === 'my-portfolio' && (
         <>
-          {colMenuOpen && (
+          {colMenuOpen && (portfolioView === 'table' ? (
             <PortfolioColumnSheet
               visible={visibleCols}
               order={colOrder}
               onToggle={toggleVisibleCol}
               onReorder={updateColOrder}
               onReset={resetVisibleCols}
+              sparkTf={sparkTf}
+              onSparkTf={updateSparkTf}
               onClose={() => setColMenuOpen(false)}
             />
-          )}
+          ) : (
+            <MobileCardOptions
+              visible={cardFields}
+              onToggle={toggleCardField}
+              onReset={resetCardFields}
+              sparkTf={sparkTf}
+              onSparkTf={updateSparkTf}
+              onClose={() => setColMenuOpen(false)}
+            />
+          ))}
           <div className="mobile-portfolio-section">
             <PortfolioHeader
               portfolio={portfolio}
@@ -2020,20 +2214,24 @@ export default function MobileExperience() {
             <div className="mobile-portfolio-header">
               <span className="mobile-portfolio-count">Positions</span>
               <div className="pf-header-actions">
-                {portfolioView === 'table' && (
-                  <button type="button" className="pf-columns-btn" onClick={() => setColMenuOpen(true)}>
-                    <SlidersHorizontal size={13} /> Cols
-                  </button>
-                )}
                 <div className="portfolio-view-toggle" role="group" aria-label="Portfolio view mode">
                   <button className={portfolioView === 'table' ? 'active' : ''} onClick={() => updatePortfolioView('table')}>Table</button>
                   <button className={portfolioView === 'cards' ? 'active' : ''} onClick={() => updatePortfolioView('cards')}>Cards</button>
                 </div>
+                <button
+                  type="button"
+                  className="pf-options-btn"
+                  aria-label={portfolioView === 'table' ? 'Table display options' : 'Card display options'}
+                  aria-expanded={colMenuOpen}
+                  onClick={() => setColMenuOpen(true)}
+                >
+                  <MoreVertical size={18} />
+                </button>
               </div>
             </div>
             {portfolioView === 'table'
-              ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} />
-              : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} />
+              ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} />
+              : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} tf={sparkTf} />
             }
           </div>
         </>
