@@ -2050,44 +2050,54 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
   const advCols = advancedDefs.filter((d) => visibleCols.has(d.key))
   const orderedCols: { key: string; label: string; sortKey?: string }[] = [...curatedCols, ...advCols]
 
+  const sortArrow = <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span>
+
+  // Split-layer structure: the frozen ticker column is a separate non-scrolling
+  // sibling OUTSIDE the horizontal scroll container, so scrolled cells can never
+  // pass behind or to the left of it on iOS. Row heights are fixed on both layers
+  // so rows stay aligned without JS measurement.
   return (
-    <div className="mobile-terminal-wrap">
-      <table className="mobile-terminal-table">
-        <thead>
-          <tr>
-            {showTicker && (
-              <th className="mtt-col-frozen" onClick={() => toggleSort('symbol')}>
-                {sort === 'symbol' ? <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span> : null}Ticker
-              </th>
-            )}
-            {orderedCols.map((col) => {
-              const active = col.sortKey && sort === col.sortKey
-              return (
-                <th key={col.key} className={active ? 'col-sorted' : ''} onClick={() => col.sortKey && toggleSort(col.sortKey)}>
-                  {col.label}{active ? <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span> : null}
-                </th>
-              )
-            })}
-          </tr>
-        </thead>
-        <tbody>
+    <div className="mptbl-split">
+      {showTicker && (
+        <div className="mptbl-frozen">
+          <div className="mptbl-fcell mptbl-fhead" role="button" onClick={() => toggleSort('symbol')}>
+            {sort === 'symbol' ? sortArrow : null}Ticker
+          </div>
           {sorted.map((position) => (
-            <tr key={position.symbol} onClick={() => onSelect(position)}>
-              {showTicker && (
-                <td className="mtt-col-frozen">
-                  <div className="mtt-symbol">
-                    <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
-                      {hidden ? '●' : (position.logo || String(position.symbol || '').slice(0, 2))}
-                    </div>
-                    <strong className="mtt-sym-label">{hidden ? mask : position.symbol}</strong>
-                  </div>
-                </td>
-              )}
-              {orderedCols.map((col) => renderCell(col.key, position))}
-            </tr>
+            <button key={position.symbol} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(position)}>
+              <div className="mtt-symbol">
+                <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
+                  {hidden ? '●' : (position.logo || String(position.symbol || '').slice(0, 2))}
+                </div>
+                <strong className="mtt-sym-label">{hidden ? mask : position.symbol}</strong>
+              </div>
+            </button>
           ))}
-        </tbody>
-      </table>
+        </div>
+      )}
+      <div className="mptbl-scrollarea">
+        <table className="mobile-terminal-table">
+          <thead>
+            <tr>
+              {orderedCols.map((col) => {
+                const active = col.sortKey && sort === col.sortKey
+                return (
+                  <th key={col.key} className={active ? 'col-sorted' : ''} onClick={() => col.sortKey && toggleSort(col.sortKey)}>
+                    {col.label}{active ? sortArrow : null}
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((position) => (
+              <tr key={position.symbol} onClick={() => onSelect(position)}>
+                {orderedCols.map((col) => renderCell(col.key, position))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
