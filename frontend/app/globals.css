@@ -456,7 +456,7 @@ html,body{max-width:100%;overflow-x:clip}
 .pf-columns-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(148,163,184,.18);border-radius:999px;background:rgba(9,14,24,.82);color:var(--muted);padding:4px 9px;font-size:11px;font-weight:700;white-space:nowrap;transition:color .13s ease,border-color .13s ease}
 .pf-columns-btn:hover{color:#eef4fb;border-color:rgba(96,165,250,.32)}
 .mobile-portfolio-header{flex-wrap:nowrap}
-.mobile-portfolio-count{font-size:11px}
+.mobile-portfolio-count{font-size:16px;font-weight:800;color:#f4f8fc}
 
 /* Column settings sheet (CR-29) */
 .pf-col-list{display:grid;gap:7px;padding-bottom:4px}
@@ -476,7 +476,7 @@ html,body{max-width:100%;overflow-x:clip}
 /* Mobile portfolio section header */
 .mobile-portfolio-header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:4px 0 12px;padding:0 2px}
 .mobile-portfolio-header h2{margin:0;font-size:16px;font-weight:700}
-.mobile-portfolio-count{font-size:12px;color:var(--muted);flex:1}
+.mobile-portfolio-count{font-size:18px;font-weight:800;color:#f4f8fc;letter-spacing:-.01em;flex:1}
 
 /* Mobile IBKR terminal table — frozen column + density (CR-30, CR-31) */
 .mobile-terminal-wrap{overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x pan-y;margin:0 -12px;padding:0 12px 12px;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.18) transparent}
