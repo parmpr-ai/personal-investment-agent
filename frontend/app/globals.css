@@ -461,7 +461,7 @@ html,body{max-width:100%;overflow-x:clip}
 .mobile-portfolio-count{font-size:12px;color:var(--muted);flex:1}
 
 /* Mobile IBKR terminal table — frozen column + density (CR-30, CR-31) */
-.mobile-terminal-wrap{overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x pan-y;margin:0 -12px;padding:0 12px 12px;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.18) transparent}
+.mobile-terminal-wrap{overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x pan-y;margin:0 -12px;padding:0 12px 12px;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.18) transparent}
 .mobile-terminal-wrap::-webkit-scrollbar{height:3px}.mobile-terminal-wrap::-webkit-scrollbar-thumb{background:rgba(148,163,184,.18);border-radius:999px}
 .mobile-terminal-table{width:100%;min-width:520px;border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums}
 .mobile-terminal-table thead th{position:sticky;top:0;z-index:2;background:rgba(5,8,14,.98);color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:7px 9px 6px;text-align:left;border-bottom:1px solid rgba(148,163,184,.14);cursor:pointer;user-select:none;white-space:nowrap;transition:color .13s ease}
@@ -474,10 +474,14 @@ html,body{max-width:100%;overflow-x:clip}
 .mobile-terminal-table td{padding:7px 9px;vertical-align:middle;white-space:nowrap;border-bottom:1px solid rgba(148,163,184,.07)}
 .mobile-terminal-table td:first-child{padding-left:0;min-width:120px}
 /* Frozen first column (CR-30) */
-.mtt-col-frozen{position:sticky !important;left:0;z-index:3;background:#070b12 !important;box-shadow:6px 0 10px -6px rgba(0,0,0,.6)}
-.mobile-terminal-table thead th.mtt-col-frozen{z-index:5;background:#05080e !important;top:0}
+.mtt-col-frozen{position:sticky !important;left:0;z-index:6;isolation:isolate;background:#070b12 !important;border-right:1px solid rgba(148,163,184,.2);box-shadow:6px 0 10px -6px rgba(0,0,0,.55)}
+.mobile-terminal-table thead th.mtt-col-frozen{z-index:7;background:#05080e !important;top:0}
 .mobile-terminal-table tbody tr:hover td.mtt-col-frozen{background:#0b111a !important}
 .mobile-terminal-table tbody tr:active td.mtt-col-frozen{background:#0f1928 !important}
+/* Frozen-column bleed hardening (real-device iOS): opaque inner wrappers that
+   inherit the cell background so no scrolled content can show through. */
+.mtt-col-frozen .mtt-symbol{position:relative;z-index:1;background:inherit}
+.mtt-col-frozen .mtt-sym-label,.mtt-col-frozen .mtt-company{background:inherit}
 
 /* Terminal row symbol cell */
 .mtt-symbol{display:flex;align-items:center;gap:8px}
