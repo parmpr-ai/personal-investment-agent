@@ -14,6 +14,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import GlowCard from '../ui/GlowCard'
+import IntelligenceBadge from '../ui/IntelligenceBadge'
 import SectionHeader from '../ui/SectionHeader'
 import { assetTypes, brokers, emptyHolding, fetchJson, getApiBase, mask, money, safeMessage } from '../../lib/pia-api'
 import { WorkspaceManagerPanel, useWorkspaceConfig, type WorkspaceId } from '../workspace'
@@ -424,7 +425,91 @@ function Toggle({ label, checked, onChange }: any) {
   )
 }
 
-const settingsTabs = ['General', 'Workspaces', 'Manual Holdings', 'Integrations', 'Notifications', 'System', 'About'] as const
+type ReleaseChangelogItem = {
+  version?: string
+  title?: string
+  features?: string[]
+  deferred?: string[]
+  bugs_fixed?: string[]
+}
+
+type ReleaseAboutPayload = {
+  app?: string
+  version?: string
+  tagline?: string
+  changelog?: ReleaseChangelogItem[]
+  known_issues?: string[]
+  next_version?: string[]
+}
+
+type ReleaseQaPayload = {
+  version?: string
+  groups?: { name?: string; items?: string[] }[]
+}
+
+const releaseFallbackAbout: ReleaseAboutPayload = {
+  app: 'Personal Investment Agent',
+  version: 'v5.6',
+  tagline: 'Personalized investment decision platform with rule-first portfolio intelligence.',
+  changelog: [
+    {
+      version: 'v5.6',
+      title: 'Integration + Product Hardening',
+      features: [
+        'Integration Center UI/API',
+        'IBKR in-app config scaffold',
+        'Yahoo connector health',
+        'Seeking Alpha RSS/auth scaffold',
+        'Source Health Monitor',
+        'About/Changelog/QA Center',
+      ],
+      deferred: ['Discord cloud connector', 'AI reasoning API', 'Chart OCR'],
+    },
+    {
+      version: 'v5.5',
+      title: 'Intelligence Workbench',
+      features: ['Portfolio Snapshot', 'Risk Doctor', 'Opportunity Board', 'Rules-based Trade Engine', 'Stock Intelligence Drawer'],
+    },
+  ],
+  known_issues: [
+    'Seeking Alpha authenticated parsing depends on user subscription/session and may break if the site changes.',
+    'Yahoo public endpoints are best-effort and should have fallback providers later.',
+    'Discord Advisor Connector is scoped for a later release.',
+  ],
+  next_version: ['Discord Advisor Intel connector', 'Persistent drag/drop resize grid', 'AI Lite optional layer', 'Chart screenshot/OCR later'],
+}
+
+const releaseFallbackQa: ReleaseQaPayload = {
+  version: 'v5.6',
+  groups: [
+    { name: 'Core UI', items: ['Dashboard loads', 'No layout jumping', 'Mobile responsive', 'Privacy toggle', 'About/Changelog visible'] },
+    { name: 'Integrations', items: ['Settings save/reload', 'IBKR test button', 'Yahoo test receives data', 'Source Health Monitor updates'] },
+    { name: 'Portfolio/Trade', items: ['Positions tabs', 'Exposure map', 'Risk Doctor', 'Trade Engine entries/stops/targets', 'Rescan refresh'] },
+  ],
+}
+
+const releaseBacklogSummary = [
+  { status: 'Pending', target: 'v5.7', tone: 'warn' as const },
+  { status: 'Pending', target: 'v5.7', tone: 'warn' as const },
+  { status: 'Not configured', target: 'v5.7', tone: 'neutral' as const },
+  { status: 'Degraded', target: 'Later', tone: 'bad' as const },
+]
+
+function stringList(value: unknown, fallback: string[] = []) {
+  if (!Array.isArray(value)) return fallback
+  const list = value.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
+  return list.length ? list : fallback
+}
+
+function changelogList(value: unknown) {
+  return Array.isArray(value) && value.length ? (value as ReleaseChangelogItem[]) : releaseFallbackAbout.changelog || []
+}
+
+function qaGroupList(value: unknown) {
+  return Array.isArray(value) && value.length ? (value as NonNullable<ReleaseQaPayload['groups']>) : releaseFallbackQa.groups || []
+}
+
+const settingsTabs = ['General', 'Workspace', 'Manual Holdings', 'Integrations', 'Notifications', 'System', 'About'] as const
 
 function GeneralSettings({ hidden }: { hidden?: boolean }) {
   return (
@@ -470,7 +555,7 @@ function WorkspaceSettings({
         <>
           <div className="workspace-system-head">
             <div>
-              <span className="workspace-system-kicker">{hidden ? 'Workspace' : 'Settings -> Workspaces'}</span>
+              <span className="workspace-system-kicker">{hidden ? 'Workspace' : 'Settings -> Workspace'}</span>
               <h3>{hidden ? 'Workspace System' : 'Workspace System'}</h3>
               <p className="muted">
                 {hidden
@@ -741,15 +826,121 @@ function SystemSettings({ hidden, variant }: { hidden?: boolean; variant?: Setti
   )
 }
 
-function SettingsAbout() {
+function SettingsAbout({ hidden }: { hidden?: boolean }) {
+  const [about, setAbout] = useState<ReleaseAboutPayload>(releaseFallbackAbout)
+  const [qa, setQa] = useState<ReleaseQaPayload>(releaseFallbackQa)
+  const [status, setStatus] = useState('Bundled release summary shown while API syncs.')
+
+  useEffect(() => {
+    let active = true
+    Promise.allSettled([fetchJson('/about'), fetchJson('/qa-checklist')]).then(([aboutResult, qaResult]) => {
+      if (!active) return
+      if (aboutResult.status === 'fulfilled' && aboutResult.value) {
+        setAbout((current) => ({ ...current, ...aboutResult.value }))
+      }
+      if (qaResult.status === 'fulfilled' && qaResult.value) {
+        setQa((current) => ({ ...current, ...qaResult.value }))
+      }
+      setStatus(
+        aboutResult.status === 'fulfilled' || qaResult.status === 'fulfilled'
+          ? 'Release data synced from API.'
+          : 'Release API unavailable; bundled release summary shown.',
+      )
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const appName = about.app || releaseFallbackAbout.app || 'Personal Investment Agent'
+  const version = about.version || releaseFallbackAbout.version || 'Current'
+  const tagline = about.tagline || releaseFallbackAbout.tagline || 'Release center and platform status.'
+  const changelog = changelogList(about.changelog).slice(0, 4)
+  const limitations = stringList(about.known_issues, releaseFallbackAbout.known_issues)
+  const nextVersion = stringList(about.next_version, releaseFallbackAbout.next_version)
+  const backlogRows = nextVersion.map((item, index) => ({
+    item,
+    ...(releaseBacklogSummary[index] || { status: 'Planned', target: 'Later', tone: 'neutral' as const }),
+  }))
+  const qaGroups = qaGroupList(qa.groups).slice(0, 5)
+
   return (
-    <div className="settings-panels">
+    <div className="settings-panels release-center-settings">
       <GlowCard>
-        <h3>About</h3>
-        <p className="muted">Release details live in the desktop About / Release Center view.</p>
-        <a className="tab" href="/#tool=about">
-          Open release center
-        </a>
+        <SectionHeader
+          title={hidden ? 'Release Center' : `${appName} ${version}`}
+          subtitle={hidden ? 'Release center and platform status.' : tagline}
+        />
+        <div className="release-meta">
+          <IntelligenceBadge label="UAT ready" tone="good" />
+          <IntelligenceBadge label="Rule engine active" tone="neutral" />
+          <IntelligenceBadge label={`${limitations.length} known limitations`} tone={limitations.length ? 'warn' : 'good'} />
+        </div>
+        <p className="muted">{status}</p>
+      </GlowCard>
+
+      <GlowCard>
+        <h3>App / Version</h3>
+        <div className="empty-state">
+          <p><b>App:</b> {appName}</p>
+          <p><b>Version:</b> {version}</p>
+          <p><b>QA checklist:</b> {qa.version || version}</p>
+        </div>
+      </GlowCard>
+
+      <GlowCard>
+        <h3>Changelog Summary</h3>
+        <div className="actions">
+          {changelog.map((item) => {
+            const features = stringList(item.features)
+            const deferred = stringList(item.deferred)
+            return (
+              <div className="version-card" key={`${item.version || 'release'}-${item.title || 'summary'}`}>
+                <b>{`${item.version || version} - ${item.title || 'Release update'}`}</b>
+                {features.length ? (
+                  <ul>{features.slice(0, 5).map((feature) => <li key={feature}>{feature}</li>)}</ul>
+                ) : (
+                  <p className="muted">No changelog details published for this entry.</p>
+                )}
+                {deferred.length ? <small className="muted">Deferred: {deferred.join(', ')}</small> : null}
+              </div>
+            )
+          })}
+        </div>
+      </GlowCard>
+
+      <GlowCard>
+        <h3>Backlog Summary</h3>
+        <div className="actions">
+          {backlogRows.map((row) => (
+            <div className="version-card" key={row.item}>
+              <b>{row.item}</b>
+              <div className="release-meta">
+                <IntelligenceBadge label={row.status} tone={row.tone} />
+                <IntelligenceBadge label={`Target ${row.target}`} tone="neutral" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </GlowCard>
+
+      <GlowCard>
+        <h3>UAT Checklist</h3>
+        <div className="actions">
+          {qaGroups.map((group) => (
+            <div className="version-card" key={group.name || 'uat-group'}>
+              <b>{group.name || 'Checklist'}</b>
+              <ul>{stringList(group.items).map((item) => <li key={item}>{item}</li>)}</ul>
+            </div>
+          ))}
+        </div>
+      </GlowCard>
+
+      <GlowCard>
+        <h3>Known Limitations</h3>
+        <div className="empty-state">
+          <ul>{limitations.map((item) => <li key={item}>{item}</li>)}</ul>
+        </div>
       </GlowCard>
     </div>
   )
@@ -769,12 +960,12 @@ function SettingsTabPanels({
   onSelectWorkspace?: (workspaceId: WorkspaceId) => void
 }) {
   if (tab === 'General') return <GeneralSettings hidden={hidden} />
-  if (tab === 'Workspaces') return <WorkspaceSettings hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} />
+  if (tab === 'Workspace') return <WorkspaceSettings hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} />
   if (tab === 'Manual Holdings') return <ManualHoldingsSettings hidden={hidden} />
   if (tab === 'Integrations') return <IntegrationsSettings hidden={hidden} variant={variant} />
   if (tab === 'Notifications') return <NotificationsSettings />
   if (tab === 'System') return <SystemSettings hidden={hidden} variant={variant} />
-  return <SettingsAbout />
+  return <SettingsAbout hidden={hidden} />
 }
 
 export default function SettingsPage({
