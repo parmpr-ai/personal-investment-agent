@@ -1448,13 +1448,13 @@ function MobileEditInstruments({
 }
 
 type PortfolioView = 'table' | 'cards'
-type ColKey =
+type CuratedColKey =
   | 'ticker' | 'company' | 'shares' | 'mktvalue' | 'last' | 'avgcost'
   | 'daypnl' | 'daypnlpct' | 'unrealized' | 'unrealizedpct'
   | 'risk' | 'momentum' | 'weight' | 'sparkline'
-type TableSortKey =
-  | 'symbol' | 'shares' | 'mktvalue' | 'last' | 'avgcost'
-  | 'daypnl' | 'daypnlpct' | 'unrealized' | 'unrealizedpct' | 'risk' | 'momentum' | 'weight'
+// Advanced / IBKR fields are dynamic, keyed as `adv:<field>`, so ColKey/TableSortKey are strings.
+type ColKey = CuratedColKey | string
+type TableSortKey = string
 
 const COL_DEFS: { key: ColKey; label: string; sortKey?: TableSortKey; defaultOn: boolean; frozen?: boolean }[] = [
   { key: 'ticker',        label: 'Ticker',       sortKey: 'symbol',        defaultOn: true, frozen: true },
@@ -1529,6 +1529,105 @@ function readSavedSparkTf(): SparkTf {
     if (raw && (SPARK_TF_OPTIONS as readonly string[]).includes(raw)) return raw as SparkTf
   } catch {}
   return DEFAULT_SPARK_TF
+}
+
+// --- Advanced / IBKR position fields -------------------------------------
+// Discovered dynamically from the backend position payload so any delivered
+// field can be exposed as an optional column. No fake data is hardcoded.
+type FieldKind = 'money' | 'pct' | 'num' | 'text'
+type AdvancedColDef = { key: string; field: string; label: string; kind: FieldKind; sortKey: string; sensitive?: boolean }
+
+// Friendly labels + formatting for known IBKR / backend keys.
+const KNOWN_FIELD_META: Record<string, { label: string; kind: FieldKind; sensitive?: boolean }> = {
+  currency: { label: 'Currency', kind: 'text' },
+  account: { label: 'Account', kind: 'text', sensitive: true },
+  account_id: { label: 'Account', kind: 'text', sensitive: true },
+  conid: { label: 'Contract ID', kind: 'text' },
+  con_id: { label: 'Contract ID', kind: 'text' },
+  contract_id: { label: 'Contract ID', kind: 'text' },
+  sec_type: { label: 'Asset Class', kind: 'text' },
+  sectype: { label: 'Asset Class', kind: 'text' },
+  asset_class: { label: 'Asset Class', kind: 'text' },
+  asset_type: { label: 'Asset Class', kind: 'text' },
+  exchange: { label: 'Exchange', kind: 'text' },
+  listing_exchange: { label: 'Exchange', kind: 'text' },
+  primary_exchange: { label: 'Primary Exch', kind: 'text' },
+  multiplier: { label: 'Multiplier', kind: 'num' },
+  cost_basis: { label: 'Cost Basis', kind: 'money', sensitive: true },
+  market_price: { label: 'Market Price', kind: 'money' },
+  mkt_price: { label: 'Market Price', kind: 'money' },
+  realized_pnl: { label: 'Realized P&L', kind: 'money', sensitive: true },
+  realized_pl: { label: 'Realized P&L', kind: 'money', sensitive: true },
+  daily_pnl: { label: 'Daily P&L', kind: 'money', sensitive: true },
+  delta: { label: 'Delta', kind: 'num' },
+  gamma: { label: 'Gamma', kind: 'num' },
+  theta: { label: 'Theta', kind: 'num' },
+  vega: { label: 'Vega', kind: 'num' },
+  iv: { label: 'IV', kind: 'pct' },
+  implied_vol: { label: 'IV', kind: 'pct' },
+  expiry: { label: 'Expiry', kind: 'text' },
+  expiration: { label: 'Expiry', kind: 'text' },
+  strike: { label: 'Strike', kind: 'money' },
+  right: { label: 'Right', kind: 'text' },
+  sector: { label: 'Sector', kind: 'text' },
+  industry: { label: 'Industry', kind: 'text' },
+  macro_sensitivity: { label: 'Macro β', kind: 'num' },
+  beta: { label: 'Beta', kind: 'num' },
+}
+
+// Keys already represented by curated columns or used only for presentation /
+// internal rendering — excluded from advanced discovery.
+const EXCLUDED_ADV_FIELDS = new Set<string>([
+  'symbol', 'ticker', 'name', 'company', 'quantity', 'qty', 'shares',
+  'market_value', 'mktvalue', 'last', 'price', 'avg_price', 'avg_cost',
+  'day_pnl', 'day_change_pct', 'change_pct', 'unrealized', 'unrealized_pct',
+  'risk', 'momentum', 'momentum_score', 'portfolio_pct',
+  'spark', 'sparks', 'accent', 'brand', 'logo', 'ai_view', 'ai_score',
+  'news_count', 'news',
+])
+
+function humanizeFieldLabel(field: string): string {
+  return field
+    .replace(/^adv:/, '')
+    .replace(/[_\-.]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/\bPnl\b/i, 'P&L')
+    .replace(/\bId\b/, 'ID')
+    .trim()
+}
+
+// Build the advanced column list from whatever the backend actually delivers.
+function discoverAdvancedFields(positions: any[]): AdvancedColDef[] {
+  const seen = new Map<string, AdvancedColDef>()
+  for (const p of positions || []) {
+    if (!p || typeof p !== 'object') continue
+    for (const [field, value] of Object.entries(p)) {
+      if (EXCLUDED_ADV_FIELDS.has(field) || field.startsWith('spark_')) continue
+      // Only primitive, displayable values — never break the UI on objects/arrays.
+      if (value == null || typeof value === 'object') continue
+      if (seen.has(field)) continue
+      const meta = KNOWN_FIELD_META[field]
+      seen.set(field, {
+        key: `adv:${field}`,
+        field,
+        label: meta?.label || humanizeFieldLabel(field),
+        kind: meta?.kind || (typeof value === 'number' ? 'num' : 'text'),
+        sortKey: `adv:${field}`,
+        sensitive: meta?.sensitive,
+      })
+    }
+  }
+  return Array.from(seen.values())
+}
+
+function formatAdvancedValue(value: unknown, kind: FieldKind): string {
+  if (value == null || value === '') return '—'
+  switch (kind) {
+    case 'money': return money(value)
+    case 'pct': return `${Number(value).toFixed(2)}%`
+    case 'num': return typeof value === 'number' ? String(Number(value.toFixed(4))) : String(value)
+    default: return String(value)
+  }
 }
 
 function readSavedCols(): Set<ColKey> {
@@ -1741,7 +1840,7 @@ function MobileCardOptions({ visible, onToggle, onReset, sparkTf, onSparkTf, onC
   )
 }
 
-function PortfolioColumnSheet({ visible, order, onToggle, onReorder, onReset, sparkTf, onSparkTf, onClose }: {
+function PortfolioColumnSheet({ visible, order, onToggle, onReorder, onReset, sparkTf, onSparkTf, advancedDefs, onClose }: {
   visible: Set<ColKey>
   order: ColKey[]
   onToggle: (key: ColKey) => void
@@ -1749,6 +1848,7 @@ function PortfolioColumnSheet({ visible, order, onToggle, onReorder, onReset, sp
   onReset: () => void
   sparkTf: SparkTf
   onSparkTf: (tf: SparkTf) => void
+  advancedDefs: AdvancedColDef[]
   onClose: () => void
 }) {
   const [activeIdx, setActiveIdx] = useState<number | null>(null)
@@ -1825,12 +1925,34 @@ function PortfolioColumnSheet({ visible, order, onToggle, onReorder, onReset, sp
         })}
         <button type="button" className="pf-col-reset" onClick={onReset}>Reset to defaults</button>
       </div>
+      {advancedDefs.length > 0 && (
+        <div className="pf-adv-section">
+          <span className="pf-display-tf-label">Advanced / IBKR fields</span>
+          <div className="pf-col-list">
+            {advancedDefs.map((def) => {
+              const on = visible.has(def.key)
+              return (
+                <div key={def.key} className="pf-col-row">
+                  <button
+                    type="button"
+                    className={`pf-col-toggle${on ? ' active' : ''}`}
+                    onClick={() => onToggle(def.key)}
+                  >
+                    <span className="pf-col-check">{on ? '✓' : ''}</span>
+                    {def.label}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
       <SparkTfRail value={sparkTf} onChange={onSparkTf} />
     </MobileSheet>
   )
 }
 
-function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, sparkTf }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean; visibleCols: Set<ColKey>; colOrder: ColKey[]; sparkTf: SparkTf }) {
+function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, sparkTf, advancedDefs }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean; visibleCols: Set<ColKey>; colOrder: ColKey[]; sparkTf: SparkTf; advancedDefs: AdvancedColDef[] }) {
   const [sort, setSort] = useState<TableSortKey>('weight')
   const [dir, setDir] = useState<'desc' | 'asc'>('desc')
 
@@ -1843,6 +1965,10 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
     const key = (p: any): string | number => {
       const shares = Number(p.quantity ?? p.qty ?? 0)
       const last = Number(p.last || p.price || 0)
+      if (sort.startsWith('adv:')) {
+        const v = p[sort.slice(4)]
+        return typeof v === 'number' ? v : String(v ?? '')
+      }
       switch (sort) {
         case 'symbol':        return String(p.symbol || '')
         case 'shares':        return shares
@@ -1876,6 +2002,11 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
     const last = Number(position.last || position.price || 0)
     const marketValue = Number(position.market_value ?? last * shares)
     if (hidden) return <td key={col}>{mask}</td>
+    if (col.startsWith('adv:')) {
+      const def = advancedDefs.find((d) => d.key === col)
+      const raw = def ? position[def.field] : undefined
+      return <td key={col} className={def && def.kind === 'text' ? 'muted' : undefined}>{def ? formatAdvancedValue(raw, def.kind) : '—'}</td>
+    }
     switch (col) {
       case 'company':
         return <td key={col} className="muted mtt-company">{position.name || '—'}</td>
@@ -1913,9 +2044,11 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
   }
 
   const showTicker = visibleCols.has('ticker')
-  const orderedCols = colOrder
+  const curatedCols = colOrder
     .map((k) => COL_DEFS.find((c) => c.key === k))
     .filter((c): c is (typeof COL_DEFS)[number] => !!c && c.key !== 'ticker' && visibleCols.has(c.key))
+  const advCols = advancedDefs.filter((d) => visibleCols.has(d.key))
+  const orderedCols: { key: string; label: string; sortKey?: string }[] = [...curatedCols, ...advCols]
 
   return (
     <div className="mobile-terminal-wrap">
@@ -1993,6 +2126,7 @@ export default function MobileExperience() {
 
   const portfolio = dashboard?.portfolio || {}
   const positions = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
+  const advancedFieldDefs = useMemo(() => discoverAdvancedFields(positions), [positions])
   const scanner = dashboard?.scanner || scannerFallback
   const privacyHidden = mounted && hidden
   const searchUniverse = useMemo(() => {
@@ -2191,6 +2325,7 @@ export default function MobileExperience() {
               onReset={resetVisibleCols}
               sparkTf={sparkTf}
               onSparkTf={updateSparkTf}
+              advancedDefs={advancedFieldDefs}
               onClose={() => setColMenuOpen(false)}
             />
           ) : (
@@ -2230,7 +2365,7 @@ export default function MobileExperience() {
               </div>
             </div>
             {portfolioView === 'table'
-              ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} />
+              ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} advancedDefs={advancedFieldDefs} />
               : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} tf={sparkTf} />
             }
           </div>
