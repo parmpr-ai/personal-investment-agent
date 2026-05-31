@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { ArrowRight, Check, GripVertical, Pencil, Pin, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { WORKSPACE_REGISTRY, type WorkspaceDefinition, type WorkspaceIconKey, type WorkspaceId } from './workspaceRegistry'
 import { workspaceIconMap } from './WorkspaceSwitcher'
@@ -37,7 +37,6 @@ export const CUSTOM_WORKSPACE_TEMPLATES = [
 export const CUSTOM_WORKSPACE_ICONS: { key: WorkspaceIconKey; label: string }[] = [
   { key: 'home', label: 'Home' },
   { key: 'wallet', label: 'Portfolio' },
-  { key: 'list', label: 'List' },
   { key: 'scan', label: 'Scanner' },
   { key: 'globe', label: 'Macro' },
   { key: 'cpu', label: 'AI' },
@@ -196,17 +195,49 @@ export function useWorkspaceConfig() {
   }
 
   function deleteCustom(id: WorkspaceId) {
-    persistCustom(custom.filter((workspace) => workspace.id !== id))
-    persistOrder(order.filter((item) => item !== id))
-    persistPinned(pinnedMobile.filter((item) => item !== id))
-    persistSidebar(sidebarDesktop.filter((item) => item !== id))
+    const nextCustom = custom.filter((workspace) => workspace.id !== id)
+    const nextAll = [...WORKSPACE_REGISTRY, ...nextCustom]
+    const nextOrder = normalizeOrder(order.filter((item) => item !== id), nextAll)
+    const nextPinned = uniqueExisting(pinnedMobile.filter((item) => item !== id), nextAll).slice(0, MAX_PINNED_MOBILE)
+    const nextSidebar = uniqueExisting(sidebarDesktop.filter((item) => item !== id), nextAll)
+    persistCustom(nextCustom)
+    setOrder(nextOrder)
+    writeJson(WORKSPACE_ORDER_KEY, nextOrder)
+    setPinnedMobile(nextPinned)
+    writeJson(PINNED_MOBILE_KEY, nextPinned)
+    setSidebarDesktop(nextSidebar)
+    writeJson(SIDEBAR_DESKTOP_KEY, nextSidebar)
+    setWarning('')
+  }
+
+  function removeWorkspace(id: WorkspaceId, surface: 'desktop' | 'mobile' | 'all' = 'all') {
+    if (custom.some((workspace) => workspace.id === id)) {
+      deleteCustom(id)
+      return
+    }
+    if (surface !== 'mobile') persistSidebar(sidebarDesktop.filter((item) => item !== id))
+    if (surface !== 'desktop') persistPinned(pinnedMobile.filter((item) => item !== id))
+    setWarning('System workspace hidden. Reset to defaults restores system workspaces.')
   }
 
   function reset() {
-    persistCustom([])
-    persistOrder(DEFAULT_ORDER)
-    persistPinned(DEFAULT_PINNED_MOBILE)
-    persistSidebar(DEFAULT_SIDEBAR_DESKTOP)
+    const all = [...WORKSPACE_REGISTRY, ...custom]
+    const customIds = custom.map((workspace) => workspace.id)
+    const orderedCustomIds = [
+      ...order.filter((id) => customIds.includes(id)),
+      ...customIds.filter((id) => !order.includes(id)),
+    ]
+    const sidebarCustomIds = sidebarDesktop.filter((id) => customIds.includes(id))
+    const pinnedCustomIds = pinnedMobile.filter((id) => customIds.includes(id))
+    const nextOrder = normalizeOrder([...DEFAULT_ORDER, ...orderedCustomIds], all)
+    const nextSidebar = uniqueExisting([...DEFAULT_SIDEBAR_DESKTOP, ...sidebarCustomIds], all)
+    const nextPinned = uniqueExisting([...DEFAULT_PINNED_MOBILE, ...pinnedCustomIds], all).slice(0, MAX_PINNED_MOBILE)
+    setOrder(nextOrder)
+    writeJson(WORKSPACE_ORDER_KEY, nextOrder)
+    setSidebarDesktop(nextSidebar)
+    writeJson(SIDEBAR_DESKTOP_KEY, nextSidebar)
+    setPinnedMobile(nextPinned)
+    writeJson(PINNED_MOBILE_KEY, nextPinned)
     setWarning('')
   }
 
@@ -222,7 +253,7 @@ export function useWorkspaceConfig() {
     toggleSidebar,
     createCustom,
     renameCustom,
-    deleteCustom,
+    removeWorkspace,
     reset,
     movePinned: (from: number, to: number) => persistPinned(moveItem(pinnedMobile, from, to)),
     moveSidebar: (from: number, to: number) => persistSidebar(moveItem(sidebarDesktop, from, to)),
@@ -297,23 +328,49 @@ export function WorkspaceManagerPanel({
   onClose?: () => void
 }) {
   const [name, setName] = useState('')
-  const [iconKey, setIconKey] = useState<WorkspaceIconKey>('list')
+  const [iconKey, setIconKey] = useState<WorkspaceIconKey>('home')
   const [accent, setAccent] = useState('#60a5fa')
   const [template, setTemplate] = useState('blank')
   const [editingId, setEditingId] = useState<WorkspaceId | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [createdId, setCreatedId] = useState<WorkspaceId | null>(null)
+  const customRowRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const isDesktop = variant === 'desktop'
   const customIds = config.custom.map((workspace) => workspace.id)
   const allIds = config.workspaces.map((workspace) => workspace.id)
+
+  useEffect(() => {
+    if (!createdId) return
+    const row = customRowRefs.current[createdId]
+    if (!row) return
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    row.focus({ preventScroll: true })
+  }, [config.custom.length, createdId])
+
+  function confirmRemoveWorkspace(workspace: WorkspaceDefinition, surface: 'desktop' | 'mobile' | 'all' = 'all') {
+    const isCustom = config.custom.some((item) => item.id === workspace.id)
+    const confirmed = window.confirm(
+      isCustom
+        ? `Delete custom workspace "${workspace.title}"? Its saved widget layout entries are left untouched.`
+        : surface === 'desktop'
+          ? `Hide "${workspace.title}" from desktop navigation? Reset to defaults will restore it.`
+          : surface === 'mobile'
+            ? `Remove "${workspace.title}" from mobile navigation? Reset to defaults will restore it if it is a default mobile workspace.`
+            : `Hide "${workspace.title}" from visible navigation? Reset to defaults will restore system workspaces.`,
+    )
+    if (!confirmed) return
+    config.removeWorkspace(workspace.id, surface)
+    if (createdId === workspace.id) setCreatedId(null)
+  }
 
   function submitCustom() {
     const createdId = config.createCustom({ name, iconKey, accent, template })
     if (!createdId) return
     setName('')
-    setIconKey('list')
+    setIconKey('home')
     setAccent('#60a5fa')
     setTemplate('blank')
-    onClose?.()
+    setCreatedId(createdId)
   }
 
   return (
@@ -359,8 +416,13 @@ export function WorkspaceManagerPanel({
                     <ArrowRight size={15} />
                   </button>
                 ) : null}
-                <button type="button" className="workspace-row-action danger" onClick={() => config.toggleSidebar(workspace.id)} aria-label={`Hide ${workspace.title} from desktop navigation`}>
-                  <X size={15} />
+                <button
+                  type="button"
+                  className="workspace-row-action danger"
+                  onClick={() => confirmRemoveWorkspace(workspace, 'desktop')}
+                  aria-label={`Remove ${workspace.title} from desktop navigation`}
+                >
+                  <Trash2 size={15} />
                 </button>
               </div>
             )}
@@ -381,8 +443,13 @@ export function WorkspaceManagerPanel({
             onMove={config.movePinned}
             renderMeta={() => <span>Visible on mobile bottom nav</span>}
             renderAction={(workspace) => (
-              <button type="button" className="workspace-row-action" onClick={() => config.togglePinned(workspace.id)} aria-label={`Unpin ${workspace.title}`}>
-                <X size={15} />
+              <button
+                type="button"
+                className="workspace-row-action danger"
+                onClick={() => confirmRemoveWorkspace(workspace, 'mobile')}
+                aria-label={`Remove ${workspace.title} from mobile navigation`}
+              >
+                <Trash2 size={15} />
               </button>
             )}
           />
@@ -441,6 +508,14 @@ export function WorkspaceManagerPanel({
                 >
                   <Check size={15} />
                 </button>
+                <button
+                  type="button"
+                  className="workspace-row-action danger"
+                  onClick={() => confirmRemoveWorkspace(workspace, 'all')}
+                  aria-label={`Remove ${workspace.title}`}
+                >
+                  <Trash2 size={15} />
+                </button>
               </div>
             )
           }}
@@ -450,25 +525,37 @@ export function WorkspaceManagerPanel({
       <section className="workspace-manager-section">
         <div className="workspace-manager-title">
           <div>
-            <h3>Workspace Presets</h3>
-            <span>Create a local workspace preset</span>
+            <h3>Create Workspace</h3>
+            <span>Create a local workspace with a seeded starting layout</span>
           </div>
         </div>
         <div className="workspace-create-grid">
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Workspace name" aria-label="Workspace name" />
-          <select value={iconKey} onChange={(event) => setIconKey(event.target.value as WorkspaceIconKey)} aria-label="Workspace icon">
-            {CUSTOM_WORKSPACE_ICONS.map((item) => (
-              <option key={item.key} value={item.key}>{item.label}</option>
-            ))}
-          </select>
-          <input value={accent} onChange={(event) => setAccent(event.target.value)} type="color" aria-label="Workspace accent" />
-          <select value={template} onChange={(event) => setTemplate(event.target.value)} aria-label="Workspace template">
-            {CUSTOM_WORKSPACE_TEMPLATES.map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </select>
+          <label className="workspace-create-field workspace-create-name">
+            <span>Workspace name</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Workspace name" />
+          </label>
+          <label className="workspace-create-field">
+            <span>Icon</span>
+            <select value={iconKey} onChange={(event) => setIconKey(event.target.value as WorkspaceIconKey)}>
+              {CUSTOM_WORKSPACE_ICONS.map((item) => (
+                <option key={item.key} value={item.key}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="workspace-create-field workspace-color-field">
+            <span>Accent</span>
+            <input value={accent} onChange={(event) => setAccent(event.target.value)} type="color" />
+          </label>
+          <label className="workspace-create-field workspace-template-field">
+            <span>Starting layout</span>
+            <select value={template} onChange={(event) => setTemplate(event.target.value)}>
+              {CUSTOM_WORKSPACE_TEMPLATES.map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </label>
           <button type="button" className="workspace-create-button" onClick={submitCustom}>
-            <Plus size={15} /> Add preset
+            <Plus size={15} /> Create workspace
           </button>
         </div>
         {customIds.length ? (
@@ -477,7 +564,14 @@ export function WorkspaceManagerPanel({
               const Icon = workspaceIconMap[workspace.iconKey] || workspaceIconMap.home
               const editing = editingId === workspace.id
               return (
-                <div className="workspace-manager-row" key={workspace.id}>
+                <div
+                  className="workspace-manager-row"
+                  key={workspace.id}
+                  ref={(node) => {
+                    customRowRefs.current[workspace.id] = node
+                  }}
+                  tabIndex={createdId === workspace.id ? -1 : undefined}
+                >
                   <span className="workspace-custom-accent" style={{ background: workspace.accent || '#60a5fa' }} />
                   <Icon size={17} aria-hidden="true" />
                   <div className="workspace-manager-row-text">
@@ -516,7 +610,7 @@ export function WorkspaceManagerPanel({
                         <Pencil size={15} />
                       </button>
                     )}
-                    <button type="button" className="workspace-row-action danger" onClick={() => config.deleteCustom(workspace.id)} aria-label={`Delete ${workspace.title}`}>
+                    <button type="button" className="workspace-row-action danger" onClick={() => confirmRemoveWorkspace(workspace, 'all')} aria-label={`Delete ${workspace.title}`}>
                       <Trash2 size={15} />
                     </button>
                   </div>
@@ -531,7 +625,7 @@ export function WorkspaceManagerPanel({
         <div className="workspace-manager-title">
           <div>
             <h3>System Maintenance</h3>
-            <span>Reset workspace order, visibility, pins, and custom presets</span>
+            <span>Restore system defaults while preserving custom workspaces</span>
           </div>
         </div>
         <button type="button" className="workspace-reset-button" onClick={config.reset}>
