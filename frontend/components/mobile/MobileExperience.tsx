@@ -1288,51 +1288,62 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
 }
 
 function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, change: true, changePercent: true, volume: true }, onSelect, onRemove, hidden }: { rows: any[]; columns?: any; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean }) {
+  // Split-layer frozen column (PIA-UAT-FIX-001D): the instrument column is a
+  // separate non-scrolling left layer outside the horizontal scroller, so
+  // scrolled cells can never bleed behind/left of it on iOS.
   return (
-    <div className="mobile-terminal-wrap">
-      <table className="mobile-terminal-table mobile-watchlist-table">
-        <thead>
-          <tr>
-            {columns.instrument && <th className="mtt-col-frozen">INSTRMNT</th>}
-            {columns.last && <th>LAST</th>}
-            {columns.change && <th>CHNG</th>}
-            {columns.changePercent && <th>CHG%</th>}
-            {columns.volume && <th>VLM</th>}
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
+    <div className="mptbl-split">
+      {columns.instrument && (
+        <div className="mptbl-frozen pf-wl-frozen">
+          <div className="mptbl-fcell mptbl-fhead">INSTRMNT</div>
           {rows.map((row) => (
-            <tr key={row.symbol} onClick={() => onSelect(row)}>
-              {columns.instrument && <td className="mtt-col-frozen">
-                <div className="mtt-symbol">
-                  <div className="mtt-logo" style={{ background: row.accent || row.brand || '#60a5fa' }}>
-                    {hidden ? '-' : row.logo || String(row.symbol).slice(0, 2)}
-                  </div>
-                  <span>
-                    <strong className="mtt-sym-label">{hidden ? mask : row.symbol}</strong>
-                    <small>{hidden ? 'Market' : row.exchange || 'NASDAQ'}</small>
-                  </span>
+            <button key={row.symbol} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(row)}>
+              <div className="mtt-symbol">
+                <div className="mtt-logo" style={{ background: row.accent || row.brand || '#60a5fa' }}>
+                  {hidden ? '-' : row.logo || String(row.symbol).slice(0, 2)}
                 </div>
-              </td>}
-              {columns.last && <td>{hidden ? mask : money(row.last || row.price)}</td>}
-              {columns.change && <td className={Number(row.day_pnl) >= 0 ? 'green' : 'red'}>{hidden ? mask : money(row.day_pnl)}</td>}
-              {columns.changePercent && <td className={Number(row.day_change_pct) >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(row.day_change_pct)}</td>}
-              {columns.volume && <td>{hidden ? mask : compactVolume(row.volume)}</td>}
-              <td>
-                <div className="mobile-watchlist-actions">
-                  <button type="button" aria-label={`Open intelligence for ${row.symbol}`} onClick={(e) => { e.stopPropagation(); onSelect(row) }}>
-                    <Brain size={14} />
-                  </button>
-                  <button type="button" aria-label={`Remove ${row.symbol}`} onClick={(e) => { e.stopPropagation(); onRemove(row.symbol) }}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </td>
-            </tr>
+                <span>
+                  <strong className="mtt-sym-label">{hidden ? mask : row.symbol}</strong>
+                  <small>{hidden ? 'Market' : row.exchange || 'NASDAQ'}</small>
+                </span>
+              </div>
+            </button>
           ))}
-        </tbody>
-      </table>
+        </div>
+      )}
+      <div className="mptbl-scrollarea">
+        <table className="mobile-terminal-table mobile-watchlist-table">
+          <thead>
+            <tr>
+              {columns.last && <th>LAST</th>}
+              {columns.change && <th>CHNG</th>}
+              {columns.changePercent && <th>CHG%</th>}
+              {columns.volume && <th>VLM</th>}
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.symbol} onClick={() => onSelect(row)}>
+                {columns.last && <td>{hidden ? mask : money(row.last || row.price)}</td>}
+                {columns.change && <td className={Number(row.day_pnl) >= 0 ? 'green' : 'red'}>{hidden ? mask : money(row.day_pnl)}</td>}
+                {columns.changePercent && <td className={Number(row.day_change_pct) >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(row.day_change_pct)}</td>}
+                {columns.volume && <td>{hidden ? mask : compactVolume(row.volume)}</td>}
+                <td>
+                  <div className="mobile-watchlist-actions">
+                    <button type="button" aria-label={`Open intelligence for ${row.symbol}`} onClick={(e) => { e.stopPropagation(); onSelect(row) }}>
+                      <Brain size={14} />
+                    </button>
+                    <button type="button" aria-label={`Remove ${row.symbol}`} onClick={(e) => { e.stopPropagation(); onRemove(row.symbol) }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
