@@ -16,9 +16,11 @@ import {
   Eye,
   EyeOff,
   Gauge,
+  ChevronUp,
   Globe2,
   GripVertical,
   Home,
+  Info,
   Menu,
   MoreVertical,
   Newspaper,
@@ -1015,9 +1017,10 @@ function WatchlistMovers({ scanner, positions, onSelect, hidden = false }: { sca
   )
 }
 
-function PositionCards({ rows, onSelect, hidden = false, fields, tf }: { rows: any[]; onSelect: (position: any) => void; hidden?: boolean; fields: Set<CardFieldKey>; tf: SparkTf }) {
+function PositionCards({ rows, onSelect, hidden = false, fields, order, tf }: { rows: any[]; onSelect: (position: any) => void; hidden?: boolean; fields: Set<CardFieldKey>; order: CardFieldKey[]; tf: SparkTf }) {
   const positions = rows.length ? rows : positionFallback
   const show = (key: CardFieldKey) => fields.has(key)
+  const gridOrder = order.filter((k) => CARD_GRID_FIELDS.includes(k) && show(k))
   return (
     <SwipeRail
       title="Positions"
@@ -1068,29 +1071,30 @@ function PositionCards({ rows, onSelect, hidden = false, fields, tf }: { rows: a
               </div>
             )}
 
-            {/* Position summary, price, performance */}
-            {(show('shares') || show('mktvalue') || show('last') || show('avgcost') || show('daypnl') || show('unrealized')) && (
+            {/* Position summary, price, performance — rendered in user order */}
+            {gridOrder.length > 0 && (
               <div className="mobile-position-stats">
-                {show('shares') && <div className="mps-cell"><span>Shares</span><b>{hidden ? mask : shares.toLocaleString('en-US')}</b></div>}
-                {show('mktvalue') && <div className="mps-cell"><span>Mkt Value</span><b>{hidden ? mask : money(marketValue)}</b></div>}
-                {show('last') && <div className="mps-cell"><span>Last</span><b>{hidden ? mask : money(last)}</b></div>}
-                {show('avgcost') && <div className="mps-cell"><span>Avg Cost</span><b>{hidden ? mask : money(avgCost)}</b></div>}
-                {show('daypnl') && (
-                  <div className="mps-cell">
-                    <span>Today P&amp;L</span>
-                    <b className={dayPnl >= 0 ? 'green' : 'red'}>
-                      {hidden ? mask : `${signed(dayPnl, money)} (${signed(change, (n) => `${n.toFixed(2)}%`)})`}
-                    </b>
-                  </div>
-                )}
-                {show('unrealized') && (
-                  <div className="mps-cell">
-                    <span>Unrealized</span>
-                    <b className={unreal >= 0 ? 'green' : 'red'}>
-                      {hidden ? mask : `${signed(unreal, money)} (${signed(unrealPct, (n) => `${n.toFixed(1)}%`)})`}
-                    </b>
-                  </div>
-                )}
+                {gridOrder.map((k) => {
+                  switch (k) {
+                    case 'shares': return <div key={k} className="mps-cell"><span>Shares</span><b>{hidden ? mask : shares.toLocaleString('en-US')}</b></div>
+                    case 'mktvalue': return <div key={k} className="mps-cell"><span>Mkt Value</span><b>{hidden ? mask : money(marketValue)}</b></div>
+                    case 'last': return <div key={k} className="mps-cell"><span>Last</span><b>{hidden ? mask : money(last)}</b></div>
+                    case 'avgcost': return <div key={k} className="mps-cell"><span>Avg Cost</span><b>{hidden ? mask : money(avgCost)}</b></div>
+                    case 'daypnl': return (
+                      <div key={k} className="mps-cell">
+                        <span>Today P&amp;L</span>
+                        <b className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : `${signed(dayPnl, money)} (${signed(change, (n) => `${n.toFixed(2)}%`)})`}</b>
+                      </div>
+                    )
+                    case 'unrealized': return (
+                      <div key={k} className="mps-cell">
+                        <span>Unrealized</span>
+                        <b className={unreal >= 0 ? 'green' : 'red'}>{hidden ? mask : `${signed(unreal, money)} (${signed(unrealPct, (n) => `${n.toFixed(1)}%`)})`}</b>
+                      </div>
+                    )
+                    default: return null
+                  }
+                })}
               </div>
             )}
 
@@ -1496,6 +1500,30 @@ const CARD_FIELD_DEFS: { key: CardFieldKey; label: string }[] = [
   { key: 'news', label: 'News' },
 ]
 const CARD_FIELDS_LS_KEY = 'pia.portfolioCardFields.mobile'
+const CARD_ORDER_LS_KEY = 'pia.portfolioCardOrder.mobile'
+// Card fields whose display order can be applied to the card stat grid.
+const CARD_GRID_FIELDS: CardFieldKey[] = ['shares', 'mktvalue', 'last', 'avgcost', 'daypnl', 'unrealized']
+
+// Short descriptions surfaced via the info icon in the Manage Display screen.
+const FIELD_INFO: Record<string, string> = {
+  ticker: 'Instrument symbol (frozen first column)',
+  company: 'Company / instrument name',
+  shares: 'Position size (quantity held)',
+  mktvalue: 'Current market value of the position',
+  last: 'Last traded price',
+  avgcost: 'Average cost per share',
+  daypnl: "Today's profit/loss in cash",
+  daypnlpct: "Today's profit/loss in percent",
+  unrealized: 'Open profit/loss in cash',
+  unrealizedpct: 'Open profit/loss in percent',
+  weight: 'Share of total portfolio value',
+  risk: 'PIA risk score (0-100)',
+  momentum: 'PIA momentum score (0-100)',
+  sparkline: 'Mini price trend for the selected timeframe',
+  macro: 'Macro sensitivity (beta)',
+  ai: 'AI view available',
+  news: 'Recent news activity',
+}
 
 // Sparkline timeframe (shared across portfolio positions view)
 const SPARK_TF_OPTIONS = ['1H', '4H', '1D', '5D', '1M', '3M', '6M', '1Y'] as const
@@ -1521,6 +1549,21 @@ function readSavedCardFields(): Set<CardFieldKey> {
     }
   } catch {}
   return new Set(CARD_FIELD_DEFS.map((c) => c.key))
+}
+
+function readSavedCardOrder(): CardFieldKey[] {
+  const all = CARD_FIELD_DEFS.map((c) => c.key)
+  try {
+    const raw = localStorage.getItem(CARD_ORDER_LS_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw) as CardFieldKey[]
+      if (Array.isArray(arr) && arr.length) {
+        // keep saved order, then append any new fields not yet stored
+        return [...arr.filter((k) => all.includes(k)), ...all.filter((k) => !arr.includes(k))]
+      }
+    }
+  } catch {}
+  return all
 }
 
 function readSavedSparkTf(): SparkTf {
@@ -1809,150 +1852,86 @@ function SparkTfRail({ value, onChange }: { value: SparkTf; onChange: (tf: Spark
   )
 }
 
-function MobileCardOptions({ visible, onToggle, onReset, sparkTf, onSparkTf, onClose }: {
-  visible: Set<CardFieldKey>
-  onToggle: (key: CardFieldKey) => void
-  onReset: () => void
+type ManageItem = { key: string; label: string; info?: string; locked?: boolean }
+
+// IBKR-style "Manage Display" screen used for both Table columns and Card
+// fields: enabled list (checkmark + name + info + reorder + grip), an
+// "+ Add" catalog of available/IBKR fields, and the sparkline timeframe.
+function MobileManageDisplay({
+  title, addLabel, order, visible, allKeys, defsByKey, sparkTf, onSparkTf, onToggle, onMove, onReset, onClose,
+}: {
+  title: string
+  addLabel: string
+  order: string[]
+  visible: Set<string>
+  allKeys: string[]
+  defsByKey: (key: string) => ManageItem | undefined
   sparkTf: SparkTf
   onSparkTf: (tf: SparkTf) => void
+  onToggle: (key: string) => void
+  onMove: (key: string, dir: -1 | 1) => void
+  onReset: () => void
   onClose: () => void
 }) {
+  const [addOpen, setAddOpen] = useState(false)
+  const enabled = order.map(defsByKey).filter((d): d is ManageItem => !!d && visible.has(d.key))
+  const seen = new Set<string>()
+  const available = allKeys
+    .filter((k) => !visible.has(k))
+    .map(defsByKey)
+    .filter((d): d is ManageItem => !!d && !seen.has(d.key) && (seen.add(d.key), true))
+
   return (
-    <MobileSheet title="Card Display Options" onClose={onClose}>
-      <div className="pf-col-list">
-        {CARD_FIELD_DEFS.map((field) => {
-          const on = visible.has(field.key)
-          return (
-            <div key={field.key} className="pf-col-row">
+    <div className="pf-manage" role="dialog" aria-modal="true" aria-label={title}>
+      <header className="pf-manage-head">
+        <button type="button" className="pf-manage-back" aria-label="Done" onClick={onClose}><ChevronLeft size={20} /></button>
+        <h2>{title}</h2>
+        <button type="button" className="pf-manage-reset" onClick={onReset}>Reset</button>
+      </header>
+      <div className="pf-manage-body">
+        <ul className="pf-manage-list">
+          {enabled.map((item, i) => (
+            <li className="pf-manage-row" key={item.key}>
               <button
                 type="button"
-                className={`pf-col-toggle${on ? ' active' : ''}`}
-                onClick={() => onToggle(field.key)}
+                className="pf-manage-check on"
+                aria-label={`Hide ${item.label}`}
+                disabled={item.locked}
+                onClick={() => !item.locked && onToggle(item.key)}
               >
-                <span className="pf-col-check">{on ? '✓' : ''}</span>
-                {field.label}
+                ✓
               </button>
-            </div>
-          )
-        })}
-        <button type="button" className="pf-col-reset" onClick={onReset}>Reset to defaults</button>
-      </div>
-      <SparkTfRail value={sparkTf} onChange={onSparkTf} />
-    </MobileSheet>
-  )
-}
-
-function PortfolioColumnSheet({ visible, order, onToggle, onReorder, onReset, sparkTf, onSparkTf, advancedDefs, onClose }: {
-  visible: Set<ColKey>
-  order: ColKey[]
-  onToggle: (key: ColKey) => void
-  onReorder: (next: ColKey[]) => void
-  onReset: () => void
-  sparkTf: SparkTf
-  onSparkTf: (tf: SparkTf) => void
-  advancedDefs: AdvancedColDef[]
-  onClose: () => void
-}) {
-  const [activeIdx, setActiveIdx] = useState<number | null>(null)
-  const pointerRef = useRef<{ id: number; idx: number } | null>(null)
-  const listRef = useRef<HTMLDivElement>(null)
-
-  function onListPointerDown(e: PointerEvent<HTMLDivElement>) {
-    const target = e.target as HTMLElement
-    if (!target.closest('[data-drag-handle]')) return
-    const row = target.closest('[data-ci]') as HTMLElement
-    if (!row) return
-    const idx = parseInt(row.dataset.ci || '0', 10)
-    ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
-    pointerRef.current = { id: e.pointerId, idx }
-    setActiveIdx(idx)
-  }
-
-  function onListPointerMove(e: PointerEvent<HTMLDivElement>) {
-    if (!pointerRef.current || !listRef.current) return
-    const y = e.clientY
-    const items = listRef.current.querySelectorAll('[data-ci]') as NodeListOf<HTMLElement>
-    let targetIdx = pointerRef.current.idx
-    items.forEach((el, i) => {
-      const rect = el.getBoundingClientRect()
-      if (y >= rect.top && y < rect.bottom) targetIdx = i
-    })
-    if (targetIdx !== pointerRef.current.idx) {
-      const next = [...order]
-      const [item] = next.splice(pointerRef.current.idx, 1)
-      next.splice(targetIdx, 0, item)
-      onReorder(next)
-      pointerRef.current.idx = targetIdx
-      setActiveIdx(targetIdx)
-    }
-  }
-
-  function onListPointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (!pointerRef.current) return
-    ;(e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId)
-    pointerRef.current = null
-    setActiveIdx(null)
-  }
-
-  return (
-    <MobileSheet title="Table Display Options" onClose={onClose}>
-      <div
-        ref={listRef}
-        className="pf-col-list"
-        style={{ touchAction: 'none' }}
-        onPointerDown={onListPointerDown}
-        onPointerMove={onListPointerMove}
-        onPointerUp={onListPointerUp}
-        onPointerCancel={onListPointerUp}
-      >
-        {order.map((key, idx) => {
-          const col = COL_DEFS.find((c) => c.key === key)
-          if (!col) return null
-          const on = visible.has(key)
-          return (
-            <div key={key} data-ci={String(idx)} className={`pf-col-row${activeIdx === idx ? ' dragging' : ''}`}>
-              <div data-drag-handle className="pf-col-drag-handle" style={{ touchAction: 'none' }}>
-                <GripVertical size={14} />
+              <span className="pf-manage-name">{item.label}</span>
+              <button type="button" className="pf-manage-info" aria-label={`${item.label} info`} title={item.info || item.label}><Info size={14} /></button>
+              <div className="pf-manage-reorder">
+                <button type="button" aria-label={`Move ${item.label} up`} disabled={i === 0} onClick={() => onMove(item.key, -1)}><ChevronUp size={15} /></button>
+                <button type="button" aria-label={`Move ${item.label} down`} disabled={i === enabled.length - 1} onClick={() => onMove(item.key, 1)}><ChevronDown size={15} /></button>
               </div>
-              <button
-                type="button"
-                className={`pf-col-toggle${on ? ' active' : ''}`}
-                onClick={() => !pointerRef.current && onToggle(key)}
-              >
-                <span className="pf-col-check">{on ? '✓' : ''}</span>
-                {col.label}
-              </button>
-            </div>
-          )
-        })}
-        <button type="button" className="pf-col-reset" onClick={onReset}>Reset to defaults</button>
+              <span className="pf-manage-grip" aria-hidden="true"><GripVertical size={16} /></span>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="pf-manage-add" aria-expanded={addOpen} onClick={() => setAddOpen((o) => !o)}>
+          <Plus size={16} /> {addLabel}
+        </button>
+        {addOpen && (
+          <ul className="pf-manage-list pf-manage-available">
+            {available.length ? available.map((item) => (
+              <li className="pf-manage-row" key={item.key}>
+                <button type="button" className="pf-manage-check" aria-label={`Add ${item.label}`} onClick={() => onToggle(item.key)} />
+                <span className="pf-manage-name">{item.label}</span>
+                <button type="button" className="pf-manage-info" aria-label={`${item.label} info`} title={item.info || item.label}><Info size={14} /></button>
+                <button type="button" className="pf-manage-addbtn" aria-label={`Add ${item.label}`} onClick={() => onToggle(item.key)}><Plus size={15} /></button>
+              </li>
+            )) : <li className="pf-manage-empty">All fields are shown.</li>}
+          </ul>
+        )}
+        <SparkTfRail value={sparkTf} onChange={onSparkTf} />
       </div>
-      {advancedDefs.length > 0 && (
-        <div className="pf-adv-section">
-          <span className="pf-display-tf-label">Advanced / IBKR fields</span>
-          <div className="pf-col-list">
-            {advancedDefs.map((def) => {
-              const on = visible.has(def.key)
-              return (
-                <div key={def.key} className="pf-col-row">
-                  <button
-                    type="button"
-                    className={`pf-col-toggle${on ? ' active' : ''}`}
-                    onClick={() => onToggle(def.key)}
-                  >
-                    <span className="pf-col-check">{on ? '✓' : ''}</span>
-                    {def.label}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-      <SparkTfRail value={sparkTf} onChange={onSparkTf} />
-    </MobileSheet>
+    </div>
   )
 }
+
 
 function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, sparkTf, advancedDefs }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean; visibleCols: Set<ColKey>; colOrder: ColKey[]; sparkTf: SparkTf; advancedDefs: AdvancedColDef[] }) {
   const [sort, setSort] = useState<TableSortKey>('weight')
@@ -2046,11 +2025,16 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
   }
 
   const showTicker = visibleCols.has('ticker')
-  const curatedCols = colOrder
-    .map((k) => COL_DEFS.find((c) => c.key === k))
-    .filter((c): c is (typeof COL_DEFS)[number] => !!c && c.key !== 'ticker' && visibleCols.has(c.key))
-  const advCols = advancedDefs.filter((d) => visibleCols.has(d.key))
-  const orderedCols: { key: string; label: string; sortKey?: string }[] = [...curatedCols, ...advCols]
+  const advByKey = new Map(advancedDefs.map((d) => [d.key, d]))
+  const defByKey = (k: string): { key: string; label: string; sortKey?: string } | undefined =>
+    COL_DEFS.find((c) => c.key === k) || advByKey.get(k)
+  // Columns in saved order (curated + any added advanced/IBKR fields), then any
+  // newly-discovered advanced field that's enabled but not yet in the order.
+  const inOrder = new Set(colOrder)
+  const orderedCols: { key: string; label: string; sortKey?: string }[] = colOrder
+    .map(defByKey)
+    .filter((c): c is { key: string; label: string; sortKey?: string } => !!c && c.key !== 'ticker' && visibleCols.has(c.key))
+    .concat(advancedDefs.filter((d) => visibleCols.has(d.key) && !inOrder.has(d.key)))
 
   const sortArrow = <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span>
 
@@ -2129,6 +2113,7 @@ export default function MobileExperience() {
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key)))
   const [colOrder, setColOrder] = useState<ColKey[]>(() => COL_DEFS.map((c) => c.key))
   const [cardFields, setCardFields] = useState<Set<CardFieldKey>>(() => new Set(CARD_FIELD_DEFS.map((c) => c.key)))
+  const [cardOrder, setCardOrder] = useState<CardFieldKey[]>(() => CARD_FIELD_DEFS.map((c) => c.key))
   const [sparkTf, setSparkTf] = useState<SparkTf>(DEFAULT_SPARK_TF)
   const [quickOpen, setQuickOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -2181,6 +2166,7 @@ export default function MobileExperience() {
       setVisibleCols(readSavedCols())
       setColOrder(readSavedOrder())
       setCardFields(readSavedCardFields())
+      setCardOrder(readSavedCardOrder())
       setSparkTf(readSavedSparkTf())
     } catch {}
     fetchJson('/source-health')
@@ -2200,7 +2186,28 @@ export default function MobileExperience() {
     if (next.has(key) && next.size > 2) next.delete(key)
     else next.add(key)
     setVisibleCols(next)
+    // Ensure advanced/IBKR keys join the order when first enabled.
+    if (next.has(key) && !colOrder.includes(key)) {
+      const nextOrder = [...colOrder, key]
+      setColOrder(nextOrder)
+      try { localStorage.setItem(COL_ORDER_LS_KEY, JSON.stringify(nextOrder)) } catch {}
+    }
     try { localStorage.setItem(COL_LS_KEY, JSON.stringify([...next])) } catch {}
+  }
+
+  // Swap an enabled column with its adjacent enabled neighbour, leaving any
+  // disabled entries in place — reliable reorder without touch-drag.
+  function moveCol(key: ColKey, dir: -1 | 1) {
+    const enabled = colOrder.filter((k) => visibleCols.has(k))
+    const ei = enabled.indexOf(key)
+    const neighbour = enabled[ei + dir]
+    if (ei < 0 || neighbour == null) return
+    const ci = colOrder.indexOf(key)
+    const ni = colOrder.indexOf(neighbour)
+    const nextOrder = [...colOrder]
+    ;[nextOrder[ci], nextOrder[ni]] = [nextOrder[ni], nextOrder[ci]]
+    setColOrder(nextOrder)
+    try { localStorage.setItem(COL_ORDER_LS_KEY, JSON.stringify(nextOrder)) } catch {}
   }
 
   function resetVisibleCols() {
@@ -2214,11 +2221,6 @@ export default function MobileExperience() {
     } catch {}
   }
 
-  function updateColOrder(next: ColKey[]) {
-    setColOrder(next)
-    try { localStorage.setItem(COL_ORDER_LS_KEY, JSON.stringify(next)) } catch {}
-  }
-
   function toggleCardField(key: CardFieldKey) {
     const next = new Set(cardFields)
     if (next.has(key)) next.delete(key)
@@ -2227,10 +2229,28 @@ export default function MobileExperience() {
     try { localStorage.setItem(CARD_FIELDS_LS_KEY, JSON.stringify([...next])) } catch {}
   }
 
+  function moveCardField(key: CardFieldKey, dir: -1 | 1) {
+    const enabled = cardOrder.filter((k) => cardFields.has(k))
+    const ei = enabled.indexOf(key)
+    const neighbour = enabled[ei + dir]
+    if (ei < 0 || neighbour == null) return
+    const ci = cardOrder.indexOf(key)
+    const ni = cardOrder.indexOf(neighbour)
+    const nextOrder = [...cardOrder]
+    ;[nextOrder[ci], nextOrder[ni]] = [nextOrder[ni], nextOrder[ci]]
+    setCardOrder(nextOrder)
+    try { localStorage.setItem(CARD_ORDER_LS_KEY, JSON.stringify(nextOrder)) } catch {}
+  }
+
   function resetCardFields() {
     const def = new Set(CARD_FIELD_DEFS.map((c) => c.key))
+    const defOrder = CARD_FIELD_DEFS.map((c) => c.key)
     setCardFields(def)
-    try { localStorage.setItem(CARD_FIELDS_LS_KEY, JSON.stringify([...def])) } catch {}
+    setCardOrder(defOrder)
+    try {
+      localStorage.setItem(CARD_FIELDS_LS_KEY, JSON.stringify([...def]))
+      localStorage.setItem(CARD_ORDER_LS_KEY, JSON.stringify(defOrder))
+    } catch {}
   }
 
   function updateSparkTf(next: SparkTf) {
@@ -2329,24 +2349,42 @@ export default function MobileExperience() {
       {active === 'my-portfolio' && (
         <>
           {colMenuOpen && (portfolioView === 'table' ? (
-            <PortfolioColumnSheet
-              visible={visibleCols}
+            <MobileManageDisplay
+              title="Manage Table Columns"
+              addLabel="Add Columns"
               order={colOrder}
-              onToggle={toggleVisibleCol}
-              onReorder={updateColOrder}
-              onReset={resetVisibleCols}
+              visible={visibleCols}
+              allKeys={[...COL_DEFS.map((c) => c.key), ...advancedFieldDefs.map((d) => d.key)]}
+              defsByKey={(k) => {
+                const c = COL_DEFS.find((d) => d.key === k)
+                if (c) return { key: c.key, label: c.label, info: FIELD_INFO[c.key], locked: c.key === 'ticker' }
+                const a = advancedFieldDefs.find((d) => d.key === k)
+                if (a) return { key: a.key, label: a.label, info: 'IBKR / backend field' }
+                return undefined
+              }}
               sparkTf={sparkTf}
               onSparkTf={updateSparkTf}
-              advancedDefs={advancedFieldDefs}
+              onToggle={toggleVisibleCol}
+              onMove={(k, d) => moveCol(k, d)}
+              onReset={resetVisibleCols}
               onClose={() => setColMenuOpen(false)}
             />
           ) : (
-            <MobileCardOptions
+            <MobileManageDisplay
+              title="Manage Card Fields"
+              addLabel="Add Fields"
+              order={cardOrder}
               visible={cardFields}
-              onToggle={toggleCardField}
-              onReset={resetCardFields}
+              allKeys={CARD_FIELD_DEFS.map((c) => c.key)}
+              defsByKey={(k) => {
+                const c = CARD_FIELD_DEFS.find((d) => d.key === k)
+                return c ? { key: c.key, label: c.label, info: FIELD_INFO[c.key] } : undefined
+              }}
               sparkTf={sparkTf}
               onSparkTf={updateSparkTf}
+              onToggle={(k) => toggleCardField(k as CardFieldKey)}
+              onMove={(k, d) => moveCardField(k as CardFieldKey, d)}
+              onReset={resetCardFields}
               onClose={() => setColMenuOpen(false)}
             />
           ))}
@@ -2378,7 +2416,7 @@ export default function MobileExperience() {
             </div>
             {portfolioView === 'table'
               ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} advancedDefs={advancedFieldDefs} />
-              : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} tf={sparkTf} />
+              : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} order={cardOrder} tf={sparkTf} />
             }
           </div>
         </>
