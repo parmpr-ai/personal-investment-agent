@@ -1547,8 +1547,8 @@ function normalizeManualMatches(payload: any): ManualInstrumentMatch[] {
     .filter((item: ManualInstrumentMatch) => item.symbol)
 }
 
-function validManualTicker(value: string) {
-  return /^[A-Z0-9][A-Z0-9.\-=^]{0,19}$/.test(value)
+function validManualSearch(value: string) {
+  return /^[A-Z0-9][A-Z0-9 .,&'()\/\-=^]{0,79}$/i.test(value.trim())
 }
 
 // Short descriptions surfaced via the info icon in the Manage Display screen.
@@ -2083,24 +2083,26 @@ function AddManualHoldingSheet({
   const [status, setStatus] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const ticker = form.ticker.trim().toUpperCase()
+  const searchText = form.ticker.trim()
+  const selectedTicker = selected?.symbol || ''
+  const selectedMatchesSearch = Boolean(selectedTicker && selectedTicker === searchText.toUpperCase())
 
   useEffect(() => {
-    if (!ticker) {
+    if (!searchText) {
       setMatches([])
       setLookupMessage('')
       setLookupLoading(false)
       return
     }
-    if (!validManualTicker(ticker)) {
+    if (!validManualSearch(searchText)) {
       setMatches([])
-      setLookupMessage('Enter a valid ticker symbol.')
+      setLookupMessage('Enter a ticker or company name.')
       setLookupLoading(false)
       return
     }
-    if (selected?.symbol === ticker) {
+    if (selectedMatchesSearch) {
       setMatches([])
-      setLookupMessage(`${ticker} selected.`)
+      setLookupMessage(`${selectedTicker} selected.`)
       setLookupLoading(false)
       return
     }
@@ -2108,10 +2110,10 @@ function AddManualHoldingSheet({
     setLookupLoading(true)
     setLookupMessage('')
     const timer = window.setTimeout(async () => {
-      const result = await fetchJson(`/ticker-lookup?q=${encodeURIComponent(ticker)}`).catch((error) => {
+      const result = await fetchJson(`/instruments/search?q=${encodeURIComponent(searchText)}`).catch((error) => {
         if (active) {
           setMatches([])
-          setLookupMessage(safeMessage(error?.detail, 'Ticker lookup is unavailable. Try again when the backend is online.'))
+          setLookupMessage(safeMessage(error?.detail, 'Instrument search is unavailable. Try again when the backend is online.'))
         }
         return { lookupError: true }
       })
@@ -2129,7 +2131,7 @@ function AddManualHoldingSheet({
       active = false
       window.clearTimeout(timer)
     }
-  }, [ticker, selected?.symbol])
+  }, [searchText, selectedMatchesSearch, selectedTicker])
 
   function update(key: keyof typeof emptyManualHoldingForm, value: string) {
     if (key === 'ticker') {
@@ -2152,18 +2154,19 @@ function AddManualHoldingSheet({
     event.preventDefault()
     setStatus('')
     if (saving) return
-    if (!ticker || !validManualTicker(ticker)) {
-      setStatus('Enter a valid ticker symbol.')
+    if (!searchText || !validManualSearch(searchText)) {
+      setStatus('Enter a ticker or company name.')
       return
     }
     if (lookupLoading) {
-      setStatus('Finish the ticker lookup before saving.')
+      setStatus('Finish the instrument search before saving.')
       return
     }
-    if (selected?.symbol !== ticker) {
+    if (!selectedMatchesSearch) {
       setStatus('Select a matching instrument from the search results before saving.')
       return
     }
+    const ticker = selected.symbol
     const quantity = Number(form.quantity)
     const avgPrice = Number(form.avg_price)
     if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -2205,20 +2208,20 @@ function AddManualHoldingSheet({
     <MobileSheet title="Add Manual Holding" onClose={onClose} closeOnOverlay={!saving}>
       <form className="manual-form manual-sheet-form" onSubmit={save}>
         <label className="field">
-          <span>Ticker</span>
-          <input value={form.ticker} autoComplete="off" placeholder="AMD" onChange={(event) => update('ticker', event.target.value.toUpperCase())} />
+          <span>Ticker or company</span>
+          <input value={form.ticker} autoComplete="off" placeholder="AMD or Apple" onChange={(event) => update('ticker', event.target.value)} />
         </label>
         <div className="field wide manual-lookup">
           <span>Instrument match</span>
           {lookupLoading && <div className="manual-lookup-status">Searching instruments...</div>}
-          {!lookupLoading && selected?.symbol === ticker && (
+          {!lookupLoading && selectedMatchesSearch && (
             <div className="manual-selected">
               <b>{selected.symbol}</b>
               <span>{selected.name || 'Selected instrument'}</span>
               <small>{[selected.exchange, selected.asset_type, selected.currency].filter(Boolean).join(' / ')}</small>
             </div>
           )}
-          {!lookupLoading && lookupMessage && selected?.symbol !== ticker && (
+          {!lookupLoading && lookupMessage && !selectedMatchesSearch && (
             <div className="manual-lookup-status">{lookupMessage}</div>
           )}
           {!lookupLoading && matches.length > 0 && (
@@ -2235,14 +2238,14 @@ function AddManualHoldingSheet({
         </div>
         <label className="field">
           <span>Quantity</span>
-          <input value={form.quantity} inputMode="decimal" onChange={(event) => update('quantity', event.target.value)} />
+          <input value={form.quantity} inputMode="decimal" disabled={!selectedMatchesSearch} onChange={(event) => update('quantity', event.target.value)} />
         </label>
         <label className="field">
           <span>Average Cost</span>
-          <input value={form.avg_price} inputMode="decimal" onChange={(event) => update('avg_price', event.target.value)} />
+          <input value={form.avg_price} inputMode="decimal" disabled={!selectedMatchesSearch} onChange={(event) => update('avg_price', event.target.value)} />
         </label>
         <div className="manual-actions">
-          <button className="tab active" type="submit" disabled={saving}>
+          <button className="tab active" type="submit" disabled={saving || !selectedMatchesSearch}>
             <Plus size={15} /> {saving ? 'Saving...' : 'Add holding'}
           </button>
         </div>

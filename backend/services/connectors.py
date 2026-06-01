@@ -10,6 +10,10 @@ from services.settings_store import get_settings
 load_dotenv()
 
 
+class InstrumentSearchError(Exception):
+    pass
+
+
 def _result(source: str, ok: bool, message: str, data_received: bool = False, sample: Any = None, latency_ms: int = 0):
     return {
         "source": source,
@@ -97,9 +101,17 @@ def yahoo_symbol_search(query: str, limit: int = 8) -> List[Dict[str, Any]]:
     q = str(query or "").strip()
     if not q:
         return []
+    return yahoo_instrument_search(q, limit=limit)
+
+
+def yahoo_instrument_search(query: str, limit: int = 8) -> List[Dict[str, Any]]:
+    q = str(query or "").strip()
+    if not q:
+        return []
     url = "https://query1.finance.yahoo.com/v1/finance/search"
     rows: List[Dict[str, Any]] = []
     seen: set[str] = set()
+    search_error: Exception | None = None
     try:
         r = httpx.get(
             url,
@@ -126,7 +138,8 @@ def yahoo_symbol_search(query: str, limit: int = 8) -> List[Dict[str, Any]]:
                     "source": "Yahoo search",
                 }
             )
-    except Exception:
+    except Exception as exc:
+        search_error = exc
         rows = []
     if rows:
         return rows[:limit]
@@ -143,6 +156,8 @@ def yahoo_symbol_search(query: str, limit: int = 8) -> List[Dict[str, Any]]:
                 "source": exact.get("source") or "Yahoo public",
             }
         ]
+    if search_error:
+        raise InstrumentSearchError(f"Yahoo Finance instrument search unavailable: {search_error}") from search_error
     return []
 
 
