@@ -247,6 +247,177 @@ function integrationNavTone(status: any): 'good' | 'warn' | 'bad' {
   return 'warn'
 }
 
+function formatCheckedAt(value: any) {
+  if (!value) return 'Not checked yet'
+  const numeric = Number(value)
+  const date = Number.isFinite(numeric) ? new Date(numeric < 10_000_000_000 ? numeric * 1000 : numeric) : new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString()
+}
+
+function previewText(value: any) {
+  if (value == null || value === '') return '-'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '-'
+  return String(value)
+}
+
+function sampleItems(sample: any): any[] {
+  if (Array.isArray(sample)) return sample
+  if (Array.isArray(sample?.items)) return sample.items
+  if (Array.isArray(sample?.headlines)) return sample.headlines
+  if (Array.isArray(sample?.positions)) return sample.positions
+  if (Array.isArray(sample?.portfolio?.positions)) return sample.portfolio.positions
+  return []
+}
+
+function enabledState(sourceId: string, settings: any) {
+  const cfg = settings?.[sourceId] || {}
+  if (sourceId === 'ibkr') return { enabled: cfg.enabled !== false, detail: `${cfg.host || '127.0.0.1'}:${cfg.port || 4001}` }
+  if (sourceId === 'yahoo') return { enabled: Boolean(cfg.news_enabled || cfg.fundamentals_enabled), detail: `Test ticker ${cfg.test_ticker || 'AMD'}` }
+  if (sourceId === 'seeking_alpha') return { enabled: Boolean(cfg.rss_enabled || cfg.authenticated_enabled), detail: cfg.authenticated_enabled ? 'RSS + authenticated' : 'RSS preferred' }
+  if (sourceId === 'rss') return { enabled: Array.isArray(cfg.feeds) && cfg.feeds.length > 0, detail: `${Array.isArray(cfg.feeds) ? cfg.feeds.length : 0} feeds` }
+  if (sourceId === 'fred') return { enabled: Boolean(cfg.api_key), detail: cfg.api_key ? 'API key saved' : 'No API key' }
+  if (sourceId === 'telegram') return { enabled: Boolean(cfg.bot_token && cfg.chat_id), detail: cfg.chat_id ? 'Chat configured' : 'Not configured' }
+  if (sourceId === 'discord_advisor') return { enabled: cfg.mode !== 'off', detail: cfg.mode || 'manual_first' }
+  if (sourceId === 'openai') return { enabled: cfg.mode !== 'off', detail: cfg.mode || 'off' }
+  return { enabled: true, detail: 'Configured' }
+}
+
+function PreviewFacts({ sourceId, status, settings, hidden }: any) {
+  const enabled = enabledState(sourceId, settings)
+  const connected = status?.status === 'healthy' || status?.data_received || status?.ok
+  const failed = status?.status === 'failed'
+  const facts = [
+    ['Enabled', enabled.enabled ? 'Enabled' : 'Disabled', enabled.detail],
+    ['Connection', failed ? 'Disconnected' : connected ? 'Connected' : 'Unknown', status?.source || 'No check result'],
+    ['Data received', status?.data_received ? 'Yes' : 'No', status?.status || 'not_checked'],
+    ['Last checked', formatCheckedAt(status?.checked_at), 'checked_at'],
+    ['Latency', status?.latency_ms != null ? `${status.latency_ms} ms` : 'Not reported', 'latency_ms'],
+  ]
+  return (
+    <div className="status-grid">
+      {facts.map(([label, value, detail]) => (
+        <div className="empty-state status-card" key={label}>
+          <div>
+            <span className="muted" style={{ display: 'block' }}>{label}</span>
+            <b style={{ display: 'block', marginTop: 4 }}>{hidden ? mask : value}</b>
+          </div>
+          <small className="muted">{hidden ? mask : detail}</small>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PreviewItemList({ items, empty, hidden }: { items: any[]; empty: string; hidden?: boolean }) {
+  if (!items.length) {
+    return (
+      <div className="empty-state">
+        <p className="muted">{hidden ? mask : empty}</p>
+      </div>
+    )
+  }
+  return (
+    <div className="actions">
+      {items.slice(0, 3).map((item, index) => {
+        const title = item?.title || item?.first || item?.name || item?.indicator || item?.symbol || `Preview item ${index + 1}`
+        const detail = item?.published || item?.timestamp || item?.source || item?.url || item?.link || item?.mode || item?.error || ''
+        const count = item?.items != null ? `${item.items} items` : item?.value != null ? previewText(item.value) : ''
+        return (
+          <div className="action" key={`${title}-${index}`}>
+            <div>
+              <b style={{ display: 'block' }}>{hidden ? mask : title}</b>
+              {count && <div className="muted">{hidden ? mask : count}</div>}
+              {detail && <small className={item?.error ? 'red' : 'muted'} style={{ display: 'block', marginTop: 4 }}>{hidden ? mask : detail}</small>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function KeyValuePreview({ sample, hidden }: { sample: any; hidden?: boolean }) {
+  if (!sample || typeof sample !== 'object' || Array.isArray(sample)) {
+    return (
+      <div className="empty-state">
+        <p className="muted">{hidden ? mask : 'No preview data available yet.'}</p>
+      </div>
+    )
+  }
+  const entries = Object.entries(sample).filter(([, value]) => value == null || typeof value !== 'object').slice(0, 8)
+  if (!entries.length) {
+    return (
+      <div className="empty-state">
+        <p className="muted">{hidden ? mask : 'Preview sample is present but has no displayable fields yet.'}</p>
+      </div>
+    )
+  }
+  return (
+    <div className="status-grid">
+      {entries.map(([key, value]) => (
+        <div className="empty-state" key={key}>
+          <span className="muted" style={{ display: 'block' }}>{key}</span>
+          <b style={{ display: 'block', marginTop: 4 }}>{hidden ? mask : previewText(value)}</b>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function IbkrPreview({ status, settings, hidden }: any) {
+  const sample = status?.sample || {}
+  const cfg = settings?.ibkr || {}
+  const positions = sampleItems(sample)
+  const connectionSample = { host: sample.host || cfg.host, port: sample.port || cfg.port, client_id: sample.client_id || cfg.client_id, status: status?.status || 'not_checked', fields: sample && typeof sample === 'object' ? Object.keys(sample).length : 0 }
+  return (
+    <>
+      <KeyValuePreview sample={connectionSample} hidden={hidden} />
+      <PreviewItemList items={positions.map((p: any) => ({ title: p.symbol || p.ticker || 'Position', value: p.market_value || p.qty || p.quantity, source: p.name || p.sec_type }))} empty={status?.data_received ? 'IBKR connected, but no sample positions were returned.' : status?.message || 'IBKR live data unavailable.'} hidden={hidden} />
+    </>
+  )
+}
+
+function SourceSamplePreview({ sourceId, status, settings, hidden }: any) {
+  const sample = status?.sample
+  if (sourceId === 'ibkr') return <IbkrPreview status={status} settings={settings} hidden={hidden} />
+  if (sourceId === 'yahoo') return <PreviewItemList items={sampleItems(sample)} empty={status?.message || 'No Yahoo preview data available yet.'} hidden={hidden} />
+  if (sourceId === 'seeking_alpha') {
+    const items = sampleItems(sample)
+    const sampleAuthIssue = sample && !Array.isArray(sample) && (sample.error || sample.auth_session_detected === false || Number(sample.status_code) >= 400)
+    const hasAuthIssue = sampleAuthIssue || items.some((item) => item?.error || item?.auth_session_detected === false || Number(item?.status_code) >= 400)
+    return (
+      <>
+        {hasAuthIssue && <div className="empty-state"><p className="muted">{hidden ? mask : 'Seeking Alpha RSS/auth preview is degraded. Check subscription/session settings if authenticated mode is enabled.'}</p></div>}
+        {items.length || !sample || Array.isArray(sample)
+          ? <PreviewItemList items={items} empty={status?.message || 'No Seeking Alpha preview data available yet.'} hidden={hidden} />
+          : <KeyValuePreview sample={sample} hidden={hidden} />}
+      </>
+    )
+  }
+  if (sourceId === 'rss') return <PreviewItemList items={sampleItems(sample)} empty={status?.message || 'No RSS preview data available yet.'} hidden={hidden} />
+  if (sourceId === 'fred') return <KeyValuePreview sample={sample || { status: status?.message || 'No macro preview data available yet.' }} hidden={hidden} />
+  return <KeyValuePreview sample={sample || { status: status?.message || 'No preview data available yet.' }} hidden={hidden} />
+}
+
+function IntegrationPreview({ sourceId, status, settings, hidden }: any) {
+  return (
+    <div className="actions">
+      <div>
+        <h3>{hidden ? 'Preview' : 'Data Preview'}</h3>
+        <p className="muted">{hidden ? mask : 'Latest health-check sample from this integration.'}</p>
+      </div>
+      <PreviewFacts sourceId={sourceId} status={status} settings={settings} hidden={hidden} />
+      <div className="empty-state">
+        <b>{hidden ? 'Status' : 'Last message'}</b>
+        <p className={status?.status === 'failed' ? 'red' : 'muted'}>{hidden ? mask : status?.message || 'No status message reported yet.'}</p>
+      </div>
+      <SourceSamplePreview sourceId={sourceId} status={status} settings={settings} hidden={hidden} />
+    </div>
+  )
+}
+
 function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop' }: { compact?: boolean; hidden?: boolean; variant?: SettingsVariant }) {
   const [settings, setSettings] = useState<any>(() => mergeIntegrationSettings(null))
   const [health, setHealth] = useState<any[]>([])
@@ -340,9 +511,11 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
         </nav>
         <div className="integration-detail">
           <IntegrationCard
+            sourceId={active.id}
             title={active.title}
             hidden={hidden}
             icon={active.icon}
+            settings={settings}
             status={statusFor(active)}
             doc={settings[active.id]?.documentation}
             onTest={active.testSrc ? () => test(active.testSrc as string) : undefined}
@@ -374,7 +547,7 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
   )
 }
 
-function IntegrationCard({ title, hidden, icon, status, doc, onTest, testing, children }: any) {
+function IntegrationCard({ sourceId, title, hidden, icon, settings, status, doc, onTest, testing, children }: any) {
   const ok = status?.data_received
   const failed = status?.status === 'failed'
   return (
@@ -394,6 +567,7 @@ function IntegrationCard({ title, hidden, icon, status, doc, onTest, testing, ch
         </button>
       )}
       {status && <pre className="mini-log">{hidden ? mask : status.message}</pre>}
+      <IntegrationPreview sourceId={sourceId} status={status} settings={settings} hidden={hidden} />
     </div>
   )
 }
