@@ -80,6 +80,72 @@ def yahoo_fundamentals(ticker: str) -> Dict[str, Any]:
     return out
 
 
+def _asset_type_from_quote_type(quote_type: Any) -> str:
+    text = str(quote_type or "").upper()
+    if "ETF" in text:
+        return "ETF"
+    if "CRYPTO" in text:
+        return "Crypto"
+    if "OPTION" in text:
+        return "Option"
+    if text in {"EQUITY", "STOCK"}:
+        return "Stock"
+    return "Other"
+
+
+def yahoo_symbol_search(query: str, limit: int = 8) -> List[Dict[str, Any]]:
+    q = str(query or "").strip()
+    if not q:
+        return []
+    url = "https://query1.finance.yahoo.com/v1/finance/search"
+    rows: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    try:
+        r = httpx.get(
+            url,
+            params={"q": q, "quotesCount": limit, "newsCount": 0},
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        r.raise_for_status()
+        data = r.json()
+        for quote in data.get("quotes", []):
+            symbol = str(quote.get("symbol") or "").strip().upper()
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            quote_type = quote.get("quoteType") or quote.get("typeDisp")
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "name": quote.get("shortname") or quote.get("longname") or quote.get("name") or symbol,
+                    "asset_type": _asset_type_from_quote_type(quote_type),
+                    "quote_type": quote_type,
+                    "exchange": quote.get("exchDisp") or quote.get("exchange"),
+                    "currency": quote.get("currency") or "USD",
+                    "source": "Yahoo search",
+                }
+            )
+    except Exception:
+        rows = []
+    if rows:
+        return rows[:limit]
+    exact = yahoo_fundamentals(q)
+    if exact.get("status") == "ok":
+        return [
+            {
+                "symbol": q.upper(),
+                "name": q.upper(),
+                "asset_type": "Stock",
+                "quote_type": "EQUITY",
+                "exchange": exact.get("exchange"),
+                "currency": exact.get("currency") or "USD",
+                "source": exact.get("source") or "Yahoo public",
+            }
+        ]
+    return []
+
+
 def test_rss(settings: Dict[str, Any] | None = None):
     t0 = time.time()
     cfg = (settings or get_settings()).get("rss", {})

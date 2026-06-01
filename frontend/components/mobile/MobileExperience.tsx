@@ -16,7 +16,6 @@ import {
   Eye,
   EyeOff,
   Gauge,
-  ChevronUp,
   Globe2,
   GripVertical,
   Home,
@@ -1506,23 +1505,52 @@ const CARD_GRID_FIELDS: CardFieldKey[] = ['shares', 'mktvalue', 'last', 'avgcost
 
 // Short descriptions surfaced via the info icon in the Manage Display screen.
 const FIELD_INFO: Record<string, string> = {
-  ticker: 'Instrument symbol (frozen first column)',
-  company: 'Company / instrument name',
-  shares: 'Position size (quantity held)',
-  mktvalue: 'Current market value of the position',
-  last: 'Last traded price',
-  avgcost: 'Average cost per share',
-  daypnl: "Today's profit/loss in cash",
-  daypnlpct: "Today's profit/loss in percent",
-  unrealized: 'Open profit/loss in cash',
-  unrealizedpct: 'Open profit/loss in percent',
-  weight: 'Share of total portfolio value',
-  risk: 'PIA risk score (0-100)',
-  momentum: 'PIA momentum score (0-100)',
-  sparkline: 'Mini price trend for the selected timeframe',
-  macro: 'Macro sensitivity (beta)',
-  ai: 'AI view available',
-  news: 'Recent news activity',
+  // Default table + card fields
+  ticker: 'Instrument symbol. Stays fixed as the first column while you scroll.',
+  company: 'Full company / instrument name.',
+  shares: 'Number of shares (or contracts) you currently hold.',
+  mktvalue: 'Current value of the holding at the latest price.',
+  last: 'Most recent traded price.',
+  avgcost: 'Average purchase cost of your current position.',
+  daypnl: "Today's profit or loss in cash.",
+  daypnlpct: "Today's price change in percent.",
+  unrealized: 'Profit or loss if sold at the current market price.',
+  unrealizedpct: 'Open profit or loss as a percentage of cost.',
+  weight: 'Percentage of total portfolio value.',
+  risk: 'PIA risk score from 0 (low) to 100 (high).',
+  momentum: 'PIA momentum score from 0 (weak) to 100 (strong).',
+  sparkline: 'Mini price trend for the selected timeframe.',
+  macro: 'Macro sensitivity (beta) to broad market moves.',
+  ai: 'An AI view is available for this position.',
+  news: 'Recent news activity for this instrument.',
+  // Advanced / IBKR fields (keyed by backend field name)
+  currency: 'Currency the position is denominated in.',
+  account: 'Brokerage account holding this position.',
+  conid: 'IBKR contract identifier (conId).',
+  con_id: 'IBKR contract identifier (conId).',
+  contract_id: 'IBKR contract identifier (conId).',
+  sec_type: 'Asset class (e.g. stock, ETF, option).',
+  asset_class: 'Asset class (e.g. stock, ETF, option).',
+  exchange: 'Exchange where the instrument trades.',
+  primary_exchange: 'Primary listing exchange.',
+  multiplier: 'Contract multiplier (options/futures).',
+  cost_basis: 'Total amount paid to open the position.',
+  market_price: 'Current market price used for valuation.',
+  realized: 'Profit or loss already locked in from closed trades.',
+  realized_pnl: 'Profit or loss already locked in from closed trades.',
+  daily_pnl: "Today's profit or loss in cash.",
+  day_change: "Today's price change in cash.",
+  delta: 'Option delta (price sensitivity to the underlying).',
+  gamma: 'Option gamma (rate of change of delta).',
+  theta: 'Option theta (time decay per day).',
+  vega: 'Option vega (sensitivity to volatility).',
+  expiry: 'Option/contract expiration date.',
+  strike: 'Option strike price.',
+  right: 'Option right (Call or Put).',
+  sector: 'Market sector classification.',
+  industry: 'Industry classification.',
+  beta: 'Beta vs the broad market.',
+  news_score: 'Recent news activity score for this instrument.',
 }
 
 // Sparkline timeframe (shared across portfolio positions view)
@@ -1858,7 +1886,7 @@ type ManageItem = { key: string; label: string; info?: string; locked?: boolean 
 // fields: enabled list (checkmark + name + info + reorder + grip), an
 // "+ Add" catalog of available/IBKR fields, and the sparkline timeframe.
 function MobileManageDisplay({
-  title, addLabel, order, visible, allKeys, defsByKey, sparkTf, onSparkTf, onToggle, onMove, onReset, onClose,
+  title, addLabel, order, visible, allKeys, defsByKey, sparkTf, onSparkTf, onToggle, onReorder, onReset, onClose,
 }: {
   title: string
   addLabel: string
@@ -1869,17 +1897,64 @@ function MobileManageDisplay({
   sparkTf: SparkTf
   onSparkTf: (tf: SparkTf) => void
   onToggle: (key: string) => void
-  onMove: (key: string, dir: -1 | 1) => void
+  onReorder: (nextOrder: string[]) => void
   onReset: () => void
   onClose: () => void
 }) {
   const [addOpen, setAddOpen] = useState(false)
+  const [info, setInfo] = useState<{ label: string; text: string } | null>(null)
+  const [dragKey, setDragKey] = useState<string | null>(null)
+  const dragKeyRef = useRef<string | null>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+
   const enabled = order.map(defsByKey).filter((d): d is ManageItem => !!d && visible.has(d.key))
   const seen = new Set<string>()
   const available = allKeys
     .filter((k) => !visible.has(k))
     .map(defsByKey)
     .filter((d): d is ManageItem => !!d && !seen.has(d.key) && (seen.add(d.key), true))
+
+  // Drag-to-reorder from the right-side grip. Reorders the enabled subset and
+  // merges back into the full order, leaving disabled entries in place.
+  function reorderTo(key: string, targetKey: string) {
+    if (key === targetKey) return
+    const en = order.filter((k) => visible.has(k))
+    const from = en.indexOf(key)
+    const to = en.indexOf(targetKey)
+    if (from < 0 || to < 0) return
+    const next = [...en]
+    next.splice(from, 1)
+    next.splice(to, 0, key)
+    let i = 0
+    onReorder(order.map((k) => (visible.has(k) ? next[i++] : k)))
+  }
+  function onListPointerDown(e: PointerEvent<HTMLUListElement>) {
+    const target = e.target as HTMLElement
+    if (!target.closest('[data-grip]')) return
+    const li = target.closest('[data-key]') as HTMLElement | null
+    if (!li?.dataset.key) return
+    dragKeyRef.current = li.dataset.key
+    setDragKey(li.dataset.key)
+    listRef.current?.setPointerCapture(e.pointerId)
+  }
+  function onListPointerMove(e: PointerEvent<HTMLUListElement>) {
+    if (!dragKeyRef.current || !listRef.current) return
+    const rows = Array.from(listRef.current.querySelectorAll('[data-key]')) as HTMLElement[]
+    for (const el of rows) {
+      const r = el.getBoundingClientRect()
+      if (e.clientY >= r.top && e.clientY < r.bottom) {
+        const tk = el.dataset.key
+        if (tk && tk !== dragKeyRef.current) reorderTo(dragKeyRef.current, tk)
+        break
+      }
+    }
+  }
+  function onListPointerEnd(e: PointerEvent<HTMLUListElement>) {
+    if (!dragKeyRef.current) return
+    dragKeyRef.current = null
+    setDragKey(null)
+    listRef.current?.releasePointerCapture?.(e.pointerId)
+  }
 
   return (
     <div className="pf-manage" role="dialog" aria-modal="true" aria-label={title}>
@@ -1889,9 +1964,16 @@ function MobileManageDisplay({
         <button type="button" className="pf-manage-reset" onClick={onReset}>Reset</button>
       </header>
       <div className="pf-manage-body">
-        <ul className="pf-manage-list">
-          {enabled.map((item, i) => (
-            <li className="pf-manage-row" key={item.key}>
+        <ul
+          className={`pf-manage-list${dragKey ? ' is-dragging' : ''}`}
+          ref={listRef}
+          onPointerDown={onListPointerDown}
+          onPointerMove={onListPointerMove}
+          onPointerUp={onListPointerEnd}
+          onPointerCancel={onListPointerEnd}
+        >
+          {enabled.map((item) => (
+            <li className={`pf-manage-row${dragKey === item.key ? ' dragging' : ''}`} key={item.key} data-key={item.key}>
               <button
                 type="button"
                 className="pf-manage-check on"
@@ -1902,12 +1984,8 @@ function MobileManageDisplay({
                 ✓
               </button>
               <span className="pf-manage-name">{item.label}</span>
-              <button type="button" className="pf-manage-info" aria-label={`${item.label} info`} title={item.info || item.label}><Info size={14} /></button>
-              <div className="pf-manage-reorder">
-                <button type="button" aria-label={`Move ${item.label} up`} disabled={i === 0} onClick={() => onMove(item.key, -1)}><ChevronUp size={15} /></button>
-                <button type="button" aria-label={`Move ${item.label} down`} disabled={i === enabled.length - 1} onClick={() => onMove(item.key, 1)}><ChevronDown size={15} /></button>
-              </div>
-              <span className="pf-manage-grip" aria-hidden="true"><GripVertical size={16} /></span>
+              <button type="button" className="pf-manage-info" aria-label={`About ${item.label}`} onClick={() => setInfo({ label: item.label, text: item.info || 'No description available.' })}><Info size={15} /></button>
+              <span className="pf-manage-grip" data-grip role="button" tabIndex={0} aria-label={`Drag to reorder ${item.label}`}><GripVertical size={18} /></span>
             </li>
           ))}
         </ul>
@@ -1920,7 +1998,7 @@ function MobileManageDisplay({
               <li className="pf-manage-row" key={item.key}>
                 <button type="button" className="pf-manage-check" aria-label={`Add ${item.label}`} onClick={() => onToggle(item.key)} />
                 <span className="pf-manage-name">{item.label}</span>
-                <button type="button" className="pf-manage-info" aria-label={`${item.label} info`} title={item.info || item.label}><Info size={14} /></button>
+                <button type="button" className="pf-manage-info" aria-label={`About ${item.label}`} onClick={() => setInfo({ label: item.label, text: item.info || 'No description available.' })}><Info size={15} /></button>
                 <button type="button" className="pf-manage-addbtn" aria-label={`Add ${item.label}`} onClick={() => onToggle(item.key)}><Plus size={15} /></button>
               </li>
             )) : <li className="pf-manage-empty">All fields are shown.</li>}
@@ -1928,6 +2006,16 @@ function MobileManageDisplay({
         )}
         <SparkTfRail value={sparkTf} onChange={onSparkTf} />
       </div>
+      {info && (
+        <div className="pf-info-pop-root" role="presentation">
+          <button type="button" className="pf-info-pop-overlay" aria-label="Close" onClick={() => setInfo(null)} />
+          <div className="pf-info-pop" role="dialog" aria-modal="true" aria-label={`${info.label} info`}>
+            <strong>{info.label}</strong>
+            <p>{info.text}</p>
+            <button type="button" className="pf-info-pop-close" onClick={() => setInfo(null)}>Got it</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2195,21 +2283,6 @@ export default function MobileExperience() {
     try { localStorage.setItem(COL_LS_KEY, JSON.stringify([...next])) } catch {}
   }
 
-  // Swap an enabled column with its adjacent enabled neighbour, leaving any
-  // disabled entries in place — reliable reorder without touch-drag.
-  function moveCol(key: ColKey, dir: -1 | 1) {
-    const enabled = colOrder.filter((k) => visibleCols.has(k))
-    const ei = enabled.indexOf(key)
-    const neighbour = enabled[ei + dir]
-    if (ei < 0 || neighbour == null) return
-    const ci = colOrder.indexOf(key)
-    const ni = colOrder.indexOf(neighbour)
-    const nextOrder = [...colOrder]
-    ;[nextOrder[ci], nextOrder[ni]] = [nextOrder[ni], nextOrder[ci]]
-    setColOrder(nextOrder)
-    try { localStorage.setItem(COL_ORDER_LS_KEY, JSON.stringify(nextOrder)) } catch {}
-  }
-
   function resetVisibleCols() {
     const def = new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key))
     setVisibleCols(def)
@@ -2227,19 +2300,6 @@ export default function MobileExperience() {
     else next.add(key)
     setCardFields(next)
     try { localStorage.setItem(CARD_FIELDS_LS_KEY, JSON.stringify([...next])) } catch {}
-  }
-
-  function moveCardField(key: CardFieldKey, dir: -1 | 1) {
-    const enabled = cardOrder.filter((k) => cardFields.has(k))
-    const ei = enabled.indexOf(key)
-    const neighbour = enabled[ei + dir]
-    if (ei < 0 || neighbour == null) return
-    const ci = cardOrder.indexOf(key)
-    const ni = cardOrder.indexOf(neighbour)
-    const nextOrder = [...cardOrder]
-    ;[nextOrder[ci], nextOrder[ni]] = [nextOrder[ni], nextOrder[ci]]
-    setCardOrder(nextOrder)
-    try { localStorage.setItem(CARD_ORDER_LS_KEY, JSON.stringify(nextOrder)) } catch {}
   }
 
   function resetCardFields() {
@@ -2359,13 +2419,13 @@ export default function MobileExperience() {
                 const c = COL_DEFS.find((d) => d.key === k)
                 if (c) return { key: c.key, label: c.label, info: FIELD_INFO[c.key], locked: c.key === 'ticker' }
                 const a = advancedFieldDefs.find((d) => d.key === k)
-                if (a) return { key: a.key, label: a.label, info: 'IBKR / backend field' }
+                if (a) return { key: a.key, label: a.label, info: FIELD_INFO[a.field] || 'Additional IBKR / backend field.' }
                 return undefined
               }}
               sparkTf={sparkTf}
               onSparkTf={updateSparkTf}
               onToggle={toggleVisibleCol}
-              onMove={(k, d) => moveCol(k, d)}
+              onReorder={(next) => { setColOrder(next); try { localStorage.setItem(COL_ORDER_LS_KEY, JSON.stringify(next)) } catch {} }}
               onReset={resetVisibleCols}
               onClose={() => setColMenuOpen(false)}
             />
@@ -2383,7 +2443,7 @@ export default function MobileExperience() {
               sparkTf={sparkTf}
               onSparkTf={updateSparkTf}
               onToggle={(k) => toggleCardField(k as CardFieldKey)}
-              onMove={(k, d) => moveCardField(k as CardFieldKey, d)}
+              onReorder={(next) => { setCardOrder(next as CardFieldKey[]); try { localStorage.setItem(CARD_ORDER_LS_KEY, JSON.stringify(next)) } catch {} }}
               onReset={resetCardFields}
               onClose={() => setColMenuOpen(false)}
             />

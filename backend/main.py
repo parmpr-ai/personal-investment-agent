@@ -8,7 +8,7 @@ from services.state import portfolio_snapshot, macro_snapshot, news_items, catal
 from services.trade_engine import scanner_items, opportunity_for
 from services.ws import manager
 from services.settings_store import get_settings, save_settings
-from services.connectors import source_health, test_source, yahoo_news, yahoo_fundamentals
+from services.connectors import source_health, test_source, yahoo_news, yahoo_fundamentals, yahoo_symbol_search
 from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding
 from services.news_intelligence import get_news_intelligence
 from services.stock_intelligence import build_stock_panel_intelligence, get_ticker_news_intelligence
@@ -133,6 +133,9 @@ def setup_diagnostics():
 def portfolio(): return get_portfolio_payload()
 @app.get('/manual-holdings')
 def manual_holdings(): return list_manual_holdings()
+@app.get('/ticker-lookup')
+def ticker_lookup(q:str=''):
+ return {'query':q,'matches':yahoo_symbol_search(q)}
 @app.post('/manual-holdings')
 def manual_holdings_create(req:ManualHoldingRequest):
  try:
