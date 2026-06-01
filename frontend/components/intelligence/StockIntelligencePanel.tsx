@@ -38,6 +38,92 @@ function MetricRow({ label, value, tone = 'blue', hidden }: { label: string; val
   )
 }
 
+// Position Intelligence V2 — decision-support panel built only from existing
+// backend/position values. Unavailable values are omitted; no fake data.
+function PositionIntelligence({ source, last, hidden }: { source: any; last: number; hidden: boolean }) {
+  const shares = Number(source.quantity ?? source.qty ?? 0)
+  if (!(shares > 0)) {
+    return (
+      <PiaCard className="stock-intel-position" title={hidden ? 'Workspace' : 'Your Position'}>
+        <p className="sip-empty">No position currently held.</p>
+      </PiaCard>
+    )
+  }
+  const avgCost = Number(source.avg_price ?? source.avgCost ?? source.avg_cost ?? 0)
+  const marketValue = Number(source.market_value ?? (last && shares ? last * shares : 0))
+  const costBasis = Number(source.cost_basis ?? (avgCost && shares ? avgCost * shares : 0))
+  const portfolioPct = source.portfolio_pct
+  const assetClass = source.sec_type ?? source.asset_class ?? source.sectype
+  const sector = source.sector ?? source.industry
+  const dayPnl = source.day_pnl ?? source.day_change
+  const unrealized = source.unrealized
+  const unrealizedPct = source.unrealized_pct
+  const realized = source.realized ?? source.realized_pnl
+  const risk = source.risk
+  const momentum = source.momentum_score ?? source.momentum
+  const newsScore = source.news_score ?? source.news_count ?? source.news
+  const macro = source.macro_sensitivity
+
+  const has = (v: unknown) => v != null && v !== '' && !(typeof v === 'number' && Number.isNaN(v))
+  const signedMoney = (v: number) => `${v >= 0 ? '+' : ''}${money(v)}`
+  const signedPct = (v: number) => `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`
+
+  // AI-style summary from existing values only; omit statements without data.
+  const lines: string[] = [`You own ${shares.toLocaleString('en-US')} shares.`]
+  if (has(portfolioPct)) lines.push(`Position size is ${Number(portfolioPct).toFixed(1)}% of the portfolio.`)
+  if (avgCost > 0) lines.push(`Average cost is ${money(avgCost)}.`)
+  if (has(unrealized)) lines.push(`Position is ${Number(unrealized) >= 0 ? 'currently profitable' : 'currently at a loss'}${has(unrealizedPct) ? ` (${signedPct(Number(unrealizedPct))})` : ''}.`)
+  if (has(momentum)) lines.push(`Momentum is ${Number(momentum) >= 60 ? 'positive' : Number(momentum) >= 40 ? 'neutral' : 'soft'}.`)
+
+  return (
+    <PiaCard
+      className="stock-intel-position"
+      title={hidden ? 'Workspace' : 'Your Position'}
+      badge={has(unrealized) && !hidden ? <PiaBadge variant={Number(unrealized) >= 0 ? 'bullish' : 'bearish'} size="compact">{signedMoney(Number(unrealized))} P/L</PiaBadge> : undefined}
+    >
+      <div className="sip-grid">
+        <div className="sip-cell"><span>Shares</span><b>{hidden ? mask : shares.toLocaleString('en-US')}</b></div>
+        {avgCost > 0 && <div className="sip-cell"><span>Avg Cost</span><b>{hidden ? mask : money(avgCost)}</b></div>}
+        {costBasis > 0 && <div className="sip-cell"><span>Cost Basis</span><b>{hidden ? mask : money(costBasis)}</b></div>}
+        {marketValue > 0 && <div className="sip-cell"><span>Market Value</span><b>{hidden ? mask : money(marketValue)}</b></div>}
+        {has(portfolioPct) && <div className="sip-cell"><span>Portfolio %</span><b>{hidden ? mask : `${Number(portfolioPct).toFixed(1)}%`}</b></div>}
+        {has(assetClass) && <div className="sip-cell"><span>Asset Class</span><b>{String(assetClass)}</b></div>}
+        {has(sector) && <div className="sip-cell"><span>Sector</span><b>{String(sector)}</b></div>}
+      </div>
+
+      {(has(dayPnl) || has(unrealized) || has(realized)) && (
+        <>
+          <div className="sip-subhead">Performance</div>
+          <div className="sip-grid">
+            {has(dayPnl) && <div className="sip-cell"><span>Today&apos;s P&amp;L</span><b className={Number(dayPnl) >= 0 ? 'green' : 'red'}>{hidden ? mask : signedMoney(Number(dayPnl))}</b></div>}
+            {has(unrealized) && <div className="sip-cell"><span>Unrealized P&amp;L</span><b className={Number(unrealized) >= 0 ? 'green' : 'red'}>{hidden ? mask : signedMoney(Number(unrealized))}</b></div>}
+            {has(unrealizedPct) && <div className="sip-cell"><span>Unrealized %</span><b className={Number(unrealizedPct) >= 0 ? 'green' : 'red'}>{hidden ? mask : signedPct(Number(unrealizedPct))}</b></div>}
+            {has(realized) && <div className="sip-cell"><span>Realized P&amp;L</span><b className={Number(realized) >= 0 ? 'green' : 'red'}>{hidden ? mask : signedMoney(Number(realized))}</b></div>}
+          </div>
+        </>
+      )}
+
+      {(has(risk) || has(momentum) || has(newsScore) || has(macro)) && (
+        <>
+          <div className="sip-subhead">Intelligence</div>
+          <div className="sip-grid sip-intel">
+            {has(risk) && <div className="sip-cell"><span>Risk</span><b>{Number(risk)}</b></div>}
+            {has(momentum) && <div className="sip-cell"><span>Momentum</span><b>{Number(momentum)}</b></div>}
+            {has(newsScore) && <div className="sip-cell"><span>News Score</span><b>{Number(newsScore)}</b></div>}
+            {has(macro) && <div className="sip-cell"><span>Macro Sensitivity</span><b>{Number(macro)}</b></div>}
+          </div>
+        </>
+      )}
+
+      {!hidden && (
+        <div className="sip-summary">
+          {lines.map((line, i) => <p key={i}>{line}</p>)}
+        </div>
+      )}
+    </PiaCard>
+  )
+}
+
 function ConfidenceMeter({ value, hidden }: { value: number; hidden: boolean }) {
   const score = Math.max(0, Math.min(100, Math.round(value)))
   return (
@@ -165,14 +251,6 @@ export default function StockIntelligencePanel({
   const targets = intelligence?.targets || source.targets || {}
   const isPlaceholderCompany = !intelligence?.company && !source.company
 
-  const positionQty = Number(source.quantity ?? source.qty ?? 0)
-  const positionAvgCost = Number(source.avg_price ?? source.avgCost ?? 0)
-  const positionUnrealized = Number(source.unrealized || 0)
-  const positionUnrealizedPct = Number(source.unrealized_pct || 0)
-  const hasPosition = positionQty > 0
-  const positionSummary = hasPosition
-    ? `${positionQty} shares${positionAvgCost ? ` @ ${money(positionAvgCost)}` : ''}, ${positionUnrealized >= 0 ? '+' : ''}${money(positionUnrealized)} P/L${Number.isFinite(positionUnrealizedPct) ? ` (${pct(positionUnrealizedPct)})` : ''}`
-    : 'No open position detected for this symbol.'
 
   const tabLabel = (value: StockPanelTab) => (hidden ? PRIVATE_TAB_LABELS[value] : value)
   const handleTabChange = (value: StockPanelTab) => {
@@ -246,6 +324,7 @@ export default function StockIntelligencePanel({
             <PiaWidgetShell title={hidden ? 'Workspace summary' : 'AI quote overview'} statusBadge={<PiaBadge variant="ai">PIA AI</PiaBadge>} density="compact">
               <p>{hidden ? mask : overview.summary || 'Quote, position, and current market context for this symbol.'}</p>
             </PiaWidgetShell>
+            <PositionIntelligence source={source} last={last} hidden={hidden} />
             <div className="stock-intel-facts">
               <article>
                 <span>{hidden ? 'Signal' : 'Why moving'}</span>
@@ -259,12 +338,6 @@ export default function StockIntelligencePanel({
                 <span>{hidden ? 'Workspace' : 'Macro sensitivity'}</span>
                 <p>{hidden ? mask : overview.macro_sensitivity || `${source.macro_sensitivity || 0}/100 sensitivity score`}</p>
               </article>
-              {hasPosition ? (
-                <article>
-                  <span>{hidden ? 'Workspace' : 'Your position'}</span>
-                  <p>{hidden ? mask : positionSummary}</p>
-                </article>
-              ) : null}
               <article>
                 <span>{hidden ? 'Workspace' : 'Earnings proximity'}</span>
                 <p>{hidden ? mask : overview.earnings_proximity || 'Next earnings placeholder is tracked in Company.'}</p>

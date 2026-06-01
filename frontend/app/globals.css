@@ -761,3 +761,15 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .ws-widget-menu .ws-widget-menu-danger{color:#fda4af}
 .ws-widget-menu-sep{height:1px;background:var(--line);margin:4px 2px}
 @media(max-width:980px){.ws-widget-draghandle{display:none}.ws-widget-controls button{flex:1 1 auto;min-width:64px}}
+/* PIA-INT-001E Position Intelligence panel */
+.stock-intel-position{margin-bottom:6px}
+.sip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:2px 0}
+.sip-cell{display:grid;gap:3px;padding:9px 10px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(9,14,24,.6);min-width:0}
+.sip-cell span{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.sip-cell b{font-size:13px;font-variant-numeric:tabular-nums;color:#eef4fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sip-subhead{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8ab4ff;margin:12px 0 4px}
+.sip-summary{margin-top:12px;border:1px solid rgba(96,165,250,.2);border-radius:14px;background:linear-gradient(180deg,rgba(13,21,36,.7),rgba(8,13,19,.7));padding:12px}
+.sip-summary p{margin:0 0 4px;color:#dbe7f5;font-size:13px;line-height:1.45}
+.sip-summary p:last-child{margin-bottom:0}
+.sip-empty{margin:0;color:var(--muted);font-size:13px}
+@media(min-width:560px){.sip-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.sip-intel{grid-template-columns:repeat(4,minmax(0,1fr))}}
