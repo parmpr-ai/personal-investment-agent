@@ -1033,13 +1033,13 @@ function PositionCards({ rows, onSelect, hidden = false, fields, tf }: { rows: a
         const last = Number(position.last || position.price || 0)
         const avgCost = Number(position.avg_price ?? position.avg_cost ?? 0)
         const marketValue = Number(position.market_value ?? last * shares)
-        const dayPnl = Number(position.day_pnl || 0)
+        const dayPnl = Number(position.day_pnl ?? position.day_change ?? 0)
         const unreal = Number(position.unrealized || 0)
         const unrealPct = Number(
           position.unrealized_pct != null ? position.unrealized_pct : avgCost > 0 ? ((last - avgCost) / avgCost) * 100 : 0,
         )
         const macro = position.macro_sensitivity
-        const newsCount = Number(position.news_count ?? position.news ?? 0)
+        const newsCount = Number(position.news_count ?? position.news ?? position.news_score ?? 0)
         const hasAi = Boolean(position.ai_view || position.ai_score != null)
         const brandColor = position.brand || position.accent || undefined
         const signed = (value: number, format: (n: number) => string) => `${value >= 0 ? '+' : ''}${format(value)}`
@@ -1556,9 +1556,11 @@ const KNOWN_FIELD_META: Record<string, { label: string; kind: FieldKind; sensiti
   cost_basis: { label: 'Cost Basis', kind: 'money', sensitive: true },
   market_price: { label: 'Market Price', kind: 'money' },
   mkt_price: { label: 'Market Price', kind: 'money' },
+  realized: { label: 'Realized P&L', kind: 'money', sensitive: true },
   realized_pnl: { label: 'Realized P&L', kind: 'money', sensitive: true },
   realized_pl: { label: 'Realized P&L', kind: 'money', sensitive: true },
   daily_pnl: { label: 'Daily P&L', kind: 'money', sensitive: true },
+  day_change: { label: 'Day Change $', kind: 'money' },
   delta: { label: 'Delta', kind: 'num' },
   gamma: { label: 'Gamma', kind: 'num' },
   theta: { label: 'Theta', kind: 'num' },
@@ -1975,7 +1977,7 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
         case 'mktvalue':      return Number(p.market_value ?? last * shares)
         case 'last':          return last
         case 'avgcost':       return Number(p.avg_price || p.avg_cost || 0)
-        case 'daypnl':        return Number(p.day_pnl || 0)
+        case 'daypnl':        return Number(p.day_pnl ?? p.day_change ?? 0)
         case 'daypnlpct':     return Number(p.day_change_pct || 0)
         case 'unrealized':    return Number(p.unrealized || 0)
         case 'unrealizedpct': return Number(p.unrealized_pct || 0)
@@ -1996,7 +1998,7 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
     const change = Number(position.day_change_pct || 0)
     const unreal = Number(position.unrealized || 0)
     const unrealPct = Number(position.unrealized_pct || 0)
-    const dayPnl = Number(position.day_pnl || 0)
+    const dayPnl = Number(position.day_pnl ?? position.day_change ?? 0)
     const risk = Number(position.risk || 0)
     const shares = Number(position.quantity ?? position.qty ?? 0)
     const last = Number(position.last || position.price || 0)
