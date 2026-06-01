@@ -7,6 +7,7 @@ import { mask, money, pct } from '../../lib/pia-api'
 import TickerNewsList from './TickerNewsList'
 import TickerVideosList from './TickerVideosList'
 import { PRIVATE_TAB_LABELS, STOCK_PANEL_TABS, type StockPanelTab } from './panelRegistry'
+import StockKeyMetrics from './StockKeyMetrics'
 import { useStockIntelligence } from './useStockIntelligence'
 
 let lastActiveStockPanelTab: StockPanelTab = 'Quote'
@@ -292,6 +293,8 @@ export default function StockIntelligencePanel({
           <X size={variant === 'mobile' ? 22 : 16} />
         </button>
       </header>
+
+      <StockKeyMetrics source={{ ...source, fundamentals, company }} hidden={hidden} ticker={symbol} />
 
       <div className="stock-intel-quick-actions">
         <PiaButton type="button" variant="secondary" density="compact" icon={<Eye size={15} />} disabled title="Planned">
