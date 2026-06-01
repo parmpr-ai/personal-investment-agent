@@ -2,23 +2,27 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Brain, RotateCcw } from 'lucide-react'
-import { WIDGET_CATALOG_MAP, type WidgetCatalogItem } from './widgetCatalog'
+import { WIDGET_CATALOG_MAP, type WidgetCatalogItem, type WorkspaceWidgetId } from './widgetCatalog'
 import { getWorkspaceAiContext } from './workspaceAiContext'
-import { readWorkspaceLayout, resetWorkspaceLayout, writeWorkspaceLayout } from './workspaceLayoutStorage'
+import {
+  moveWidgetInLayout,
+  readHiddenWidgets,
+  readWorkspaceLayout,
+  reorderWidgetInLayout,
+  resetHiddenWidgets,
+  resetWorkspaceLayout,
+  writeHiddenWidgets,
+  writeWorkspaceLayout,
+  type WidgetMove,
+} from './workspaceLayoutStorage'
 import { WORKSPACE_MAP, type WorkspaceDefinition, type WorkspaceId } from './workspaceRegistry'
+import WorkspaceWidgetGrid from './WorkspaceWidgetGrid'
 
 type WorkspaceShellProps = {
   workspaceId: WorkspaceId
   workspace?: WorkspaceDefinition
   hidden?: boolean
   children?: ReactNode
-}
-
-const sizeToSpan: Record<WidgetCatalogItem['defaultSize'], string> = {
-  sm: 'span-4',
-  md: 'span-6',
-  lg: 'span-6',
-  xl: 'span-12',
 }
 
 export default function WorkspaceShell({ workspaceId, workspace: providedWorkspace, hidden = false, children }: WorkspaceShellProps) {
@@ -28,24 +32,49 @@ export default function WorkspaceShell({ workspaceId, workspace: providedWorkspa
   // (whose ids are absent from WORKSPACE_MAP) pass their own seed widgets via fallbackDefaults,
   // and no widget is dropped by a per-workspace allowlist during normalization.
   const defaultWidgetIds = workspace.defaultWidgetIds
-  const [layout, setLayout] = useState(() => [...defaultWidgetIds])
+  // PIA-BUG-030A: `order` rides the existing layout contract; `hiddenWidgets` is a companion set so
+  // removal persists (normalizeLayoutOrder otherwise re-appends removed defaults on reload).
+  const [order, setOrder] = useState<WorkspaceWidgetId[]>(() => [...defaultWidgetIds])
+  const [hiddenWidgets, setHiddenWidgets] = useState<WorkspaceWidgetId[]>([])
 
   useEffect(() => {
-    setLayout(readWorkspaceLayout(workspaceId, defaultWidgetIds))
+    setOrder(readWorkspaceLayout(workspaceId, defaultWidgetIds))
+    setHiddenWidgets(readHiddenWidgets(workspaceId))
   }, [defaultWidgetIds, workspaceId])
 
-  const widgets = useMemo(
-    () => layout.map((id) => WIDGET_CATALOG_MAP[id]).filter((widget): widget is WidgetCatalogItem => Boolean(widget)),
-    [layout],
-  )
-
-  function resetLayout() {
-    setLayout(resetWorkspaceLayout(workspaceId, defaultWidgetIds))
-  }
+  useEffect(() => {
+    writeWorkspaceLayout(workspaceId, order, defaultWidgetIds)
+  }, [defaultWidgetIds, order, workspaceId])
 
   useEffect(() => {
-    writeWorkspaceLayout(workspaceId, layout, defaultWidgetIds)
-  }, [defaultWidgetIds, layout, workspaceId])
+    writeHiddenWidgets(workspaceId, hiddenWidgets)
+  }, [hiddenWidgets, workspaceId])
+
+  const hiddenSet = useMemo(() => new Set(hiddenWidgets), [hiddenWidgets])
+  const visibleLayout = useMemo(() => order.filter((id) => !hiddenSet.has(id)), [order, hiddenSet])
+  const widgets = useMemo(
+    () => visibleLayout.map((id) => WIDGET_CATALOG_MAP[id]).filter((widget): widget is WidgetCatalogItem => Boolean(widget)),
+    [visibleLayout],
+  )
+
+  // Reorder/move operate on the visible order; hidden widgets are retained at the tail so the layout
+  // contract keeps every default present (no re-append surprises) while staying filtered from view.
+  function applyVisibleOrder(nextVisible: WorkspaceWidgetId[]) {
+    setOrder([...nextVisible, ...order.filter((id) => hiddenSet.has(id))])
+  }
+  function handleMove(id: WorkspaceWidgetId, move: WidgetMove) {
+    applyVisibleOrder(moveWidgetInLayout(visibleLayout, id, move))
+  }
+  function handleReorder(sourceId: WorkspaceWidgetId, targetId: WorkspaceWidgetId) {
+    applyVisibleOrder(reorderWidgetInLayout(visibleLayout, sourceId, targetId))
+  }
+  function handleRemove(id: WorkspaceWidgetId) {
+    setHiddenWidgets((current) => (current.includes(id) ? current : [...current, id]))
+  }
+  function resetLayout() {
+    setOrder(resetWorkspaceLayout(workspaceId, defaultWidgetIds))
+    setHiddenWidgets(resetHiddenWidgets(workspaceId))
+  }
 
   return (
     <div className="grid" data-workspace-id={workspaceId} data-ai-context={aiContext}>
@@ -88,35 +117,17 @@ export default function WorkspaceShell({ workspaceId, workspace: providedWorkspa
       <section className="panel span-12">
         <div className="section-header">
           <div>
-            <h3>{hidden ? 'Workspace widgets' : 'Coming widgets'}</h3>
+            <h3>{hidden ? 'Workspace widgets' : 'Workspace widgets'}</h3>
             <p className="muted">
               {hidden
                 ? `${widgets.length} workspace modules`
-                : 'This preview is filtered from the workspace widget catalog and will become the customizable workspace layout.'}
+                : 'Drag to reorder or right-click a widget for actions. On mobile, long-press a widget to edit.'}
             </p>
           </div>
         </div>
       </section>
 
-      {widgets.map((widget) => (
-        <section className={`panel ${sizeToSpan[widget.defaultSize]}`} key={widget.id}>
-          <div className="section-header">
-            <div>
-              <h3>{hidden ? 'Workspace widget' : widget.title}</h3>
-              <p className="muted">{hidden ? 'Private module preview' : widget.description}</p>
-            </div>
-            <span className="badge">{widget.status === 'existing' ? 'Existing' : 'Planned'}</span>
-          </div>
-          <div className="empty-state">
-            <b>{hidden ? 'Module preview' : widget.category}</b>
-            <p className="muted">
-              {hidden
-                ? 'Layout state is saved locally for this workspace.'
-                : `Default size ${widget.defaultSize.toUpperCase()} · allowed sizes ${widget.allowedSizes.join(', ').toUpperCase()}`}
-            </p>
-          </div>
-        </section>
-      ))}
+      <WorkspaceWidgetGrid widgets={widgets} hidden={hidden} onMove={handleMove} onReorder={handleReorder} onRemove={handleRemove} />
     </div>
   )
 }

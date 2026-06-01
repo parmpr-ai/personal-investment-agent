@@ -1,4 +1,4 @@
-import { normalizeLayoutOrder } from '../dashboard/layoutStorage'
+import { normalizeLayoutOrder, reorderItems } from '../dashboard/layoutStorage'
 import { WIDGET_CATALOG_MAP, isKnownWorkspaceWidgetId, type WorkspaceWidgetId } from './widgetCatalog'
 import { WORKSPACE_MAP, type WorkspaceId } from './workspaceRegistry'
 
@@ -66,4 +66,76 @@ export function resetWorkspaceLayout(workspaceId: WorkspaceId, fallbackDefaults?
     window.localStorage.removeItem(getWorkspaceLayoutStorageKey(workspaceId))
   } catch {}
   return defaults
+}
+
+// --- PIA-BUG-030A: widget management helpers (pure list mutations + hidden set) ---
+
+export type WidgetMove = 'top' | 'up' | 'down' | 'bottom'
+
+export function moveWidgetInLayout(
+  layout: readonly WorkspaceWidgetId[],
+  id: WorkspaceWidgetId,
+  move: WidgetMove,
+): WorkspaceWidgetId[] {
+  const index = layout.indexOf(id)
+  if (index === -1) return [...layout]
+  const next = [...layout]
+  next.splice(index, 1)
+  const target =
+    move === 'top'
+      ? 0
+      : move === 'bottom'
+        ? next.length
+        : move === 'up'
+          ? Math.max(0, index - 1)
+          : Math.min(next.length, index + 1)
+  next.splice(target, 0, id)
+  return next
+}
+
+export function reorderWidgetInLayout(
+  layout: readonly WorkspaceWidgetId[],
+  sourceId: WorkspaceWidgetId,
+  targetId: WorkspaceWidgetId,
+): WorkspaceWidgetId[] {
+  return reorderItems(layout, sourceId, targetId)
+}
+
+// Remove/hide is tracked in a companion key. `writeWorkspaceLayout` (the layout-order contract)
+// re-appends any default widget missing from the saved order via normalizeLayoutOrder, so a removed
+// default would otherwise reappear on reload. The hidden set lets removal persist while the order
+// contract, custom-safe seeding (fallbackDefaults), and reset behavior remain unchanged.
+export const WORKSPACE_HIDDEN_STORAGE_PREFIX = 'pia.workspace.hidden.v1'
+
+export function getWorkspaceHiddenStorageKey(workspaceId: WorkspaceId) {
+  return `${WORKSPACE_HIDDEN_STORAGE_PREFIX}.${workspaceId}`
+}
+
+export function readHiddenWidgets(workspaceId: WorkspaceId): WorkspaceWidgetId[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(getWorkspaceHiddenStorageKey(workspaceId))
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is WorkspaceWidgetId => typeof id === 'string' && isKnownWorkspaceWidgetId(id))
+      : []
+  } catch {
+    return []
+  }
+}
+
+export function writeHiddenWidgets(workspaceId: WorkspaceId, hidden: readonly WorkspaceWidgetId[]) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(getWorkspaceHiddenStorageKey(workspaceId), JSON.stringify([...hidden]))
+  } catch {}
+}
+
+export function resetHiddenWidgets(workspaceId: WorkspaceId): WorkspaceWidgetId[] {
+  if (typeof window === 'undefined') return []
+  try {
+    window.localStorage.removeItem(getWorkspaceHiddenStorageKey(workspaceId))
+  } catch {}
+  return []
 }
