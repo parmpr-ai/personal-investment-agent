@@ -165,6 +165,15 @@ export default function StockIntelligencePanel({
   const targets = intelligence?.targets || source.targets || {}
   const isPlaceholderCompany = !intelligence?.company && !source.company
 
+  const positionQty = Number(source.quantity ?? source.qty ?? 0)
+  const positionAvgCost = Number(source.avg_price ?? source.avgCost ?? 0)
+  const positionUnrealized = Number(source.unrealized || 0)
+  const positionUnrealizedPct = Number(source.unrealized_pct || 0)
+  const hasPosition = positionQty > 0
+  const positionSummary = hasPosition
+    ? `${positionQty} shares${positionAvgCost ? ` @ ${money(positionAvgCost)}` : ''}, ${positionUnrealized >= 0 ? '+' : ''}${money(positionUnrealized)} P/L${Number.isFinite(positionUnrealizedPct) ? ` (${pct(positionUnrealizedPct)})` : ''}`
+    : 'No open position detected for this symbol.'
+
   const tabLabel = (value: StockPanelTab) => (hidden ? PRIVATE_TAB_LABELS[value] : value)
   const handleTabChange = (value: StockPanelTab) => {
     lastActiveStockPanelTab = value
@@ -250,6 +259,12 @@ export default function StockIntelligencePanel({
                 <span>{hidden ? 'Workspace' : 'Macro sensitivity'}</span>
                 <p>{hidden ? mask : overview.macro_sensitivity || `${source.macro_sensitivity || 0}/100 sensitivity score`}</p>
               </article>
+              {hasPosition ? (
+                <article>
+                  <span>{hidden ? 'Workspace' : 'Your position'}</span>
+                  <p>{hidden ? mask : positionSummary}</p>
+                </article>
+              ) : null}
               <article>
                 <span>{hidden ? 'Workspace' : 'Earnings proximity'}</span>
                 <p>{hidden ? mask : overview.earnings_proximity || 'Next earnings placeholder is tracked in Company.'}</p>
