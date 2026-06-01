@@ -257,7 +257,7 @@ export function useWorkspaceConfig() {
     reset,
     movePinned: (from: number, to: number) => persistPinned(moveItem(pinnedMobile, from, to)),
     moveSidebar: (from: number, to: number) => persistSidebar(moveItem(sidebarDesktop, from, to)),
-    moveOrder: (from: number, to: number) => persistOrder(moveItem(order, from, to)),
+    moveOrder: (from: number, to: number) => persistOrder(moveItem(workspaces.map((workspace) => workspace.id), from, to)),
     setPinnedMobile: persistPinned,
     setSidebarDesktop: persistSidebar,
   }

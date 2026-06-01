@@ -48,7 +48,6 @@ import {
   WorkspaceShell,
   WorkspaceSwitcher,
   getWorkspaceDefinition,
-  getWorkspaceAiPromptPrefix,
   isWorkspaceId,
   useWorkspaceConfig,
   type WorkspaceId,
@@ -387,7 +386,9 @@ export default function Dashboard() {
           rescanning={rescanning}
           rescanStatus={rescanStatus}
         />
-        <MarketStrip items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />
+        {activeTool === 'workspace' && activeWorkspaceId === 'home' && (
+          <MarketStrip items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />
+        )}
         {activeTool === 'workspace' && activeWorkspaceId === 'home' && (
           <DashboardHome
             d={dashboard}
@@ -529,16 +530,18 @@ function Top({ workspace, activeTool, hidden, amountHidden, setHidden, rescan, r
   const title = activeTool === 'workspace' ? workspace?.title || 'Home' : toolLabel
   const subtitle =
     activeTool === 'workspace'
-      ? getWorkspaceAiPromptPrefix(workspace?.id || DEFAULT_WORKSPACE_ID)
+      ? ''
       : 'System tools, settings, release notes and operational controls'
 
   return (
     <div className="topbar">
       <div className="topbar-title">
         <h1>{hidden ? 'Workspace' : title}</h1>
-        <div className="muted">
-          {hidden ? 'Private workspace overview and controls' : subtitle}
-        </div>
+        {(hidden || subtitle) && (
+          <div className="muted">
+            {hidden ? 'Private workspace overview and controls' : subtitle}
+          </div>
+        )}
         {rescanStatus && <div className="muted">{rescanStatus}</div>}
       </div>
       <div className="top-actions">
