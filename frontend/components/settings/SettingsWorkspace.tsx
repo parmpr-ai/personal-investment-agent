@@ -8,15 +8,13 @@ import {
   Brain,
   Database,
   Globe2,
-  Pencil,
-  Plus,
   Trash2,
   Wallet,
 } from 'lucide-react'
 import GlowCard from '../ui/GlowCard'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 import SectionHeader from '../ui/SectionHeader'
-import { assetTypes, brokers, emptyHolding, fetchJson, getApiBase, mask, money, safeMessage } from '../../lib/pia-api'
+import { fetchJson, getApiBase, mask, money, safeMessage } from '../../lib/pia-api'
 import { WorkspaceManagerPanel, useWorkspaceConfig, type WorkspaceId } from '../workspace'
 
 type SettingsVariant = 'desktop' | 'mobile'
@@ -669,38 +667,6 @@ const releaseBacklogSummary = [
   { status: 'Degraded', target: 'Later', tone: 'bad' as const },
 ]
 
-type InstrumentMatch = {
-  symbol: string
-  name?: string
-  asset_type?: string
-  currency?: string
-  exchange?: string
-  quote_type?: string
-}
-
-function normalizeInstrumentMatches(payload: any): InstrumentMatch[] {
-  const matches = Array.isArray(payload?.matches) ? payload.matches : []
-  return matches
-    .map((item: any) => ({
-      symbol: String(item?.symbol || '').trim().toUpperCase(),
-      name: String(item?.name || item?.shortname || item?.longname || item?.symbol || '').trim(),
-      asset_type: assetTypes.includes(item?.asset_type) ? item.asset_type : 'Stock',
-      currency: String(item?.currency || 'USD').trim().toUpperCase(),
-      exchange: item?.exchange ? String(item.exchange) : '',
-      quote_type: item?.quote_type ? String(item.quote_type) : '',
-    }))
-    .filter((item: InstrumentMatch) => item.symbol)
-}
-
-function selectedInstrumentFromHolding(holding: any): InstrumentMatch {
-  return {
-    symbol: String(holding?.ticker || '').toUpperCase(),
-    name: holding?.name || holding?.ticker || '',
-    asset_type: holding?.asset_type || 'Stock',
-    currency: holding?.currency || 'USD',
-  }
-}
-
 function stringList(value: unknown, fallback: string[] = []) {
   if (!Array.isArray(value)) return fallback
   const list = value.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
@@ -805,148 +771,13 @@ function WorkspaceSettings({
 
 function ManualHoldingsSettings({ hidden }: { hidden?: boolean }) {
   const [holdings, setHoldings] = useState<any[]>([])
-  const [form, setForm] = useState<any>(emptyHolding)
-  const [editingId, setEditingId] = useState('')
   const [status, setStatus] = useState('')
-  const [lookupMatches, setLookupMatches] = useState<InstrumentMatch[]>([])
-  const [lookupLoading, setLookupLoading] = useState(false)
-  const [lookupMessage, setLookupMessage] = useState('')
-  const [selectedInstrument, setSelectedInstrument] = useState<InstrumentMatch | null>(null)
-  const [saving, setSaving] = useState(false)
 
   const refresh = () => fetchJson('/manual-holdings').then(setHoldings).catch(() => setStatus('Manual holdings API is unavailable.'))
 
   useEffect(() => {
     refresh()
   }, [])
-
-  useEffect(() => {
-    const ticker = String(form.ticker || '').trim().toUpperCase()
-    if (!ticker) {
-      setLookupMatches([])
-      setLookupMessage('')
-      setLookupLoading(false)
-      return
-    }
-    if (selectedInstrument?.symbol === ticker) {
-      setLookupMatches([])
-      setLookupMessage(`${ticker} selected.`)
-      setLookupLoading(false)
-      return
-    }
-    let active = true
-    setLookupLoading(true)
-    setLookupMessage('')
-    const timer = window.setTimeout(async () => {
-      const result = await fetchJson(`/ticker-lookup?q=${encodeURIComponent(ticker)}`).catch((error) => {
-        if (active) {
-          setLookupMatches([])
-          setLookupMessage(safeMessage(error?.detail, 'Unable to search instruments. Check the ticker and try again.'))
-        }
-        return { lookupError: true }
-      })
-      if (!active) return
-      if (result?.lookupError) {
-        setLookupLoading(false)
-        return
-      }
-      const matches = normalizeInstrumentMatches(result)
-      setLookupMatches(matches)
-      setLookupMessage(matches.length ? 'Select the matching instrument before saving.' : 'No matching instruments found.')
-      setLookupLoading(false)
-    }, 300)
-    return () => {
-      active = false
-      window.clearTimeout(timer)
-    }
-  }, [form.ticker, selectedInstrument?.symbol])
-
-  function updateForm(key: string, value: any) {
-    if (key === 'ticker') {
-      const nextTicker = String(value || '').trim().toUpperCase()
-      setSelectedInstrument((current) => (current?.symbol === nextTicker ? current : null))
-    }
-    setForm((current: any) => ({ ...current, [key]: value }))
-  }
-
-  function startEdit(holding: any) {
-    setEditingId(holding.id)
-    setSelectedInstrument(selectedInstrumentFromHolding(holding))
-    setLookupMatches([])
-    setLookupMessage(`${holding.ticker} selected.`)
-    setForm({
-      ticker: holding.ticker || '',
-      name: holding.name || '',
-      asset_type: holding.asset_type || 'Stock',
-      broker: holding.broker || 'Manual',
-      quantity: holding.quantity ?? '',
-      avg_price: holding.avg_price ?? '',
-      currency: holding.currency || 'USD',
-      notes: holding.notes || '',
-    })
-    setStatus('')
-  }
-
-  function resetForm() {
-    setEditingId('')
-    setForm(emptyHolding)
-    setSelectedInstrument(null)
-    setLookupMatches([])
-    setLookupMessage('')
-    setLookupLoading(false)
-  }
-
-  function selectInstrument(match: InstrumentMatch) {
-    setSelectedInstrument(match)
-    setLookupMatches([])
-    setLookupMessage(`${match.symbol} selected.`)
-    setForm((current: any) => ({
-      ...current,
-      ticker: match.symbol,
-      name: match.name || match.symbol,
-      asset_type: assetTypes.includes(match.asset_type || '') ? match.asset_type : current.asset_type || 'Stock',
-      currency: match.currency || current.currency || 'USD',
-    }))
-  }
-
-  async function saveHolding(event: React.FormEvent) {
-    event.preventDefault()
-    setStatus('')
-    if (saving) return
-    const ticker = String(form.ticker || '').trim().toUpperCase()
-    if (!ticker || selectedInstrument?.symbol !== ticker) {
-      setStatus('Select a matching instrument from the ticker search before saving.')
-      return
-    }
-    if (lookupLoading) {
-      setStatus('Finish the ticker lookup before saving.')
-      return
-    }
-    const payload = {
-      ...form,
-      ticker,
-      name: form.name || selectedInstrument.name || ticker,
-      quantity: Number(form.quantity),
-      avg_price: Number(form.avg_price),
-      currency: String(form.currency || selectedInstrument.currency || 'USD').toUpperCase(),
-    }
-    const path = editingId ? `/manual-holdings/${editingId}` : '/manual-holdings'
-    const method = editingId ? 'PUT' : 'POST'
-    setSaving(true)
-    const result = await fetchJson(path, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).catch((error) => {
-      setStatus(safeMessage(error?.detail, 'Unable to save manual holding.'))
-      return null
-    })
-    setSaving(false)
-    if (!result) return
-    setStatus(editingId ? 'Manual holding updated.' : 'Manual holding added.')
-    resetForm()
-    refresh()
-  }
 
   async function removeHolding(id: string) {
     const result = await fetchJson(`/manual-holdings/${id}`, { method: 'DELETE' }).catch((error) => {
@@ -955,7 +786,6 @@ function ManualHoldingsSettings({ hidden }: { hidden?: boolean }) {
     })
     if (!result) return
     setStatus('Manual holding deleted.')
-    if (editingId === id) resetForm()
     refresh()
   }
 
@@ -964,74 +794,11 @@ function ManualHoldingsSettings({ hidden }: { hidden?: boolean }) {
       <GlowCard>
         <SectionHeader
           title={hidden ? 'Manual Assets' : 'Manual Holdings'}
-          subtitle={hidden ? 'Manage external positions.' : 'Add Freedom24, Revolut, IBKR-adjacent, or manually tracked assets.'}
+          subtitle={hidden ? 'Review external positions.' : 'Manual holding creation now starts from Portfolio options.'}
         />
-        <form className="manual-form" onSubmit={saveHolding}>
-          <label className="field">
-            <span>Ticker</span>
-            <input value={form.ticker ?? ''} autoComplete="off" onChange={(e) => updateForm('ticker', e.target.value.toUpperCase())} />
-          </label>
-          <div className="field wide manual-lookup">
-            <span>Instrument match</span>
-            {lookupLoading && <div className="manual-lookup-status">Searching instruments...</div>}
-            {!lookupLoading && selectedInstrument?.symbol === String(form.ticker || '').toUpperCase() && (
-              <div className="manual-selected">
-                <b>{selectedInstrument.symbol}</b>
-                <span>{selectedInstrument.name || 'Selected instrument'}</span>
-                {selectedInstrument.exchange && <small>{selectedInstrument.exchange}</small>}
-              </div>
-            )}
-            {!lookupLoading && lookupMessage && selectedInstrument?.symbol !== String(form.ticker || '').toUpperCase() && (
-              <div className="manual-lookup-status">{lookupMessage}</div>
-            )}
-            {!lookupLoading && lookupMatches.length > 0 && (
-              <div className="manual-lookup-results">
-                {lookupMatches.map((match) => (
-                  <button type="button" key={`${match.symbol}-${match.exchange || match.name}`} onClick={() => selectInstrument(match)}>
-                    <b>{match.symbol}</b>
-                    <span>{match.name || match.symbol}</span>
-                    <small>{[match.exchange, match.asset_type, match.currency].filter(Boolean).join(' / ')}</small>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <Field label="Name" value={form.name} onChange={(v: any) => updateForm('name', v)} />
-          <label className="field">
-            <span>Asset Type</span>
-            <select value={form.asset_type} onChange={(e) => updateForm('asset_type', e.target.value)}>
-              {assetTypes.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Broker</span>
-            <select value={form.broker} onChange={(e) => updateForm('broker', e.target.value)}>
-              {brokers.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Field label="Quantity" value={form.quantity} onChange={(v: any) => updateForm('quantity', v)} />
-          <Field label="Average Price" value={form.avg_price} onChange={(v: any) => updateForm('avg_price', v)} />
-          <Field label="Currency" value={form.currency} onChange={(v: any) => updateForm('currency', v.toUpperCase())} />
-          <TextArea label="Notes" value={form.notes} onChange={(v: any) => updateForm('notes', v)} placeholder="Source account, thesis, or manual valuation notes." />
-          <div className="manual-actions">
-            <button className="tab active" type="submit">
-              {editingId ? <Pencil size={15} /> : <Plus size={15} />} {saving ? 'Saving...' : editingId ? 'Update holding' : 'Add holding'}
-            </button>
-            {editingId && (
-              <button className="tab" type="button" onClick={resetForm}>
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
+        <div className="empty-state">
+          <p>{hidden ? 'Use Portfolio options to add holdings.' : 'Use Portfolio -> three-dot menu -> Add Manual Holding to search and select an instrument before saving.'}</p>
+        </div>
         {status && <p className="muted">{status}</p>}
       </GlowCard>
       <GlowCard>
@@ -1070,9 +837,6 @@ function ManualHoldingsSettings({ hidden }: { hidden?: boolean }) {
                   <td>{hidden ? mask : holding.notes || '-'}</td>
                   <td>
                     <div className="row-actions">
-                      <button className="icon-tab" type="button" onClick={() => startEdit(holding)} aria-label={`Edit ${holding.ticker}`}>
-                        <Pencil size={15} />
-                      </button>
                       <button className="icon-tab danger" type="button" onClick={() => removeHolding(holding.id)} aria-label={`Delete ${holding.ticker}`}>
                         <Trash2 size={15} />
                       </button>

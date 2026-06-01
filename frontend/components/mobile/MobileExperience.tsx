@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent, ReactNode } from 'react'
 import {
   AlertTriangle,
@@ -165,11 +165,15 @@ const scannerFallback = [
 function useMobileDashboard() {
   const [dashboard, setDashboard] = useState<any>(null)
 
+  const refresh = useCallback(async () => {
+    const response = await fetch(`${API}/dashboard`)
+    const data = await response.json()
+    setDashboard(data)
+    return data
+  }, [])
+
   useEffect(() => {
-    fetch(`${API}/dashboard`)
-      .then((response) => response.json())
-      .then(setDashboard)
-      .catch(() => {})
+    refresh().catch(() => {})
 
     let socket: WebSocket | undefined
     try {
@@ -183,9 +187,9 @@ function useMobileDashboard() {
     } catch {}
 
     return () => socket?.close()
-  }, [])
+  }, [refresh])
 
-  return dashboard
+  return { dashboard, refresh }
 }
 
 function riskTone(value: number) {
@@ -1514,6 +1518,39 @@ const CARD_ORDER_LS_KEY = 'pia.portfolioCardOrder.mobile'
 // Card fields whose display order can be applied to the card stat grid.
 const CARD_GRID_FIELDS: CardFieldKey[] = ['shares', 'mktvalue', 'last', 'avgcost', 'daypnl', 'unrealized']
 
+type ManualInstrumentMatch = {
+  symbol: string
+  name?: string
+  asset_type?: string
+  currency?: string
+  exchange?: string
+  quote_type?: string
+}
+
+const emptyManualHoldingForm = {
+  ticker: '',
+  quantity: '',
+  avg_price: '',
+}
+
+function normalizeManualMatches(payload: any): ManualInstrumentMatch[] {
+  const matches = Array.isArray(payload?.matches) ? payload.matches : []
+  return matches
+    .map((item: any) => ({
+      symbol: String(item?.symbol || '').trim().toUpperCase(),
+      name: String(item?.name || item?.shortname || item?.longname || item?.symbol || '').trim(),
+      asset_type: String(item?.asset_type || 'Stock'),
+      currency: String(item?.currency || 'USD').trim().toUpperCase(),
+      exchange: item?.exchange ? String(item.exchange) : '',
+      quote_type: item?.quote_type ? String(item.quote_type) : '',
+    }))
+    .filter((item: ManualInstrumentMatch) => item.symbol)
+}
+
+function validManualTicker(value: string) {
+  return /^[A-Z0-9][A-Z0-9.\-=^]{0,19}$/.test(value)
+}
+
 // Short descriptions surfaced via the info icon in the Manage Display screen.
 const FIELD_INFO: Record<string, string> = {
   // Default table + card fields
@@ -2031,6 +2068,190 @@ function MobileManageDisplay({
   )
 }
 
+function AddManualHoldingSheet({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void
+  onSaved: () => Promise<unknown>
+}) {
+  const [form, setForm] = useState(emptyManualHoldingForm)
+  const [matches, setMatches] = useState<ManualInstrumentMatch[]>([])
+  const [selected, setSelected] = useState<ManualInstrumentMatch | null>(null)
+  const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupMessage, setLookupMessage] = useState('')
+  const [status, setStatus] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const ticker = form.ticker.trim().toUpperCase()
+
+  useEffect(() => {
+    if (!ticker) {
+      setMatches([])
+      setLookupMessage('')
+      setLookupLoading(false)
+      return
+    }
+    if (!validManualTicker(ticker)) {
+      setMatches([])
+      setLookupMessage('Enter a valid ticker symbol.')
+      setLookupLoading(false)
+      return
+    }
+    if (selected?.symbol === ticker) {
+      setMatches([])
+      setLookupMessage(`${ticker} selected.`)
+      setLookupLoading(false)
+      return
+    }
+    let active = true
+    setLookupLoading(true)
+    setLookupMessage('')
+    const timer = window.setTimeout(async () => {
+      const result = await fetchJson(`/ticker-lookup?q=${encodeURIComponent(ticker)}`).catch((error) => {
+        if (active) {
+          setMatches([])
+          setLookupMessage(safeMessage(error?.detail, 'Ticker lookup is unavailable. Try again when the backend is online.'))
+        }
+        return { lookupError: true }
+      })
+      if (!active) return
+      if (result?.lookupError) {
+        setLookupLoading(false)
+        return
+      }
+      const nextMatches = normalizeManualMatches(result)
+      setMatches(nextMatches)
+      setLookupMessage(nextMatches.length ? 'Select the matching instrument before saving.' : 'No matching instruments found.')
+      setLookupLoading(false)
+    }, 300)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [ticker, selected?.symbol])
+
+  function update(key: keyof typeof emptyManualHoldingForm, value: string) {
+    if (key === 'ticker') {
+      const nextTicker = value.trim().toUpperCase()
+      setSelected((current) => (current?.symbol === nextTicker ? current : null))
+      setStatus('')
+    }
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function selectInstrument(match: ManualInstrumentMatch) {
+    setSelected(match)
+    setMatches([])
+    setLookupMessage(`${match.symbol} selected.`)
+    setStatus('')
+    setForm((current) => ({ ...current, ticker: match.symbol }))
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault()
+    setStatus('')
+    if (saving) return
+    if (!ticker || !validManualTicker(ticker)) {
+      setStatus('Enter a valid ticker symbol.')
+      return
+    }
+    if (lookupLoading) {
+      setStatus('Finish the ticker lookup before saving.')
+      return
+    }
+    if (selected?.symbol !== ticker) {
+      setStatus('Select a matching instrument from the search results before saving.')
+      return
+    }
+    const quantity = Number(form.quantity)
+    const avgPrice = Number(form.avg_price)
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setStatus('Enter a quantity greater than zero.')
+      return
+    }
+    if (!Number.isFinite(avgPrice) || avgPrice < 0) {
+      setStatus('Enter a valid average cost.')
+      return
+    }
+    setSaving(true)
+    const result = await fetchJson('/manual-holdings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ticker,
+        name: selected.name || ticker,
+        asset_type: selected.asset_type || 'Stock',
+        broker: 'Manual',
+        quantity,
+        avg_price: avgPrice,
+        currency: selected.currency || 'USD',
+        notes: `Added from Portfolio menu${selected.exchange ? ` (${selected.exchange})` : ''}.`,
+      }),
+    }).catch((error) => {
+      setStatus(safeMessage(error?.detail, 'Unable to save manual holding. Check quantity, cost, and backend status.'))
+      return null
+    })
+    if (!result) {
+      setSaving(false)
+      return
+    }
+    await onSaved().catch(() => {})
+    setSaving(false)
+    onClose()
+  }
+
+  return (
+    <MobileSheet title="Add Manual Holding" onClose={onClose} closeOnOverlay={!saving}>
+      <form className="manual-form manual-sheet-form" onSubmit={save}>
+        <label className="field">
+          <span>Ticker</span>
+          <input value={form.ticker} autoComplete="off" placeholder="AMD" onChange={(event) => update('ticker', event.target.value.toUpperCase())} />
+        </label>
+        <div className="field wide manual-lookup">
+          <span>Instrument match</span>
+          {lookupLoading && <div className="manual-lookup-status">Searching instruments...</div>}
+          {!lookupLoading && selected?.symbol === ticker && (
+            <div className="manual-selected">
+              <b>{selected.symbol}</b>
+              <span>{selected.name || 'Selected instrument'}</span>
+              <small>{[selected.exchange, selected.asset_type, selected.currency].filter(Boolean).join(' / ')}</small>
+            </div>
+          )}
+          {!lookupLoading && lookupMessage && selected?.symbol !== ticker && (
+            <div className="manual-lookup-status">{lookupMessage}</div>
+          )}
+          {!lookupLoading && matches.length > 0 && (
+            <div className="manual-lookup-results">
+              {matches.map((match) => (
+                <button type="button" key={`${match.symbol}-${match.exchange || match.name}`} onClick={() => selectInstrument(match)}>
+                  <b>{match.symbol}</b>
+                  <span>{match.name || match.symbol}</span>
+                  <small>{[match.exchange, match.asset_type, match.currency].filter(Boolean).join(' / ')}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <label className="field">
+          <span>Quantity</span>
+          <input value={form.quantity} inputMode="decimal" onChange={(event) => update('quantity', event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Average Cost</span>
+          <input value={form.avg_price} inputMode="decimal" onChange={(event) => update('avg_price', event.target.value)} />
+        </label>
+        <div className="manual-actions">
+          <button className="tab active" type="submit" disabled={saving}>
+            <Plus size={15} /> {saving ? 'Saving...' : 'Add holding'}
+          </button>
+        </div>
+      </form>
+      {status && <p className="muted mobile-control-status">{status}</p>}
+    </MobileSheet>
+  )
+}
+
 
 function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, sparkTf, advancedDefs }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean; visibleCols: Set<ColKey>; colOrder: ColKey[]; sparkTf: SparkTf; advancedDefs: AdvancedColDef[] }) {
   const [sort, setSort] = useState<TableSortKey>('weight')
@@ -2199,7 +2420,7 @@ const HEADER_TITLE_OVERRIDES: Record<string, string> = {
 }
 
 export default function MobileExperience() {
-  const dashboard = useMobileDashboard()
+  const { dashboard, refresh: refreshDashboard } = useMobileDashboard()
   const workspaceConfig = useWorkspaceConfig()
   const [active, setActive] = useState('home')
   const [selected, setSelected] = useState<any>(null)
@@ -2208,6 +2429,8 @@ export default function MobileExperience() {
   const [portfolioView, setPortfolioView] = useState<PortfolioView>('table')
   const [headerExpanded, setHeaderExpanded] = useState(true)
   const [colMenuOpen, setColMenuOpen] = useState(false)
+  const [portfolioMenuOpen, setPortfolioMenuOpen] = useState(false)
+  const [manualHoldingOpen, setManualHoldingOpen] = useState(false)
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key)))
   const [colOrder, setColOrder] = useState<ColKey[]>(() => COL_DEFS.map((c) => c.key))
@@ -2419,6 +2642,46 @@ export default function MobileExperience() {
 
       {active === 'my-portfolio' && (
         <>
+          {portfolioMenuOpen && (
+            <MobileSheet title="Portfolio Options" onClose={() => setPortfolioMenuOpen(false)}>
+              <div className="mobile-controls-list">
+                <button
+                  type="button"
+                  className="mobile-control-row"
+                  onClick={() => {
+                    setPortfolioMenuOpen(false)
+                    setColMenuOpen(true)
+                  }}
+                >
+                  <SlidersHorizontal size={18} />
+                  <div>
+                    <strong>{portfolioView === 'table' ? 'Manage Table Columns' : 'Manage Card Fields'}</strong>
+                    <span>{portfolioView === 'table' ? 'Choose, reorder, and time-scale portfolio table fields' : 'Choose and reorder portfolio card fields'}</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="mobile-control-row"
+                  onClick={() => {
+                    setPortfolioMenuOpen(false)
+                    setManualHoldingOpen(true)
+                  }}
+                >
+                  <Plus size={18} />
+                  <div>
+                    <strong>Add Manual Holding</strong>
+                    <span>Search an instrument, select the match, then enter quantity and cost</span>
+                  </div>
+                </button>
+              </div>
+            </MobileSheet>
+          )}
+          {manualHoldingOpen && (
+            <AddManualHoldingSheet
+              onClose={() => setManualHoldingOpen(false)}
+              onSaved={refreshDashboard}
+            />
+          )}
           {colMenuOpen && (portfolioView === 'table' ? (
             <MobileManageDisplay
               title="Manage Table Columns"
@@ -2477,9 +2740,9 @@ export default function MobileExperience() {
                 <button
                   type="button"
                   className="pf-options-btn"
-                  aria-label={portfolioView === 'table' ? 'Table display options' : 'Card display options'}
-                  aria-expanded={colMenuOpen}
-                  onClick={() => setColMenuOpen(true)}
+                  aria-label="Portfolio options"
+                  aria-expanded={portfolioMenuOpen || colMenuOpen || manualHoldingOpen}
+                  onClick={() => setPortfolioMenuOpen(true)}
                 >
                   <MoreVertical size={18} />
                 </button>
