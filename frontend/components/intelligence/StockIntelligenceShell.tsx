@@ -7,12 +7,14 @@ export default function StockIntelligenceShell({
   ticker,
   position,
   hidden,
+  onHiddenChange,
   onClose,
   variant,
 }: {
   ticker: string
   position?: Record<string, unknown> | null
   hidden: boolean
+  onHiddenChange?: (hidden: boolean) => void
   onClose: () => void
   variant: 'desktop' | 'mobile'
 }) {
@@ -50,7 +52,7 @@ export default function StockIntelligenceShell({
           tabIndex={-1}
           onClick={(event) => event.stopPropagation()}
         >
-          <StockIntelligencePanel ticker={ticker} seedPosition={position} hidden={hidden} onClose={onClose} variant="mobile" />
+          <StockIntelligencePanel ticker={ticker} seedPosition={position} hidden={hidden} onHiddenChange={onHiddenChange} onClose={onClose} variant="mobile" />
         </div>
       </div>
     )
@@ -60,7 +62,7 @@ export default function StockIntelligenceShell({
     <>
       <div className="stock-intel-backdrop" onClick={onClose} />
       <aside className="stock-intel-modal" role="dialog" aria-modal="true" aria-label={`${ticker} intelligence`}>
-        <StockIntelligencePanel ticker={ticker} seedPosition={position} hidden={hidden} onClose={onClose} variant="desktop" />
+        <StockIntelligencePanel ticker={ticker} seedPosition={position} hidden={hidden} onHiddenChange={onHiddenChange} onClose={onClose} variant="desktop" />
       </aside>
     </>
   )

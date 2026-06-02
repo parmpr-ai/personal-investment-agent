@@ -113,7 +113,7 @@ export default function StockAiIntelligenceWidget({
         </div>
         <div className="sai-lede">
           <span className="sai-kicker">AI Intelligence</span>
-          <h3>{hidden ? mask : headline || 'No intelligence headline available.'}</h3>
+          <h3>{hidden ? mask : headline || 'Data gathering in progress'}</h3>
           <span className="sai-chip">{hidden ? mask : sentiment}</span>
         </div>
       </header>
@@ -125,7 +125,7 @@ export default function StockAiIntelligenceWidget({
         <IntelligenceBar label="Risk" value={risk} tone="red" hidden={hidden} />
       </div>
 
-      <p className="sai-summary">{hidden ? mask : summary || EMPTY}</p>
+      <p className="sai-summary">{hidden ? mask : summary || 'Data gathering in progress'}</p>
 
       {insights.length > 0 && (
         <div className="sai-insights">

@@ -442,6 +442,7 @@ export default function Dashboard() {
           ticker={selected.symbol || selected.ticker}
           position={selected}
           hidden={privacyHidden}
+          onHiddenChange={updateHidden}
           onClose={() => setSelected(null)}
         />
       )}

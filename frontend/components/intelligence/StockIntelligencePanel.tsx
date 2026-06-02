@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { BarChart3, Building2, Gauge, Target, X } from 'lucide-react'
-import { PiaBadge, PiaCard, PiaTabs } from '../ui-v3'
+import { BarChart3, Bell, Building2, Eye, EyeOff, Gauge, Shield, Target, X } from 'lucide-react'
+import { PiaBadge, PiaButton, PiaCard, PiaTabs } from '../ui-v3'
 import { mask, money, pct } from '../../lib/pia-api'
 import TickerNewsList from './TickerNewsList'
 import TickerVideosList from './TickerVideosList'
@@ -12,7 +12,7 @@ import StockKeyMetrics from './StockKeyMetrics'
 import StockPositionSummary from './StockPositionSummary'
 import { useStockIntelligence } from './useStockIntelligence'
 
-let lastActiveStockPanelTab: StockPanelTab = 'Quote'
+let lastActiveStockPanelTab: StockPanelTab = 'Overview'
 const timeframes = ['Intraday', 'Swing', 'Position'] as const
 type Timeframe = (typeof timeframes)[number]
 const EMPTY = '—'
@@ -253,16 +253,18 @@ export default function StockIntelligencePanel({
   ticker,
   seedPosition,
   hidden,
+  onHiddenChange,
   onClose,
   variant,
 }: {
   ticker: string
   seedPosition?: Record<string, unknown> | null
   hidden: boolean
+  onHiddenChange?: (hidden: boolean) => void
   onClose: () => void
   variant: 'desktop' | 'mobile'
 }) {
-  const [tab, setTab] = useState<StockPanelTab>(() => (STOCK_PANEL_TABS.includes(lastActiveStockPanelTab) ? lastActiveStockPanelTab : 'Quote'))
+  const [tab, setTab] = useState<StockPanelTab>(() => (STOCK_PANEL_TABS.includes(lastActiveStockPanelTab) ? lastActiveStockPanelTab : 'Overview'))
   const [timeframe, setTimeframe] = useState<Timeframe>('Swing')
   const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition)
 
@@ -288,40 +290,69 @@ export default function StockIntelligencePanel({
 
   return (
     <div className={`stock-intel-panel ${variant === 'mobile' ? 'stock-intel-panel-mobile' : 'stock-intel-panel-desktop'}`.trim()}>
-      <header className="stock-intel-header">
-        <div className="stock-intel-title-block">
-          <div className="stock-intel-identity">
-            <div className="stock-intel-symbol-mark" aria-hidden="true">
-              {hidden ? '*' : symbol.slice(0, 2)}
+      <section className="stock-intel-hero-card" aria-label="Stock header and key metrics">
+        <header className="stock-intel-header">
+          <div className="stock-intel-title-block">
+            <div className="stock-intel-identity">
+              <div className="stock-intel-symbol-mark" aria-hidden="true">
+                {hidden ? '*' : symbol.slice(0, 2)}
+              </div>
+              <div>
+                <span className="stock-intel-kicker">{hidden ? 'Workspace' : name}</span>
+                <h2>{hidden ? mask : symbol}</h2>
+              </div>
             </div>
-            <div>
-              <span className="stock-intel-kicker">{hidden ? 'Workspace' : name}</span>
-              <h2>{hidden ? mask : symbol}</h2>
+            <div className="stock-intel-market-line">
+              <div className="stock-intel-price-row">
+                <strong>{hidden ? mask : money(last)}</strong>
+                <small className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)}</small>
+                {position ? (
+                  <PiaBadge variant={unrealized >= 0 ? 'bullish' : 'bearish'} size="compact">
+                    {hidden ? mask : `${unrealized >= 0 ? '+' : ''}${money(unrealized)} P/L`}
+                  </PiaBadge>
+                ) : null}
+              </div>
+              <div className="stock-intel-summary-row">
+                <span>{hidden ? 'Overview' : `${pct(source.portfolio_pct || 0)} weight`}</span>
+                <span>{hidden ? 'Controls' : `Risk ${source.risk || 0}`}</span>
+                <span>{hidden ? 'Workspace' : `Momentum ${source.momentum_score || source.momentum || 0}`}</span>
+              </div>
             </div>
           </div>
-          <div className="stock-intel-market-line">
-            <div className="stock-intel-price-row">
-              <strong>{hidden ? mask : money(last)}</strong>
-              <small className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)}</small>
-              {position ? (
-                <PiaBadge variant={unrealized >= 0 ? 'bullish' : 'bearish'} size="compact">
-                  {hidden ? mask : `${unrealized >= 0 ? '+' : ''}${money(unrealized)} P/L`}
-                </PiaBadge>
-              ) : null}
-            </div>
-            <div className="stock-intel-summary-row">
-              <span>{hidden ? 'Overview' : `${pct(source.portfolio_pct || 0)} weight`}</span>
-              <span>{hidden ? 'Controls' : `Risk ${source.risk || 0}`}</span>
-              <span>{hidden ? 'Workspace' : `Momentum ${source.momentum_score || source.momentum || 0}`}</span>
-            </div>
-          </div>
-        </div>
-        <button type="button" className="stock-intel-close" onClick={onClose} aria-label="Close intelligence panel">
-          <X size={variant === 'mobile' ? 22 : 16} />
-        </button>
-      </header>
+          <button type="button" className="stock-intel-close" onClick={onClose} aria-label="Close intelligence panel">
+            <X size={variant === 'mobile' ? 22 : 16} />
+          </button>
+        </header>
 
-      <StockKeyMetrics source={{ ...source, fundamentals, company }} hidden={hidden} ticker={symbol} />
+        <StockKeyMetrics source={{ ...source, fundamentals, company }} hidden={hidden} ticker={symbol} />
+      </section>
+
+      <div className="stock-intel-quick-actions" role="group" aria-label="Stock actions">
+        <PiaButton type="button" variant="secondary" density="compact" icon={<Eye size={15} />} disabled title="Planned" aria-label={hidden ? 'Monitor' : 'Watch'}>
+          {hidden ? 'Monitor' : 'Watch'}
+          <span className="stock-intel-action-state">Planned</span>
+        </PiaButton>
+        <PiaButton type="button" variant="secondary" density="compact" icon={<Bell size={15} />} disabled title="Planned" aria-label={hidden ? 'Alerts' : 'Set alert'}>
+          {hidden ? 'Alerts' : 'Set alert'}
+          <span className="stock-intel-action-state">Planned</span>
+        </PiaButton>
+        <PiaButton
+          type="button"
+          variant="secondary"
+          density="compact"
+          icon={hidden ? <Eye size={15} /> : <EyeOff size={15} />}
+          disabled={!onHiddenChange}
+          aria-label={hidden ? 'Show Amounts' : 'Hide Amounts'}
+          onClick={() => onHiddenChange?.(!hidden)}
+        >
+          {hidden ? 'Show Amounts' : 'Hide Amounts'}
+        </PiaButton>
+        <PiaButton type="button" variant="secondary" density="compact" icon={<Shield size={15} />} disabled title="Planned" aria-label={hidden ? 'Controls' : 'Risk check'}>
+          {hidden ? 'Controls' : 'Risk check'}
+          <span className="stock-intel-action-state">Planned</span>
+        </PiaButton>
+      </div>
+
       <StockPositionSummary source={source} hidden={hidden} />
 
       <PiaTabs
@@ -335,12 +366,8 @@ export default function StockIntelligencePanel({
       <div className="stock-intel-body">
         {loading ? <p className="muted">Loading intelligence workspace...</p> : null}
 
-        {!loading && tab === 'Quote' && (
+        {!loading && tab === 'Overview' && (
           <div className="stock-intel-section stock-overview-v2">
-            <PiaCard className="stock-intel-chart-card" title={hidden ? 'Workspace chart' : 'Price chart'} badge={<PiaBadge variant="info">Live</PiaBadge>}>
-              <TradingViewChart ticker={symbol} hidden={hidden} />
-            </PiaCard>
-
             <StockAiIntelligenceWidget source={source} overview={overview} technical={technical} targets={targets} hidden={hidden} />
 
             <PiaCard title={hidden ? 'Updates' : 'Recent News'}>
@@ -380,7 +407,15 @@ export default function StockIntelligencePanel({
           </div>
         )}
 
-        {!loading && tab === 'Technical' && (
+        {!loading && tab === 'Chart' && (
+          <div className="stock-intel-section">
+            <PiaCard className="stock-intel-chart-card" title={hidden ? 'Workspace chart' : 'Price chart'} badge={<PiaBadge variant="info">Live</PiaBadge>}>
+              <TradingViewChart ticker={symbol} hidden={hidden} />
+            </PiaCard>
+          </div>
+        )}
+
+        {!loading && tab === 'Analysis' && (
           <div className="stock-intel-section stock-intel-technical-layout">
             <PiaCard className="stock-intel-chart-card" title={hidden ? 'Workspace chart' : 'Institutional chart'} badge={<PiaBadge variant="info">Live</PiaBadge>}>
               <TradingViewChart ticker={symbol} hidden={hidden} />
@@ -468,6 +503,11 @@ export default function StockIntelligencePanel({
                 ]}
               />
             </PiaCard>
+          </div>
+        )}
+
+        {!loading && tab === 'Financials' && (
+          <div className="stock-company-hub">
             <PiaCard title="Earnings" badge={<PiaBadge variant="neutral">{hidden ? 'Data' : 'Estimate vs actual'}</PiaBadge>}>
               <DetailGrid
                 hidden={hidden}
@@ -521,7 +561,23 @@ export default function StockIntelligencePanel({
           </div>
         )}
 
-        {!loading && tab === 'Videos' && <TickerVideosList ticker={symbol} companyName={name} hidden={hidden} />}
+        {!loading && tab === 'Options' && (
+          <div className="stock-intel-section">
+            <PiaCard title={hidden ? 'Options' : 'Options'} badge={<PiaBadge variant="warning">Pending</PiaBadge>}>
+              <p className="muted">{hidden ? mask : 'Options chain data gathering in progress.'}</p>
+            </PiaCard>
+          </div>
+        )}
+
+        {!loading && tab === 'Video' && <TickerVideosList ticker={symbol} companyName={name} hidden={hidden} />}
+
+        {!loading && tab === 'Notes' && (
+          <div className="stock-intel-section">
+            <PiaCard title={hidden ? 'Notes' : 'Notes'}>
+              <p className="stock-overview-notes">{hidden ? mask : textOrDash(source.notes || overview.why_moving || overview.summary)}</p>
+            </PiaCard>
+          </div>
+        )}
       </div>
     </div>
   )

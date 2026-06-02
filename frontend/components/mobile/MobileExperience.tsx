@@ -1556,6 +1556,12 @@ function validManualSearch(value: string) {
   return /^[A-Z0-9][A-Z0-9 .,&'()\/\-=^]{0,79}$/i.test(value.trim())
 }
 
+function manualHoldingError(error: any, fallback: string) {
+  if (typeof error?.detail === 'string' && error.detail.trim()) return error.detail
+  if (typeof error?.message === 'string' && error.message.trim() && error.message !== 'Failed to fetch') return error.message
+  return fallback
+}
+
 // Short descriptions surfaced via the info icon in the Manage Display screen.
 const FIELD_INFO: Record<string, string> = {
   // Default table + card fields
@@ -2118,7 +2124,7 @@ function AddManualHoldingSheet({
       const result = await fetchJson(`/instruments/search?q=${encodeURIComponent(searchText)}`).catch((error) => {
         if (active) {
           setMatches([])
-          setLookupMessage(safeMessage(error?.detail, 'Instrument search is unavailable. Try again when the backend is online.'))
+          setLookupMessage(manualHoldingError(error, `Instrument search could not reach ${API || 'the backend API'}. Confirm the backend is running and reachable from this device.`))
         }
         return { lookupError: true }
       })
@@ -2197,7 +2203,7 @@ function AddManualHoldingSheet({
         notes: `Added from Portfolio menu${selected.exchange ? ` (${selected.exchange})` : ''}.`,
       }),
     }).catch((error) => {
-      setStatus(safeMessage(error?.detail, 'Unable to save manual holding. Check quantity, cost, and backend status.'))
+      setStatus(manualHoldingError(error, `Unable to save manual holding. Confirm the backend is reachable at ${API || 'the API host'} and try again.`))
       return null
     })
     if (!result) {
@@ -2794,6 +2800,7 @@ export default function MobileExperience() {
           ticker={selected.symbol || selected.ticker}
           position={selected}
           hidden={privacyHidden}
+          onHiddenChange={updateHidden}
           onClose={() => setSelected(null)}
         />
       )}

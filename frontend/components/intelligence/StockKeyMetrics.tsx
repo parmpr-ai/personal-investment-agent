@@ -5,7 +5,7 @@ import type { PointerEvent } from 'react'
 import { ChevronDown, GripVertical, Pencil } from 'lucide-react'
 import { mask } from '../../lib/pia-api'
 
-type Fmt = 'price' | 'compact' | 'compact$' | 'num' | 'pct'
+type Fmt = 'price' | 'compact' | 'compact$' | 'num' | 'pct' | 'range'
 type MetricDef = { key: string; label: string; fmt: Fmt; get: (source: any) => unknown }
 type Prefs = { order: string[]; hidden: string[] }
 
@@ -30,6 +30,15 @@ const KEY_METRIC_DEFS: MetricDef[] = [
   { key: 'prev_close', label: 'Prev Close', fmt: 'price', get: (source) => pick(source, ['prior_close', 'previous_close', 'prev_close', 'regularMarketPreviousClose']) },
   { key: 'volume', label: 'Volume', fmt: 'compact', get: (source) => pick(source, ['volume', 'regularMarketVolume']) },
   { key: 'avg_volume', label: 'Avg Volume', fmt: 'compact', get: (source) => pick(source, ['avg_volume', 'average_volume', 'averageDailyVolume3Month', 'averageVolume']) },
+  {
+    key: 'today_range',
+    label: 'Today Range',
+    fmt: 'range',
+    get: (source) => [
+      pick(source, ['day_low', 'dayLow', 'regular_market_day_low', 'regularMarketDayLow', 'low']),
+      pick(source, ['day_high', 'dayHigh', 'regular_market_day_high', 'regularMarketDayHigh', 'high']),
+    ],
+  },
   { key: 'high_52w', label: '52W High', fmt: 'price', get: (source) => pick(source, ['52w_high', 'week52_high', 'high_52w', 'fiftyTwoWeekHigh']) },
   { key: 'low_52w', label: '52W Low', fmt: 'price', get: (source) => pick(source, ['52w_low', 'week52_low', 'low_52w', 'fiftyTwoWeekLow']) },
   { key: 'market_cap', label: 'Market Cap', fmt: 'compact$', get: (source) => pick(source, ['market_cap', 'marketCap']) },
@@ -46,7 +55,8 @@ const KEY_METRIC_DEFS: MetricDef[] = [
 
 const DEF_BY_KEY = new Map(KEY_METRIC_DEFS.map((def) => [def.key, def]))
 const DEFAULT_ORDER = KEY_METRIC_DEFS.map((def) => def.key)
-const DEFAULT_PREFS: Prefs = { order: DEFAULT_ORDER, hidden: [] }
+const DEFAULT_VISIBLE = ['open', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'today_range']
+const DEFAULT_PREFS: Prefs = { order: DEFAULT_ORDER, hidden: DEFAULT_ORDER.filter((key) => !DEFAULT_VISIBLE.includes(key)) }
 const GLOBAL_PREFS_KEY = 'pia.stockView.defaults.keyMetrics'
 
 function compact(value: number): string {
@@ -61,6 +71,13 @@ function compact(value: number): string {
 function formatMetric(value: unknown, fmt: Fmt): string {
   if (value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value))) return EMPTY
   if (typeof value === 'string' && value.trim() === '') return EMPTY
+  if (fmt === 'range') {
+    const range = Array.isArray(value) ? value : []
+    const low = range[0]
+    const high = range[1]
+    if (low == null || low === '' || high == null || high === '') return EMPTY
+    return `${formatMetric(low, 'price')} - ${formatMetric(high, 'price')}`
+  }
   if (fmt === 'pct' && typeof value === 'string' && value.includes('%')) return value
   const n = Number(value)
   if (!Number.isFinite(n)) return String(value)
@@ -114,22 +131,14 @@ function savePrefs(ticker: string, prefs: Prefs) {
   } catch {}
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
-  return out
-}
-
 export default function StockKeyMetrics({ source, hidden, ticker }: { source: any; hidden: boolean; ticker: string }) {
   const [collapsed, setCollapsed] = useState(false)
   const [editing, setEditing] = useState(false)
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
-  const [activePage, setActivePage] = useState(0)
   const railRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setPrefs(loadPrefs(ticker))
-    setActivePage(0)
   }, [ticker])
 
   const hiddenSet = useMemo(() => new Set(prefs.hidden), [prefs.hidden])
@@ -137,22 +146,9 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
     () => prefs.order.map((key) => DEF_BY_KEY.get(key)).filter((def): def is MetricDef => Boolean(def && !hiddenSet.has(def.key))),
     [prefs.order, hiddenSet],
   )
-  const pages = useMemo(() => chunk(visibleDefs, 6), [visibleDefs])
-
-  useEffect(() => {
-    if (activePage > Math.max(0, pages.length - 1)) setActivePage(Math.max(0, pages.length - 1))
-  }, [activePage, pages.length])
-
   function update(next: Prefs) {
     setPrefs(next)
     savePrefs(ticker, next)
-  }
-
-  function onRailScroll() {
-    const node = railRef.current
-    if (!node) return
-    const nextPage = Math.round(node.scrollLeft / Math.max(node.clientWidth, 1))
-    setActivePage(Math.max(0, Math.min(pages.length - 1, nextPage)))
   }
 
   return (
@@ -169,28 +165,17 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
 
       {!collapsed && (
         <>
-          <div className="skm-rail" ref={railRef} onScroll={onRailScroll}>
-            {pages.map((page, pageIndex) => (
-              <div className="skm-page" key={pageIndex}>
-                {page.map((def) => (
-                  <div className="skm-cell" key={def.key}>
-                    <span>{def.label}</span>
-                    <b>{hidden ? mask : formatMetric(def.get(source), def.fmt)}</b>
-                  </div>
-                ))}
+          <div className="skm-rail" ref={railRef}>
+            {visibleDefs.map((def) => (
+              <div className="skm-cell" key={def.key}>
+                <span>{def.label}</span>
+                <b>{hidden ? mask : formatMetric(def.get(source), def.fmt)}</b>
               </div>
             ))}
             {visibleDefs.length === 0 && (
-              <div className="skm-page">
-                <div className="skm-empty">No metrics selected.</div>
-              </div>
+              <div className="skm-empty">No metrics selected.</div>
             )}
           </div>
-          {pages.length > 1 && (
-            <div className="skm-dots" aria-hidden="true">
-              {pages.map((_, index) => <span key={index} className={index === activePage ? 'active' : ''} />)}
-            </div>
-          )}
         </>
       )}
 
