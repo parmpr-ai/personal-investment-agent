@@ -1186,6 +1186,8 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
   const view = activeList?.viewMode || 'table'
   const [cardGrid, setCardGrid] = useState<'1x1' | '2x2'>('1x1')
   const [lpTarget, setLpTarget] = useState<any | null>(null)
+  const [addPickerSymbol, setAddPickerSymbol] = useState<string | null>(null)
+  const listHasSymbol = (list: any, sym: string) => (list?.tickers || list?.symbols || []).includes(sym)
   const [colOrder, setColOrder] = useState<string[]>(['instrument', ...WL_DATA_KEYS])
   useEffect(() => {
     try { const g = localStorage.getItem('pia.watchlist.cardGrid'); if (g === '1x1' || g === '2x2') setCardGrid(g) } catch {}
@@ -1314,11 +1316,33 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
       {lpTarget && (
         <MobileSheet title={hidden ? 'Actions' : (lpTarget.symbol || 'Actions')} onClose={() => setLpTarget(null)}>
           <div className="mobile-watchlist-sheet-menu">
-            <button type="button" onClick={() => { const t = lpTarget; setLpTarget(null); onSelect(t) }}>Open Chart</button>
+            <button type="button" onClick={() => { const t = lpTarget; setLpTarget(null); onSelect({ ...t, initialTab: 'Technical' }) }}>Open Chart</button>
             <button type="button" onClick={() => { const t = lpTarget; setLpTarget(null); onSelect(t) }}>Open Stock Intelligence</button>
-            <button type="button" onClick={() => { const t = lpTarget; setLpTarget(null); onSelect(t) }}>AI Coach</button>
-            <button type="button" onClick={() => { setAdding(true); setLpTarget(null) }}>Add To Watchlist</button>
+            <button type="button" onClick={() => { const t = lpTarget; setLpTarget(null); onSelect({ ...t, initialTab: 'Analysis' }) }}>AI Coach</button>
+            <button type="button" onClick={() => { setAddPickerSymbol(lpTarget.symbol); setLpTarget(null) }}>Add To Watchlist</button>
             <button type="button" className="wl-action-danger" onClick={() => { if (activeList) removeSymbol(activeList.id, lpTarget.symbol); setLpTarget(null) }}>Remove From Watchlist</button>
+          </div>
+        </MobileSheet>
+      )}
+      {addPickerSymbol && (
+        <MobileSheet title={hidden ? 'Add to list' : `Add ${addPickerSymbol} to…`} onClose={() => setAddPickerSymbol(null)}>
+          <div className="mobile-watchlist-sheet-menu">
+            {lists.map((list) => {
+              const on = listHasSymbol(list, addPickerSymbol)
+              return (
+                <button
+                  key={list.id}
+                  type="button"
+                  className={`wl-add-row${on ? ' active' : ''}`}
+                  aria-pressed={on}
+                  onClick={() => (on ? removeSymbol(list.id, addPickerSymbol) : addSymbol(list.id, addPickerSymbol))}
+                >
+                  <span className="wl-add-check">{on ? '✓' : ''}</span>
+                  {hidden ? 'List' : list.name}
+                </button>
+              )
+            })}
+            <button type="button" className="pf-col-reset" onClick={() => setAddPickerSymbol(null)}>Done</button>
           </div>
         </MobileSheet>
       )}

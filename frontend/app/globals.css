@@ -951,3 +951,9 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .reorder-row.locked{opacity:.92}
 .reorder-grip-locked{color:#475569;cursor:default}
 .reorder-grip-locked:active{cursor:default;color:#475569}
+
+/* WATCHLIST-V1-005 long-press add-to-list picker */
+.wl-add-row{display:flex;align-items:center;gap:10px;justify-content:flex-start!important}
+.wl-add-check{width:22px;height:22px;flex:0 0 auto;display:grid;place-items:center;border:1px solid rgba(148,163,184,.3);border-radius:6px;background:#05080e;font-weight:800;color:transparent}
+.wl-add-row.active .wl-add-check{border-color:rgba(36,209,140,.55);background:rgba(36,209,140,.2);color:#bbf7d0}
+.wl-action-danger{color:#ff9aaa!important}
