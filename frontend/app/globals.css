@@ -42,7 +42,7 @@
 .mptbl-frozen .mtt-symbol{gap:7px}
 .mptbl-scrollarea{flex:1 1 auto;min-width:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x pan-y;padding-right:12px;scrollbar-width:none;-ms-overflow-style:none}
 .mptbl-scrollarea::-webkit-scrollbar{display:none}
-.mptbl-scrollarea .mobile-watchlist-table{min-width:520px}
+.mptbl-scrollarea .mobile-terminal-table.mobile-watchlist-table{min-width:520px}
 .mptbl-scrollarea .mobile-terminal-table{min-width:max-content}
 .mptbl-scrollarea .mobile-terminal-table thead th,.mptbl-scrollarea .mobile-terminal-table tbody td{box-sizing:border-box}
 .mptbl-scrollarea .mobile-terminal-table thead th{height:34px}
