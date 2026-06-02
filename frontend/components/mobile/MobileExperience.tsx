@@ -1228,7 +1228,7 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
         <button type="button" aria-label="Edit instruments" onClick={() => setEditOpen(true)}><Pencil size={16} /></button>
         <div className="mobile-watchlist-viewtoggle" role="group" aria-label="Watchlist style">
           <button type="button" className={view === 'table' ? 'active' : ''} onClick={() => activeList && setListViewMode(activeList.id, 'table')}>Table</button>
-          <button type="button" className={view === 'list' ? 'active' : ''} onClick={() => activeList && setListViewMode(activeList.id, 'list')}>List</button>
+          <button type="button" className={view === 'list' ? 'active' : ''} onClick={() => activeList && setListViewMode(activeList.id, 'list')}>Cards</button>
         </div>
       </div>
       {adding && (
@@ -1352,43 +1352,47 @@ function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, 
   )
 }
 
-function MobileWatchlistCards({ rows, onSelect, onRemove, hidden }: { rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean }) {
+function MobileWatchlistCards({ rows, onSelect, hidden }: { rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean }) {
+  // Portfolio Card V2 design language — research card (no position metrics).
+  // Keeps ticker, company, daily %, sparkline, risk, momentum, news/macro/AI chips.
   return (
     <div className="mobile-watchlist-card-list">
       {rows.map((row) => {
         const change = Number(row.day_change_pct || 0)
-        const dayPnl = Number(row.day_pnl || 0)
+        const risk = Number(row.risk || 0)
+        const momentum = Number(row.momentum_score || row.momentum || 52)
+        const macro = row.macro_sensitivity
+        const newsCount = Number(row.news_count ?? row.news ?? row.news_score ?? 0)
+        const hasAi = Boolean(row.ai_view || row.ai_score != null)
+        const brandColor = row.brand || row.accent || undefined
         return (
-          <article
+          <button
             key={row.symbol}
-            className={`mobile-visual-card mobile-position-card mobile-watchlist-card${row.brand ? ' themed' : ''}`}
-            style={row.brand ? { borderTopColor: row.brand } as CSSProperties : undefined}
+            type="button"
+            className={`mobile-visual-card mobile-position-card mobile-watchlist-card${brandColor ? ' themed' : ''}`}
+            style={brandColor ? { borderTopColor: brandColor } as CSSProperties : undefined}
+            onClick={() => onSelect(row)}
           >
             <div className="mobile-card-head">
               <div>
-                <span>{hidden ? 'Workspace item' : row.name}</span>
-                <strong>{hidden ? mask : row.symbol}</strong>
-                <small>{hidden ? 'Market' : row.exchange || 'NASDAQ'}</small>
+                <span>{hidden ? 'Workspace item' : row.name || 'Instrument'}</span>
+                <strong>{row.symbol}</strong>
               </div>
-              <div className="mobile-price-stack">
-                <b>{hidden ? mask : money(row.last || row.price)}</b>
-                <small className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)}</small>
-              </div>
+              <IntelligenceBadge label={pct(change)} tone={change >= 0 ? 'good' : 'bad'} />
             </div>
             <Sparkline values={row.spark} tone={change >= 0 ? 'good' : 'bad'} />
-            <div className="mobile-position-pnl">
-              <span className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(dayPnl)}</span>
-              <small>{hidden ? mask : compactVolume(row.volume)}</small>
+            <div className="mps-bars">
+              <RiskBar value={risk || 31} />
+              <MomentumBar value={momentum} />
             </div>
-            <div className="mobile-watchlist-card-actions">
-              <button type="button" onClick={() => onSelect(row)}>
-                <Brain size={15} /> Intel
-              </button>
-              <button type="button" onClick={() => onRemove(row.symbol)} aria-label={`Remove ${row.symbol}`}>
-                <Trash2 size={15} /> Remove
-              </button>
-            </div>
-          </article>
+            {(newsCount > 0 || macro != null || hasAi) && (
+              <div className="mps-chips">
+                {newsCount > 0 ? <span className="mps-chip"><Newspaper size={12} />{newsCount}</span> : null}
+                {macro != null ? <span className="mps-chip">Macro β {Number(macro)}</span> : null}
+                {hasAi ? <span className="mps-chip mps-chip-ai"><Brain size={12} />AI</span> : null}
+              </div>
+            )}
+          </button>
         )
       })}
     </div>
