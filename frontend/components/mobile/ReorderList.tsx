@@ -2,16 +2,17 @@
 
 import { useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
-import { GripVertical } from 'lucide-react'
+import { GripVertical, Lock } from 'lucide-react'
 
 export type ReorderItem = { key: string; label: string }
 
 // PIA-ARCH-009 — reusable mobile/desktop reorder list.
 // Drag only from the right-side grip handle; scroll anywhere else;
 // scrollbars hidden; optional per-row visibility checkmark.
-export default function ReorderList({ items, hiddenKeys, onReorder, onToggle, className = '' }: {
+export default function ReorderList({ items, hiddenKeys, lockedKeys, onReorder, onToggle, className = '' }: {
   items: ReorderItem[]
   hiddenKeys?: Set<string>
+  lockedKeys?: Set<string>
   onReorder: (nextKeys: string[]) => void
   onToggle?: (key: string) => void
   className?: string
@@ -22,7 +23,7 @@ export default function ReorderList({ items, hiddenKeys, onReorder, onToggle, cl
   const keys = items.map((i) => i.key)
 
   function reorderTo(key: string, target: string) {
-    if (key === target) return
+    if (key === target || lockedKeys?.has(key) || lockedKeys?.has(target)) return
     const from = keys.indexOf(key)
     const to = keys.indexOf(target)
     if (from < 0 || to < 0) return
@@ -70,15 +71,20 @@ export default function ReorderList({ items, hiddenKeys, onReorder, onToggle, cl
     >
       {items.map((item) => {
         const on = !hiddenKeys?.has(item.key)
+        const locked = lockedKeys?.has(item.key)
         return (
-          <li className={`reorder-row${dragKey === item.key ? ' dragging' : ''}`} key={item.key} data-key={item.key}>
-            {onToggle && (
+          <li className={`reorder-row${dragKey === item.key ? ' dragging' : ''}${locked ? ' locked' : ''}`} key={item.key} data-key={item.key}>
+            {onToggle && (locked ? (
+              <span className="reorder-check on" aria-label={`${item.label} (locked on)`}><Lock size={12} /></span>
+            ) : (
               <button type="button" className={`reorder-check${on ? ' on' : ''}`} aria-label={`${on ? 'Hide' : 'Show'} ${item.label}`} onClick={() => onToggle(item.key)}>
                 {on ? '✓' : ''}
               </button>
-            )}
+            ))}
             <span className="reorder-name">{item.label}</span>
-            <span className="reorder-grip" data-grip role="button" tabIndex={0} aria-label={`Drag to reorder ${item.label}`}><GripVertical size={18} /></span>
+            {locked
+              ? <span className="reorder-grip reorder-grip-locked" aria-hidden="true"><Lock size={14} /></span>
+              : <span className="reorder-grip" data-grip role="button" tabIndex={0} aria-label={`Drag to reorder ${item.label}`}><GripVertical size={18} /></span>}
           </li>
         )
       })}

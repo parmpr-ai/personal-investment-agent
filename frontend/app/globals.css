@@ -935,3 +935,7 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .wl-grid-2 .mobile-watchlist-card .mobile-card-head strong{font-size:18px}
 .wl-grid-2 .mobile-watchlist-card .mobile-sparkline{height:48px}
 .wl-grid-2 .mps-chip{font-size:9px;padding:3px 6px}
+
+/* WATCHLIST-V1-006 locked column row */
+.reorder-row.locked{opacity:.92}
+.reorder-grip-locked{color:#475569;cursor:default;width:40px;height:40px;display:grid;place-items:center;flex:0 0 auto}

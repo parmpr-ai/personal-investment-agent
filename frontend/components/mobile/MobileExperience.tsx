@@ -1139,6 +1139,26 @@ function PositionCards({ rows, onSelect, hidden = false, fields, order, tf }: { 
   )
 }
 
+const WL_COL_DEFS: { key: string; label: string }[] = [
+  { key: 'instrument', label: 'Instrument' },
+  { key: 'last', label: 'Last' },
+  { key: 'change', label: 'Chng' },
+  { key: 'changePercent', label: 'Chg %' },
+  { key: 'volume', label: 'Volume' },
+]
+const WL_DATA_KEYS = WL_COL_DEFS.filter((c) => c.key !== 'instrument').map((c) => c.key)
+const WL_COL_ORDER_KEY = 'pia.watchlist.colOrder'
+function readWlColOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(WL_COL_ORDER_KEY)
+    if (raw) {
+      const arr = (JSON.parse(raw) as string[]).filter((k) => WL_DATA_KEYS.includes(k))
+      if (arr.length) return ['instrument', ...arr, ...WL_DATA_KEYS.filter((k) => !arr.includes(k))]
+    }
+  } catch {}
+  return ['instrument', ...WL_DATA_KEYS]
+}
+
 function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashboard: any; onSelect: (position: any) => void; hidden?: boolean }) {
   const {
     lists,
@@ -1165,9 +1185,16 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
   const rows = useMemo(() => resolveWatchlistRows(activeList?.tickers || activeList?.symbols || [], universe), [activeList, universe])
   const view = activeList?.viewMode || 'table'
   const [cardGrid, setCardGrid] = useState<'1x1' | '2x2'>('1x1')
+  const [lpTarget, setLpTarget] = useState<any | null>(null)
+  const [colOrder, setColOrder] = useState<string[]>(['instrument', ...WL_DATA_KEYS])
   useEffect(() => {
     try { const g = localStorage.getItem('pia.watchlist.cardGrid'); if (g === '1x1' || g === '2x2') setCardGrid(g) } catch {}
+    setColOrder(readWlColOrder())
   }, [])
+  function reorderCols(next: string[]) {
+    setColOrder(next)
+    try { localStorage.setItem(WL_COL_ORDER_KEY, JSON.stringify(next.filter((k) => k !== 'instrument'))) } catch {}
+  }
   function chooseView(list: any, mode: 'table' | 'list', grid?: '1x1' | '2x2') {
     if (list) setListViewMode(list.id, mode)
     if (grid) { setCardGrid(grid); try { localStorage.setItem('pia.watchlist.cardGrid', grid) } catch {} }
@@ -1244,9 +1271,9 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
           <span>{hidden ? mask : 'Add AMD, NBIS, IREN, or any ticker to this custom watchlist.'}</span>
         </div>
       ) : view === 'table' ? (
-        <MobileWatchlistTable rows={rows} columns={activeList?.columns} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} hidden={hidden} />
+        <MobileWatchlistTable rows={rows} columns={activeList?.columns} colOrder={colOrder} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} onLongPress={setLpTarget} hidden={hidden} />
       ) : (
-        <MobileWatchlistCards rows={rows} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} hidden={hidden} grid={cardGrid} />
+        <MobileWatchlistCards rows={rows} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} onLongPress={setLpTarget} hidden={hidden} grid={cardGrid} />
       )}
       {menuOpen && activeList && (
         <MobileSheet title="Watchlist Actions" onClose={() => setMenuOpen(false)}>
@@ -1275,12 +1302,23 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
       )}
       {manageColumnsOpen && activeList && (
         <MobileSheet title="Manage Columns" onClose={() => setManageColumnsOpen(false)}>
+          <ReorderList
+            items={colOrder.map((key) => ({ key, label: WL_COL_DEFS.find((c) => c.key === key)?.label || key }))}
+            hiddenKeys={new Set(WL_DATA_KEYS.filter((key) => activeList.columns?.[key] === false))}
+            lockedKeys={new Set(['instrument'])}
+            onReorder={reorderCols}
+            onToggle={(key) => key !== 'instrument' && toggleColumn(activeList.id, key as keyof typeof activeList.columns)}
+          />
+        </MobileSheet>
+      )}
+      {lpTarget && (
+        <MobileSheet title={hidden ? 'Actions' : (lpTarget.symbol || 'Actions')} onClose={() => setLpTarget(null)}>
           <div className="mobile-watchlist-sheet-menu">
-            {Object.entries(activeList.columns).map(([key, enabled]) => (
-              <button key={key} type="button" className={enabled ? 'active' : ''} onClick={() => toggleColumn(activeList.id, key as keyof typeof activeList.columns)}>
-                {enabled ? 'On' : 'Off'} {key}
-              </button>
-            ))}
+            <button type="button" onClick={() => { const t = lpTarget; setLpTarget(null); onSelect(t) }}>Open Chart</button>
+            <button type="button" onClick={() => { const t = lpTarget; setLpTarget(null); onSelect(t) }}>Open Stock Intelligence</button>
+            <button type="button" onClick={() => { const t = lpTarget; setLpTarget(null); onSelect(t) }}>AI Coach</button>
+            <button type="button" onClick={() => { setAdding(true); setLpTarget(null) }}>Add To Watchlist</button>
+            <button type="button" className="wl-action-danger" onClick={() => { if (activeList) removeSymbol(activeList.id, lpTarget.symbol); setLpTarget(null) }}>Remove From Watchlist</button>
           </div>
         </MobileSheet>
       )}
@@ -1288,17 +1326,28 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
   )
 }
 
-function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, change: true, changePercent: true, volume: true }, onSelect, onRemove, hidden }: { rows: any[]; columns?: any; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean }) {
+function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, change: true, changePercent: true, volume: true }, colOrder = ['instrument', 'last', 'change', 'changePercent', 'volume'], onSelect, onRemove, onLongPress, hidden }: { rows: any[]; columns?: any; colOrder?: string[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; onLongPress?: (row: any) => void; hidden: boolean }) {
   // Split-layer frozen column (PIA-UAT-FIX-001D): the instrument column is a
   // separate non-scrolling left layer outside the horizontal scroller, so
   // scrolled cells can never bleed behind/left of it on iOS.
+  const WL_TH: Record<string, string> = { last: 'LAST', change: 'CHNG', changePercent: 'CHG%', volume: 'VLM' }
+  const dataCols = colOrder.filter((k) => k !== 'instrument' && columns[k] !== false)
+  function wlCell(key: string, row: any) {
+    switch (key) {
+      case 'last': return <td key={key}>{hidden ? mask : money(row.last || row.price)}</td>
+      case 'change': return <td key={key} className={Number(row.day_pnl) >= 0 ? 'green' : 'red'}>{hidden ? mask : money(row.day_pnl)}</td>
+      case 'changePercent': return <td key={key} className={Number(row.day_change_pct) >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(row.day_change_pct)}</td>
+      case 'volume': return <td key={key}>{hidden ? mask : compactVolume(row.volume)}</td>
+      default: return <td key={key}>—</td>
+    }
+  }
   return (
     <div className="mptbl-split">
       {columns.instrument && (
         <div className="mptbl-frozen pf-wl-frozen">
           <div className="mptbl-fcell mptbl-fhead">INSTRMNT</div>
           {rows.map((row) => (
-            <button key={row.symbol} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(row)}>
+            <button key={row.symbol} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(row)} onContextMenu={(e) => { e.preventDefault(); onLongPress?.(row) }}>
               <div className="mtt-symbol">
                 <div className="mtt-logo" style={{ background: row.accent || row.brand || '#60a5fa' }}>
                   {hidden ? '-' : row.logo || String(row.symbol).slice(0, 2)}
@@ -1316,20 +1365,14 @@ function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, 
         <table className="mobile-terminal-table mobile-watchlist-table">
           <thead>
             <tr>
-              {columns.last && <th>LAST</th>}
-              {columns.change && <th>CHNG</th>}
-              {columns.changePercent && <th>CHG%</th>}
-              {columns.volume && <th>VLM</th>}
+              {dataCols.map((key) => <th key={key}>{WL_TH[key] || key}</th>)}
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.symbol} onClick={() => onSelect(row)}>
-                {columns.last && <td>{hidden ? mask : money(row.last || row.price)}</td>}
-                {columns.change && <td className={Number(row.day_pnl) >= 0 ? 'green' : 'red'}>{hidden ? mask : money(row.day_pnl)}</td>}
-                {columns.changePercent && <td className={Number(row.day_change_pct) >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(row.day_change_pct)}</td>}
-                {columns.volume && <td>{hidden ? mask : compactVolume(row.volume)}</td>}
+              <tr key={row.symbol} onClick={() => onSelect(row)} onContextMenu={(e) => { e.preventDefault(); onLongPress?.(row) }}>
+                {dataCols.map((key) => wlCell(key, row))}
                 <td>
                   <div className="mobile-watchlist-actions">
                     <button type="button" aria-label={`Open intelligence for ${row.symbol}`} onClick={(e) => { e.stopPropagation(); onSelect(row) }}>
@@ -1349,7 +1392,7 @@ function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, 
   )
 }
 
-function MobileWatchlistCards({ rows, onSelect, hidden, grid = '1x1' }: { rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean; grid?: '1x1' | '2x2' }) {
+function MobileWatchlistCards({ rows, onSelect, onLongPress, hidden, grid = '1x1' }: { rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; onLongPress?: (row: any) => void; hidden: boolean; grid?: '1x1' | '2x2' }) {
   // Portfolio Card V2 design language — research card (no position metrics).
   // Keeps ticker, company, daily %, sparkline, risk, momentum, news/macro/AI chips.
   return (
@@ -1369,6 +1412,7 @@ function MobileWatchlistCards({ rows, onSelect, hidden, grid = '1x1' }: { rows: 
             className={`mobile-visual-card mobile-position-card mobile-watchlist-card${brandColor ? ' themed' : ''}`}
             style={brandColor ? { borderTopColor: brandColor } as CSSProperties : undefined}
             onClick={() => onSelect(row)}
+            onContextMenu={(e) => { e.preventDefault(); onLongPress?.(row) }}
           >
             <div className="mobile-card-head">
               <div>
