@@ -476,7 +476,7 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Overview' && (
           <div className="stock-intel-section stock-overview-v2">
-            <StockPositionSummary source={source} hidden={hidden} />
+            {position ? <StockPositionSummary source={{ ...source, ...position }} hidden={hidden} /> : null}
 
             <PiaCard className="stock-intel-chart-card" title={hidden ? 'Workspace chart' : 'Price Chart'}>
               <TradingViewChart ticker={symbol} hidden={hidden} />

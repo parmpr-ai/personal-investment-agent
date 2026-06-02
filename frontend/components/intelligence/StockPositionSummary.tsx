@@ -47,6 +47,14 @@ function tone(value: unknown) {
   return parsed > 0 ? ' positive' : ' negative'
 }
 
+function hasPositionSummaryData(source: any) {
+  const shares = numberValue(source.quantity ?? source.qty ?? source.shares)
+  if (shares != null && Math.abs(shares) > 0) return true
+  const marketValue = numberValue(source.market_value ?? source.mktvalue)
+  const costBasis = numberValue(source.cost_basis)
+  return Boolean(source.manual) || Boolean((marketValue != null && Math.abs(marketValue) > 0) || (costBasis != null && Math.abs(costBasis) > 0))
+}
+
 function metric(label: string, value: string, toneClass = '') {
   return (
     <div className={`sps-tile${toneClass}`}>
@@ -57,6 +65,8 @@ function metric(label: string, value: string, toneClass = '') {
 }
 
 export default function StockPositionSummary({ source, hidden }: { source: any; hidden: boolean }) {
+  if (!hasPositionSummaryData(source)) return null
+
   const shares = source.quantity ?? source.qty ?? source.shares
   const avgCost = source.avg_price ?? source.avg_cost ?? source.avgCost
   const marketValue = source.market_value ?? source.mktvalue
