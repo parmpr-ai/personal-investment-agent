@@ -1164,6 +1164,15 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
   const universe = useMemo(() => buildWatchlistUniverse(dashboard, [...positionFallback, ...scannerFallback]), [dashboard])
   const rows = useMemo(() => resolveWatchlistRows(activeList?.tickers || activeList?.symbols || [], universe), [activeList, universe])
   const view = activeList?.viewMode || 'table'
+  const [cardGrid, setCardGrid] = useState<'1x1' | '2x2'>('1x1')
+  useEffect(() => {
+    try { const g = localStorage.getItem('pia.watchlist.cardGrid'); if (g === '1x1' || g === '2x2') setCardGrid(g) } catch {}
+  }, [])
+  function chooseView(list: any, mode: 'table' | 'list', grid?: '1x1' | '2x2') {
+    if (list) setListViewMode(list.id, mode)
+    if (grid) { setCardGrid(grid); try { localStorage.setItem('pia.watchlist.cardGrid', grid) } catch {} }
+    setMenuOpen(false)
+  }
 
   function submitList(e: any) {
     e.preventDefault()
@@ -1204,15 +1213,9 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
           <span>Watchlists</span>
           <strong>{hidden ? 'Workspace' : activeList?.name || 'Favorites'}</strong>
         </div>
-        <button type="button" className="mobile-icon-action" aria-label="Watchlist menu" onClick={() => setMenuOpen(true)}>
-          <MoreVertical size={18} />
-        </button>
       </div>
 
       <div className="mobile-watchlist-tabs" aria-label="Watchlist tabs">
-        <button type="button" className="mobile-watchlist-plus" aria-label="New watchlist" onClick={createPromptList}>
-          <Plus size={15} />
-        </button>
         <div className="mobile-watchlist-tabrail">
           {lists.map((list) => (
             <button key={list.id} type="button" className={list.id === activeId ? 'active' : ''} onClick={() => selectList(list.id)}>
@@ -1220,17 +1223,12 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
             </button>
           ))}
         </div>
-      </div>
-
-      <div className="mobile-watchlist-actionrow">
-        <button type="button" className="mobile-add-instrument" onClick={() => setAdding((value) => !value)}>
-          <Plus size={16} /> Add Instrument
+        <button type="button" className="mobile-watchlist-plus" aria-label="Add instrument" onClick={() => setAdding(true)}>
+          <Plus size={16} />
         </button>
-        <button type="button" aria-label="Edit instruments" onClick={() => setEditOpen(true)}><Pencil size={16} /></button>
-        <div className="mobile-watchlist-viewtoggle" role="group" aria-label="Watchlist style">
-          <button type="button" className={view === 'table' ? 'active' : ''} onClick={() => activeList && setListViewMode(activeList.id, 'table')}>Table</button>
-          <button type="button" className={view === 'list' ? 'active' : ''} onClick={() => activeList && setListViewMode(activeList.id, 'list')}>Cards</button>
-        </div>
+        <button type="button" className="mobile-icon-action mobile-watchlist-menu-btn" aria-label="Watchlist actions" onClick={() => setMenuOpen(true)}>
+          <MoreVertical size={18} />
+        </button>
       </div>
       {adding && (
         <form className="mobile-watchlist-addform" onSubmit={submitTicker}>
@@ -1248,22 +1246,20 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
       ) : view === 'table' ? (
         <MobileWatchlistTable rows={rows} columns={activeList?.columns} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} hidden={hidden} />
       ) : (
-        <MobileWatchlistCards rows={rows} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} hidden={hidden} />
+        <MobileWatchlistCards rows={rows} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} hidden={hidden} grid={cardGrid} />
       )}
       {menuOpen && activeList && (
-        <MobileSheet title="Watchlist Menu" onClose={() => setMenuOpen(false)}>
+        <MobileSheet title="Watchlist Actions" onClose={() => setMenuOpen(false)}>
           <div className="mobile-watchlist-sheet-menu">
-            <span>Watchlist Style</span>
-            <button type="button" onClick={() => setListViewMode(activeList.id, 'list')}>List View</button>
-            <button type="button" onClick={() => setListViewMode(activeList.id, 'table')}>Table View</button>
-            <button type="button" onClick={createPromptList}>New Watchlist</button>
-            <button type="button" onClick={renamePromptList}>Rename Watchlist</button>
-            <button type="button" onClick={() => setEditOpen(true)}>Manage Watchlists</button>
-            <button type="button" onClick={() => setEditOpen(true)}>Manage Tabs</button>
-            <button type="button" onClick={() => setManageColumnsOpen(true)}>Manage Columns</button>
-            <button type="button" onClick={() => document.querySelector<HTMLButtonElement>('[aria-label="Hide amounts"],[aria-label="Show amounts"]')?.click()}>
-              Privacy Mode {hidden ? 'On' : 'Off'}
-            </button>
+            <span>View</span>
+            <button type="button" className={view === 'table' ? 'active' : ''} onClick={() => chooseView(activeList, 'table')}>Table</button>
+            <button type="button" className={view === 'list' && cardGrid === '1x1' ? 'active' : ''} onClick={() => chooseView(activeList, 'list', '1x1')}>Cards 1×1</button>
+            <button type="button" className={view === 'list' && cardGrid === '2x2' ? 'active' : ''} onClick={() => chooseView(activeList, 'list', '2x2')}>Cards 2×2</button>
+            <span>Watchlist</span>
+            <button type="button" onClick={() => { setMenuOpen(false); createPromptList() }}>New Watchlist</button>
+            <button type="button" onClick={() => { setMenuOpen(false); renamePromptList() }}>Rename Watchlist</button>
+            <button type="button" onClick={() => { setMenuOpen(false); setEditOpen(true) }}>Manage Watchlists</button>
+            <button type="button" onClick={() => { setMenuOpen(false); setManageColumnsOpen(true) }}>Manage Columns</button>
           </div>
         </MobileSheet>
       )}
@@ -1353,11 +1349,11 @@ function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, 
   )
 }
 
-function MobileWatchlistCards({ rows, onSelect, hidden }: { rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean }) {
+function MobileWatchlistCards({ rows, onSelect, hidden, grid = '1x1' }: { rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; hidden: boolean; grid?: '1x1' | '2x2' }) {
   // Portfolio Card V2 design language — research card (no position metrics).
   // Keeps ticker, company, daily %, sparkline, risk, momentum, news/macro/AI chips.
   return (
-    <div className="mobile-watchlist-card-list">
+    <div className={`mobile-watchlist-card-list${grid === '2x2' ? ' wl-grid-2' : ''}`}>
       {rows.map((row) => {
         const change = Number(row.day_change_pct || 0)
         const risk = Number(row.risk || 0)

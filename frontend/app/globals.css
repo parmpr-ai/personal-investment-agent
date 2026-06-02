@@ -927,3 +927,11 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .skm-edit-visibility{width:34px;height:34px;display:grid;place-items:center;border:0;background:transparent;color:#a7b7ca;padding:0}
 .skm-edit-visibility.on{color:#dbeafe}
 @media(max-width:420px){.stock-intel-panel{padding:12px}.stock-intel-header{grid-template-columns:28px minmax(0,1fr) auto;padding:10px 10px 4px}.stock-intel-symbol-mark{width:38px;height:38px}.stock-intel-name-row h2{font-size:23px}.stock-intel-market-line{grid-template-columns:minmax(0,1fr) 112px;padding:4px 10px 9px}.skm-page{grid-auto-rows:minmax(50px,auto);gap:6px}.skm-page .skm-cell{min-height:50px;padding:7px 8px}.skm-cell b{font-size:13px}.stock-intel-tabs{gap:18px}}
+
+/* WATCHLIST-V1: single-row header + card grid modes */
+.mobile-watchlist-menu-btn{width:34px;height:34px;border-radius:11px;flex:0 0 auto}
+.mobile-watchlist-card-list.wl-grid-2{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.wl-grid-2 .mobile-watchlist-card{min-height:0;padding:11px}
+.wl-grid-2 .mobile-watchlist-card .mobile-card-head strong{font-size:18px}
+.wl-grid-2 .mobile-watchlist-card .mobile-sparkline{height:48px}
+.wl-grid-2 .mps-chip{font-size:9px;padding:3px 6px}
