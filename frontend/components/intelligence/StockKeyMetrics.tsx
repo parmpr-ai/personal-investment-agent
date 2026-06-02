@@ -9,7 +9,7 @@ type Fmt = 'price' | 'compact' | 'compact$' | 'num' | 'pct' | 'range'
 type MetricDef = { key: string; label: string; fmt: Fmt; get: (source: any) => unknown }
 type Prefs = { order: string[]; hidden: string[] }
 
-const EMPTY = '—'
+const EMPTY = 'N/A'
 
 const pick = (source: any, keys: string[]) => {
   for (const key of keys) {
@@ -30,6 +30,7 @@ const KEY_METRIC_DEFS: MetricDef[] = [
   { key: 'prev_close', label: 'Prev Close', fmt: 'price', get: (source) => pick(source, ['prior_close', 'previous_close', 'prev_close', 'regularMarketPreviousClose']) },
   { key: 'volume', label: 'Volume', fmt: 'compact', get: (source) => pick(source, ['volume', 'regularMarketVolume']) },
   { key: 'avg_volume', label: 'Avg Volume', fmt: 'compact', get: (source) => pick(source, ['avg_volume', 'average_volume', 'averageDailyVolume3Month', 'averageVolume']) },
+  { key: 'last_price', label: 'Last Price', fmt: 'price', get: (source) => pick(source, ['last', 'price', 'regularMarketPrice']) },
   {
     key: 'today_range',
     label: 'Today Range',
@@ -57,7 +58,7 @@ const KEY_METRIC_DEFS: MetricDef[] = [
 
 const DEF_BY_KEY = new Map(KEY_METRIC_DEFS.map((def) => [def.key, def]))
 const DEFAULT_ORDER = KEY_METRIC_DEFS.map((def) => def.key)
-const DEFAULT_VISIBLE = ['open', 'today_range', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'high_52w', 'low_52w', 'vwap', 'market_cap', 'pe', 'beta', 'eps', 'div_yield']
+const DEFAULT_VISIBLE = ['open', 'today_range', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'last_price', 'high_52w', 'low_52w', 'vwap', 'market_cap', 'pe', 'beta', 'eps', 'div_yield']
 const DEFAULT_PREFS: Prefs = { order: DEFAULT_ORDER, hidden: DEFAULT_ORDER.filter((key) => !DEFAULT_VISIBLE.includes(key)) }
 const GLOBAL_PREFS_KEY = 'pia.stockView.defaults.keyMetrics'
 

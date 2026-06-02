@@ -19,7 +19,18 @@ export function useStockIntelligence(ticker: string, seedPosition?: Record<strin
 
   const position = data?.position || seedPosition || null
   const watch = data?.watch || null
-  const source = position || watch || seedPosition || {}
+  const fundamentals = data?.fundamentals || {}
+  const intelligenceFundamentals = data?.intelligence?.fundamentals || {}
+  const company = data?.intelligence?.company || {}
+  const source = {
+    ...fundamentals,
+    fundamentals: { ...fundamentals, ...intelligenceFundamentals },
+    company,
+    ...(watch || {}),
+    ...(seedPosition || {}),
+    ...(position || {}),
+    symbol: data?.ticker || position?.symbol || watch?.symbol || seedPosition?.symbol || ticker,
+  }
 
   return {
     data,
