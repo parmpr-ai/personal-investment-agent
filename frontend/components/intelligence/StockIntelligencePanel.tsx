@@ -16,6 +16,18 @@ const timeframes = ['Intraday', 'Swing', 'Position'] as const
 type Timeframe = (typeof timeframes)[number]
 const FINANCIAL_UNAVAILABLE = 'Financial data unavailable'
 const TARGET_UNAVAILABLE = 'Analyst target data unavailable'
+const INITIAL_TAB_ALIASES: Record<string, StockPanelTab> = {
+  overview: 'Overview',
+  quote: 'Overview',
+  chart: 'Chart',
+  technical: 'Chart',
+  news: 'News',
+  financials: 'Financials',
+  analysis: 'Analysis',
+  ai: 'Analysis',
+  'ai coach': 'Analysis',
+  options: 'Options',
+}
 const LOGO_URLS: Record<string, string> = {
   AAPL: 'https://companiesmarketcap.com/img/company-logos/64/AAPL.png',
   AMD: 'https://companiesmarketcap.com/img/company-logos/64/AMD.png',
@@ -266,6 +278,17 @@ function textOrDash(value: unknown) {
   return value == null || value === '' ? EMPTY : String(value)
 }
 
+function resolveInitialTab(value: unknown): StockPanelTab | null {
+  if (typeof value !== 'string') return null
+  const key = value.trim().toLowerCase().replace(/[_-]+/g, ' ')
+  if (!key) return null
+  return STOCK_PANEL_TABS.find((item) => item.toLowerCase() === key) || INITIAL_TAB_ALIASES[key] || null
+}
+
+function initialTabFromSeed(seedPosition?: Record<string, unknown> | null): StockPanelTab | null {
+  return resolveInitialTab(seedPosition?.initialTab ?? seedPosition?.initial_tab)
+}
+
 function logoUrlFor(source: any, symbol: string) {
   const direct = source?.logo_url || source?.logoUrl || source?.company?.logo_url || source?.company?.logoUrl
   if (typeof direct === 'string' && /^https?:\/\//i.test(direct)) return direct
@@ -356,9 +379,15 @@ export default function StockIntelligencePanel({
   onClose: () => void
   variant: 'desktop' | 'mobile'
 }) {
-  const [tab, setTab] = useState<StockPanelTab>(() => (STOCK_PANEL_TABS.includes(lastActiveStockPanelTab) ? lastActiveStockPanelTab : 'Overview'))
+  const requestedInitialTab = initialTabFromSeed(seedPosition)
+  const [tab, setTab] = useState<StockPanelTab>(() => requestedInitialTab || (STOCK_PANEL_TABS.includes(lastActiveStockPanelTab) ? lastActiveStockPanelTab : 'Overview'))
   const [timeframe, setTimeframe] = useState<Timeframe>('Swing')
   const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition)
+
+  useEffect(() => {
+    const nextTab = initialTabFromSeed(seedPosition)
+    if (nextTab) setTab(nextTab)
+  }, [seedPosition?.initialTab, seedPosition?.initial_tab, ticker])
 
   const symbol = String(ticker || '').split(' ')[0]
   const company = { ...(source.company || {}), ...(intelligence?.company || {}) }
