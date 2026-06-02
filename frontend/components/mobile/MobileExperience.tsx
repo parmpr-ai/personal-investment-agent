@@ -39,6 +39,7 @@ import IntelligenceBadge from '../ui/IntelligenceBadge'
 import SettingsPage from '../settings/SettingsWorkspace'
 import MobileReorderableSections from '../dashboard/MobileReorderableSections'
 import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
+import ReorderList from './ReorderList'
 import {
   WorkspaceShell,
   getWorkspaceDefinition,
