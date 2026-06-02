@@ -1,7 +1,5 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronDown } from 'lucide-react'
 import { mask, money } from '../../lib/pia-api'
 
 const EMPTY = '—'
@@ -59,7 +57,6 @@ function metric(label: string, value: string, toneClass = '') {
 }
 
 export default function StockPositionSummary({ source, hidden }: { source: any; hidden: boolean }) {
-  const [expanded, setExpanded] = useState(false)
   const shares = source.quantity ?? source.qty ?? source.shares
   const avgCost = source.avg_price ?? source.avg_cost ?? source.avgCost
   const marketValue = source.market_value ?? source.mktvalue
@@ -80,9 +77,6 @@ export default function StockPositionSummary({ source, hidden }: { source: any; 
           <span>Position Summary</span>
           <strong>{hidden ? 'Workspace' : textValue(source.symbol || source.ticker || source.underlying)}</strong>
         </div>
-        <button type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
-          <ChevronDown size={16} className={expanded ? 'open' : ''} />
-        </button>
       </header>
 
       <div className="sps-grid">
@@ -96,14 +90,12 @@ export default function StockPositionSummary({ source, hidden }: { source: any; 
         {metric('Portfolio %', pctValue(portfolioPct, hidden))}
       </div>
 
-      {expanded && (
-        <div className="sps-more">
-          {metric('Realized P&L', moneyValue(source.realized ?? source.realized_pnl, hidden, true), tone(source.realized ?? source.realized_pnl))}
-          {metric('Asset Class', hidden ? mask : textValue(source.asset_type ?? source.sec_type ?? source.asset_class))}
-          {metric('Sector', hidden ? mask : textValue(source.sector ?? source.industry))}
-          {metric('Account', hidden ? mask : textValue(source.account ?? source.broker))}
-        </div>
-      )}
+      <div className="sps-more">
+        {metric('Realized P&L', moneyValue(source.realized ?? source.realized_pnl, hidden, true), tone(source.realized ?? source.realized_pnl))}
+        {metric('Asset Class', hidden ? mask : textValue(source.asset_type ?? source.sec_type ?? source.asset_class))}
+        {metric('Sector', hidden ? mask : textValue(source.sector ?? source.industry))}
+        {metric('Account', hidden ? mask : textValue(source.account ?? source.broker))}
+      </div>
     </section>
   )
 }

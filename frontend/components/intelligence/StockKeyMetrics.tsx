@@ -289,13 +289,13 @@ function EditKeyMetricsSheet({
               const def = DEF_BY_KEY.get(key)!
               return (
                 <li className={`skm-edit-row${dragKey === key ? ' dragging' : ''}`} key={key} data-key={key}>
-                  <button type="button" className="skm-edit-toggle on" aria-label={`Hide ${def.label}`} aria-pressed="true" onClick={() => toggle(key)}>
+                  <button type="button" className="stock-reorder-toggle skm-edit-toggle on" aria-label={`Hide ${def.label}`} aria-pressed="true" onClick={() => toggle(key)}>
                     <span aria-hidden="true" />
                   </button>
                   <span className="skm-edit-name">{def.label}</span>
-                  <span className="skm-edit-grip" data-grip role="button" tabIndex={0} aria-label={`Drag to reorder ${def.label}`}>
+                  <button type="button" className="stock-reorder-grip skm-edit-grip" data-grip aria-label={`Drag to reorder ${def.label}`}>
                     <GripVertical size={18} />
-                  </span>
+                  </button>
                 </li>
               )
             })}
@@ -309,7 +309,7 @@ function EditKeyMetricsSheet({
                   const def = DEF_BY_KEY.get(key)!
                   return (
                     <li className="skm-edit-row" key={key}>
-                      <button type="button" className="skm-edit-toggle" aria-label={`Show ${def.label}`} aria-pressed="false" onClick={() => toggle(key)}>
+                      <button type="button" className="stock-reorder-toggle skm-edit-toggle" aria-label={`Show ${def.label}`} aria-pressed="false" onClick={() => toggle(key)}>
                         <span aria-hidden="true" />
                       </button>
                       <span className="skm-edit-name">{def.label}</span>
