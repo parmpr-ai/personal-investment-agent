@@ -6,9 +6,8 @@ import { GripVertical, Lock } from 'lucide-react'
 
 export type ReorderItem = { key: string; label: string }
 
-// PIA-ARCH-009 — reusable mobile/desktop reorder list.
-// Drag only from the right-side grip handle; scroll anywhere else;
-// scrollbars hidden; optional per-row visibility checkmark.
+// Watchlist column manager: drag only from the right-side grip; scroll anywhere
+// else; keep hidden and visible columns in one list.
 export default function ReorderList({ items, hiddenKeys, lockedKeys, onReorder, onToggle, className = '' }: {
   items: ReorderItem[]
   hiddenKeys?: Set<string>
@@ -20,7 +19,7 @@ export default function ReorderList({ items, hiddenKeys, lockedKeys, onReorder, 
   const [dragKey, setDragKey] = useState<string | null>(null)
   const dragRef = useRef<string | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
-  const keys = items.map((i) => i.key)
+  const keys = items.map((item) => item.key)
 
   function reorderTo(key: string, target: string) {
     if (key === target || lockedKeys?.has(key) || lockedKeys?.has(target)) return
@@ -32,32 +31,35 @@ export default function ReorderList({ items, hiddenKeys, lockedKeys, onReorder, 
     next.splice(to, 0, key)
     onReorder(next)
   }
-  function onDown(e: PointerEvent<HTMLUListElement>) {
-    const t = e.target as HTMLElement
-    if (!t.closest('[data-grip]')) return
-    const li = t.closest('[data-key]') as HTMLElement | null
-    if (!li?.dataset.key) return
-    dragRef.current = li.dataset.key
-    setDragKey(li.dataset.key)
-    listRef.current?.setPointerCapture(e.pointerId)
+
+  function onDown(event: PointerEvent<HTMLUListElement>) {
+    const target = event.target as HTMLElement
+    if (!target.closest('[data-grip]')) return
+    const row = target.closest('[data-key]') as HTMLElement | null
+    if (!row?.dataset.key || lockedKeys?.has(row.dataset.key)) return
+    dragRef.current = row.dataset.key
+    setDragKey(row.dataset.key)
+    listRef.current?.setPointerCapture(event.pointerId)
   }
-  function onMove(e: PointerEvent<HTMLUListElement>) {
+
+  function onMove(event: PointerEvent<HTMLUListElement>) {
     if (!dragRef.current || !listRef.current) return
     const rows = Array.from(listRef.current.querySelectorAll('[data-key]')) as HTMLElement[]
-    for (const el of rows) {
-      const r = el.getBoundingClientRect()
-      if (e.clientY >= r.top && e.clientY < r.bottom) {
-        const tk = el.dataset.key
-        if (tk && tk !== dragRef.current) reorderTo(dragRef.current, tk)
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect()
+      if (event.clientY >= rect.top && event.clientY < rect.bottom) {
+        const targetKey = row.dataset.key
+        if (targetKey && targetKey !== dragRef.current) reorderTo(dragRef.current, targetKey)
         break
       }
     }
   }
-  function onUp(e: PointerEvent<HTMLUListElement>) {
+
+  function onUp(event: PointerEvent<HTMLUListElement>) {
     if (!dragRef.current) return
     dragRef.current = null
     setDragKey(null)
-    listRef.current?.releasePointerCapture?.(e.pointerId)
+    listRef.current?.releasePointerCapture?.(event.pointerId)
   }
 
   return (
@@ -71,20 +73,35 @@ export default function ReorderList({ items, hiddenKeys, lockedKeys, onReorder, 
     >
       {items.map((item) => {
         const on = !hiddenKeys?.has(item.key)
-        const locked = lockedKeys?.has(item.key)
+        const locked = Boolean(lockedKeys?.has(item.key))
         return (
           <li className={`reorder-row${dragKey === item.key ? ' dragging' : ''}${locked ? ' locked' : ''}`} key={item.key} data-key={item.key}>
-            {onToggle && (locked ? (
-              <span className="reorder-check on" aria-label={`${item.label} (locked on)`}><Lock size={12} /></span>
-            ) : (
-              <button type="button" className={`reorder-check${on ? ' on' : ''}`} aria-label={`${on ? 'Hide' : 'Show'} ${item.label}`} onClick={() => onToggle(item.key)}>
-                {on ? '✓' : ''}
+            <span className="reorder-name">
+              <span>{item.label}</span>
+              {locked ? <Lock size={13} aria-label={`${item.label} locked`} /> : null}
+            </span>
+            {onToggle ? (
+              <button
+                type="button"
+                className={`reorder-toggle${on ? ' on' : ''}${locked ? ' locked' : ''}`}
+                aria-label={locked ? `${item.label} locked on` : `${on ? 'Hide' : 'Show'} ${item.label}`}
+                aria-pressed={on}
+                disabled={locked}
+                onClick={() => !locked && onToggle(item.key)}
+              >
+                <span>{on ? 'ON' : 'OFF'}</span>
               </button>
-            ))}
-            <span className="reorder-name">{item.label}</span>
-            {locked
-              ? <span className="reorder-grip reorder-grip-locked" aria-hidden="true"><Lock size={14} /></span>
-              : <span className="reorder-grip" data-grip role="button" tabIndex={0} aria-label={`Drag to reorder ${item.label}`}><GripVertical size={18} /></span>}
+            ) : null}
+            <span
+              className={`reorder-grip${locked ? ' reorder-grip-locked' : ''}`}
+              data-grip={locked ? undefined : true}
+              role="button"
+              tabIndex={locked ? -1 : 0}
+              aria-label={locked ? `${item.label} is locked` : `Drag to reorder ${item.label}`}
+              aria-disabled={locked}
+            >
+              <GripVertical size={18} />
+            </span>
           </li>
         )
       })}

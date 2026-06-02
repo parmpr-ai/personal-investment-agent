@@ -1140,11 +1140,11 @@ function PositionCards({ rows, onSelect, hidden = false, fields, order, tf }: { 
 }
 
 const WL_COL_DEFS: { key: string; label: string }[] = [
-  { key: 'instrument', label: 'Instrument' },
-  { key: 'last', label: 'Last' },
-  { key: 'change', label: 'Chng' },
-  { key: 'changePercent', label: 'Chg %' },
-  { key: 'volume', label: 'Volume' },
+  { key: 'instrument', label: 'INSTRUMENT' },
+  { key: 'last', label: 'LAST' },
+  { key: 'change', label: 'CHNG' },
+  { key: 'changePercent', label: 'CHG%' },
+  { key: 'volume', label: 'VLM' },
 ]
 const WL_DATA_KEYS = WL_COL_DEFS.filter((c) => c.key !== 'instrument').map((c) => c.key)
 const WL_COL_ORDER_KEY = 'pia.watchlist.colOrder'
