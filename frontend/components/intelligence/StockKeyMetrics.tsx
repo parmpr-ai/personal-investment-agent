@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
-import { ChevronDown, Eye, EyeOff, GripVertical, Pencil } from 'lucide-react'
+import { ChevronDown, GripVertical, Pencil } from 'lucide-react'
 import { mask } from '../../lib/pia-api'
 
 type Fmt = 'price' | 'compact' | 'compact$' | 'num' | 'pct' | 'range'
 type MetricDef = { key: string; label: string; fmt: Fmt; get: (source: any) => unknown }
 type Prefs = { order: string[]; hidden: string[] }
 
-const EMPTY = 'N/A'
+const EMPTY = '-'
 
 const pick = (source: any, keys: string[]) => {
   for (const key of keys) {
@@ -57,8 +57,9 @@ const KEY_METRIC_DEFS: MetricDef[] = [
 ]
 
 const DEF_BY_KEY = new Map(KEY_METRIC_DEFS.map((def) => [def.key, def]))
-const DEFAULT_ORDER = KEY_METRIC_DEFS.map((def) => def.key)
-const DEFAULT_VISIBLE = ['open', 'today_range', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'last_price', 'high_52w', 'low_52w', 'vwap', 'market_cap', 'pe', 'beta', 'eps', 'div_yield']
+const APPROVED_FIRST_PAGE = ['last_price', 'open', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'today_range']
+const DEFAULT_ORDER = [...APPROVED_FIRST_PAGE, ...KEY_METRIC_DEFS.map((def) => def.key).filter((key) => !APPROVED_FIRST_PAGE.includes(key))]
+const DEFAULT_VISIBLE = [...APPROVED_FIRST_PAGE, 'high_52w', 'low_52w', 'vwap', 'market_cap', 'pe', 'beta', 'eps', 'div_yield']
 const DEFAULT_PREFS: Prefs = { order: DEFAULT_ORDER, hidden: DEFAULT_ORDER.filter((key) => !DEFAULT_VISIBLE.includes(key)) }
 const GLOBAL_PREFS_KEY = 'pia.stockView.defaults.keyMetrics'
 
@@ -108,9 +109,25 @@ function formatMetric(value: unknown, fmt: Fmt): string {
 function normalizedPrefs(raw: unknown): Prefs | null {
   if (!raw || typeof raw !== 'object') return null
   const parsed = raw as Partial<Prefs>
-  const known = Array.isArray(parsed.order) ? parsed.order.filter((key) => DEF_BY_KEY.has(key)) : []
-  const order = [...known, ...DEFAULT_ORDER.filter((key) => !known.includes(key))]
-  const hidden = Array.isArray(parsed.hidden) ? parsed.hidden.filter((key) => DEF_BY_KEY.has(key)) : []
+  const rawOrder = Array.isArray(parsed.order) ? parsed.order : []
+  const rawHidden = Array.isArray(parsed.hidden) ? parsed.hidden : []
+  const known: string[] = []
+  const seen = new Set<string>()
+  for (const key of rawOrder) {
+    if (typeof key !== 'string' || !DEF_BY_KEY.has(key) || seen.has(key)) return null
+    seen.add(key)
+    known.push(key)
+  }
+  const hidden: string[] = []
+  const hiddenSeen = new Set<string>()
+  for (const key of rawHidden) {
+    if (typeof key !== 'string' || !DEF_BY_KEY.has(key)) return null
+    if (!hiddenSeen.has(key)) {
+      hiddenSeen.add(key)
+      hidden.push(key)
+    }
+  }
+  const order = known.length ? [...known, ...DEFAULT_ORDER.filter((key) => !known.includes(key))] : DEFAULT_ORDER
   return { order, hidden }
 }
 
@@ -160,7 +177,7 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
     () => prefs.order.map((key) => DEF_BY_KEY.get(key)).filter((def): def is MetricDef => Boolean(def && !hiddenSet.has(def.key))),
     [prefs.order, hiddenSet],
   )
-  const pages = useMemo(() => chunk(visibleDefs, 9), [visibleDefs])
+  const pages = useMemo(() => chunk(visibleDefs, 8), [visibleDefs])
 
   useEffect(() => {
     if (activePage > Math.max(0, pages.length - 1)) setActivePage(Math.max(0, pages.length - 1))
@@ -241,8 +258,7 @@ function EditKeyMetricsSheet({
   onClose: () => void
 }) {
   const hiddenSet = new Set(prefs.hidden)
-  const active = prefs.order.filter((key) => DEF_BY_KEY.has(key) && !hiddenSet.has(key))
-  const inactive = prefs.order.filter((key) => DEF_BY_KEY.has(key) && hiddenSet.has(key))
+  const rows = prefs.order.filter((key) => DEF_BY_KEY.has(key))
   const [dragKey, setDragKey] = useState<string | null>(null)
   const dragRef = useRef<string | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
@@ -306,49 +322,24 @@ function EditKeyMetricsSheet({
           <button type="button" className="skm-sheet-done" onClick={onClose}>Done</button>
         </header>
         <div className="skm-sheet-body">
-          <div className="skm-sheet-tabs" aria-hidden="true">
-            <span className="active">Order</span>
-            <span>Visibility</span>
-          </div>
-          <span className="skm-edit-section">Drag to reorder</span>
+          <span className="skm-edit-section">Metric Name</span>
           <ul className="skm-edit-list" ref={listRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
-            {active.map((key) => {
+            {rows.map((key) => {
               const def = DEF_BY_KEY.get(key)!
+              const on = !hiddenSet.has(key)
               return (
                 <li className={`skm-edit-row${dragKey === key ? ' dragging' : ''}`} key={key} data-key={key}>
+                  <span className="skm-edit-name">{def.label}</span>
+                  <button type="button" className={`skm-edit-toggle${on ? ' on' : ''}`} aria-label={`${on ? 'Hide' : 'Show'} ${def.label}`} aria-pressed={on} onClick={() => toggle(key)}>
+                    <span />
+                  </button>
                   <button type="button" className="stock-reorder-grip skm-edit-grip" data-grip aria-label={`Drag to reorder ${def.label}`}>
                     <GripVertical size={18} />
-                  </button>
-                  <span className="skm-edit-name">{def.label}</span>
-                  <button type="button" className="skm-edit-visibility on" aria-label={`Hide ${def.label}`} aria-pressed="true" onClick={() => toggle(key)}>
-                    <Eye size={16} />
                   </button>
                 </li>
               )
             })}
           </ul>
-
-          {inactive.length > 0 && (
-            <>
-              <span className="skm-edit-section">Hidden</span>
-              <ul className="skm-edit-list">
-                {inactive.map((key) => {
-                  const def = DEF_BY_KEY.get(key)!
-                  return (
-                    <li className="skm-edit-row" key={key}>
-                      <span className="stock-reorder-grip skm-edit-grip" aria-hidden="true">
-                        <GripVertical size={18} />
-                      </span>
-                      <span className="skm-edit-name">{def.label}</span>
-                      <button type="button" className="skm-edit-visibility" aria-label={`Show ${def.label}`} aria-pressed="false" onClick={() => toggle(key)}>
-                        <EyeOff size={16} />
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </>
-          )}
 
           <button type="button" className="skm-edit-reset" onClick={onReset}>Reset to default</button>
         </div>

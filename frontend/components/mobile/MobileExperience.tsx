@@ -53,6 +53,7 @@ import {
 import { usePersistedLayout } from '../dashboard/usePersistedLayout'
 import type { MobileHomeSectionId } from '../dashboard/types'
 import { API, fetchJson, mask, money, pct as formatPct, safeMessage } from '../../lib/pia-api'
+import { instrumentSearchErrorMessage, searchInstruments, type InstrumentMatch } from '../../lib/instrument-search'
 import {
   buildWatchlistUniverse,
   resolveWatchlistRows,
@@ -756,12 +757,46 @@ function GlobalStockSearch({ universe, hidden, onSelect, onClose }: {
   onClose: () => void
 }) {
   const [q, setQ] = useState('')
+  const [liveResults, setLiveResults] = useState<InstrumentMatch[]>([])
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
   const query = q.trim().toUpperCase()
-  const results = (query
+  const localResults = (query
     ? universe.filter((u) => u.symbol.includes(query) || String(u.name || '').toUpperCase().includes(query))
     : universe
   ).slice(0, 8)
-  const exact = universe.some((u) => u.symbol === query)
+  const results = query && liveResults.length ? liveResults : localResults
+  const exact = results.some((u) => String(u.symbol || '').toUpperCase() === query)
+
+  useEffect(() => {
+    if (!query) {
+      setLiveResults([])
+      setMessage('')
+      setLoading(false)
+      return
+    }
+    let active = true
+    setLoading(true)
+    setMessage('')
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await searchInstruments(query)
+        if (!active) return
+        setLiveResults(result.matches)
+        setMessage(result.matches.length ? '' : 'No matching instruments found.')
+      } catch (error) {
+        if (!active) return
+        setLiveResults([])
+        setMessage(instrumentSearchErrorMessage(error, 'Instrument search is unavailable right now.'))
+      } finally {
+        if (active) setLoading(false)
+      }
+    }, 250)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [query])
 
   function onEnter() {
     if (!query) return
@@ -789,6 +824,8 @@ function GlobalStockSearch({ universe, hidden, onSelect, onClose }: {
         ) : null}
       </div>
       <div className="global-search-results">
+        {loading && <div className="manual-lookup-status">Searching instruments...</div>}
+        {!loading && message && <div className="manual-lookup-status">{message}</div>}
         {results.map((r) => {
           const chg = Number(r.change ?? 0)
           return (
@@ -804,11 +841,11 @@ function GlobalStockSearch({ universe, hidden, onSelect, onClose }: {
                   {r.change != null ? <small className={chg >= 0 ? 'green' : 'red'}>{hidden ? '' : pct(chg)}</small> : null}
                 </div>
               ) : null}
-              <span className={`gsr-source gsr-source-${String(r.source).toLowerCase()}`}>{r.source}</span>
+              <span className={`gsr-source gsr-source-${String(r.source || 'search').toLowerCase()}`}>{r.source || r.exchange || 'Search'}</span>
             </button>
           )
         })}
-        {query && !exact ? (
+        {query && !loading && !exact && !liveResults.length ? (
           <button type="button" className="global-search-result gsr-analyze" onClick={() => onSelect(query)}>
             <div className="gsr-logo gsr-logo-analyze">{query.slice(0, 2)}</div>
             <div className="gsr-main">
@@ -1189,6 +1226,9 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
   const [addPickerSymbol, setAddPickerSymbol] = useState<string | null>(null)
   const listHasSymbol = (list: any, sym: string) => (list?.tickers || list?.symbols || []).includes(sym)
   const [colOrder, setColOrder] = useState<string[]>(['instrument', ...WL_DATA_KEYS])
+  const [addMatches, setAddMatches] = useState<InstrumentMatch[]>([])
+  const [addLookupLoading, setAddLookupLoading] = useState(false)
+  const [addLookupMessage, setAddLookupMessage] = useState('')
   useEffect(() => {
     try { const g = localStorage.getItem('pia.watchlist.cardGrid'); if (g === '1x1' || g === '2x2') setCardGrid(g) } catch {}
     setColOrder(readWlColOrder())
@@ -1209,10 +1249,9 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
     setNewListName('')
   }
 
-  function submitTicker(e: any) {
-    e.preventDefault()
+  function addTickerSymbol(rawSymbol: string) {
     if (!activeList) return
-    const symbol = newTicker.trim().toUpperCase()
+    const symbol = rawSymbol.trim().toUpperCase()
     if (!symbol) return
     if ((activeList.tickers || activeList.symbols || []).includes(symbol)) {
       setValidation(`${symbol} is already in ${activeList.name}.`)
@@ -1220,9 +1259,63 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
     }
     addSymbol(activeList.id, symbol)
     setNewTicker('')
+    setAddMatches([])
+    setAddLookupMessage('')
     setValidation('')
     setAdding(false)
   }
+
+  function submitTicker(e: any) {
+    e.preventDefault()
+    if (addLookupLoading) {
+      setValidation('Finish the instrument search before adding.')
+      return
+    }
+    const exact = addMatches.find((match) => match.symbol === newTicker.trim().toUpperCase())
+    const match = exact || (addMatches.length === 1 ? addMatches[0] : null)
+    if (!match) {
+      setValidation(addLookupMessage || 'Select a matching instrument before adding.')
+      return
+    }
+    addTickerSymbol(match.symbol)
+  }
+
+  useEffect(() => {
+    const query = newTicker.trim()
+    if (!adding || !query) {
+      setAddMatches([])
+      setAddLookupMessage('')
+      setAddLookupLoading(false)
+      return
+    }
+    if (!validManualSearch(query)) {
+      setAddMatches([])
+      setAddLookupMessage('Enter a ticker or company name.')
+      setAddLookupLoading(false)
+      return
+    }
+    let active = true
+    setAddLookupLoading(true)
+    setAddLookupMessage('')
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await searchInstruments(query)
+        if (!active) return
+        setAddMatches(result.matches)
+        setAddLookupMessage(result.matches.length ? 'Select the matching instrument to add.' : 'No matching instruments found.')
+      } catch (error) {
+        if (!active) return
+        setAddMatches([])
+        setAddLookupMessage(instrumentSearchErrorMessage(error, 'Instrument search is unavailable right now.'))
+      } finally {
+        if (active) setAddLookupLoading(false)
+      }
+    }, 300)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [adding, newTicker])
 
   function createPromptList() {
     const name = window.prompt('New watchlist name')
@@ -1262,8 +1355,21 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
       {adding && (
         <form className="mobile-watchlist-addform" onSubmit={submitTicker}>
           <input value={newTicker} onChange={(e) => { setNewTicker(e.target.value.toUpperCase()); setValidation('') }} placeholder="Ticker" aria-label="Ticker to add" autoFocus />
-          <button type="submit">Add</button>
+          <button type="submit" disabled={addLookupLoading}>Add</button>
         </form>
+      )}
+      {adding && addLookupLoading && <div className="manual-lookup-status">Searching instruments...</div>}
+      {adding && !addLookupLoading && addLookupMessage && <div className="manual-lookup-status">{addLookupMessage}</div>}
+      {adding && !addLookupLoading && addMatches.length > 0 && (
+        <div className="manual-lookup-results">
+          {addMatches.map((match) => (
+            <button type="button" key={`${match.symbol}-${match.exchange || match.name}`} onClick={() => addTickerSymbol(match.symbol)}>
+              <b>{match.symbol}</b>
+              <span>{match.name || match.symbol}</span>
+              <small>{[match.exchange, match.asset_type, match.currency].filter(Boolean).join(' / ')}</small>
+            </button>
+          ))}
+        </div>
       )}
       {validation && <div className="mobile-watchlist-validation">{validation}</div>}
 
@@ -1587,33 +1693,12 @@ const CARD_ORDER_LS_KEY = 'pia.portfolioCardOrder.mobile'
 // Card fields whose display order can be applied to the card stat grid.
 const CARD_GRID_FIELDS: CardFieldKey[] = ['shares', 'mktvalue', 'last', 'avgcost', 'daypnl', 'unrealized']
 
-type ManualInstrumentMatch = {
-  symbol: string
-  name?: string
-  asset_type?: string
-  currency?: string
-  exchange?: string
-  quote_type?: string
-}
+type ManualInstrumentMatch = InstrumentMatch
 
 const emptyManualHoldingForm = {
   ticker: '',
   quantity: '',
   avg_price: '',
-}
-
-function normalizeManualMatches(payload: any): ManualInstrumentMatch[] {
-  const matches = Array.isArray(payload?.matches) ? payload.matches : []
-  return matches
-    .map((item: any) => ({
-      symbol: String(item?.symbol || '').trim().toUpperCase(),
-      name: String(item?.name || item?.shortname || item?.longname || item?.symbol || '').trim(),
-      asset_type: String(item?.asset_type || 'Stock'),
-      currency: String(item?.currency || 'USD').trim().toUpperCase(),
-      exchange: item?.exchange ? String(item.exchange) : '',
-      quote_type: item?.quote_type ? String(item.quote_type) : '',
-    }))
-    .filter((item: ManualInstrumentMatch) => item.symbol)
 }
 
 function validManualSearch(value: string) {
@@ -2185,19 +2270,19 @@ function AddManualHoldingSheet({
     setLookupLoading(true)
     setLookupMessage('')
     const timer = window.setTimeout(async () => {
-      const result = await fetchJson(`/instruments/search?q=${encodeURIComponent(searchText)}`).catch((error) => {
+      const result = await searchInstruments(searchText).catch((error) => {
         if (active) {
           setMatches([])
-          setLookupMessage(manualHoldingError(error, `Instrument search could not reach ${API || 'the backend API'}. Confirm the backend is running and reachable from this device.`))
+          setLookupMessage(instrumentSearchErrorMessage(error, 'Instrument search is unavailable right now.'))
         }
-        return { lookupError: true }
+        return null
       })
       if (!active) return
-      if (result?.lookupError) {
+      if (!result) {
         setLookupLoading(false)
         return
       }
-      const nextMatches = normalizeManualMatches(result)
+      const nextMatches = result.matches
       setMatches(nextMatches)
       setLookupMessage(nextMatches.length ? 'Select the matching instrument before saving.' : 'No matching instruments found.')
       setLookupLoading(false)
