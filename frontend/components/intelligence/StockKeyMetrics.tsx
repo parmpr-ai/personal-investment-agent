@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
-import { ChevronDown, GripVertical, Pencil } from 'lucide-react'
+import { ChevronDown, Eye, EyeOff, GripVertical, Pencil } from 'lucide-react'
 import { mask } from '../../lib/pia-api'
 
 type Fmt = 'price' | 'compact' | 'compact$' | 'num' | 'pct' | 'range'
@@ -42,20 +42,22 @@ const KEY_METRIC_DEFS: MetricDef[] = [
   { key: 'high_52w', label: '52W High', fmt: 'price', get: (source) => pick(source, ['52w_high', 'week52_high', 'high_52w', 'fiftyTwoWeekHigh']) },
   { key: 'low_52w', label: '52W Low', fmt: 'price', get: (source) => pick(source, ['52w_low', 'week52_low', 'low_52w', 'fiftyTwoWeekLow']) },
   { key: 'market_cap', label: 'Market Cap', fmt: 'compact$', get: (source) => pick(source, ['market_cap', 'marketCap']) },
-  { key: 'pe', label: 'P/E', fmt: 'num', get: (source) => pick(source, ['pe', 'pe_ttm', 'trailingPE']) },
+  { key: 'pe', label: 'P/E (TTM)', fmt: 'num', get: (source) => pick(source, ['pe', 'pe_ttm', 'trailingPE']) },
   { key: 'beta', label: 'Beta', fmt: 'num', get: (source) => pick(source, ['beta']) },
   { key: 'vwap', label: 'VWAP', fmt: 'price', get: (source) => pick(source, ['vwap']) },
-  { key: 'eps', label: 'EPS', fmt: 'price', get: (source) => pick(source, ['eps', 'eps_ttm', 'trailingEps']) },
-  { key: 'div_yield', label: 'Dividend Yield', fmt: 'pct', get: (source) => pick(source, ['dividend_yield', 'dividendYield']) },
+  { key: 'eps', label: 'EPS (TTM)', fmt: 'price', get: (source) => pick(source, ['eps', 'eps_ttm', 'trailingEps']) },
+  { key: 'div_yield', label: 'Div Yield', fmt: 'pct', get: (source) => pick(source, ['dividend_yield', 'dividendYield']) },
+  { key: 'turnover', label: 'Turnover', fmt: 'compact$', get: (source) => pick(source, ['turnover', 'dollar_volume']) },
   { key: 'shares_out', label: 'Shares Outstanding', fmt: 'compact', get: (source) => pick(source, ['shares_outstanding', 'sharesOutstanding']) },
   { key: 'float', label: 'Float', fmt: 'compact', get: (source) => pick(source, ['float', 'floatShares']) },
+  { key: 'quick_ratio', label: 'Quick Ratio', fmt: 'num', get: (source) => pick(source, ['quick_ratio', 'quickRatio']) },
   { key: 'revenue', label: 'Revenue', fmt: 'compact$', get: (source) => pick(source, ['revenue', 'totalRevenue']) },
   { key: 'gross_margin', label: 'Gross Margin', fmt: 'pct', get: (source) => pick(source, ['gross_margin', 'grossMargins']) },
 ]
 
 const DEF_BY_KEY = new Map(KEY_METRIC_DEFS.map((def) => [def.key, def]))
 const DEFAULT_ORDER = KEY_METRIC_DEFS.map((def) => def.key)
-const DEFAULT_VISIBLE = ['open', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'today_range']
+const DEFAULT_VISIBLE = ['open', 'today_range', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'high_52w', 'low_52w', 'vwap', 'market_cap', 'pe', 'beta', 'eps', 'div_yield']
 const DEFAULT_PREFS: Prefs = { order: DEFAULT_ORDER, hidden: DEFAULT_ORDER.filter((key) => !DEFAULT_VISIBLE.includes(key)) }
 const GLOBAL_PREFS_KEY = 'pia.stockView.defaults.keyMetrics'
 
@@ -131,14 +133,22 @@ function savePrefs(ticker: string, prefs: Prefs) {
   } catch {}
 }
 
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
 export default function StockKeyMetrics({ source, hidden, ticker }: { source: any; hidden: boolean; ticker: string }) {
   const [collapsed, setCollapsed] = useState(false)
   const [editing, setEditing] = useState(false)
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
+  const [activePage, setActivePage] = useState(0)
   const railRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setPrefs(loadPrefs(ticker))
+    setActivePage(0)
   }, [ticker])
 
   const hiddenSet = useMemo(() => new Set(prefs.hidden), [prefs.hidden])
@@ -146,9 +156,22 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
     () => prefs.order.map((key) => DEF_BY_KEY.get(key)).filter((def): def is MetricDef => Boolean(def && !hiddenSet.has(def.key))),
     [prefs.order, hiddenSet],
   )
+  const pages = useMemo(() => chunk(visibleDefs, 9), [visibleDefs])
+
+  useEffect(() => {
+    if (activePage > Math.max(0, pages.length - 1)) setActivePage(Math.max(0, pages.length - 1))
+  }, [activePage, pages.length])
+
   function update(next: Prefs) {
     setPrefs(next)
     savePrefs(ticker, next)
+  }
+
+  function onRailScroll() {
+    const node = railRef.current
+    if (!node) return
+    const nextPage = Math.round(node.scrollLeft / Math.max(node.clientWidth, 1))
+    setActivePage(Math.max(0, Math.min(pages.length - 1, nextPage)))
   }
 
   return (
@@ -165,17 +188,28 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
 
       {!collapsed && (
         <>
-          <div className="skm-rail" ref={railRef}>
-            {visibleDefs.map((def) => (
-              <div className="skm-cell" key={def.key}>
-                <span>{def.label}</span>
-                <b>{hidden ? mask : formatMetric(def.get(source), def.fmt)}</b>
+          <div className="skm-rail" ref={railRef} onScroll={onRailScroll}>
+            {pages.map((page, pageIndex) => (
+              <div className="skm-page" key={pageIndex}>
+                {page.map((def) => (
+                  <div className="skm-cell" key={def.key}>
+                    <span>{def.label}</span>
+                    <b>{hidden ? mask : formatMetric(def.get(source), def.fmt)}</b>
+                  </div>
+                ))}
               </div>
             ))}
             {visibleDefs.length === 0 && (
-              <div className="skm-empty">No metrics selected.</div>
+              <div className="skm-page">
+                <div className="skm-empty">No metrics selected.</div>
+              </div>
             )}
           </div>
+          {pages.length > 1 && (
+            <div className="skm-dots" aria-hidden="true">
+              {pages.map((_, index) => <span key={index} className={index === activePage ? 'active' : ''} />)}
+            </div>
+          )}
         </>
       )}
 
@@ -224,7 +258,7 @@ function EditKeyMetricsSheet({
     if (from < 0 || to < 0) return
     next.splice(from, 1)
     next.splice(to, 0, key)
-    onChange({ ...prefs, order: next })
+    onChange({ ...prefs, order: next, hidden: [...prefs.hidden] })
   }
 
   function onDown(event: PointerEvent<HTMLUListElement>) {
@@ -264,22 +298,26 @@ function EditKeyMetricsSheet({
       <button type="button" className="skm-sheet-overlay" aria-label="Close key metrics editor" onClick={onClose} />
       <div className="skm-sheet" role="dialog" aria-modal="true" aria-label="Edit key metrics">
         <header className="skm-sheet-head">
-          <h3>Edit Key Metrics</h3>
+          <h3>Customize Key Metrics</h3>
           <button type="button" className="skm-sheet-done" onClick={onClose}>Done</button>
         </header>
         <div className="skm-sheet-body">
-          <span className="skm-edit-section">Active - drag to reorder</span>
+          <div className="skm-sheet-tabs" aria-hidden="true">
+            <span className="active">Order</span>
+            <span>Visibility</span>
+          </div>
+          <span className="skm-edit-section">Drag to reorder</span>
           <ul className="skm-edit-list" ref={listRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
             {active.map((key) => {
               const def = DEF_BY_KEY.get(key)!
               return (
                 <li className={`skm-edit-row${dragKey === key ? ' dragging' : ''}`} key={key} data-key={key}>
-                  <button type="button" className="stock-reorder-toggle skm-edit-toggle on" aria-label={`Hide ${def.label}`} aria-pressed="true" onClick={() => toggle(key)}>
-                    <span aria-hidden="true" />
-                  </button>
-                  <span className="skm-edit-name">{def.label}</span>
                   <button type="button" className="stock-reorder-grip skm-edit-grip" data-grip aria-label={`Drag to reorder ${def.label}`}>
                     <GripVertical size={18} />
+                  </button>
+                  <span className="skm-edit-name">{def.label}</span>
+                  <button type="button" className="skm-edit-visibility on" aria-label={`Hide ${def.label}`} aria-pressed="true" onClick={() => toggle(key)}>
+                    <Eye size={16} />
                   </button>
                 </li>
               )
@@ -294,10 +332,13 @@ function EditKeyMetricsSheet({
                   const def = DEF_BY_KEY.get(key)!
                   return (
                     <li className="skm-edit-row" key={key}>
-                      <button type="button" className="stock-reorder-toggle skm-edit-toggle" aria-label={`Show ${def.label}`} aria-pressed="false" onClick={() => toggle(key)}>
-                        <span aria-hidden="true" />
-                      </button>
+                      <span className="stock-reorder-grip skm-edit-grip" aria-hidden="true">
+                        <GripVertical size={18} />
+                      </span>
                       <span className="skm-edit-name">{def.label}</span>
+                      <button type="button" className="skm-edit-visibility" aria-label={`Show ${def.label}`} aria-pressed="false" onClick={() => toggle(key)}>
+                        <EyeOff size={16} />
+                      </button>
                     </li>
                   )
                 })}
