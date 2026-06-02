@@ -4,7 +4,7 @@ import { Brain } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import { mask } from '../../lib/pia-api'
 
-const EMPTY = '—'
+const UNAVAILABLE = 'N/A'
 
 function hasValue(value: unknown) {
   return value != null && value !== '' && !(typeof value === 'number' && Number.isNaN(value))
@@ -52,14 +52,14 @@ function trendScore(technical: any, source: any) {
 }
 
 function formatValue(value: unknown, suffix = '') {
-  if (!hasValue(value)) return EMPTY
+  if (!hasValue(value)) return UNAVAILABLE
   const parsed = numberValue(value)
   if (parsed == null) return String(value)
   return `${Number(parsed.toFixed(2))}${suffix}`
 }
 
 function IntelligenceBar({ label, value, tone = 'blue', hidden }: { label: string; value: number | null; tone?: string; hidden: boolean }) {
-  const shown = value == null ? EMPTY : `${value}/100`
+  const shown = value == null ? UNAVAILABLE : `${value}/100`
   return (
     <div className="sai-bar">
       <div>
@@ -102,13 +102,14 @@ export default function StockAiIntelligenceWidget({
     hasValue(source.short_interest) ? ['Short Interest', formatValue(source.short_interest, '%')] : null,
     hasValue(source.price_vs_fair_value ?? targets.upside_downside) ? ['Price vs Fair Value', String(source.price_vs_fair_value ?? targets.upside_downside)] : null,
   ].filter((item): item is [string, string] => Boolean(item))
+  const insightRows = insights.length > 0 ? insights : [['Signal details', 'Data gathering in progress'] as [string, string]]
 
   return (
     <section className={`sai sentiment-${sentiment.toLowerCase()}`} aria-label="AI intelligence">
       <header className="sai-head">
         <div className="sai-score" style={{ '--sai-score': `${score ?? 0}%` } as CSSProperties}>
           <Brain size={18} />
-          <strong>{hidden ? mask : score ?? EMPTY}</strong>
+          <strong>{hidden ? mask : score ?? UNAVAILABLE}</strong>
           <span>{hidden ? 'Signal' : sentiment}</span>
         </div>
         <div className="sai-lede">
@@ -127,16 +128,14 @@ export default function StockAiIntelligenceWidget({
 
       <p className="sai-summary">{hidden ? mask : summary || 'Data gathering in progress'}</p>
 
-      {insights.length > 0 && (
-        <div className="sai-insights">
-          {insights.map(([label, value]) => (
-            <div className="sai-insight" key={label}>
-              <span>{label}</span>
-              <b>{hidden ? mask : value}</b>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="sai-insights">
+        {insightRows.map(([label, value]) => (
+          <div className={`sai-insight${insights.length === 0 ? ' unavailable' : ''}`} key={label}>
+            <span>{label}</span>
+            <b>{hidden ? mask : value}</b>
+          </div>
+        ))}
+      </div>
     </section>
   )
 }

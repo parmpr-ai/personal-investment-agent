@@ -38,7 +38,7 @@ export default function TickerNewsList({
 }) {
   const rows = items.slice(0, 6)
   if (!rows.length) {
-    return <p className="muted">No structured headlines for this symbol in the current scan.</p>
+    return <p className="muted">Live news provider unavailable for this symbol right now.</p>
   }
 
   return (

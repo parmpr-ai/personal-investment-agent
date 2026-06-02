@@ -2,57 +2,54 @@ from __future__ import annotations
 
 from typing import Any
 
-from mock_intelligence_data import enrich_technical, get_mock_intelligence, get_mock_overview_hints
+from services.connectors import yahoo_news
 from services.news_intelligence import (
-    DemoNewsProvider,
     RawNewsItem,
     YahooNewsProvider,
     _infer_sentiment,
     _parse_published,
     build_digest,
-    generate_mock_news,
     get_news_intelligence,
     normalize_news,
     serialize_item,
 )
-from services.connectors import yahoo_news
 
 
 def _momentum_label(score: int) -> str:
     if score >= 75:
-        return "Strong momentum — extension risk rising"
+        return "Strong momentum - extension risk rising"
     if score >= 55:
-        return "Constructive momentum — trend intact"
+        return "Constructive momentum - trend intact"
     if score >= 40:
-        return "Mixed momentum — wait for confirmation"
-    return "Weak momentum — downside pressure possible"
+        return "Mixed momentum - wait for confirmation"
+    return "Weak momentum - downside pressure possible"
 
 
 def _volatility_label(risk: int) -> str:
     if risk >= 80:
-        return "Elevated volatility — size defensively"
+        return "Elevated volatility - size defensively"
     if risk >= 60:
-        return "Above-average risk — tighten stops"
+        return "Above-average risk - tighten stops"
     if risk >= 40:
-        return "Moderate volatility — normal sizing"
-    return "Contained volatility — cleaner risk profile"
+        return "Moderate volatility - normal sizing"
+    return "Contained volatility - cleaner risk profile"
 
 
 def _macro_label(sensitivity: int, macro: dict[str, Any]) -> str:
     regime = macro.get("risk_mode") or "Neutral"
     if sensitivity >= 80:
-        return f"High macro sensitivity — {regime} regime matters"
+        return f"High macro sensitivity - {regime} regime matters"
     if sensitivity >= 60:
-        return f"Moderate macro sensitivity — watch rates and {regime}"
-    return f"Lower macro beta — less driven by {regime}"
+        return f"Moderate macro sensitivity - watch rates and {regime}"
+    return f"Lower macro beta - less driven by {regime}"
 
 
 def _earnings_proximity(ticker: str, calendar: list[dict[str, Any]]) -> str:
     matches = [event for event in calendar if ticker.upper() in str(event.get("event", "")).upper()]
     if matches:
         first = matches[0]
-        return f"{first.get('event')} on {first.get('date')} — catalyst window active"
-    return "No earnings headline in the current calendar window"
+        return f"{first.get('event')} on {first.get('date')} - catalyst window active"
+    return "Earnings calendar unavailable for this symbol."
 
 
 def _trend_label(change_pct: float) -> str:
@@ -88,14 +85,13 @@ def _build_actions(position: dict[str, Any] | None, watch: dict[str, Any] | None
         actions.append({"label": "Elevated volatility", "detail": "Headline tone or risk score argues for patience."})
 
     if not actions:
-        actions.append({"label": "Watch", "detail": "No urgent action — confirm catalyst and liquidity."})
+        actions.append({"label": "Watch", "detail": "No urgent action. Confirm catalyst and liquidity."})
     return actions[:4]
 
 
 def get_ticker_news_intelligence(ticker: str) -> dict[str, Any]:
     symbol = ticker.upper().split()[0]
     raw_items: list[RawNewsItem] = []
-    used_demo = False
 
     for article in yahoo_news(symbol, limit=6):
         title = str(article.get("title") or "").strip()
@@ -117,31 +113,27 @@ def get_ticker_news_intelligence(ticker: str) -> dict[str, Any]:
 
     if not raw_items:
         global_bundle = get_news_intelligence()
-        filtered = [item for item in global_bundle.get("items", []) if str(item.get("ticker", "")).upper() == symbol]
+        filtered = [] if global_bundle.get("is_demo") else [item for item in global_bundle.get("items", []) if str(item.get("ticker", "")).upper() == symbol]
         if filtered:
-            digest = f"{symbol}: " + " · ".join(item.get("title", "") for item in filtered[:2]) if filtered else "No headlines."
-            return {"is_demo": bool(global_bundle.get("is_demo")), "digest": digest, "items": filtered}
+            digest = f"{symbol}: " + " / ".join(item.get("title", "") for item in filtered[:2]) if filtered else "No headlines."
+            return {"is_demo": False, "digest": digest, "items": filtered}
 
-        demo_items = [item for item in DemoNewsProvider().fetch() if item.ticker == symbol]
-        if demo_items:
-            used_demo = True
-            raw_items = demo_items
+        provider_items = YahooNewsProvider().fetch()
+        real_items = [item for item in provider_items if item.ticker == symbol][:4]
+        if real_items:
+            raw_items = real_items
         else:
-            provider_items = YahooNewsProvider().fetch()
-            real_items = [item for item in provider_items if item.ticker == symbol][:4]
-            if real_items:
-                # Real Yahoo headlines for this symbol — not demo.
-                raw_items = real_items
-                used_demo = False
-            else:
-                # Final fallback: deterministic per-ticker mock so every symbol shows source-badged news.
-                raw_items = generate_mock_news(symbol)
-                used_demo = True
+            return {
+                "is_demo": False,
+                "unavailable": True,
+                "digest": f"Live news provider unavailable for {symbol} right now.",
+                "items": [],
+            }
 
     normalized = normalize_news(raw_items)
     return {
-        "is_demo": used_demo,
-        "digest": build_digest(normalized) if normalized else f"No live headlines for {symbol} in the current scan.",
+        "is_demo": False,
+        "digest": build_digest(normalized) if normalized else f"Live news provider unavailable for {symbol} right now.",
         "items": [serialize_item(item) for item in normalized],
     }
 
@@ -156,35 +148,30 @@ def build_stock_panel_intelligence(
     calendar: list[dict[str, Any]],
 ) -> dict[str, Any]:
     source = position or watch or {}
-    change_pct = float(source.get("day_change_pct") or source.get("change_pct") or 0)
-    momentum = int(source.get("momentum_score") or source.get("momentum") or 50)
-    risk = int(source.get("risk") or 50)
-    macro_sensitivity = int(source.get("macro_sensitivity") or 60)
+    change_raw = source.get("day_change_pct") if source.get("day_change_pct") is not None else source.get("change_pct")
+    momentum_raw = source.get("momentum_score") if source.get("momentum_score") is not None else source.get("momentum")
+    risk_raw = source.get("risk")
+    macro_raw = source.get("macro_sensitivity")
+    change_pct = float(change_raw or 0)
+    momentum = int(momentum_raw) if momentum_raw is not None else None
+    risk = int(risk_raw) if risk_raw is not None else None
+    macro_sensitivity = int(macro_raw) if macro_raw is not None else None
     news_items = news_bundle.get("items") or []
 
     overview = {
-        "why_moving": (position or {}).get("why_moving") or (watch or {}).get("reason") or "No dominant catalyst flagged — confirm with news and sector tape.",
-        "momentum_state": _momentum_label(momentum),
-        "macro_sensitivity": _macro_label(macro_sensitivity, macro),
+        "why_moving": (position or {}).get("why_moving") or (watch or {}).get("reason") or "No dominant catalyst flagged. Confirm with news and sector tape.",
+        "momentum_state": _momentum_label(momentum) if momentum is not None else "Momentum data unavailable.",
+        "macro_sensitivity": _macro_label(macro_sensitivity, macro) if macro_sensitivity is not None else "Macro sensitivity unavailable.",
         "earnings_proximity": _earnings_proximity(ticker, calendar),
-        "volatility_state": _volatility_label(risk),
+        "volatility_state": _volatility_label(risk) if risk is not None else "Risk data unavailable.",
         "summary": (position or {}).get("ai_view") or (watch or {}).get("reason") or forecast.get("base") or "Rules-based view using portfolio and macro inputs.",
     }
 
-    mock_intel = get_mock_intelligence(ticker)
-    mock_overview = get_mock_overview_hints(ticker)
-
-    technical = enrich_technical(
-        {
-            "trend": _trend_label(change_pct),
-            "momentum_state": _momentum_label(momentum),
-            "day_change_pct": change_pct,
-        },
-        ticker,
-    )
-
-    overview["why_moving"] = mock_overview.get("why_moving") or overview["why_moving"]
-    overview["summary"] = mock_overview.get("ai_view") or overview["summary"]
+    technical = {
+        "trend": _trend_label(change_pct) if change_raw is not None else None,
+        "momentum_state": _momentum_label(momentum) if momentum is not None else None,
+        "day_change_pct": change_pct if change_raw is not None else None,
+    }
 
     scenarios = [
         {
@@ -209,8 +196,8 @@ def build_stock_panel_intelligence(
         "technical": technical,
         "scenarios": scenarios,
         "actions": _build_actions(position, watch, news_items),
-        "company": mock_intel.get("company"),
-        "fundamentals": mock_intel.get("fundamentals"),
-        "targets": mock_intel.get("targets"),
+        "company": {},
+        "fundamentals": {},
+        "targets": {},
         "future_tabs": ["Videos", "Earnings", "Macro exposure", "Options flow"],
     }

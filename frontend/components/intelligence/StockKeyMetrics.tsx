@@ -79,7 +79,10 @@ function formatMetric(value: unknown, fmt: Fmt): string {
     const low = range[0]
     const high = range[1]
     if (low == null || low === '' || high == null || high === '') return EMPTY
-    return `${formatMetric(low, 'price')} - ${formatMetric(high, 'price')}`
+    const lowNumber = Number(low)
+    const highNumber = Number(high)
+    if (!Number.isFinite(lowNumber) || !Number.isFinite(highNumber)) return EMPTY
+    return `${lowNumber.toLocaleString('en-US', { maximumFractionDigits: 2 })}-${highNumber.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
   }
   if (fmt === 'pct' && typeof value === 'string' && value.includes('%')) return value
   const n = Number(value)

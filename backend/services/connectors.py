@@ -69,18 +69,152 @@ def yahoo_news(ticker: str, limit: int = 8) -> List[Dict[str, Any]]:
         return []
 
 
+_LOGO_URLS = {
+    "AAPL": "https://companiesmarketcap.com/img/company-logos/64/AAPL.png",
+    "AMD": "https://companiesmarketcap.com/img/company-logos/64/AMD.png",
+    "GOOGL": "https://companiesmarketcap.com/img/company-logos/64/GOOG.png",
+    "GOOG": "https://companiesmarketcap.com/img/company-logos/64/GOOG.png",
+    "META": "https://companiesmarketcap.com/img/company-logos/64/META.png",
+    "MSFT": "https://companiesmarketcap.com/img/company-logos/64/MSFT.png",
+    "NVDA": "https://companiesmarketcap.com/img/company-logos/64/NVDA.png",
+    "SOFI": "https://companiesmarketcap.com/img/company-logos/64/SOFI.png",
+    "TSLA": "https://companiesmarketcap.com/img/company-logos/64/TSLA.png",
+    "TSM": "https://companiesmarketcap.com/img/company-logos/64/TSM.png",
+}
+
+_COMPANY_NAMES = {
+    "AAPL": "Apple",
+    "AMD": "Advanced Micro Devices",
+    "GOOGL": "Alphabet",
+    "GOOG": "Alphabet",
+    "META": "Meta Platforms",
+    "MSFT": "Microsoft",
+    "NVDA": "NVIDIA",
+    "SOFI": "SoFi Technologies",
+    "TSLA": "Tesla",
+    "TSM": "Taiwan Semiconductor",
+}
+
+
+def _last_present(values: Any) -> Any:
+    if isinstance(values, list):
+        for value in reversed(values):
+            if value is not None and value != "":
+                return value
+    return None
+
+
+def _first_present(values: Any) -> Any:
+    if isinstance(values, list):
+        for value in values:
+            if value is not None and value != "":
+                return value
+    return None
+
+
+def _numbers(values: Any) -> List[float]:
+    if not isinstance(values, list):
+        return []
+    rows: List[float] = []
+    for value in values:
+        try:
+            if value is not None:
+                rows.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    return rows
+
+
 def yahoo_fundamentals(ticker: str) -> Dict[str, Any]:
-    # Free public endpoints are not guaranteed; this returns a robust schema with best-effort values.
+    # Free public endpoints are not guaranteed; this returns a robust schema with best-effort live values.
     # V5.6 intentionally avoids paid providers.
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1d&interval=1d"
-    out = {"source": "Yahoo public", "ticker": ticker.upper(), "price": None, "currency": None, "status": "no_data"}
+    symbol = ticker.upper().split()[0]
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1d&interval=5m"
+    out: Dict[str, Any] = {"source": "Yahoo chart", "ticker": symbol, "price": None, "currency": None, "status": "no_data"}
+    logo_url = _LOGO_URLS.get(symbol)
+    if logo_url:
+        out["logo_url"] = logo_url
+    if symbol in _COMPANY_NAMES:
+        out["name"] = _COMPANY_NAMES[symbol]
+
     try:
         r = httpx.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
         data = r.json()
-        meta = data.get("chart", {}).get("result", [{}])[0].get("meta", {})
-        out.update({"price": meta.get("regularMarketPrice"), "currency": meta.get("currency"), "exchange": meta.get("exchangeName"), "status": "ok" if meta else "no_data"})
+        result = (data.get("chart", {}).get("result") or [{}])[0]
+        meta = result.get("meta") or {}
+        quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+
+        opens = quote.get("open") or []
+        highs = quote.get("high") or []
+        lows = quote.get("low") or []
+        closes = quote.get("close") or []
+        volumes = quote.get("volume") or []
+        close_values = _numbers(closes)
+        high_values = _numbers(highs)
+        low_values = _numbers(lows)
+        volume_values = _numbers(volumes)
+
+        price = meta.get("regularMarketPrice") or _last_present(closes)
+        day_high = meta.get("regularMarketDayHigh") or (max(high_values) if high_values else _last_present(highs))
+        day_low = meta.get("regularMarketDayLow") or (min(low_values) if low_values else _last_present(lows))
+        volume = meta.get("regularMarketVolume") or (sum(volume_values) if volume_values else _last_present(volumes))
+        previous_close = meta.get("chartPreviousClose") or meta.get("previousClose") or meta.get("regularMarketPreviousClose")
+        open_value = meta.get("regularMarketOpen") or _first_present(opens)
+
+        out.update(
+            {
+                "price": price,
+                "regularMarketPrice": price,
+                "last": price,
+                "open": open_value,
+                "regularMarketOpen": open_value,
+                "day_high": day_high,
+                "regularMarketDayHigh": day_high,
+                "day_low": day_low,
+                "regularMarketDayLow": day_low,
+                "prev_close": previous_close,
+                "regularMarketPreviousClose": previous_close,
+                "volume": volume,
+                "regularMarketVolume": volume,
+                "currency": meta.get("currency"),
+                "exchange": meta.get("fullExchangeName") or meta.get("exchangeName") or meta.get("exchange"),
+                "asset_type": "Stock",
+                "spark": close_values[-24:],
+                "sparkline": close_values[-24:],
+                "status": "ok" if meta else "no_data",
+            }
+        )
+        if day_low is not None and day_high is not None:
+            out["today_range"] = [day_low, day_high]
     except Exception as e:
         out["error"] = str(e)
+
+    try:
+        history_url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1y&interval=1d"
+        r = httpx.get(history_url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        data = r.json()
+        result = (data.get("chart", {}).get("result") or [{}])[0]
+        quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+        high_values = _numbers(quote.get("high") or [])
+        low_values = _numbers(quote.get("low") or [])
+        volume_values = _numbers(quote.get("volume") or [])
+        if volume_values:
+            avg_volume = sum(volume_values) / len(volume_values)
+            out["avg_volume"] = avg_volume
+            out["averageVolume"] = avg_volume
+            out["averageDailyVolume3Month"] = avg_volume
+        if high_values:
+            out["52w_high"] = max(high_values)
+            out["fiftyTwoWeekHigh"] = max(high_values)
+        if low_values:
+            out["52w_low"] = min(low_values)
+            out["fiftyTwoWeekLow"] = min(low_values)
+        if out.get("status") == "no_data" and (high_values or low_values or volume_values):
+            out["status"] = "ok"
+    except Exception as e:
+        out["history_error"] = str(e)
     return out
 
 

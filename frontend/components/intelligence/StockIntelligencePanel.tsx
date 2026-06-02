@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, BarChart3, Bell, Gauge, MoreVertical, Star, Target } from 'lucide-react'
 import { PiaBadge, PiaCard, PiaTabs } from '../ui-v3'
 import { mask, money, pct } from '../../lib/pia-api'
@@ -14,6 +14,32 @@ import { useStockIntelligence } from './useStockIntelligence'
 let lastActiveStockPanelTab: StockPanelTab = 'Overview'
 const timeframes = ['Intraday', 'Swing', 'Position'] as const
 type Timeframe = (typeof timeframes)[number]
+const FINANCIAL_UNAVAILABLE = 'Financial data unavailable'
+const TARGET_UNAVAILABLE = 'Analyst target data unavailable'
+const LOGO_URLS: Record<string, string> = {
+  AAPL: 'https://companiesmarketcap.com/img/company-logos/64/AAPL.png',
+  AMD: 'https://companiesmarketcap.com/img/company-logos/64/AMD.png',
+  GOOG: 'https://companiesmarketcap.com/img/company-logos/64/GOOG.png',
+  GOOGL: 'https://companiesmarketcap.com/img/company-logos/64/GOOG.png',
+  META: 'https://companiesmarketcap.com/img/company-logos/64/META.png',
+  MSFT: 'https://companiesmarketcap.com/img/company-logos/64/MSFT.png',
+  NVDA: 'https://companiesmarketcap.com/img/company-logos/64/NVDA.png',
+  SOFI: 'https://companiesmarketcap.com/img/company-logos/64/SOFI.png',
+  TSLA: 'https://companiesmarketcap.com/img/company-logos/64/TSLA.png',
+  TSM: 'https://companiesmarketcap.com/img/company-logos/64/TSM.png',
+}
+const COMPANY_NAMES: Record<string, string> = {
+  AAPL: 'Apple',
+  AMD: 'Advanced Micro Devices',
+  GOOG: 'Alphabet',
+  GOOGL: 'Alphabet',
+  META: 'Meta Platforms',
+  MSFT: 'Microsoft',
+  NVDA: 'NVIDIA',
+  SOFI: 'SoFi Technologies',
+  TSLA: 'Tesla',
+  TSM: 'Taiwan Semiconductor',
+}
 const EMPTY = '—'
 
 function numeric(value: unknown, fallback = 0) {
@@ -224,13 +250,80 @@ function DetailGrid({ rows, hidden }: { rows: { label: string; value: string; pl
   )
 }
 
+function hasDisplayValue(value: unknown) {
+  return value != null && value !== '' && !(typeof value === 'number' && Number.isNaN(value))
+}
+
+function financialText(value: unknown) {
+  return hasDisplayValue(value) ? String(value) : FINANCIAL_UNAVAILABLE
+}
+
+function targetText(value: unknown) {
+  return hasDisplayValue(value) ? String(value) : TARGET_UNAVAILABLE
+}
+
 function textOrDash(value: unknown) {
   return value == null || value === '' ? EMPTY : String(value)
 }
 
+function logoUrlFor(source: any, symbol: string) {
+  const direct = source?.logo_url || source?.logoUrl || source?.company?.logo_url || source?.company?.logoUrl
+  if (typeof direct === 'string' && /^https?:\/\//i.test(direct)) return direct
+  return LOGO_URLS[String(symbol || '').toUpperCase()]
+}
+
+function CompanyLogoMark({ source, symbol, hidden }: { source: any; symbol: string; hidden: boolean }) {
+  const logoUrl = hidden ? '' : logoUrlFor(source, symbol)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    setFailed(false)
+  }, [logoUrl])
+
+  if (logoUrl && !failed) {
+    return (
+      <div className="stock-intel-symbol-mark has-logo" aria-hidden="true">
+        <img src={logoUrl} alt="" onError={() => setFailed(true)} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="stock-intel-symbol-mark" aria-hidden="true">
+      {hidden ? '*' : symbol.slice(0, 2)}
+    </div>
+  )
+}
+
+function sparkPoints(values: unknown, width = 120, height = 46) {
+  const rows = Array.isArray(values)
+    ? values.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0)
+    : []
+  if (rows.length < 2) return ''
+  const min = Math.min(...rows)
+  const max = Math.max(...rows)
+  const spread = max - min || 1
+  return rows.map((value, index) => {
+    const x = (index / Math.max(rows.length - 1, 1)) * width
+    const y = height - 4 - ((value - min) / spread) * (height - 8)
+    return `${Number(x.toFixed(2))},${Number(y.toFixed(2))}`
+  }).join(' ')
+}
+
+function MiniSpark({ source, hidden }: { source: any; hidden: boolean }) {
+  const points = sparkPoints(source.spark || source.sparkline || source.chart)
+  if (hidden) return <span className="stock-intel-spark-empty">{mask}</span>
+  if (!points) return <span className="stock-intel-spark-empty">Chart data unavailable</span>
+  return (
+    <svg viewBox="0 0 120 46" focusable="false">
+      <polyline points={points} />
+    </svg>
+  )
+}
+
 function RecentNewsPreview({ items, hidden }: { items: any[]; hidden: boolean }) {
   const rows = items.slice(0, 3)
-  if (!rows.length) return <p className="muted">No structured headlines for this symbol in the current scan.</p>
+  if (!rows.length) return <p className="muted">Live news provider unavailable for this symbol right now.</p>
   return (
     <div className="stock-overview-news-list">
       {rows.map((item: any, index: number) => {
@@ -268,16 +361,16 @@ export default function StockIntelligencePanel({
   const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition)
 
   const symbol = String(ticker || '').split(' ')[0]
-  const name = String(source.name || seedPosition?.name || 'Position')
-  const last = Number(source.last || source.price || seedPosition?.last || 0)
+  const company = { ...(source.company || {}), ...(intelligence?.company || {}) }
+  const fundamentals = { ...(source.fundamentals || {}), ...(intelligence?.fundamentals || {}) }
+  const targets = { ...(source.targets || {}), ...(intelligence?.targets || {}) }
+  const name = String(source.name || company.name || seedPosition?.name || COMPANY_NAMES[symbol.toUpperCase()] || 'Position')
+  const last = Number(source.last || source.price || source.regularMarketPrice || seedPosition?.last || 0)
   const change = Number(source.day_change_pct || source.change_pct || source.change || 0)
   const unrealized = Number(source.unrealized || 0)
   const overview = intelligence?.overview || {}
   const technical = intelligence?.technical || {}
   const techPlan = buildTechnicalPlan(technical, source, last || 100, timeframe)
-  const company = intelligence?.company || source.company || {}
-  const fundamentals = intelligence?.fundamentals || source.fundamentals || {}
-  const targets = intelligence?.targets || source.targets || {}
 
   const tabLabel = (value: StockPanelTab) => (hidden ? PRIVATE_TAB_LABELS[value] : value)
   const handleTabChange = (value: StockPanelTab) => {
@@ -294,9 +387,7 @@ export default function StockIntelligencePanel({
           </button>
           <div className="stock-intel-title-block">
             <div className="stock-intel-identity">
-              <div className="stock-intel-symbol-mark" aria-hidden="true">
-                {hidden ? '*' : symbol.slice(0, 2)}
-              </div>
+              <CompanyLogoMark source={{ ...source, company }} symbol={symbol} hidden={hidden} />
               <div className="stock-intel-name-block">
                 <div className="stock-intel-name-row">
                   <h2>{hidden ? mask : symbol}</h2>
@@ -322,7 +413,7 @@ export default function StockIntelligencePanel({
           <div className="stock-intel-price-block">
             <div className="stock-intel-price-row">
               <strong>{hidden ? mask : money(last)}</strong>
-              <span>USD</span>
+              <span>{hidden ? 'USD' : source.currency || fundamentals.currency || 'USD'}</span>
               <small className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : `${change >= 0 ? '+' : ''}${pct(change)}`}</small>
               {position ? (
                 <PiaBadge variant={unrealized >= 0 ? 'bullish' : 'bearish'} size="compact">
@@ -336,9 +427,7 @@ export default function StockIntelligencePanel({
             </div>
           </div>
           <div className="stock-intel-mini-spark" aria-hidden="true">
-            <svg viewBox="0 0 120 46" focusable="false">
-              <polyline points="0,36 10,31 20,33 30,25 40,28 50,18 60,22 70,14 80,18 90,8 100,15 110,10 120,13" />
-            </svg>
+            <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
           </div>
         </div>
 
@@ -461,10 +550,10 @@ export default function StockIntelligencePanel({
               <DetailGrid
                 hidden={hidden}
                 rows={[
-                  { label: 'EPS estimate', value: String(fundamentals.eps_estimate || 'Placeholder'), placeholder: !fundamentals.eps_estimate },
-                  { label: 'EPS actual', value: String(fundamentals.eps_actual || 'Placeholder'), placeholder: !fundamentals.eps_actual },
-                  { label: 'Surprise', value: String(fundamentals.eps_surprise_pct || 'Placeholder %'), placeholder: !fundamentals.eps_surprise_pct },
-                  { label: 'Next earnings', value: String(fundamentals.next_earnings || 'Placeholder date'), placeholder: !fundamentals.next_earnings },
+                  { label: 'EPS estimate', value: financialText(fundamentals.eps_estimate), placeholder: !hasDisplayValue(fundamentals.eps_estimate) },
+                  { label: 'EPS actual', value: financialText(fundamentals.eps_actual), placeholder: !hasDisplayValue(fundamentals.eps_actual) },
+                  { label: 'Surprise', value: financialText(fundamentals.eps_surprise_pct), placeholder: !hasDisplayValue(fundamentals.eps_surprise_pct) },
+                  { label: 'Next earnings', value: financialText(fundamentals.next_earnings), placeholder: !hasDisplayValue(fundamentals.next_earnings) },
                 ]}
               />
             </PiaCard>
@@ -472,11 +561,11 @@ export default function StockIntelligencePanel({
               <DetailGrid
                 hidden={hidden}
                 rows={[
-                  { label: 'Revenue', value: String(fundamentals.revenue || 'Placeholder'), placeholder: !fundamentals.revenue },
-                  { label: 'Net income', value: String(fundamentals.net_income || 'Placeholder'), placeholder: !fundamentals.net_income },
-                  { label: 'EBITDA', value: String(fundamentals.ebitda || 'Placeholder'), placeholder: !fundamentals.ebitda },
-                  { label: 'Free cash flow', value: String(fundamentals.free_cash_flow || 'Placeholder'), placeholder: !fundamentals.free_cash_flow },
-                  { label: 'Margins', value: String(fundamentals.margins || 'Placeholder'), placeholder: !fundamentals.margins },
+                  { label: 'Revenue', value: financialText(fundamentals.revenue), placeholder: !hasDisplayValue(fundamentals.revenue) },
+                  { label: 'Net income', value: financialText(fundamentals.net_income), placeholder: !hasDisplayValue(fundamentals.net_income) },
+                  { label: 'EBITDA', value: financialText(fundamentals.ebitda), placeholder: !hasDisplayValue(fundamentals.ebitda) },
+                  { label: 'Free cash flow', value: financialText(fundamentals.free_cash_flow), placeholder: !hasDisplayValue(fundamentals.free_cash_flow) },
+                  { label: 'Margins', value: financialText(fundamentals.margins), placeholder: !hasDisplayValue(fundamentals.margins) },
                 ]}
               />
             </PiaCard>
@@ -484,13 +573,13 @@ export default function StockIntelligencePanel({
               <DetailGrid
                 hidden={hidden}
                 rows={[
-                  { label: 'PE', value: String(fundamentals.pe || 'Placeholder'), placeholder: !fundamentals.pe },
-                  { label: 'Forward PE', value: String(fundamentals.forward_pe || 'Placeholder'), placeholder: !fundamentals.forward_pe },
-                  { label: 'PEG', value: String(fundamentals.peg || 'Placeholder'), placeholder: !fundamentals.peg },
-                  { label: 'EV/EBITDA', value: String(fundamentals.ev_ebitda || 'Placeholder'), placeholder: !fundamentals.ev_ebitda },
-                  { label: 'ROE', value: String(fundamentals.roe || 'Placeholder'), placeholder: !fundamentals.roe },
-                  { label: 'Debt/Equity', value: String(fundamentals.debt_equity || 'Placeholder'), placeholder: !fundamentals.debt_equity },
-                  { label: 'FCF Yield', value: String(fundamentals.fcf_yield || 'Placeholder'), placeholder: !fundamentals.fcf_yield },
+                  { label: 'PE', value: financialText(fundamentals.pe), placeholder: !hasDisplayValue(fundamentals.pe) },
+                  { label: 'Forward PE', value: financialText(fundamentals.forward_pe), placeholder: !hasDisplayValue(fundamentals.forward_pe) },
+                  { label: 'PEG', value: financialText(fundamentals.peg), placeholder: !hasDisplayValue(fundamentals.peg) },
+                  { label: 'EV/EBITDA', value: financialText(fundamentals.ev_ebitda), placeholder: !hasDisplayValue(fundamentals.ev_ebitda) },
+                  { label: 'ROE', value: financialText(fundamentals.roe), placeholder: !hasDisplayValue(fundamentals.roe) },
+                  { label: 'Debt/Equity', value: financialText(fundamentals.debt_equity), placeholder: !hasDisplayValue(fundamentals.debt_equity) },
+                  { label: 'FCF Yield', value: financialText(fundamentals.fcf_yield), placeholder: !hasDisplayValue(fundamentals.fcf_yield) },
                 ]}
               />
             </PiaCard>
@@ -498,14 +587,14 @@ export default function StockIntelligencePanel({
               <DetailGrid
                 hidden={hidden}
                 rows={[
-                  { label: 'Consensus', value: String(targets.consensus || 'Mock consensus'), placeholder: !targets.consensus },
-                  { label: 'Bull', value: String(targets.bull || 'Mock bull case'), placeholder: !targets.bull },
-                  { label: 'Base', value: String(targets.base || 'Mock base case'), placeholder: !targets.base },
-                  { label: 'Bear', value: String(targets.bear || 'Mock bear case'), placeholder: !targets.bear },
-                  { label: 'Upside/downside', value: String(targets.upside_downside || 'Mock range'), placeholder: !targets.upside_downside },
+                  { label: 'Consensus', value: targetText(targets.consensus), placeholder: !hasDisplayValue(targets.consensus) },
+                  { label: 'Bull', value: targetText(targets.bull), placeholder: !hasDisplayValue(targets.bull) },
+                  { label: 'Base', value: targetText(targets.base), placeholder: !hasDisplayValue(targets.base) },
+                  { label: 'Bear', value: targetText(targets.bear), placeholder: !hasDisplayValue(targets.bear) },
+                  { label: 'Upside/downside', value: targetText(targets.upside_downside), placeholder: !hasDisplayValue(targets.upside_downside) },
                 ]}
               />
-              <p className="muted">{hidden ? mask : 'Targets are marked mock/placeholder until analyst target data is connected.'}</p>
+              <p className="muted">{hidden ? mask : 'Analyst target data unavailable from the current provider.'}</p>
             </PiaCard>
           </div>
         )}
