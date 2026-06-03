@@ -19,6 +19,10 @@ export function sampleBody(body: any) {
         volume: body.fundamentals.volume,
         avg_volume: body.fundamentals.avg_volume,
         today_range: body.fundamentals.today_range,
+        pe: body.fundamentals.pe,
+        eps: body.fundamentals.eps,
+        beta: body.fundamentals.beta,
+        dividend_yield: body.fundamentals.dividend_yield,
       },
     }
   }

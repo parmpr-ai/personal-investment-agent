@@ -394,7 +394,7 @@ export default function StockIntelligencePanel({
   const fundamentals = { ...(source.fundamentals || {}), ...(intelligence?.fundamentals || {}) }
   const targets = { ...(source.targets || {}), ...(intelligence?.targets || {}) }
   const name = String(source.name || company.name || seedPosition?.name || COMPANY_NAMES[symbol.toUpperCase()] || 'Position')
-  const last = Number(source.last || source.price || source.regularMarketPrice || seedPosition?.last || 0)
+  const last = Number(fundamentals.last || fundamentals.price || fundamentals.regularMarketPrice || source.last || source.price || source.regularMarketPrice || seedPosition?.last || 0)
   const change = Number(source.day_change_pct || source.change_pct || source.change || 0)
   const unrealized = Number(source.unrealized || 0)
   const overview = intelligence?.overview || {}

@@ -125,6 +125,82 @@ def _numbers(values: Any) -> List[float]:
     return rows
 
 
+_YAHOO_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json,text/plain,*/*"}
+_YAHOO_AUTH: tuple[float, str, Dict[str, str]] | None = None
+_YAHOO_QUOTE_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
+_YAHOO_AUTH_SECONDS = 1800
+_YAHOO_QUOTE_SECONDS = 300
+
+
+def _number_or_none(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        parsed = float(value)
+        return parsed if parsed == parsed else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _yahoo_auth(force: bool = False) -> tuple[str, Dict[str, str]]:
+    global _YAHOO_AUTH
+    now = time.time()
+    if not force and _YAHOO_AUTH and now - _YAHOO_AUTH[0] < _YAHOO_AUTH_SECONDS:
+        return _YAHOO_AUTH[1], _YAHOO_AUTH[2]
+    with httpx.Client(headers=_YAHOO_HEADERS, timeout=8, follow_redirects=True) as client:
+        try:
+            client.get("https://fc.yahoo.com")
+        except Exception:
+            pass
+        client.get("https://finance.yahoo.com/quote/AAPL")
+        crumb_response = client.get("https://query1.finance.yahoo.com/v1/test/getcrumb")
+        crumb_response.raise_for_status()
+        crumb = crumb_response.text.strip()
+        if not crumb:
+            raise ValueError("Yahoo crumb unavailable")
+        cookies = dict(client.cookies)
+        _YAHOO_AUTH = (now, crumb, cookies)
+        return crumb, cookies
+
+
+def _yahoo_quote_snapshot(symbol: str) -> Dict[str, Any]:
+    key = symbol.upper()
+    now = time.time()
+    cached = _YAHOO_QUOTE_CACHE.get(key)
+    if cached and now - cached[0] < _YAHOO_QUOTE_SECONDS:
+        return cached[1]
+    fields = ",".join(
+        [
+            "trailingPE",
+            "epsTrailingTwelveMonths",
+            "beta",
+            "dividendYield",
+            "marketCap",
+            "sharesOutstanding",
+            "floatShares",
+        ]
+    )
+    for attempt in range(2):
+        try:
+            crumb, cookies = _yahoo_auth(force=attempt > 0)
+            with httpx.Client(headers=_YAHOO_HEADERS, cookies=cookies, timeout=8, follow_redirects=True) as client:
+                response = client.get(
+                    "https://query1.finance.yahoo.com/v7/finance/quote",
+                    params={"symbols": key, "fields": fields, "crumb": crumb},
+                )
+                if response.status_code == 401 and attempt == 0:
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                quote = ((data.get("quoteResponse") or {}).get("result") or [{}])[0]
+                _YAHOO_QUOTE_CACHE[key] = (now, quote)
+                return quote
+        except Exception:
+            if attempt == 1:
+                return {}
+    return {}
+
+
 def yahoo_fundamentals(ticker: str) -> Dict[str, Any]:
     # Free public endpoints are not guaranteed; this returns a robust schema with best-effort live values.
     # V5.6 intentionally avoids paid providers.
@@ -215,6 +291,41 @@ def yahoo_fundamentals(ticker: str) -> Dict[str, Any]:
             out["status"] = "ok"
     except Exception as e:
         out["history_error"] = str(e)
+
+    quote_snapshot = _yahoo_quote_snapshot(symbol)
+    pe = _number_or_none(quote_snapshot.get("trailingPE"))
+    eps = _number_or_none(quote_snapshot.get("epsTrailingTwelveMonths") or quote_snapshot.get("trailingEps"))
+    beta = _number_or_none(quote_snapshot.get("beta"))
+    dividend_yield = _number_or_none(quote_snapshot.get("dividendYield"))
+    market_cap = _number_or_none(quote_snapshot.get("marketCap"))
+    shares_outstanding = _number_or_none(quote_snapshot.get("sharesOutstanding"))
+    float_shares = _number_or_none(quote_snapshot.get("floatShares"))
+
+    if pe is not None:
+        out["pe"] = pe
+        out["pe_ttm"] = pe
+        out["trailingPE"] = pe
+    if eps is not None:
+        out["eps"] = eps
+        out["eps_ttm"] = eps
+        out["trailingEps"] = eps
+    if beta is not None:
+        out["beta"] = beta
+    if dividend_yield is not None:
+        normalized_yield = dividend_yield / 100
+        out["dividend_yield"] = normalized_yield
+        out["dividendYield"] = normalized_yield
+    if market_cap is not None:
+        out["market_cap"] = market_cap
+        out["marketCap"] = market_cap
+    if shares_outstanding is not None:
+        out["shares_outstanding"] = shares_outstanding
+        out["sharesOutstanding"] = shares_outstanding
+    if float_shares is not None:
+        out["float"] = float_shares
+        out["floatShares"] = float_shares
+    if quote_snapshot and out.get("status") == "no_data":
+        out["status"] = "ok"
     return out
 
 

@@ -13,12 +13,12 @@ const EMPTY = '-'
 
 const pick = (source: any, keys: string[]) => {
   for (const key of keys) {
-    const direct = source?.[key]
-    if (direct != null && direct !== '') return direct
     const fundamentals = source?.fundamentals?.[key]
     if (fundamentals != null && fundamentals !== '') return fundamentals
     const company = source?.company?.[key]
     if (company != null && company !== '') return company
+    const direct = source?.[key]
+    if (direct != null && direct !== '') return direct
   }
   return undefined
 }
@@ -108,6 +108,10 @@ function formatMetric(value: unknown, fmt: Fmt): string {
   }
 }
 
+function hasMetricValue(def: MetricDef, source: any) {
+  return formatMetric(def.get(source), def.fmt) !== EMPTY
+}
+
 function normalizedPrefs(raw: unknown): Prefs | null {
   if (!raw || typeof raw !== 'object') return null
   const parsed = raw as Partial<Prefs>
@@ -172,16 +176,27 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
   const [activePage, setActivePage] = useState(0)
   const railRef = useRef<HTMLDivElement>(null)
+  const saveFrameRef = useRef<number | null>(null)
+  const pendingSaveRef = useRef<Prefs | null>(null)
 
   useEffect(() => {
     setPrefs(loadPrefs(ticker))
     setActivePage(0)
   }, [ticker])
 
+  useEffect(() => {
+    return () => {
+      if (saveFrameRef.current != null) window.cancelAnimationFrame(saveFrameRef.current)
+      if (pendingSaveRef.current) savePrefs(ticker, pendingSaveRef.current)
+      pendingSaveRef.current = null
+      saveFrameRef.current = null
+    }
+  }, [ticker])
+
   const hiddenSet = useMemo(() => new Set(prefs.hidden), [prefs.hidden])
   const visibleDefs = useMemo(
-    () => prefs.order.map((key) => DEF_BY_KEY.get(key)).filter((def): def is MetricDef => Boolean(def && !hiddenSet.has(def.key))),
-    [prefs.order, hiddenSet],
+    () => prefs.order.map((key) => DEF_BY_KEY.get(key)).filter((def): def is MetricDef => Boolean(def && !hiddenSet.has(def.key) && hasMetricValue(def, source))),
+    [prefs.order, hiddenSet, source],
   )
   const pages = useMemo(() => chunk(visibleDefs, 8), [visibleDefs])
 
@@ -192,7 +207,17 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
   function update(next: Prefs) {
     const normalized = { ...next, version: PREFS_VERSION }
     setPrefs(normalized)
-    savePrefs(ticker, normalized)
+    pendingSaveRef.current = normalized
+    if (typeof window === 'undefined') {
+      savePrefs(ticker, normalized)
+      return
+    }
+    if (saveFrameRef.current != null) window.cancelAnimationFrame(saveFrameRef.current)
+    saveFrameRef.current = window.requestAnimationFrame(() => {
+      if (pendingSaveRef.current) savePrefs(ticker, pendingSaveRef.current)
+      pendingSaveRef.current = null
+      saveFrameRef.current = null
+    })
   }
 
   function onRailScroll() {
@@ -301,6 +326,7 @@ function EditKeyMetricsSheet({
   function onDown(event: PointerEvent<HTMLUListElement>) {
     const target = event.target as HTMLElement
     if (!target.closest('[data-grip]')) return
+    event.preventDefault()
     const row = target.closest('[data-key]') as HTMLElement | null
     if (!row?.dataset.key) return
     dragRef.current = row.dataset.key
@@ -310,6 +336,7 @@ function EditKeyMetricsSheet({
 
   function onMove(event: PointerEvent<HTMLUListElement>) {
     if (!dragRef.current || !listRef.current) return
+    event.preventDefault()
     const rows = Array.from(listRef.current.querySelectorAll('[data-key]')) as HTMLElement[]
     for (const row of rows) {
       const rect = row.getBoundingClientRect()
@@ -340,7 +367,7 @@ function EditKeyMetricsSheet({
         </header>
         <div className="skm-sheet-body">
           <span className="skm-edit-section">Metric Name</span>
-          <ul className="skm-edit-list" ref={listRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+          <ul className={`skm-edit-list${dragKey ? ' is-dragging' : ''}`} ref={listRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
             {rows.map((key) => {
               const def = DEF_BY_KEY.get(key)!
               const on = !hiddenSet.has(key)
