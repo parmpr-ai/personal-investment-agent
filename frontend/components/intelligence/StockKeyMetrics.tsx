@@ -207,11 +207,21 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
       <div className="skm-head">
         <button type="button" className="skm-title" aria-expanded={!collapsed} onClick={() => setCollapsed((current) => !current)}>
           <span>Key Metrics</span>
-          <ChevronDown size={16} className={`skm-arrow${collapsed ? '' : ' open'}`} />
         </button>
-        <button type="button" className="skm-edit-trigger" aria-label="Edit key metrics" onClick={() => setEditing(true)}>
-          <Pencil size={15} />
-        </button>
+        <div className="skm-head-actions">
+          <button type="button" className="skm-edit-trigger" aria-label="Edit key metrics" onClick={() => setEditing(true)}>
+            <Pencil size={15} />
+          </button>
+          <button
+            type="button"
+            className="skm-collapse"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Expand key metrics' : 'Collapse key metrics'}
+            onClick={() => setCollapsed((current) => !current)}
+          >
+            <ChevronDown size={16} className={`skm-arrow${collapsed ? '' : ' open'}`} />
+          </button>
+        </div>
       </div>
 
       {!collapsed && (
