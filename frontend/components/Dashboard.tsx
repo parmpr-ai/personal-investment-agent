@@ -37,6 +37,8 @@ import { PiaBadge, PiaButton, PiaCard, PiaInput, PiaMetric, PiaTabs, PiaWidgetSh
 import SettingsPage from './settings/SettingsWorkspace'
 import DashboardHome from './dashboard/DashboardHome'
 import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
+import CompanyLogo from './intelligence/CompanyLogo'
+import { preloadStockIntelligence } from './intelligence/useStockIntelligence'
 import {
   buildWatchlistUniverse,
   resolveWatchlistRows,
@@ -346,6 +348,17 @@ export default function Dashboard() {
   }
 
   const positions = dashboard?.portfolio?.positions || []
+  useEffect(() => {
+    if (!positions.length) return
+    const symbols = positions
+      .map((position: any) => position.symbol || position.ticker || position.underlying)
+      .filter(Boolean)
+      .slice(0, 12)
+    const timer = window.setTimeout(() => {
+      symbols.forEach(preloadStockIntelligence)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [positions])
   const privacyHidden = mounted && hidden
   const activeWorkspace = getWorkspaceDefinition(workspaceConfig.workspaces, activeWorkspaceId)
   const sidebarWorkspaces = workspaceConfig.workspaces.filter((workspace) => workspaceConfig.sidebarDesktop.includes(workspace.id))
@@ -974,9 +987,12 @@ function PositionCards({ rows, hidden, setSelected }: any) {
         >
           <button onClick={() => setSelected(p)}>
             <header>
-              <div>
-                <b>{hidden ? mask : p.symbol}</b>
-                <span>{hidden ? 'Workspace item' : p.name}</span>
+              <div className="card-symbol">
+                <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
+                <div>
+                  <b>{hidden ? mask : p.symbol}</b>
+                  <span>{hidden ? 'Workspace item' : p.name}</span>
+                </div>
               </div>
               <strong>{hidden ? mask : money(p.market_value)}</strong>
             </header>
@@ -1058,9 +1074,7 @@ function PositionsTable({ rows, hidden, setSelected, sort, direction, onColSort 
             <tr key={p.symbol} onClick={() => setSelected(p)}>
               <td>
                 <div className="row-symbol">
-                  <div className="logo" style={{ background: p.accent || '#60a5fa' }}>
-                    {hidden ? 'â€¢â€¢' : p.logo || p.symbol?.slice(0, 2)}
-                  </div>
+                  <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
                   <div>
                     <b>{hidden ? mask : p.symbol}</b>
                     <div className="muted">{hidden ? 'Workspace item' : p.name}</div>
@@ -1277,9 +1291,7 @@ function WatchlistTable({ rows, columns, hidden, setSelected, onRemove }: any) {
             <tr key={p.symbol} onClick={() => setSelected(p)}>
               {columns.instrument && <td>
                 <div className="row-symbol">
-                  <div className="logo" style={{ background: p.accent || p.brand || '#60a5fa' }}>
-                    {hidden ? '..' : p.logo || p.symbol?.slice(0, 2)}
-                  </div>
+                  <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
                   <div>
                     <b>{hidden ? mask : p.symbol}</b>
                     <div className="muted">{hidden ? 'Workspace item' : `${p.exchange || 'NASDAQ'} - ${p.name}`}</div>
@@ -1321,10 +1333,13 @@ function WatchlistCards({ rows, hidden, setSelected, onRemove }: any) {
             style={p.brand ? ({ '--pos-brand': p.brand } as React.CSSProperties) : undefined}
           >
             <header>
-              <div>
-                <b>{hidden ? mask : p.symbol}</b>
-                <span>{hidden ? 'Workspace item' : p.name}</span>
-                <small className="muted">{hidden ? 'Market' : p.exchange || 'NASDAQ'}</small>
+              <div className="card-symbol">
+                <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
+                <div>
+                  <b>{hidden ? mask : p.symbol}</b>
+                  <span>{hidden ? 'Workspace item' : p.name}</span>
+                  <small className="muted">{hidden ? 'Market' : p.exchange || 'NASDAQ'}</small>
+                </div>
               </div>
               <strong>{hidden ? mask : money(p.last || p.price)}</strong>
             </header>

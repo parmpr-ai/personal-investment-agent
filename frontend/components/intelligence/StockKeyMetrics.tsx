@@ -112,6 +112,35 @@ function hasMetricValue(def: MetricDef, source: any) {
   return formatMetric(def.get(source), def.fmt) !== EMPTY
 }
 
+function metricNumber(value: unknown) {
+  const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function TodayRangeMetric({ source, hidden }: { source: any; hidden: boolean }) {
+  if (hidden) return <b>{mask}</b>
+  const low = metricNumber(pick(source, ['day_low', 'dayLow', 'regular_market_day_low', 'regularMarketDayLow', 'low']))
+  const high = metricNumber(pick(source, ['day_high', 'dayHigh', 'regular_market_day_high', 'regularMarketDayHigh', 'high']))
+  const current = metricNumber(pick(source, ['last', 'price', 'regularMarketPrice']))
+  if (low == null || high == null || high <= low) return <b>{EMPTY}</b>
+  const marker = Math.max(0, Math.min(100, (((current ?? low) - low) / (high - low)) * 100))
+  return (
+    <div className="skm-range">
+      <div className="skm-range-labels">
+        <span>LOW</span>
+        <span>HIGH</span>
+      </div>
+      <div className="skm-range-track">
+        <i style={{ left: `${marker}%` }}>▲</i>
+      </div>
+      <div className="skm-range-values">
+        <b>{formatMetric(low, 'price')}</b>
+        <b>{formatMetric(high, 'price')}</b>
+      </div>
+    </div>
+  )
+}
+
 function normalizedPrefs(raw: unknown): Prefs | null {
   if (!raw || typeof raw !== 'object') return null
   const parsed = raw as Partial<Prefs>
@@ -255,9 +284,12 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
             {pages.map((page, pageIndex) => (
               <div className="skm-page" key={pageIndex}>
                 {page.map((def) => (
-                  <div className="skm-cell" key={def.key}>
+                  <div className={`skm-cell${def.key === 'today_range' ? ' skm-cell-range' : ''}`} key={def.key}>
                     <span>{def.label}</span>
-                    <b>{hidden ? mask : formatMetric(def.get(source), def.fmt)}</b>
+                    {def.key === 'today_range'
+                      ? <TodayRangeMetric source={source} hidden={hidden} />
+                      : <b>{hidden ? mask : formatMetric(def.get(source), def.fmt)}</b>
+                    }
                   </div>
                 ))}
               </div>

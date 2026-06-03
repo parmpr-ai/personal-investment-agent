@@ -1036,3 +1036,35 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
   .stock-intel-panel-mobile .skm-cell{padding:8px 9px;min-height:54px}
   .stock-intel-panel-mobile .stock-intel-chart-frame{height:54vh}
 }
+
+/* Stock Intelligence V3: logos, range metric, hero sparkline, chart reliability */
+.company-logo,.logo.has-logo,.mtt-logo.has-logo,.gsr-logo.has-logo,.stock-intel-symbol-mark.has-logo{overflow:hidden;background:#f8fafc;color:#0f172a;border:1px solid rgba(255,255,255,.2)}
+.company-logo img,.logo.has-logo img,.mtt-logo.has-logo img,.gsr-logo.has-logo img,.stock-intel-symbol-mark.has-logo img{width:100%;height:100%;object-fit:contain;display:block;padding:4px}
+.logo.has-logo{box-shadow:0 6px 18px rgba(0,0,0,.22)}
+.mtt-logo.has-logo{box-shadow:0 4px 12px rgba(0,0,0,.24)}
+.mtt-symbol .mtt-logo.real-logo+.mtt-logo{display:none}
+.card-symbol,.mobile-card-symbol{display:flex;align-items:center;gap:8px;min-width:0}
+.card-symbol>div,.mobile-card-symbol>div{min-width:0}
+.card-symbol .logo,.mobile-card-symbol .mtt-logo{flex:0 0 auto}
+.mobile-card-symbol strong,.mobile-card-symbol small,.card-symbol strong,.card-symbol small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stock-intel-identity{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(96px,126px);align-items:center;gap:10px}
+.stock-intel-mini-spark{width:100%;min-width:0;align-self:center}
+.stock-intel-market-line{grid-template-columns:minmax(0,1fr)}
+.skm-cell-range{grid-column:span 2;align-content:stretch}
+.skm-cell-range>span{margin-bottom:2px}
+.skm-range{display:grid;gap:5px;min-width:0}
+.skm-range-labels,.skm-range-values{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.skm-range-labels span{font-size:8px!important;letter-spacing:.08em!important;color:#7fb5e7!important;text-transform:uppercase!important}
+.skm-range-values b{font-size:12px!important;line-height:1!important}
+.skm-range-track{position:relative;height:16px;margin:0 3px}
+.skm-range-track::before{content:"";position:absolute;left:0;right:0;top:8px;height:2px;border-radius:999px;background:linear-gradient(90deg,rgba(96,165,250,.36),rgba(36,209,140,.62))}
+.skm-range-track i{position:absolute;top:0;transform:translateX(-50%);font-style:normal;font-size:10px;line-height:1;color:#f8fbff;text-shadow:0 2px 8px rgba(34,197,94,.65)}
+.stock-intel-chart-wrap{position:relative;min-height:220px;border-radius:14px;overflow:hidden;background:#05080d}
+.stock-intel-chart-loading{position:absolute;inset:0;z-index:0;display:grid;place-items:center;color:#8fb3d9;font-size:12px;font-weight:800;background:linear-gradient(180deg,rgba(8,18,31,.7),rgba(4,9,16,.82))}
+.stock-intel-chart-frame{position:relative;z-index:1;display:block;width:100%;background:transparent}
+@media(max-width:560px){
+  .stock-intel-identity{grid-template-columns:auto minmax(0,1fr) minmax(76px,98px);gap:8px}
+  .stock-intel-mini-spark svg{height:40px}
+  .skm-cell-range{grid-column:span 3}
+  .skm-range-values b{font-size:11px!important}
+}

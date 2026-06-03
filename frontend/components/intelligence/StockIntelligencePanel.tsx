@@ -10,6 +10,7 @@ import StockAiIntelligenceWidget from './StockAiIntelligenceWidget'
 import StockKeyMetrics from './StockKeyMetrics'
 import StockPositionSummary from './StockPositionSummary'
 import { useStockIntelligence } from './useStockIntelligence'
+import CompanyLogo from './CompanyLogo'
 
 let lastActiveStockPanelTab: StockPanelTab = 'Overview'
 const timeframes = ['Intraday', 'Swing', 'Position'] as const
@@ -27,18 +28,6 @@ const INITIAL_TAB_ALIASES: Record<string, StockPanelTab> = {
   ai: 'Analysis',
   'ai coach': 'Analysis',
   options: 'Options',
-}
-const LOGO_URLS: Record<string, string> = {
-  AAPL: 'https://companiesmarketcap.com/img/company-logos/64/AAPL.png',
-  AMD: 'https://companiesmarketcap.com/img/company-logos/64/AMD.png',
-  GOOG: 'https://companiesmarketcap.com/img/company-logos/64/GOOG.png',
-  GOOGL: 'https://companiesmarketcap.com/img/company-logos/64/GOOG.png',
-  META: 'https://companiesmarketcap.com/img/company-logos/64/META.png',
-  MSFT: 'https://companiesmarketcap.com/img/company-logos/64/MSFT.png',
-  NVDA: 'https://companiesmarketcap.com/img/company-logos/64/NVDA.png',
-  SOFI: 'https://companiesmarketcap.com/img/company-logos/64/SOFI.png',
-  TSLA: 'https://companiesmarketcap.com/img/company-logos/64/TSLA.png',
-  TSM: 'https://companiesmarketcap.com/img/company-logos/64/TSM.png',
 }
 const COMPANY_NAMES: Record<string, string> = {
   AAPL: 'Apple',
@@ -181,6 +170,25 @@ function ConfidenceMeter({ value, hidden }: { value: number; hidden: boolean }) 
 }
 
 function TradingViewChart({ ticker, hidden }: { ticker: string; hidden: boolean }) {
+  const rawSymbol = String(ticker || '').split(' ')[0].toUpperCase()
+  const exchange = rawSymbol === 'PLTR' || rawSymbol === 'TSM' ? 'NYSE' : 'NASDAQ'
+  const symbol = `${exchange}:${rawSymbol}`
+  const [attempt, setAttempt] = useState(0)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    setAttempt(0)
+    setLoaded(false)
+  }, [symbol])
+
+  useEffect(() => {
+    if (hidden || loaded || attempt >= 3) return
+    const timeout = window.setTimeout(() => {
+      setAttempt((current) => current + 1)
+    }, attempt === 0 ? 4200 : 6800)
+    return () => window.clearTimeout(timeout)
+  }, [attempt, hidden, loaded, symbol])
+
   if (hidden) {
     return (
       <div className="stock-intel-chart-placeholder">
@@ -189,13 +197,23 @@ function TradingViewChart({ ticker, hidden }: { ticker: string; hidden: boolean 
     )
   }
 
-  const symbol = encodeURIComponent(`NASDAQ:${String(ticker || '').split(' ')[0]}`)
+  const encoded = encodeURIComponent(symbol)
+  const frameId = `pia-tv-${rawSymbol}-${attempt}`
   return (
-    <iframe
-      title={`${ticker} TradingView chart`}
-      className="stock-intel-chart-frame"
-      src={`https://s.tradingview.com/widgetembed/?symbol=${symbol}&interval=D&theme=dark&style=1&hide_top_toolbar=1&hide_side_toolbar=1&allow_symbol_change=0&save_image=0`}
-    />
+    <div className="stock-intel-chart-wrap">
+      {!loaded ? <div className="stock-intel-chart-loading">Loading chart...</div> : null}
+      <iframe
+        key={frameId}
+        id={frameId}
+        title={`${rawSymbol} TradingView chart`}
+        className="stock-intel-chart-frame"
+        src={`https://s.tradingview.com/widgetembed/?frameElementId=${frameId}&symbol=${encoded}&interval=D&theme=dark&style=1&hide_top_toolbar=1&hide_side_toolbar=1&allow_symbol_change=0&save_image=0&withdateranges=1&hideideas=1&timezone=Etc%2FUTC`}
+        loading="eager"
+        referrerPolicy="origin"
+        allowFullScreen
+        onLoad={() => setLoaded(true)}
+      />
+    </div>
   )
 }
 
@@ -287,35 +305,6 @@ function resolveInitialTab(value: unknown): StockPanelTab | null {
 
 function initialTabFromSeed(seedPosition?: Record<string, unknown> | null): StockPanelTab | null {
   return resolveInitialTab(seedPosition?.initialTab ?? seedPosition?.initial_tab)
-}
-
-function logoUrlFor(source: any, symbol: string) {
-  const direct = source?.logo_url || source?.logoUrl || source?.company?.logo_url || source?.company?.logoUrl
-  if (typeof direct === 'string' && /^https?:\/\//i.test(direct)) return direct
-  return LOGO_URLS[String(symbol || '').toUpperCase()]
-}
-
-function CompanyLogoMark({ source, symbol, hidden }: { source: any; symbol: string; hidden: boolean }) {
-  const logoUrl = hidden ? '' : logoUrlFor(source, symbol)
-  const [failed, setFailed] = useState(false)
-
-  useEffect(() => {
-    setFailed(false)
-  }, [logoUrl])
-
-  if (logoUrl && !failed) {
-    return (
-      <div className="stock-intel-symbol-mark has-logo" aria-hidden="true">
-        <img src={logoUrl} alt="" onError={() => setFailed(true)} />
-      </div>
-    )
-  }
-
-  return (
-    <div className="stock-intel-symbol-mark" aria-hidden="true">
-      {hidden ? '*' : symbol.slice(0, 2)}
-    </div>
-  )
 }
 
 function sparkPoints(values: unknown, width = 120, height = 46) {
@@ -418,7 +407,7 @@ export default function StockIntelligencePanel({
           </button>
           <div className="stock-intel-title-block">
             <div className="stock-intel-identity">
-              <CompanyLogoMark source={{ ...source, company }} symbol={symbol} hidden={hidden} />
+              <CompanyLogo source={{ ...source, company }} symbol={symbol} hidden={hidden} className="stock-intel-symbol-mark" />
               <div className="stock-intel-name-block">
                 <div className="stock-intel-name-row">
                   <h2>{hidden ? mask : symbol}</h2>
@@ -427,6 +416,9 @@ export default function StockIntelligencePanel({
                   </button>
                 </div>
                 <span className="stock-intel-kicker">{hidden ? 'Workspace' : `${name} - ${source.exchange || 'NASDAQ'} - ${source.asset_type || 'Stock'}`}</span>
+              </div>
+              <div className="stock-intel-mini-spark" aria-hidden="true">
+                <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
               </div>
             </div>
           </div>
@@ -456,9 +448,6 @@ export default function StockIntelligencePanel({
               <span>{hidden ? 'Market' : source.market_status || 'Market Open'}</span>
               <span>{hidden ? 'Session' : source.session_note || 'Closes in 1h 18m'}</span>
             </div>
-          </div>
-          <div className="stock-intel-mini-spark" aria-hidden="true">
-            <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
           </div>
         </div>
 

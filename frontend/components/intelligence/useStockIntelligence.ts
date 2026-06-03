@@ -145,6 +145,18 @@ function writeCachedStock(symbol: string, payload: any) {
   } catch {}
 }
 
+export function preloadStockIntelligence(ticker: unknown) {
+  const symbol = cleanSymbol(ticker)
+  if (!symbol || readCachedStock(symbol)) return
+  fetch(`/api/stock/${encodeURIComponent(symbol)}`, { cache: 'no-store' })
+    .then(async (response) => {
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw body
+      writeCachedStock(symbol, body)
+    })
+    .catch(() => {})
+}
+
 function mergeStockPayload(stage: any, fresh: any) {
   if (!stage) return fresh
   if (!fresh) return stage
