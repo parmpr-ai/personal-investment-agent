@@ -39,6 +39,8 @@ import IntelligenceBadge from '../ui/IntelligenceBadge'
 import SettingsPage from '../settings/SettingsWorkspace'
 import MobileReorderableSections from '../dashboard/MobileReorderableSections'
 import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
+import CompanyLogo from '../intelligence/CompanyLogo'
+import { preloadStockIntelligence } from '../intelligence/useStockIntelligence'
 import ReorderList from './ReorderList'
 import {
   WorkspaceShell,
@@ -1005,9 +1007,12 @@ function ScannerSetups({ scanner, onSelect, hidden = false }: { scanner: any[]; 
       render={(item: any) => (
         <button className="mobile-visual-card mobile-setup-card" onClick={() => onSelect({ symbol: item.ticker, ...item })}>
           <div className="mobile-card-head">
-            <div>
-              <span>{item.label || 'Setup'}</span>
-              <strong>{item.ticker}</strong>
+            <div className="mobile-card-symbol">
+              <CompanyLogo source={item} symbol={item.ticker || item.symbol} hidden={hidden} className="mtt-logo" />
+              <div>
+                <span>{item.label || 'Setup'}</span>
+                <strong>{item.ticker}</strong>
+              </div>
             </div>
             <b>{hidden ? mask : money(item.price)}</b>
           </div>
@@ -1042,9 +1047,12 @@ function WatchlistMovers({ scanner, positions, onSelect, hidden = false }: { sca
       render={(item: any) => (
         <button className="mobile-visual-card mobile-mover-card" onClick={() => onSelect(item)}>
           <div className="mobile-card-head">
-            <div>
-              <span>{item.name}</span>
-              <strong>{item.symbol}</strong>
+            <div className="mobile-card-symbol">
+              <CompanyLogo source={item} symbol={item.symbol} hidden={hidden} className="mtt-logo" />
+              <div>
+                <span>{item.name}</span>
+                <strong>{item.symbol}</strong>
+              </div>
             </div>
             <div className="mobile-price-stack">
               <b>{hidden ? mask : money(item.price)}</b>
@@ -1099,9 +1107,12 @@ function PositionCards({ rows, onSelect, hidden = false, fields, order, tf }: { 
           >
             {/* Header — ticker, company, daily % */}
             <div className="mobile-card-head">
-              <div>
-                <span>{position.name || 'Portfolio holding'}</span>
-                <strong>{position.symbol}</strong>
+              <div className="mobile-card-symbol">
+                <CompanyLogo source={position} symbol={position.symbol} hidden={hidden} className="mtt-logo" />
+                <div>
+                  <span>{position.name || 'Portfolio holding'}</span>
+                  <strong>{position.symbol}</strong>
+                </div>
               </div>
               <IntelligenceBadge label={pct(change)} tone={change >= 0 ? 'good' : 'bad'} />
             </div>
@@ -1178,11 +1189,20 @@ function PositionCards({ rows, onSelect, hidden = false, fields, order, tf }: { 
 }
 
 const WL_COL_DEFS: { key: string; label: string }[] = [
-  { key: 'instrument', label: 'INSTRUMENT' },
-  { key: 'last', label: 'LAST' },
-  { key: 'change', label: 'CHNG' },
+  { key: 'instrument',  label: 'INSTRUMENT' },
+  { key: 'last',        label: 'LAST' },
+  { key: 'change',      label: 'CHNG' },
   { key: 'changePercent', label: 'CHG%' },
-  { key: 'volume', label: 'VLM' },
+  { key: 'volume',      label: 'VLM' },
+  { key: 'marketCap',   label: 'MKT CAP' },
+  { key: 'pe',          label: 'P/E' },
+  { key: 'eps',         label: 'EPS' },
+  { key: 'beta',        label: 'BETA' },
+  { key: 'avgVolume',   label: 'AVG VOL' },
+  { key: 'high52w',     label: '52W HI' },
+  { key: 'low52w',      label: '52W LO' },
+  { key: 'sector',      label: 'SECTOR' },
+  { key: 'industry',    label: 'INDUSTRY' },
 ]
 const WL_DATA_KEYS = WL_COL_DEFS.filter((c) => c.key !== 'instrument').map((c) => c.key)
 const WL_COL_ORDER_KEY = 'pia.watchlist.colOrder'
@@ -1462,46 +1482,87 @@ function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, 
   // Split-layer frozen column (PIA-UAT-FIX-001D): the instrument column is a
   // separate non-scrolling left layer outside the horizontal scroller, so
   // scrolled cells can never bleed behind/left of it on iOS.
-  const WL_TH: Record<string, string> = { last: 'LAST', change: 'CHNG', changePercent: 'CHG%', volume: 'VLM' }
+  const WL_TH: Record<string, string> = {
+    last: 'LAST', change: 'CHNG', changePercent: 'CHG%', volume: 'VLM',
+    marketCap: 'MKT CAP', pe: 'P/E', eps: 'EPS', beta: 'BETA',
+    avgVolume: 'AVG VOL', high52w: '52W HI', low52w: '52W LO',
+    sector: 'SECTOR', industry: 'INDUSTRY',
+  }
   const dataCols = colOrder.filter((k) => k !== 'instrument' && columns[k] !== false)
   const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null)
   function cycleSort(key: string) {
     setSort((s) => (!s || s.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null))
   }
-  function sortVal(row: any, key: string): number {
+  function wlSortVal(row: any, key: string): number {
     switch (key) {
-      case 'last': return Number(row.last || row.price || 0)
-      case 'change': return Number(row.day_pnl || 0)
+      case 'last':          return Number(row.last || row.price || 0)
+      case 'change':        return Number(row.day_pnl || 0)
       case 'changePercent': return Number(row.day_change_pct || 0)
-      case 'volume': return Number(row.volume || 0)
-      default: return 0
+      case 'volume':        return Number(row.volume || 0)
+      case 'marketCap':     return Number(row.market_cap || row.marketCap || 0)
+      case 'pe':            return Number(row.pe || row.pe_ratio || row.pe_ttm || 0)
+      case 'eps':           return Number(row.eps || row.eps_ttm || 0)
+      case 'beta':          return Number(row.beta || 0)
+      case 'avgVolume':     return Number(row.avg_volume || row.average_volume || 0)
+      case 'high52w':       return Number(row.week52_high || row['52w_high'] || row.high_52w || 0)
+      case 'low52w':        return Number(row.week52_low || row['52w_low'] || row.low_52w || 0)
+      default:              return 0
     }
   }
-  // Sorting cycles asc -> desc -> default (custom order). Both layers use the
-  // same sorted array so the frozen Instrument column stays row-aligned.
+  const wlCompactMoney = (v: any) => {
+    const n = Number(v)
+    if (!Number.isFinite(n) || n === 0) return null
+    if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(2)}T`
+    if (Math.abs(n) >= 1e9)  return `$${(n / 1e9).toFixed(2)}B`
+    if (Math.abs(n) >= 1e6)  return `$${(n / 1e6).toFixed(2)}M`
+    return money(n)
+  }
+  // Sorting cycles asc -> desc -> default. Both layers use the same sorted array
+  // so the frozen Instrument column stays row-aligned. Text keys use localeCompare.
   const sortedRows = sort
-    ? [...rows].sort((a, b) => (sort.dir === 'asc' ? sortVal(a, sort.key) - sortVal(b, sort.key) : sortVal(b, sort.key) - sortVal(a, sort.key)))
+    ? [...rows].sort((a, b) => {
+        if (sort.key === 'symbol' || sort.key === 'sector' || sort.key === 'industry') {
+          const av = String(a[sort.key] || ''), bv = String(b[sort.key] || '')
+          return sort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
+        }
+        return sort.dir === 'asc' ? wlSortVal(a, sort.key) - wlSortVal(b, sort.key) : wlSortVal(b, sort.key) - wlSortVal(a, sort.key)
+      })
     : rows
   function wlCell(key: string, row: any) {
+    if (hidden) return <td key={key}>{mask}</td>
     switch (key) {
-      case 'last': return <td key={key}>{hidden ? mask : money(row.last || row.price)}</td>
-      case 'change': return <td key={key} className={Number(row.day_pnl) >= 0 ? 'green' : 'red'}>{hidden ? mask : money(row.day_pnl)}</td>
-      case 'changePercent': return <td key={key} className={Number(row.day_change_pct) >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(row.day_change_pct)}</td>
-      case 'volume': return <td key={key}>{hidden ? mask : compactVolume(row.volume)}</td>
-      default: return <td key={key}>—</td>
+      case 'last':          return <td key={key}>{money(row.last || row.price)}</td>
+      case 'change':        return <td key={key} className={Number(row.day_pnl) >= 0 ? 'green' : 'red'}>{money(row.day_pnl)}</td>
+      case 'changePercent': return <td key={key} className={Number(row.day_change_pct) >= 0 ? 'green' : 'red'}>{pct(row.day_change_pct)}</td>
+      case 'volume':        return <td key={key}>{compactVolume(row.volume)}</td>
+      case 'marketCap': {   const v = wlCompactMoney(row.market_cap || row.marketCap); return <td key={key}>{v ?? '—'}</td> }
+      case 'pe': {          const v = row.pe ?? row.pe_ratio ?? row.pe_ttm; return <td key={key}>{v != null ? Number(v).toFixed(2) : '—'}</td> }
+      case 'eps': {         const v = row.eps ?? row.eps_ttm; return <td key={key}>{v != null ? money(v) : '—'}</td> }
+      case 'beta': {        const v = row.beta; return <td key={key}>{v != null ? Number(v).toFixed(2) : '—'}</td> }
+      case 'avgVolume': {   const v = row.avg_volume || row.average_volume; return <td key={key}>{v ? compactVolume(v) : '—'}</td> }
+      case 'high52w': {     const v = row.week52_high ?? row['52w_high'] ?? row.high_52w; return <td key={key}>{v != null ? money(v) : '—'}</td> }
+      case 'low52w': {      const v = row.week52_low ?? row['52w_low'] ?? row.low_52w; return <td key={key}>{v != null ? money(v) : '—'}</td> }
+      case 'sector':        return <td key={key} className="muted">{row.sector || '—'}</td>
+      case 'industry':      return <td key={key} className="muted">{row.industry || '—'}</td>
+      default:              return <td key={key}>—</td>
     }
   }
   return (
     <div className="mptbl-split">
       {columns.instrument && (
         <div className="mptbl-frozen pf-wl-frozen">
-          <div className="mptbl-fcell mptbl-fhead">INSTRMNT</div>
+          <div
+            className={`mptbl-fcell mptbl-fhead wl-th-sort${sort?.key === 'symbol' ? ' sorted' : ''}`}
+            role="button"
+            aria-sort={sort?.key === 'symbol' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+            onClick={() => cycleSort('symbol')}
+          >
+            INSTRMNT{sort?.key === 'symbol' ? <span className="wl-sort-arrow">{sort.dir === 'asc' ? ' ↑' : ' ↓'}</span> : null}
+          </div>
           {sortedRows.map((row) => (
             <button key={row.symbol} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(row)} onContextMenu={(e) => { e.preventDefault(); onLongPress?.(row) }}>
               <div className="mtt-symbol">
-                <div className="mtt-logo" style={{ background: row.accent || row.brand || '#60a5fa' }}>
-                  {hidden ? '-' : row.logo || String(row.symbol).slice(0, 2)}
-                </div>
+                <CompanyLogo source={row} symbol={row.symbol} hidden={hidden} className="mtt-logo" />
                 <span>
                   <strong className="mtt-sym-label">{hidden ? mask : row.symbol}</strong>
                   <small>{hidden ? 'Market' : row.exchange || 'NASDAQ'}</small>
@@ -1576,9 +1637,12 @@ function MobileWatchlistCards({ rows, onSelect, onLongPress, hidden, grid = '1x1
             onContextMenu={(e) => { e.preventDefault(); onLongPress?.(row) }}
           >
             <div className="mobile-card-head">
-              <div>
-                <span>{hidden ? 'Workspace item' : row.name || 'Instrument'}</span>
-                <strong>{row.symbol}</strong>
+              <div className="mobile-card-symbol">
+                <CompanyLogo source={row} symbol={row.symbol} hidden={hidden} className="mtt-logo" />
+                <div>
+                  <span>{hidden ? 'Workspace item' : row.name || 'Instrument'}</span>
+                  <strong>{row.symbol}</strong>
+                </div>
               </div>
               <IntelligenceBadge label={pct(change)} tone={change >= 0 ? 'good' : 'bad'} />
             </div>
@@ -2146,26 +2210,26 @@ function MobileManageDisplay({
   const dragKeyRef = useRef<string | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
 
-  const enabled = order.map(defsByKey).filter((d): d is ManageItem => !!d && visible.has(d.key))
-  const seen = new Set<string>()
+  // All fields stay in the main list regardless of visible state (PORT-002).
+  // "Add Columns" only surfaces keys not yet placed in the order at all.
+  const enabled = order.map(defsByKey).filter((d): d is ManageItem => !!d)
+  const seen = new Set<string>(order)
   const available = allKeys
-    .filter((k) => !visible.has(k))
+    .filter((k) => !seen.has(k))
     .map(defsByKey)
-    .filter((d): d is ManageItem => !!d && !seen.has(d.key) && (seen.add(d.key), true))
+    .filter((d): d is ManageItem => !!d)
 
-  // Drag-to-reorder from the right-side grip. Reorders the enabled subset and
-  // merges back into the full order, leaving disabled entries in place.
+  // Drag-to-reorder from the right-side grip. Reorders all fields in order
+  // (both visible and hidden keep their relative positions).
   function reorderTo(key: string, targetKey: string) {
     if (key === targetKey) return
-    const en = order.filter((k) => visible.has(k))
-    const from = en.indexOf(key)
-    const to = en.indexOf(targetKey)
+    const from = order.indexOf(key)
+    const to = order.indexOf(targetKey)
     if (from < 0 || to < 0) return
-    const next = [...en]
+    const next = [...order]
     next.splice(from, 1)
     next.splice(to, 0, key)
-    let i = 0
-    onReorder(order.map((k) => (visible.has(k) ? next[i++] : k)))
+    onReorder(next)
   }
   function onListPointerDown(e: PointerEvent<HTMLUListElement>) {
     const target = e.target as HTMLElement
@@ -2211,22 +2275,25 @@ function MobileManageDisplay({
           onPointerUp={onListPointerEnd}
           onPointerCancel={onListPointerEnd}
         >
-          {enabled.map((item) => (
-            <li className={`pf-manage-row${dragKey === item.key ? ' dragging' : ''}`} key={item.key} data-key={item.key}>
-              <button
-                type="button"
-                className="pf-manage-check on"
-                aria-label={`Hide ${item.label}`}
-                disabled={item.locked}
-                onClick={() => !item.locked && onToggle(item.key)}
-              >
-                ✓
-              </button>
-              <span className="pf-manage-name">{item.label}</span>
-              <button type="button" className="pf-manage-info" aria-label={`About ${item.label}`} onClick={() => setInfo({ label: item.label, text: item.info || 'No description available.' })}><Info size={15} /></button>
-              <span className="pf-manage-grip" data-grip role="button" tabIndex={0} aria-label={`Drag to reorder ${item.label}`}><GripVertical size={18} /></span>
-            </li>
-          ))}
+          {enabled.map((item) => {
+            const on = visible.has(item.key)
+            return (
+              <li className={`pf-manage-row${dragKey === item.key ? ' dragging' : ''}`} key={item.key} data-key={item.key}>
+                <span className="pf-manage-name">{item.label}</span>
+                <button type="button" className="pf-manage-info" aria-label={`About ${item.label}`} onClick={() => setInfo({ label: item.label, text: item.info || 'No description available.' })}><Info size={15} /></button>
+                <button
+                  type="button"
+                  className={`pf-manage-check${on ? ' on' : ''}`}
+                  aria-label={on ? `Hide ${item.label}` : `Show ${item.label}`}
+                  disabled={item.locked}
+                  onClick={() => !item.locked && onToggle(item.key)}
+                >
+                  {on ? '✓' : ''}
+                </button>
+                <span className="pf-manage-grip" data-grip role="button" tabIndex={0} aria-label={`Drag to reorder ${item.label}`}><GripVertical size={18} /></span>
+              </li>
+            )
+          })}
         </ul>
         <button type="button" className="pf-manage-add" aria-expanded={addOpen} onClick={() => setAddOpen((o) => !o)}>
           <Plus size={16} /> {addLabel}
@@ -2570,6 +2637,7 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
           {sorted.map((position) => (
             <button key={position.symbol} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(position)}>
               <div className="mtt-symbol">
+                <CompanyLogo source={position} symbol={position.symbol} hidden={hidden} className="mtt-logo real-logo" />
                 <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
                   {hidden ? '●' : (position.logo || String(position.symbol || '').slice(0, 2))}
                 </div>
@@ -2625,6 +2693,7 @@ export default function MobileExperience() {
   const [mounted, setMounted] = useState(false)
   const [hidden, setHidden] = useState(false)
   const [portfolioView, setPortfolioView] = useState<PortfolioView>('table')
+  const [positionFilter, setPositionFilter] = useState<'all' | 'stocks' | 'options'>('all')
   const [headerExpanded, setHeaderExpanded] = useState(true)
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const [portfolioMenuOpen, setPortfolioMenuOpen] = useState(false)
@@ -2643,6 +2712,24 @@ export default function MobileExperience() {
 
   const portfolio = dashboard?.portfolio || {}
   const positions = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
+  useEffect(() => {
+    if (!positions.length) return
+    const symbols = positions
+      .map((position: any) => position.symbol || position.ticker || position.underlying)
+      .filter(Boolean)
+      .slice(0, 12)
+    const timer = window.setTimeout(() => {
+      symbols.forEach(preloadStockIntelligence)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [positions])
+  const filteredPositions = useMemo(() => {
+    if (positionFilter === 'all') return positions
+    return positions.filter((p: any) => {
+      const isOption = p.asset_class === 'Option' || p.instrument_type === 'OPT' || String(p.symbol || '').includes(' ')
+      return positionFilter === 'options' ? isOption : !isOption
+    })
+  }, [positions, positionFilter])
   const advancedFieldDefs = useMemo(() => discoverAdvancedFields(positions), [positions])
   const scanner = dashboard?.scanner || scannerFallback
   const privacyHidden = mounted && hidden
@@ -2931,6 +3018,13 @@ export default function MobileExperience() {
             <div className="mobile-portfolio-header">
               <span className="mobile-portfolio-count">Positions</span>
               <div className="pf-header-actions">
+                <div className="pf-pos-filter" role="group" aria-label="Position type filter">
+                  {(['all', 'stocks', 'options'] as const).map((f) => (
+                    <button key={f} className={positionFilter === f ? 'active' : ''} onClick={() => setPositionFilter(f)}>
+                      {f === 'all' ? 'All' : f === 'stocks' ? 'Stocks' : 'Options'}
+                    </button>
+                  ))}
+                </div>
                 <div className="portfolio-view-toggle" role="group" aria-label="Portfolio view mode">
                   <button className={portfolioView === 'table' ? 'active' : ''} onClick={() => updatePortfolioView('table')}>Table</button>
                   <button className={portfolioView === 'cards' ? 'active' : ''} onClick={() => updatePortfolioView('cards')}>Cards</button>
@@ -2947,8 +3041,8 @@ export default function MobileExperience() {
               </div>
             </div>
             {portfolioView === 'table'
-              ? <MobilePortfolioTable rows={positions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} advancedDefs={advancedFieldDefs} />
-              : <PositionCards rows={positions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} order={cardOrder} tf={sparkTf} />
+              ? <MobilePortfolioTable rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} advancedDefs={advancedFieldDefs} />
+              : <PositionCards rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} order={cardOrder} tf={sparkTf} />
             }
           </div>
         </>
