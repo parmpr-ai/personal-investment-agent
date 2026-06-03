@@ -83,13 +83,14 @@ export default function ReorderList({ items, hiddenKeys, lockedKeys, onReorder, 
             {onToggle ? (
               <button
                 type="button"
-                className={`reorder-toggle${on ? ' on' : ''}${locked ? ' locked' : ''}`}
+                className={`reorder-switch${on ? ' on' : ''}${locked ? ' locked' : ''}`}
+                role="switch"
+                aria-checked={on}
                 aria-label={locked ? `${item.label} locked on` : `${on ? 'Hide' : 'Show'} ${item.label}`}
-                aria-pressed={on}
                 disabled={locked}
                 onClick={() => !locked && onToggle(item.key)}
               >
-                <span>{on ? 'ON' : 'OFF'}</span>
+                <span className="reorder-knob" aria-hidden="true" />
               </button>
             ) : null}
             <span

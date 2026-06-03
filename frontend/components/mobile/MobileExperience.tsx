@@ -1356,7 +1356,8 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
       {adding && (
         <form className="mobile-watchlist-addform" onSubmit={submitTicker}>
           <input value={newTicker} onChange={(e) => { setNewTicker(e.target.value.toUpperCase()); setValidation('') }} placeholder="Ticker" aria-label="Ticker to add" autoFocus />
-          <button type="submit" disabled={addLookupLoading}>Add</button>
+          <button type="submit" disabled={addLookupLoading || addMatches.length === 0}>Add</button>
+          <button type="button" className="wl-add-cancel" aria-label="Cancel" onClick={() => { setAdding(false); setNewTicker(''); setAddMatches([]); setValidation('') }}>✕</button>
         </form>
       )}
       {adding && addLookupLoading && <div className="manual-lookup-status">Searching instruments...</div>}
@@ -1463,6 +1464,24 @@ function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, 
   // scrolled cells can never bleed behind/left of it on iOS.
   const WL_TH: Record<string, string> = { last: 'LAST', change: 'CHNG', changePercent: 'CHG%', volume: 'VLM' }
   const dataCols = colOrder.filter((k) => k !== 'instrument' && columns[k] !== false)
+  const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null)
+  function cycleSort(key: string) {
+    setSort((s) => (!s || s.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null))
+  }
+  function sortVal(row: any, key: string): number {
+    switch (key) {
+      case 'last': return Number(row.last || row.price || 0)
+      case 'change': return Number(row.day_pnl || 0)
+      case 'changePercent': return Number(row.day_change_pct || 0)
+      case 'volume': return Number(row.volume || 0)
+      default: return 0
+    }
+  }
+  // Sorting cycles asc -> desc -> default (custom order). Both layers use the
+  // same sorted array so the frozen Instrument column stays row-aligned.
+  const sortedRows = sort
+    ? [...rows].sort((a, b) => (sort.dir === 'asc' ? sortVal(a, sort.key) - sortVal(b, sort.key) : sortVal(b, sort.key) - sortVal(a, sort.key)))
+    : rows
   function wlCell(key: string, row: any) {
     switch (key) {
       case 'last': return <td key={key}>{hidden ? mask : money(row.last || row.price)}</td>
@@ -1477,7 +1496,7 @@ function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, 
       {columns.instrument && (
         <div className="mptbl-frozen pf-wl-frozen">
           <div className="mptbl-fcell mptbl-fhead">INSTRMNT</div>
-          {rows.map((row) => (
+          {sortedRows.map((row) => (
             <button key={row.symbol} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(row)} onContextMenu={(e) => { e.preventDefault(); onLongPress?.(row) }}>
               <div className="mtt-symbol">
                 <div className="mtt-logo" style={{ background: row.accent || row.brand || '#60a5fa' }}>
@@ -1496,12 +1515,23 @@ function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, 
         <table className="mobile-terminal-table mobile-watchlist-table">
           <thead>
             <tr>
-              {dataCols.map((key) => <th key={key}>{WL_TH[key] || key}</th>)}
+              {dataCols.map((key) => (
+                <th
+                  key={key}
+                  className={`wl-th-sort${sort?.key === key ? ' sorted' : ''}`}
+                  role="button"
+                  aria-sort={sort?.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                  onClick={() => cycleSort(key)}
+                >
+                  {WL_TH[key] || key}
+                  <span className="wl-sort-arrow" aria-hidden="true">{sort?.key === key ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : ''}</span>
+                </th>
+              ))}
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {sortedRows.map((row) => (
               <tr key={row.symbol} onClick={() => onSelect(row)} onContextMenu={(e) => { e.preventDefault(); onLongPress?.(row) }}>
                 {dataCols.map((key) => wlCell(key, row))}
                 <td>
