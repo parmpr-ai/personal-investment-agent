@@ -1002,3 +1002,34 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
   .stock-intel-panel-mobile .stock-video-card{box-shadow:none;border:1px solid rgba(148,163,184,.1)}
   .stock-intel-panel-mobile .stock-intel-future-tabs{padding:10px}
 }
+
+/* ATHENA-UX-022..025 Stock Intelligence terminal feel */
+/* UX-024: chart is the element — strip the surrounding card container */
+.stock-intel-chart-card{border:0;background:transparent;box-shadow:none;padding:0}
+.stock-intel-chart-card .pia-v3-card-header{display:none}
+.stock-intel-chart-card .pia-v3-card-body{padding:0}
+/* UX-023: chart hero — expand height, minimal frame chrome */
+.stock-intel-chart-frame{height:min(64vh,620px);border:0;border-radius:14px;box-shadow:none}
+.stock-intel-chart-placeholder{border:0;border-radius:14px}
+/* UX-022: single-surface feel — soften widget boundaries inside the panel */
+.stock-intel-panel .stock-intel-facts article,
+.stock-intel-panel .stock-intel-tech-grid span,
+.stock-intel-panel .stock-intel-future-tabs,
+.stock-intel-panel .stock-news-card,
+.stock-intel-panel .stock-video-card,
+.stock-intel-panel .skm,
+.stock-intel-panel .sps{box-shadow:none;border-color:rgba(148,163,184,.08)}
+.stock-intel-panel .stock-intel-tech-card,
+.stock-intel-panel .stock-intel-targets-card{box-shadow:none}
+@media(max-width:560px){
+  /* UX-025: density pass 2 — tighter padding/spacing, readability preserved */
+  .stock-intel-panel-mobile{padding:8px 6px}
+  .stock-intel-panel-mobile.stock-intel-panel{gap:6px}
+  .stock-intel-panel-mobile .stock-intel-header{padding:8px}
+  .stock-intel-panel-mobile .stock-intel-section,
+  .stock-intel-panel-mobile .stock-intel-scenarios,
+  .stock-intel-panel-mobile .stock-intel-actions{gap:8px}
+  .stock-intel-panel-mobile .stock-intel-facts article{padding:10px}
+  .stock-intel-panel-mobile .skm-cell{padding:8px 9px;min-height:54px}
+  .stock-intel-panel-mobile .stock-intel-chart-frame{height:54vh}
+}
