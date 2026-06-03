@@ -367,6 +367,7 @@ function RecentNewsPreview({ items, hidden }: { items: any[]; hidden: boolean })
 export default function StockIntelligencePanel({
   ticker,
   seedPosition,
+  dashboard,
   hidden,
   onHiddenChange,
   onClose,
@@ -374,6 +375,7 @@ export default function StockIntelligencePanel({
 }: {
   ticker: string
   seedPosition?: Record<string, unknown> | null
+  dashboard?: any
   hidden: boolean
   onHiddenChange?: (hidden: boolean) => void
   onClose: () => void
@@ -382,7 +384,7 @@ export default function StockIntelligencePanel({
   const requestedInitialTab = initialTabFromSeed(seedPosition)
   const [tab, setTab] = useState<StockPanelTab>(() => requestedInitialTab || (STOCK_PANEL_TABS.includes(lastActiveStockPanelTab) ? lastActiveStockPanelTab : 'Overview'))
   const [timeframe, setTimeframe] = useState<Timeframe>('Swing')
-  const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition)
+  const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition, dashboard)
 
   useEffect(() => {
     const nextTab = initialTabFromSeed(seedPosition)
