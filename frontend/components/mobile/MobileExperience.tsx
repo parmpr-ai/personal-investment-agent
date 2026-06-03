@@ -168,8 +168,9 @@ function useMobileDashboard() {
   const [dashboard, setDashboard] = useState<any>(null)
 
   const refresh = useCallback(async () => {
-    const response = await fetch(`${API}/dashboard`)
+    const response = await fetch('/api/dashboard', { cache: 'no-store' })
     const data = await response.json()
+    if (!response.ok) throw data
     setDashboard(data)
     return data
   }, [])
@@ -2338,7 +2339,7 @@ function AddManualHoldingSheet({
       return
     }
     setSaving(true)
-    const result = await fetchJson('/manual-holdings', {
+    const result = await fetch('/api/manual-holdings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2351,8 +2352,12 @@ function AddManualHoldingSheet({
         currency: selected.currency || 'USD',
         notes: `Added from Portfolio menu${selected.exchange ? ` (${selected.exchange})` : ''}.`,
       }),
+    }).then(async (response) => {
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw body
+      return body
     }).catch((error) => {
-      setStatus(manualHoldingError(error, `Unable to save manual holding. Confirm the backend is reachable at ${API || 'the API host'} and try again.`))
+      setStatus(manualHoldingError(error, 'Unable to save manual holding. The save proxy could not reach the backend or the backend rejected the holding.'))
       return null
     })
     if (!result) {

@@ -7,7 +7,7 @@ import { mask } from '../../lib/pia-api'
 
 type Fmt = 'price' | 'compact' | 'compact$' | 'num' | 'pct' | 'range'
 type MetricDef = { key: string; label: string; fmt: Fmt; get: (source: any) => unknown }
-type Prefs = { order: string[]; hidden: string[] }
+type Prefs = { order: string[]; hidden: string[]; version?: number }
 
 const EMPTY = '-'
 
@@ -58,9 +58,11 @@ const KEY_METRIC_DEFS: MetricDef[] = [
 
 const DEF_BY_KEY = new Map(KEY_METRIC_DEFS.map((def) => [def.key, def]))
 const APPROVED_FIRST_PAGE = ['last_price', 'open', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'today_range']
+const LEGACY_DEFAULT_PREFIX = ['open', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'last_price', 'today_range']
 const DEFAULT_ORDER = [...APPROVED_FIRST_PAGE, ...KEY_METRIC_DEFS.map((def) => def.key).filter((key) => !APPROVED_FIRST_PAGE.includes(key))]
 const DEFAULT_VISIBLE = [...APPROVED_FIRST_PAGE, 'high_52w', 'low_52w', 'vwap', 'market_cap', 'pe', 'beta', 'eps', 'div_yield']
-const DEFAULT_PREFS: Prefs = { order: DEFAULT_ORDER, hidden: DEFAULT_ORDER.filter((key) => !DEFAULT_VISIBLE.includes(key)) }
+const PREFS_VERSION = 2
+const DEFAULT_PREFS: Prefs = { order: DEFAULT_ORDER, hidden: DEFAULT_ORDER.filter((key) => !DEFAULT_VISIBLE.includes(key)), version: PREFS_VERSION }
 const GLOBAL_PREFS_KEY = 'pia.stockView.defaults.keyMetrics'
 
 function compact(value: number): string {
@@ -127,8 +129,12 @@ function normalizedPrefs(raw: unknown): Prefs | null {
       hidden.push(key)
     }
   }
-  const order = known.length ? [...known, ...DEFAULT_ORDER.filter((key) => !known.includes(key))] : DEFAULT_ORDER
-  return { order, hidden }
+  const unversioned = parsed.version !== PREFS_VERSION
+  const legacyDefault = unversioned && LEGACY_DEFAULT_PREFIX.every((key, index) => known[index] === key)
+  const missingApprovedMetrics = unversioned && APPROVED_FIRST_PAGE.some((key) => !known.includes(key))
+  if (!known.length || legacyDefault || missingApprovedMetrics) return DEFAULT_PREFS
+  const order = [...known, ...DEFAULT_ORDER.filter((key) => !known.includes(key))]
+  return { order, hidden, version: PREFS_VERSION }
 }
 
 function prefsKey(ticker: string) {
@@ -150,7 +156,7 @@ function loadPrefs(ticker: string): Prefs {
 
 function savePrefs(ticker: string, prefs: Prefs) {
   try {
-    window.localStorage.setItem(prefsKey(ticker), JSON.stringify(prefs))
+    window.localStorage.setItem(prefsKey(ticker), JSON.stringify({ ...prefs, version: PREFS_VERSION }))
   } catch {}
 }
 
@@ -184,8 +190,9 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
   }, [activePage, pages.length])
 
   function update(next: Prefs) {
-    setPrefs(next)
-    savePrefs(ticker, next)
+    const normalized = { ...next, version: PREFS_VERSION }
+    setPrefs(normalized)
+    savePrefs(ticker, normalized)
   }
 
   function onRailScroll() {

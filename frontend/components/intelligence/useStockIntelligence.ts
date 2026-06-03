@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { fetchJson } from '../../lib/pia-api'
 
 function numberValue(value: unknown): number | null {
   if (value == null || value === '') return null
@@ -26,7 +25,12 @@ export function useStockIntelligence(ticker: string, seedPosition?: Record<strin
     const symbol = String(ticker || '').split(' ')[0]
     if (!symbol) return
     setLoading(true)
-    fetchJson(`/stock/${encodeURIComponent(symbol)}`)
+    fetch(`/api/stock/${encodeURIComponent(symbol)}`, { cache: 'no-store' })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw body
+        return body
+      })
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false))

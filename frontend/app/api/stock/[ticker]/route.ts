@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { backendBase, proxyJson, sampleBody } from '../../backendProxy'
 
-export async function GET(request: NextRequest) {
-  const q = request.nextUrl.searchParams.get('q') || ''
-  const limit = request.nextUrl.searchParams.get('limit') || '8'
-  const backendUrl = `${backendBase}/instruments/search?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(limit)}`
-
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
+  const { ticker } = await params
+  const symbol = encodeURIComponent(String(ticker || '').split(' ')[0])
+  const backendUrl = `${backendBase}/stock/${symbol}`
   try {
     const { response, body } = await proxyJson(backendUrl)
     return NextResponse.json(
       {
         ...body,
-        query: body?.query ?? q,
         request_url: backendUrl,
         response_status: response.status,
         body_sample: sampleBody(body),
@@ -21,9 +19,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     return NextResponse.json(
       {
-        query: q,
-        matches: [],
-        detail: `Instrument search proxy could not reach backend at ${backendUrl}.`,
+        detail: `Stock Intelligence proxy could not reach backend at ${backendUrl}.`,
         error: error?.message || String(error),
         request_url: backendUrl,
         response_status: 0,
