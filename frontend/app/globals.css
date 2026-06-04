@@ -1068,3 +1068,6 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
   .skm-cell-range{grid-column:span 3}
   .skm-range-values b{font-size:11px!important}
 }
+
+/* ATHENA-UX-026 portfolio header market status (moved from stock intelligence header) */
+.snapshot-market-status{margin:6px 0 2px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.01em}

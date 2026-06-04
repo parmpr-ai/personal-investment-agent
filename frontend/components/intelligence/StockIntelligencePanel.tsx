@@ -444,10 +444,6 @@ export default function StockIntelligencePanel({
                 </PiaBadge>
               ) : null}
             </div>
-            <div className="stock-intel-session-line">
-              <span>{hidden ? 'Market' : source.market_status || 'Market Open'}</span>
-              <span>{hidden ? 'Session' : source.session_note || 'Closes in 1h 18m'}</span>
-            </div>
           </div>
         </div>
 

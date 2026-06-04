@@ -829,6 +829,7 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
             <span className={`snapshot-pnl-pct ${dayPnlPct >= 0 ? 'green' : 'red'}`}>{hidden ? mask : `${dayPnlPct >= 0 ? '+' : ''}${Math.abs(dayPnlPct).toFixed(2)}%`}</span>
             <span>{p.risk_mode || '-'}</span>
           </div>
+          <div className="snapshot-market-status">{hidden ? mask : `${p.market_status || 'Market Open'} · ${p.session_note || 'Closes in 1h 18m'}`}</div>
           <Kpis p={p} hidden={hidden} />
           <div className="snapshot-tf-rail">
             {tfOptions.map((tf) => (
