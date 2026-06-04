@@ -15,6 +15,7 @@ import {
   FileText,
   Globe2,
   LayoutDashboard,
+  MoreVertical,
   Pencil,
   Plus,
   Newspaper,
@@ -180,6 +181,33 @@ const metricValue = (p: any, key: string) =>
                     : key === 'total_pct'
                       ? p.unrealized_pct
                       : String(p.symbol || '')
+
+const lastPriceValue = (item: any) => item?.last ?? item?.price ?? item?.market_price ?? item?.marketPrice ?? 0
+
+type PortfolioViewMode = 'table' | 'cards-1x1' | 'cards-2x2' | 'cards-3x3'
+type PortfolioCardGrid = '1x1' | '2x2' | '3x3'
+
+const PORTFOLIO_VIEW_OPTIONS: { id: PortfolioViewMode; label: string }[] = [
+  { id: 'table', label: 'Table' },
+  { id: 'cards-1x1', label: 'Cards 1x1' },
+  { id: 'cards-2x2', label: 'Cards 2x2' },
+  { id: 'cards-3x3', label: 'Cards 3x3' },
+]
+
+function normalizePortfolioView(value: string | null): PortfolioViewMode | null {
+  if (value === 'cards') return 'cards-3x3'
+  return PORTFOLIO_VIEW_OPTIONS.some((option) => option.id === value) ? (value as PortfolioViewMode) : null
+}
+
+function portfolioViewLabel(value: PortfolioViewMode) {
+  return PORTFOLIO_VIEW_OPTIONS.find((option) => option.id === value)?.label || 'Table'
+}
+
+function portfolioGridFromView(value: PortfolioViewMode): PortfolioCardGrid {
+  if (value === 'cards-1x1') return '1x1'
+  if (value === 'cards-2x2') return '2x2'
+  return '3x3'
+}
 
 async function fetchJson(path: string, init?: RequestInit) {
   const response = await fetch(`${API}${path}`, init)
@@ -877,20 +905,32 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
 }
 
 function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: any) {
-  const [view, setView] = useState<'table' | 'cards'>('table')
+  const [view, setView] = useState<PortfolioViewMode>('table')
+  const [viewMenuOpen, setViewMenuOpen] = useState(false)
   const [sort, setSort] = useState('allocation')
   const [direction, setDirection] = useState<'desc' | 'asc'>('desc')
+  const viewMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('pia.portfolioView.desktop')
-      if (saved === 'cards' || saved === 'table') setView(saved)
+      const saved = normalizePortfolioView(localStorage.getItem('pia.portfolioView.desktop'))
+      if (saved) setView(saved)
     } catch {}
   }, [])
 
-  function changeView(next: 'table' | 'cards') {
+  useEffect(() => {
+    if (!viewMenuOpen) return
+    function handlePointerDown(event: MouseEvent) {
+      if (!viewMenuRef.current?.contains(event.target as Node)) setViewMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [viewMenuOpen])
+
+  function changeView(next: PortfolioViewMode) {
     setView(next)
     try { localStorage.setItem('pia.portfolioView.desktop', next) } catch {}
+    setViewMenuOpen(false)
   }
 
   function handleColSort(col: string) {
@@ -920,7 +960,7 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
           title={privateTitle(hidden, 'Positions', 'Overview')}
           subtitle={hidden ? `${rows.length} items` : `${rows.length} holdings across portfolio`}
           actions={
-            <>
+            <div className="portfolio-toolbar-actions">
               <PiaTabs
                 className="compact-tabs"
                 density="compact"
@@ -929,15 +969,45 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
                 onChange={setFilter}
                 tabs={['All', 'Stocks', 'Options', 'ETFs', 'Other'].map((x) => ({ id: x, label: x }))}
               />
-              <div className="portfolio-view-toggle" role="group" aria-label="Portfolio view mode">
-                <button className={view === 'table' ? 'active' : ''} onClick={() => changeView('table')}>
-                  Table
+              <div className="portfolio-view-menu" ref={viewMenuRef}>
+                <button
+                  type="button"
+                  className="portfolio-view-summary"
+                  aria-haspopup="menu"
+                  aria-expanded={viewMenuOpen}
+                  onClick={() => setViewMenuOpen((open) => !open)}
+                >
+                  <span>View</span>
+                  <b>{portfolioViewLabel(view)}</b>
                 </button>
-                <button className={view === 'cards' ? 'active' : ''} onClick={() => changeView('cards')}>
-                  Cards
+                <button
+                  type="button"
+                  className="portfolio-menu-trigger"
+                  aria-label="Portfolio view options"
+                  aria-haspopup="menu"
+                  aria-expanded={viewMenuOpen}
+                  onClick={() => setViewMenuOpen((open) => !open)}
+                >
+                  <MoreVertical size={16} />
                 </button>
+                {viewMenuOpen && (
+                  <div className="portfolio-view-popover" role="menu" aria-label="Portfolio view selection">
+                    {PORTFOLIO_VIEW_OPTIONS.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={view === option.id}
+                        className={view === option.id ? 'active' : ''}
+                        onClick={() => changeView(option.id)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </>
+            </div>
           }
         />
         <div className="sort-row">
@@ -964,7 +1034,7 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
         {view === 'table' ? (
           <PositionsTable rows={rows} hidden={hidden} setSelected={setSelected} sort={sort} direction={direction} onColSort={handleColSort} />
         ) : (
-          <PositionCards rows={rows} hidden={hidden} setSelected={setSelected} />
+          <PositionCards rows={rows} hidden={hidden} setSelected={setSelected} grid={portfolioGridFromView(view)} />
         )}
       </Panel>
       <Panel title="Exposure Map" privateTitle="Overview" span="span-6" hidden={hidden}>
@@ -977,37 +1047,41 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
   )
 }
 
-function PositionCards({ rows, hidden, setSelected }: any) {
+function PositionCards({ rows, hidden, setSelected, grid = '3x3' }: any) {
   return (
-    <div className="position-cards">
-      {rows.map((p: any) => (
-        <PiaCard
-          key={p.symbol}
-          className={`position-card${p.brand ? ' accented' : ''}`}
-          style={p.brand ? ({ '--pos-brand': p.brand } as React.CSSProperties) : undefined}
-        >
-          <button onClick={() => setSelected(p)}>
-            <header>
-              <div className="card-symbol">
-                <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
-                <div>
-                  <b>{hidden ? mask : p.symbol}</b>
-                  <span>{hidden ? 'Workspace item' : p.name}</span>
+    <div className={`position-cards position-cards-${grid}`}>
+      {rows.map((p: any) => {
+        const last = lastPriceValue(p)
+        return (
+          <PiaCard
+            key={p.symbol}
+            className={`position-card${p.brand ? ' accented' : ''}`}
+            style={p.brand ? ({ '--pos-brand': p.brand } as React.CSSProperties) : undefined}
+          >
+            <button onClick={() => setSelected(p)}>
+              <header>
+                <div className="card-symbol">
+                  <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
+                  <div>
+                    <b>{hidden ? mask : p.symbol}</b>
+                    <span>{hidden ? 'Workspace item' : p.name}</span>
+                    <small className="card-last-price">{hidden ? mask : money(last)}</small>
+                  </div>
                 </div>
+                <strong className="card-market-value">{hidden ? mask : money(p.market_value)}</strong>
+              </header>
+              <div className="position-pnl">
+                <span className={p.day_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.day_pnl)} today</span>
+                <span className={p.unrealized >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.unrealized)} total</span>
               </div>
-              <strong>{hidden ? mask : money(p.market_value)}</strong>
-            </header>
-            <div className="position-pnl">
-              <span className={p.day_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.day_pnl)} today</span>
-              <span className={p.unrealized >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.unrealized)} total</span>
-            </div>
-            <MetricBar label={hidden ? 'Overview' : 'Allocation'} value={p.portfolio_pct} tone="blue" hidden={hidden} />
-            <MetricBar label={hidden ? 'Controls' : 'Risk'} value={p.risk || 0} tone="red" hidden={hidden} />
-            <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={p.momentum_score || 0} tone="green" hidden={hidden} />
-            <MetricBar label={hidden ? 'Workspace' : 'Fundamentals'} value={fundamentalsScore(p)} tone="violet" hidden={hidden} />
-          </button>
-        </PiaCard>
-      ))}
+              <MetricBar label={hidden ? 'Overview' : 'Allocation'} value={p.portfolio_pct} tone="blue" hidden={hidden} />
+              <MetricBar label={hidden ? 'Controls' : 'Risk'} value={p.risk || 0} tone="red" hidden={hidden} />
+              <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={p.momentum_score || 0} tone="green" hidden={hidden} />
+              <MetricBar label={hidden ? 'Workspace' : 'Fundamentals'} value={fundamentalsScore(p)} tone="violet" hidden={hidden} />
+            </button>
+          </PiaCard>
+        )
+      })}
     </div>
   )
 }
@@ -1327,6 +1401,7 @@ function WatchlistCards({ rows, hidden, setSelected, onRemove }: any) {
       {rows.map((p: any) => {
         const change = Number(p.day_change_pct || 0)
         const dayPnl = Number(p.day_pnl || 0)
+        const last = lastPriceValue(p)
         return (
           <PiaCard
             key={p.symbol}
@@ -1339,10 +1414,10 @@ function WatchlistCards({ rows, hidden, setSelected, onRemove }: any) {
                 <div>
                   <b>{hidden ? mask : p.symbol}</b>
                   <span>{hidden ? 'Workspace item' : p.name}</span>
+                  <small className="card-last-price">{hidden ? mask : money(last)}</small>
                   <small className="muted">{hidden ? 'Market' : p.exchange || 'NASDAQ'}</small>
                 </div>
               </div>
-              <strong>{hidden ? mask : money(p.last || p.price)}</strong>
             </header>
             <div className="position-pnl">
               <span className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(change)} today</span>

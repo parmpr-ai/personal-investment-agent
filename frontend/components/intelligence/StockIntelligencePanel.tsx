@@ -417,9 +417,6 @@ export default function StockIntelligencePanel({
                 </div>
                 <span className="stock-intel-kicker">{hidden ? 'Workspace' : `${name} - ${source.exchange || 'NASDAQ'} - ${source.asset_type || 'Stock'}`}</span>
               </div>
-              <div className="stock-intel-mini-spark" aria-hidden="true">
-                <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
-              </div>
             </div>
           </div>
           <div className="stock-intel-header-actions" aria-label="Stock actions">
@@ -444,6 +441,10 @@ export default function StockIntelligencePanel({
                 </PiaBadge>
               ) : null}
             </div>
+          </div>
+          <div className="stock-intel-range-slot" aria-hidden="true" />
+          <div className="stock-intel-mini-spark" aria-hidden="true">
+            <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
           </div>
         </div>
 

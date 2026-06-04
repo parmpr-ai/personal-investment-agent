@@ -74,6 +74,7 @@ const compactVolume = (value: any) => {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return String(Math.round(n))
 }
+const lastPriceValue = (item: any) => item?.last ?? item?.price ?? item?.market_price ?? item?.marketPrice ?? 0
 
 const marketFallback = [
   { name: 'S&P 500', value: '6,241.80', chg: 0.42, spark: [24, 28, 27, 32, 35, 34, 39] },
@@ -1067,16 +1068,16 @@ function WatchlistMovers({ scanner, positions, onSelect, hidden = false }: { sca
   )
 }
 
-function PositionCards({ rows, onSelect, hidden = false, fields, order, tf }: { rows: any[]; onSelect: (position: any) => void; hidden?: boolean; fields: Set<CardFieldKey>; order: CardFieldKey[]; tf: SparkTf }) {
+function PositionCards({ rows, onSelect, hidden = false, fields, order, tf, grid = '1x1' }: { rows: any[]; onSelect: (position: any) => void; hidden?: boolean; fields: Set<CardFieldKey>; order: CardFieldKey[]; tf: SparkTf; grid?: PortfolioCardGrid }) {
   const positions = rows.length ? rows : positionFallback
   const show = (key: CardFieldKey) => fields.has(key)
-  const gridOrder = order.filter((k) => CARD_GRID_FIELDS.includes(k) && show(k))
+  const gridOrder = order.filter((k) => CARD_GRID_FIELDS.includes(k) && k !== 'last' && show(k))
   return (
     <SwipeRail
       title="Positions"
       icon={<BriefcaseBusiness size={18} />}
       items={positions}
-      className="mobile-position-rail"
+      className={`mobile-position-rail mobile-position-grid-${grid}`}
       hideHeader
       render={(position: any) => {
         const risk = Number(position.risk || 0)
@@ -1110,8 +1111,9 @@ function PositionCards({ rows, onSelect, hidden = false, fields, order, tf }: { 
               <div className="mobile-card-symbol">
                 <CompanyLogo source={position} symbol={position.symbol} hidden={hidden} className="mtt-logo" />
                 <div>
-                  <span>{position.name || 'Portfolio holding'}</span>
-                  <strong>{position.symbol}</strong>
+                  <strong>{hidden ? mask : position.symbol}</strong>
+                  <span>{hidden ? 'Workspace item' : position.name || 'Portfolio holding'}</span>
+                  <small className="mobile-card-last-price">{hidden ? mask : money(last)}</small>
                 </div>
               </div>
               <IntelligenceBadge label={pct(change)} tone={change >= 0 ? 'good' : 'bad'} />
@@ -1621,6 +1623,7 @@ function MobileWatchlistCards({ rows, onSelect, onLongPress, hidden, grid = '1x1
     <div className={`mobile-watchlist-card-list${grid === '2x2' ? ' wl-grid-2' : ''}`}>
       {rows.map((row) => {
         const change = Number(row.day_change_pct || 0)
+        const last = lastPriceValue(row)
         const risk = Number(row.risk || 0)
         const momentum = Number(row.momentum_score || row.momentum || 52)
         const macro = row.macro_sensitivity
@@ -1640,8 +1643,9 @@ function MobileWatchlistCards({ rows, onSelect, onLongPress, hidden, grid = '1x1
               <div className="mobile-card-symbol">
                 <CompanyLogo source={row} symbol={row.symbol} hidden={hidden} className="mtt-logo" />
                 <div>
+                  <strong>{hidden ? mask : row.symbol}</strong>
                   <span>{hidden ? 'Workspace item' : row.name || 'Instrument'}</span>
-                  <strong>{row.symbol}</strong>
+                  <small className="mobile-card-last-price">{hidden ? mask : money(last)}</small>
                 </div>
               </div>
               <IntelligenceBadge label={pct(change)} tone={change >= 0 ? 'good' : 'bad'} />
@@ -1735,7 +1739,29 @@ function MobileEditInstruments({
   )
 }
 
-type PortfolioView = 'table' | 'cards'
+type PortfolioView = 'table' | 'cards-1x1' | 'cards-2x2' | 'cards-3x3'
+type PortfolioCardGrid = '1x1' | '2x2' | '3x3'
+const PORTFOLIO_VIEW_OPTIONS: { id: PortfolioView; label: string }[] = [
+  { id: 'table', label: 'Table' },
+  { id: 'cards-1x1', label: 'Cards 1x1' },
+  { id: 'cards-2x2', label: 'Cards 2x2' },
+  { id: 'cards-3x3', label: 'Cards 3x3' },
+]
+
+function normalizePortfolioView(value: string | null): PortfolioView | null {
+  if (value === 'cards') return 'cards-1x1'
+  return PORTFOLIO_VIEW_OPTIONS.some((option) => option.id === value) ? (value as PortfolioView) : null
+}
+
+function portfolioViewLabel(value: PortfolioView) {
+  return PORTFOLIO_VIEW_OPTIONS.find((option) => option.id === value)?.label || 'Table'
+}
+
+function portfolioGridFromView(value: PortfolioView): PortfolioCardGrid {
+  if (value === 'cards-2x2') return '2x2'
+  if (value === 'cards-3x3') return '3x3'
+  return '1x1'
+}
 type CuratedColKey =
   | 'ticker' | 'company' | 'shares' | 'mktvalue' | 'last' | 'avgcost'
   | 'daypnl' | 'daypnlpct' | 'unrealized' | 'unrealizedpct'
@@ -2767,8 +2793,8 @@ export default function MobileExperience() {
     setMounted(true)
     try {
       setHidden(localStorage.getItem('pia.hideAmounts') === 'true')
-      const savedView = localStorage.getItem('pia.portfolioView.mobile')
-      if (savedView === 'cards' || savedView === 'table') setPortfolioView(savedView)
+      const savedView = normalizePortfolioView(localStorage.getItem('pia.portfolioView.mobile'))
+      if (savedView) setPortfolioView(savedView)
       if (localStorage.getItem('pia.portfolioHeader.expanded') === 'false') setHeaderExpanded(false)
       setVisibleCols(readSavedCols())
       setColOrder(readSavedOrder())
@@ -2786,6 +2812,7 @@ export default function MobileExperience() {
   function updatePortfolioView(next: PortfolioView) {
     setPortfolioView(next)
     try { localStorage.setItem('pia.portfolioView.mobile', next) } catch {}
+    setPortfolioMenuOpen(false)
   }
 
   function toggleVisibleCol(key: ColKey) {
@@ -2929,6 +2956,19 @@ export default function MobileExperience() {
         <>
           {portfolioMenuOpen && (
             <MobileSheet title="Portfolio Options" onClose={() => setPortfolioMenuOpen(false)}>
+              <div className="mobile-watchlist-sheet-menu mobile-portfolio-view-options">
+                <span>View</span>
+                {PORTFOLIO_VIEW_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={portfolioView === option.id ? 'active' : ''}
+                    onClick={() => updatePortfolioView(option.id)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
               <div className="mobile-controls-list">
                 <button
                   type="button"
@@ -3025,10 +3065,14 @@ export default function MobileExperience() {
                     </button>
                   ))}
                 </div>
-                <div className="portfolio-view-toggle" role="group" aria-label="Portfolio view mode">
-                  <button className={portfolioView === 'table' ? 'active' : ''} onClick={() => updatePortfolioView('table')}>Table</button>
-                  <button className={portfolioView === 'cards' ? 'active' : ''} onClick={() => updatePortfolioView('cards')}>Cards</button>
-                </div>
+                <button
+                  type="button"
+                  className="pf-view-chip"
+                  aria-label={`Portfolio view: ${portfolioViewLabel(portfolioView)}`}
+                  onClick={() => setPortfolioMenuOpen(true)}
+                >
+                  View
+                </button>
                 <button
                   type="button"
                   className="pf-options-btn"
@@ -3042,7 +3086,7 @@ export default function MobileExperience() {
             </div>
             {portfolioView === 'table'
               ? <MobilePortfolioTable rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} advancedDefs={advancedFieldDefs} />
-              : <PositionCards rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} order={cardOrder} tf={sparkTf} />
+              : <PositionCards rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} order={cardOrder} tf={sparkTf} grid={portfolioGridFromView(portfolioView)} />
             }
           </div>
         </>
