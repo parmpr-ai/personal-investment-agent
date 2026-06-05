@@ -74,6 +74,14 @@ const compactVolume = (value: any) => {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return String(Math.round(n))
 }
+const compactMoney = (v: any) => {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n === 0) return null
+  if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(2)}T`
+  if (Math.abs(n) >= 1e9)  return `$${(n / 1e9).toFixed(2)}B`
+  if (Math.abs(n) >= 1e6)  return `$${(n / 1e6).toFixed(2)}M`
+  return `$${n.toFixed(2)}`
+}
 const lastPriceValue = (item: any) => item?.last ?? item?.price ?? item?.market_price ?? item?.marketPrice ?? 0
 
 const marketFallback = [
@@ -1068,10 +1076,208 @@ function WatchlistMovers({ scanner, positions, onSelect, hidden = false }: { sca
   )
 }
 
+function PositionCard({
+  position, fields, order, tf, grid, hidden, onSelect,
+}: {
+  position: any; fields: Set<CardFieldKey>; order: CardFieldKey[]
+  tf: SparkTf; grid: PortfolioCardGrid; hidden: boolean; onSelect: (p: any) => void
+}) {
+  const show = (key: CardFieldKey) => fields.has(key)
+  const [page, setPage] = useState(0)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const swipedRef = useRef(false)
+  const touchState = useRef<{ x: number; y: number; locked: boolean | null; dx: number }>({ x: 0, y: 0, locked: null, dx: 0 })
+
+  const risk = Number(position.risk || 0)
+  const momentum = Number(position.momentum_score || position.momentum || 52)
+  const change = Number(position.day_change_pct || position.change_pct || 0)
+  const shares = Number(position.quantity ?? position.qty ?? 0)
+  const last = Number(position.last || position.price || 0)
+  const avgCost = Number(position.avg_price ?? position.avg_cost ?? 0)
+  const marketValue = Number(position.market_value ?? last * shares)
+  const dayPnl = Number(position.day_pnl ?? position.day_change ?? 0)
+  const dayChange = Number(position.day_change ?? 0)
+  const unreal = Number(position.unrealized || 0)
+  const unrealPct = Number(
+    position.unrealized_pct != null ? position.unrealized_pct : avgCost > 0 ? ((last - avgCost) / avgCost) * 100 : 0,
+  )
+  const macro = position.macro_sensitivity
+  const newsCount = Number(position.news_count ?? position.news ?? position.news_score ?? 0)
+  const hasAi = Boolean(position.ai_view || position.ai_score != null)
+  const brandColor = position.brand || position.accent || undefined
+  const signed = (v: number, fmt: (n: number) => string) => `${v >= 0 ? '+' : ''}${fmt(v)}`
+
+  const statsOrder = order.filter((k) => (CARD_STAT_KEYS as CardFieldKey[]).includes(k) && show(k))
+  const showBars = show('risk') || show('momentum')
+  const showChips = (show('news') && newsCount > 0) || (show('macro') && macro != null) || (show('ai') && hasAi)
+  const showBottom = show('weight') || showChips
+
+  function renderStatCell(k: CardFieldKey) {
+    switch (k) {
+      case 'shares': return <div key={k} className="mps-cell"><span>Shares</span><b>{hidden ? mask : shares.toLocaleString('en-US')}</b></div>
+      case 'mktvalue': return <div key={k} className="mps-cell"><span>Mkt Value</span><b>{hidden ? mask : money(marketValue)}</b></div>
+      case 'last': return <div key={k} className="mps-cell"><span>Last</span><b>{hidden ? mask : money(last)}</b></div>
+      case 'avgcost': return <div key={k} className="mps-cell"><span>Avg Cost</span><b>{hidden ? mask : money(avgCost)}</b></div>
+      case 'daypnl': return <div key={k} className="mps-cell"><span>Today P&amp;L</span><b className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : `${signed(dayPnl, money)} (${signed(change, (n) => `${n.toFixed(2)}%`)})`}</b></div>
+      case 'unrealized': return <div key={k} className="mps-cell"><span>Unrealized</span><b className={unreal >= 0 ? 'green' : 'red'}>{hidden ? mask : `${signed(unreal, money)} (${signed(unrealPct, (n) => `${n.toFixed(1)}%`)})`}</b></div>
+      case 'unrealizedpct': return <div key={k} className="mps-cell"><span>Unreal %</span><b className={unrealPct >= 0 ? 'green' : 'red'}>{hidden ? mask : signed(unrealPct, (n) => `${n.toFixed(2)}%`)}</b></div>
+      case 'daychange': return <div key={k} className="mps-cell"><span>Day $</span><b className={dayChange >= 0 ? 'green' : 'red'}>{hidden ? mask : signed(dayChange, money)}</b></div>
+      case 'daypct': return <div key={k} className="mps-cell"><span>Day %</span><b className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : signed(change, (n) => `${n.toFixed(2)}%`)}</b></div>
+      case 'volume': return <div key={k} className="mps-cell"><span>Volume</span><b>{hidden ? mask : position.volume != null ? compactVolume(Number(position.volume)) : '—'}</b></div>
+      case 'marketcap': return <div key={k} className="mps-cell"><span>Mkt Cap</span><b>{hidden ? mask : position.market_cap != null ? (compactMoney(position.market_cap) ?? '—') : '—'}</b></div>
+      default: return null
+    }
+  }
+
+  // Sections
+  const sparkSection = show('sparkline') ? (
+    <div className="mobile-position-spark">
+      <Sparkline values={resolveSpark(position, tf)} tone={change >= 0 ? 'good' : 'bad'} />
+      <span className="mobile-spark-tf">{tf}</span>
+    </div>
+  ) : null
+
+  const statsSection = statsOrder.length > 0 ? (
+    <div className="mobile-position-stats">{statsOrder.map(renderStatCell)}</div>
+  ) : null
+
+  const intelSection = (showBars || showBottom) ? (
+    <>
+      {showBars && (
+        <div className="mps-bars">
+          {show('risk') && <RiskBar value={risk || 31} />}
+          {show('momentum') && <MomentumBar value={momentum} />}
+        </div>
+      )}
+      {showBottom && (
+        <div className="mobile-position-bottom">
+          {show('weight') ? (
+            hidden ? (
+              <div className="mobile-exposure-gauge" style={{ '--exposure-value': '0deg' } as CSSProperties}><b>••</b><span>exposure</span></div>
+            ) : (
+              <ExposureGauge value={Number(position.portfolio_pct || 0)} />
+            )
+          ) : <span />}
+          {showChips && (
+            <div className="mps-chips">
+              {show('news') && newsCount > 0 ? <span className="mps-chip"><Newspaper size={12} />{newsCount}</span> : null}
+              {show('macro') && macro != null ? <span className="mps-chip">Macro β {Number(macro)}</span> : null}
+              {show('ai') && hasAi ? <span className="mps-chip mps-chip-ai"><Brain size={12} />AI</span> : null}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  ) : null
+
+  // Swipeable pages for 2x2 only
+  const usePager = grid === '2x2'
+  const pages = usePager
+    ? ([sparkSection, statsSection, intelSection] as Array<ReactNode | null>).filter((p) => p != null)
+    : []
+  const pageCount = pages.length
+  const clampedPage = Math.min(page, Math.max(0, pageCount - 1))
+
+  useEffect(() => {
+    if (!usePager || pageCount <= 1) return
+    const el = bodyRef.current
+    if (!el) return
+    function onStart(e: TouchEvent) {
+      touchState.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null, dx: 0 }
+    }
+    function onMove(e: TouchEvent) {
+      const t = touchState.current
+      const dx = e.touches[0].clientX - t.x
+      const dy = e.touches[0].clientY - t.y
+      if (t.locked === null) {
+        if (Math.abs(dx) > Math.abs(dy) + 6) t.locked = true
+        else if (Math.abs(dy) > Math.abs(dx) + 6) t.locked = false
+      }
+      if (t.locked === true) {
+        e.preventDefault()
+        t.dx = dx
+        const track = el.querySelector<HTMLElement>('.card-pager-track')
+        if (track) track.style.transform = `translateX(calc(${-clampedPage * 100}% + ${dx}px))`
+      }
+    }
+    function onEnd() {
+      const t = touchState.current
+      if (t.locked === true) {
+        if (Math.abs(t.dx) > 12) swipedRef.current = true
+        if (t.dx < -50) setPage((p) => Math.min(p + 1, pageCount - 1))
+        else if (t.dx > 50) setPage((p) => Math.max(p - 1, 0))
+      }
+      const track = el.querySelector<HTMLElement>('.card-pager-track')
+      if (track) track.style.transform = ''
+    }
+    el.addEventListener('touchstart', onStart, { passive: true })
+    el.addEventListener('touchmove', onMove, { passive: false })
+    el.addEventListener('touchend', onEnd, { passive: true })
+    return () => {
+      el.removeEventListener('touchstart', onStart)
+      el.removeEventListener('touchmove', onMove)
+      el.removeEventListener('touchend', onEnd)
+    }
+  }, [usePager, pageCount, clampedPage])
+
+  const header = (
+    <div className="mobile-card-head">
+      <div className="mobile-card-symbol">
+        <CompanyLogo source={position} symbol={position.symbol} hidden={hidden} className="mtt-logo" />
+        <div>
+          <strong>{hidden ? mask : position.symbol}</strong>
+          <span>{hidden ? 'Workspace item' : position.name || 'Portfolio holding'}</span>
+          <small className="mobile-card-last-price">{hidden ? mask : money(last)}</small>
+        </div>
+      </div>
+      <IntelligenceBadge label={pct(change)} tone={change >= 0 ? 'good' : 'bad'} />
+    </div>
+  )
+
+  return (
+    <button
+      className={`mobile-visual-card mobile-position-card${brandColor ? ' themed' : ''}${usePager ? ' has-pages' : ''}`}
+      onClick={(e) => {
+        if (swipedRef.current) { swipedRef.current = false; return }
+        onSelect(position)
+      }}
+      style={brandColor ? { borderTopColor: brandColor } as CSSProperties : undefined}
+    >
+      {header}
+      {usePager ? (
+        <div className="card-pager" ref={bodyRef}>
+          {pageCount > 1 ? (
+            <>
+              <div className="card-pager-clip">
+                <div className="card-pager-track" style={{ transform: `translateX(${-clampedPage * 100}%)` }}>
+                  {pages.map((pg, i) => <div key={i} className="card-pager-page">{pg}</div>)}
+                </div>
+              </div>
+              <div className="card-pager-dots">
+                {pages.map((_, i) => (
+                  <span
+                    key={i}
+                    className={i === clampedPage ? 'active' : ''}
+                    onClick={(e) => { e.stopPropagation(); setPage(i) }}
+                  />
+                ))}
+              </div>
+            </>
+          ) : pages[0] ?? null}
+        </div>
+      ) : (
+        <>
+          {sparkSection}
+          {statsSection}
+          {intelSection}
+        </>
+      )}
+    </button>
+  )
+}
+
 function PositionCards({ rows, onSelect, hidden = false, fields, order, tf, grid = '1x1' }: { rows: any[]; onSelect: (position: any) => void; hidden?: boolean; fields: Set<CardFieldKey>; order: CardFieldKey[]; tf: SparkTf; grid?: PortfolioCardGrid }) {
   const positions = rows.length ? rows : positionFallback
-  const show = (key: CardFieldKey) => fields.has(key)
-  const gridOrder = order.filter((k) => CARD_GRID_FIELDS.includes(k) && k !== 'last' && show(k))
   return (
     <SwipeRail
       title="Positions"
@@ -1079,113 +1285,17 @@ function PositionCards({ rows, onSelect, hidden = false, fields, order, tf, grid
       items={positions}
       className={`mobile-position-rail mobile-position-grid-${grid}`}
       hideHeader
-      render={(position: any) => {
-        const risk = Number(position.risk || 0)
-        const momentum = Number(position.momentum_score || position.momentum || 52)
-        const change = Number(position.day_change_pct || position.change_pct || 0)
-        const shares = Number(position.quantity ?? position.qty ?? 0)
-        const last = Number(position.last || position.price || 0)
-        const avgCost = Number(position.avg_price ?? position.avg_cost ?? 0)
-        const marketValue = Number(position.market_value ?? last * shares)
-        const dayPnl = Number(position.day_pnl ?? position.day_change ?? 0)
-        const unreal = Number(position.unrealized || 0)
-        const unrealPct = Number(
-          position.unrealized_pct != null ? position.unrealized_pct : avgCost > 0 ? ((last - avgCost) / avgCost) * 100 : 0,
-        )
-        const macro = position.macro_sensitivity
-        const newsCount = Number(position.news_count ?? position.news ?? position.news_score ?? 0)
-        const hasAi = Boolean(position.ai_view || position.ai_score != null)
-        const brandColor = position.brand || position.accent || undefined
-        const signed = (value: number, format: (n: number) => string) => `${value >= 0 ? '+' : ''}${format(value)}`
-        const showBars = show('risk') || show('momentum')
-        const showChips = (show('news') && newsCount > 0) || (show('macro') && macro != null) || (show('ai') && hasAi)
-        const showBottom = show('weight') || showChips
-        return (
-          <button
-            className={`mobile-visual-card mobile-position-card${brandColor ? ' themed' : ''}`}
-            onClick={() => onSelect(position)}
-            style={brandColor ? { borderTopColor: brandColor } as CSSProperties : undefined}
-          >
-            {/* Header — ticker, company, daily % */}
-            <div className="mobile-card-head">
-              <div className="mobile-card-symbol">
-                <CompanyLogo source={position} symbol={position.symbol} hidden={hidden} className="mtt-logo" />
-                <div>
-                  <strong>{hidden ? mask : position.symbol}</strong>
-                  <span>{hidden ? 'Workspace item' : position.name || 'Portfolio holding'}</span>
-                  <small className="mobile-card-last-price">{hidden ? mask : money(last)}</small>
-                </div>
-              </div>
-              <IntelligenceBadge label={pct(change)} tone={change >= 0 ? 'good' : 'bad'} />
-            </div>
-
-            {show('sparkline') && (
-              <div className="mobile-position-spark">
-                <Sparkline values={resolveSpark(position, tf)} tone={change >= 0 ? 'good' : 'bad'} />
-                <span className="mobile-spark-tf">{tf}</span>
-              </div>
-            )}
-
-            {/* Position summary, price, performance — rendered in user order */}
-            {gridOrder.length > 0 && (
-              <div className="mobile-position-stats">
-                {gridOrder.map((k) => {
-                  switch (k) {
-                    case 'shares': return <div key={k} className="mps-cell"><span>Shares</span><b>{hidden ? mask : shares.toLocaleString('en-US')}</b></div>
-                    case 'mktvalue': return <div key={k} className="mps-cell"><span>Mkt Value</span><b>{hidden ? mask : money(marketValue)}</b></div>
-                    case 'last': return <div key={k} className="mps-cell"><span>Last</span><b>{hidden ? mask : money(last)}</b></div>
-                    case 'avgcost': return <div key={k} className="mps-cell"><span>Avg Cost</span><b>{hidden ? mask : money(avgCost)}</b></div>
-                    case 'daypnl': return (
-                      <div key={k} className="mps-cell">
-                        <span>Today P&amp;L</span>
-                        <b className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : `${signed(dayPnl, money)} (${signed(change, (n) => `${n.toFixed(2)}%`)})`}</b>
-                      </div>
-                    )
-                    case 'unrealized': return (
-                      <div key={k} className="mps-cell">
-                        <span>Unrealized</span>
-                        <b className={unreal >= 0 ? 'green' : 'red'}>{hidden ? mask : `${signed(unreal, money)} (${signed(unrealPct, (n) => `${n.toFixed(1)}%`)})`}</b>
-                      </div>
-                    )
-                    default: return null
-                  }
-                })}
-              </div>
-            )}
-
-            {/* Intelligence bars — risk & momentum (visible in privacy mode) */}
-            {showBars && (
-              <div className="mps-bars">
-                {show('risk') && <RiskBar value={risk || 31} />}
-                {show('momentum') && <MomentumBar value={momentum} />}
-              </div>
-            )}
-
-            {/* Bottom info row — exposure mini visual + macro / AI / news */}
-            {showBottom && (
-              <div className="mobile-position-bottom">
-                {show('weight') ? (
-                  hidden ? (
-                    <div className="mobile-exposure-gauge" style={{ '--exposure-value': '0deg' } as CSSProperties}>
-                      <b>••</b>
-                      <span>exposure</span>
-                    </div>
-                  ) : (
-                    <ExposureGauge value={Number(position.portfolio_pct || 0)} />
-                  )
-                ) : <span />}
-                {showChips && (
-                  <div className="mps-chips">
-                    {show('news') && newsCount > 0 ? <span className="mps-chip"><Newspaper size={12} />{newsCount}</span> : null}
-                    {show('macro') && macro != null ? <span className="mps-chip">Macro β {Number(macro)}</span> : null}
-                    {show('ai') && hasAi ? <span className="mps-chip mps-chip-ai"><Brain size={12} />AI</span> : null}
-                  </div>
-                )}
-              </div>
-            )}
-          </button>
-        )
-      }}
+      render={(position: any) => (
+        <PositionCard
+          position={position}
+          fields={fields}
+          order={order}
+          tf={tf}
+          grid={grid}
+          hidden={hidden}
+          onSelect={onSelect}
+        />
+      )}
     />
   )
 }
@@ -1511,14 +1621,7 @@ function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, 
       default:              return 0
     }
   }
-  const wlCompactMoney = (v: any) => {
-    const n = Number(v)
-    if (!Number.isFinite(n) || n === 0) return null
-    if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(2)}T`
-    if (Math.abs(n) >= 1e9)  return `$${(n / 1e9).toFixed(2)}B`
-    if (Math.abs(n) >= 1e6)  return `$${(n / 1e6).toFixed(2)}M`
-    return money(n)
-  }
+  const wlCompactMoney = compactMoney
   // Sorting cycles asc -> desc -> default. Both layers use the same sorted array
   // so the frozen Instrument column stays row-aligned. Text keys use localeCompare.
   const sortedRows = sort
@@ -1792,27 +1895,52 @@ const COL_ORDER_LS_KEY = 'pia.portfolioColOrder.mobile.v2'
 
 // Card field visibility (independent from table columns)
 type CardFieldKey =
+  | 'sparkline'
   | 'shares' | 'mktvalue' | 'last' | 'avgcost' | 'daypnl' | 'unrealized'
-  | 'weight' | 'risk' | 'momentum' | 'sparkline' | 'macro' | 'ai' | 'news'
+  | 'unrealizedpct' | 'daychange' | 'daypct' | 'volume' | 'marketcap'
+  | 'weight' | 'risk' | 'momentum' | 'macro' | 'ai' | 'news'
 const CARD_FIELD_DEFS: { key: CardFieldKey; label: string }[] = [
-  { key: 'shares', label: 'Shares' },
-  { key: 'mktvalue', label: 'Market Value' },
-  { key: 'last', label: 'Last Price' },
-  { key: 'avgcost', label: 'Avg Cost' },
-  { key: 'daypnl', label: 'Today P&L' },
-  { key: 'unrealized', label: 'Unrealized P&L' },
-  { key: 'weight', label: 'Portfolio %' },
-  { key: 'risk', label: 'Risk' },
-  { key: 'momentum', label: 'Momentum' },
-  { key: 'sparkline', label: 'Sparkline' },
-  { key: 'macro', label: 'Macro β' },
-  { key: 'ai', label: 'AI' },
-  { key: 'news', label: 'News' },
+  { key: 'sparkline',     label: 'Sparkline' },
+  { key: 'shares',        label: 'Shares' },
+  { key: 'mktvalue',      label: 'Market Value' },
+  { key: 'avgcost',       label: 'Avg Cost' },
+  { key: 'daypnl',        label: 'Today P&L' },
+  { key: 'unrealized',    label: 'Unrealized P&L' },
+  { key: 'unrealizedpct', label: 'Unrealized %' },
+  { key: 'daychange',     label: 'Daily $' },
+  { key: 'daypct',        label: 'Daily %' },
+  { key: 'volume',        label: 'Volume' },
+  { key: 'marketcap',     label: 'Market Cap' },
+  { key: 'last',          label: 'Last Price' },
+  { key: 'weight',        label: 'Portfolio %' },
+  { key: 'risk',          label: 'Risk' },
+  { key: 'momentum',      label: 'Momentum' },
+  { key: 'macro',         label: 'Macro β' },
+  { key: 'ai',            label: 'AI' },
+  { key: 'news',          label: 'News' },
 ]
-const CARD_FIELDS_LS_KEY = 'pia.portfolioCardFields.mobile'
-const CARD_ORDER_LS_KEY = 'pia.portfolioCardOrder.mobile'
-// Card fields whose display order can be applied to the card stat grid.
-const CARD_GRID_FIELDS: CardFieldKey[] = ['shares', 'mktvalue', 'last', 'avgcost', 'daypnl', 'unrealized']
+// All stat-cell fields (rendered in the body, not the always-visible header)
+const CARD_STAT_KEYS: CardFieldKey[] = [
+  'shares', 'mktvalue', 'last', 'avgcost', 'daypnl', 'unrealized',
+  'unrealizedpct', 'daychange', 'daypct', 'volume', 'marketcap',
+]
+const CARD_INTEL_KEYS: CardFieldKey[] = ['risk', 'momentum', 'weight', 'news', 'macro', 'ai']
+const CARD_PREFS_LS_KEY = 'pia.cardPrefs.v1'
+
+type CardModeConfig = { fields: Set<CardFieldKey>; order: CardFieldKey[] }
+type CardPrefs = Record<PortfolioCardGrid, CardModeConfig>
+
+function defaultCardPrefs(): CardPrefs {
+  const all = CARD_FIELD_DEFS.map((c) => c.key)
+  const compact1x1: CardFieldKey[] = ['sparkline', 'shares', 'mktvalue', 'avgcost', 'daypnl', 'unrealized', 'weight', 'risk', 'momentum', 'macro', 'ai', 'news']
+  const compact2x2: CardFieldKey[] = ['sparkline', 'daypnl', 'shares', 'mktvalue']
+  const compact3x3: CardFieldKey[] = ['sparkline']
+  return {
+    '1x1': { fields: new Set(compact1x1), order: [...compact1x1, ...all.filter(k => !compact1x1.includes(k as CardFieldKey))] },
+    '2x2': { fields: new Set(compact2x2), order: [...compact2x2, ...all.filter(k => !compact2x2.includes(k as CardFieldKey))] },
+    '3x3': { fields: new Set(compact3x3), order: [...compact3x3, ...all.filter(k => !compact3x3.includes(k as CardFieldKey))] },
+  }
+}
 
 type ManualInstrumentMatch = InstrumentMatch
 
@@ -1849,6 +1977,10 @@ const FIELD_INFO: Record<string, string> = {
   risk: 'PIA risk score from 0 (low) to 100 (high).',
   momentum: 'PIA momentum score from 0 (weak) to 100 (strong).',
   sparkline: 'Mini price trend for the selected timeframe.',
+  daychange: "Today's price change in dollars.",
+  daypct: "Today's price change in percent.",
+  volume: 'Number of shares traded today.',
+  marketcap: 'Total market capitalisation of the instrument.',
   macro: 'Macro sensitivity (beta) to broad market moves.',
   ai: 'An AI view is available for this position.',
   news: 'Recent news activity for this instrument.',
@@ -1897,30 +2029,35 @@ function resolveSpark(position: any, tf: SparkTf): number[] | undefined {
   return position?.spark
 }
 
-function readSavedCardFields(): Set<CardFieldKey> {
-  try {
-    const raw = localStorage.getItem(CARD_FIELDS_LS_KEY)
-    if (raw) {
-      const arr = JSON.parse(raw) as CardFieldKey[]
-      if (Array.isArray(arr)) return new Set(arr)
-    }
-  } catch {}
-  return new Set(CARD_FIELD_DEFS.map((c) => c.key))
-}
-
-function readSavedCardOrder(): CardFieldKey[] {
+function readSavedCardPrefs(): CardPrefs {
+  const defaults = defaultCardPrefs()
   const all = CARD_FIELD_DEFS.map((c) => c.key)
   try {
-    const raw = localStorage.getItem(CARD_ORDER_LS_KEY)
+    const raw = localStorage.getItem(CARD_PREFS_LS_KEY)
     if (raw) {
-      const arr = JSON.parse(raw) as CardFieldKey[]
-      if (Array.isArray(arr) && arr.length) {
-        // keep saved order, then append any new fields not yet stored
-        return [...arr.filter((k) => all.includes(k)), ...all.filter((k) => !arr.includes(k))]
+      const saved = JSON.parse(raw) as Record<string, { fields: CardFieldKey[]; order: CardFieldKey[] }>
+      const parse = (grid: PortfolioCardGrid): CardModeConfig => {
+        const s = saved[grid]
+        if (!s) return defaults[grid]
+        const fields = Array.isArray(s.fields) ? new Set(s.fields.filter(k => all.includes(k as CardFieldKey))) : defaults[grid].fields
+        const order = Array.isArray(s.order) && s.order.length
+          ? [...s.order.filter(k => all.includes(k as CardFieldKey)), ...all.filter(k => !s.order.includes(k as CardFieldKey))]
+          : defaults[grid].order
+        return { fields, order }
       }
+      return { '1x1': parse('1x1'), '2x2': parse('2x2'), '3x3': parse('3x3') }
     }
   } catch {}
-  return all
+  return defaults
+}
+
+function saveCardPrefs(prefs: CardPrefs) {
+  try {
+    const serializable = Object.fromEntries(
+      Object.entries(prefs).map(([g, c]) => [g, { fields: [...c.fields], order: c.order }])
+    )
+    localStorage.setItem(CARD_PREFS_LS_KEY, JSON.stringify(serializable))
+  } catch {}
 }
 
 function readSavedSparkTf(): SparkTf {
@@ -2727,8 +2864,10 @@ export default function MobileExperience() {
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key)))
   const [colOrder, setColOrder] = useState<ColKey[]>(() => COL_DEFS.map((c) => c.key))
-  const [cardFields, setCardFields] = useState<Set<CardFieldKey>>(() => new Set(CARD_FIELD_DEFS.map((c) => c.key)))
-  const [cardOrder, setCardOrder] = useState<CardFieldKey[]>(() => CARD_FIELD_DEFS.map((c) => c.key))
+  const [cardPrefs, setCardPrefs] = useState<CardPrefs>(() => readSavedCardPrefs())
+  const currentGrid = portfolioGridFromView(portfolioView)
+  const cardFields = cardPrefs[currentGrid].fields
+  const cardOrder = cardPrefs[currentGrid].order
   const [sparkTf, setSparkTf] = useState<SparkTf>(DEFAULT_SPARK_TF)
   const [quickOpen, setQuickOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -2802,8 +2941,7 @@ export default function MobileExperience() {
       if (localStorage.getItem('pia.portfolioHeader.expanded') === 'false') setHeaderExpanded(false)
       setVisibleCols(readSavedCols())
       setColOrder(readSavedOrder())
-      setCardFields(readSavedCardFields())
-      setCardOrder(readSavedCardOrder())
+      setCardPrefs(readSavedCardPrefs())
       setSparkTf(readSavedSparkTf())
     } catch {}
     fetchJson('/source-health')
@@ -2845,22 +2983,22 @@ export default function MobileExperience() {
   }
 
   function toggleCardField(key: CardFieldKey) {
-    const next = new Set(cardFields)
+    const grid = portfolioGridFromView(portfolioView)
+    const current = cardPrefs[grid]
+    const next = new Set(current.fields)
     if (next.has(key)) next.delete(key)
     else next.add(key)
-    setCardFields(next)
-    try { localStorage.setItem(CARD_FIELDS_LS_KEY, JSON.stringify([...next])) } catch {}
+    const updated = { ...cardPrefs, [grid]: { ...current, fields: next } }
+    setCardPrefs(updated)
+    saveCardPrefs(updated)
   }
 
   function resetCardFields() {
-    const def = new Set(CARD_FIELD_DEFS.map((c) => c.key))
-    const defOrder = CARD_FIELD_DEFS.map((c) => c.key)
-    setCardFields(def)
-    setCardOrder(defOrder)
-    try {
-      localStorage.setItem(CARD_FIELDS_LS_KEY, JSON.stringify([...def]))
-      localStorage.setItem(CARD_ORDER_LS_KEY, JSON.stringify(defOrder))
-    } catch {}
+    const grid = portfolioGridFromView(portfolioView)
+    const fresh = defaultCardPrefs()
+    const updated = { ...cardPrefs, [grid]: fresh[grid] }
+    setCardPrefs(updated)
+    saveCardPrefs(updated)
   }
 
   function updateSparkTf(next: SparkTf) {
@@ -3034,7 +3172,7 @@ export default function MobileExperience() {
             />
           ) : (
             <MobileManageDisplay
-              title="Manage Card Fields"
+              title={`Manage ${currentGrid.toUpperCase()} Card Fields`}
               addLabel="Add Fields"
               order={cardOrder}
               visible={cardFields}
@@ -3046,7 +3184,12 @@ export default function MobileExperience() {
               sparkTf={sparkTf}
               onSparkTf={updateSparkTf}
               onToggle={(k) => toggleCardField(k as CardFieldKey)}
-              onReorder={(next) => { setCardOrder(next as CardFieldKey[]); try { localStorage.setItem(CARD_ORDER_LS_KEY, JSON.stringify(next)) } catch {} }}
+              onReorder={(next) => {
+                const grid = portfolioGridFromView(portfolioView)
+                const updated = { ...cardPrefs, [grid]: { ...cardPrefs[grid], order: next as CardFieldKey[] } }
+                setCardPrefs(updated)
+                saveCardPrefs(updated)
+              }}
               onReset={resetCardFields}
               onClose={() => setColMenuOpen(false)}
             />
