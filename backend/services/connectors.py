@@ -128,6 +128,7 @@ def _numbers(values: Any) -> List[float]:
 _YAHOO_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json,text/plain,*/*"}
 _YAHOO_AUTH: tuple[float, str, Dict[str, str]] | None = None
 _YAHOO_QUOTE_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
+_YAHOO_RECOMMENDATION_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
 _YAHOO_AUTH_SECONDS = 1800
 _YAHOO_QUOTE_SECONDS = 300
 
@@ -140,6 +141,12 @@ def _number_or_none(value: Any) -> float | None:
         return parsed if parsed == parsed else None
     except (TypeError, ValueError):
         return None
+
+
+def _raw_yahoo_value(value: Any) -> Any:
+    if isinstance(value, dict) and "raw" in value:
+        return value.get("raw")
+    return value
 
 
 def _yahoo_auth(force: bool = False) -> tuple[str, Dict[str, str]]:
@@ -178,6 +185,14 @@ def _yahoo_quote_snapshot(symbol: str) -> Dict[str, Any]:
             "marketCap",
             "sharesOutstanding",
             "floatShares",
+            "targetMeanPrice",
+            "targetHighPrice",
+            "targetLowPrice",
+            "targetMedianPrice",
+            "recommendationMean",
+            "recommendationKey",
+            "numberOfAnalystOpinions",
+            "averageAnalystRating",
         ]
     )
     for attempt in range(2):
@@ -195,6 +210,37 @@ def _yahoo_quote_snapshot(symbol: str) -> Dict[str, Any]:
                 quote = ((data.get("quoteResponse") or {}).get("result") or [{}])[0]
                 _YAHOO_QUOTE_CACHE[key] = (now, quote)
                 return quote
+        except Exception:
+            if attempt == 1:
+                return {}
+    return {}
+
+
+def _yahoo_recommendation_snapshot(symbol: str) -> Dict[str, Any]:
+    key = symbol.upper()
+    now = time.time()
+    cached = _YAHOO_RECOMMENDATION_CACHE.get(key)
+    if cached and now - cached[0] < _YAHOO_QUOTE_SECONDS:
+        return cached[1]
+    for attempt in range(2):
+        try:
+            crumb, cookies = _yahoo_auth(force=attempt > 0)
+            with httpx.Client(headers=_YAHOO_HEADERS, cookies=cookies, timeout=8, follow_redirects=True) as client:
+                response = client.get(
+                    f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{key}",
+                    params={"modules": "recommendationTrend,financialData", "crumb": crumb},
+                )
+                if response.status_code == 401 and attempt == 0:
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                result = (((data.get("quoteSummary") or {}).get("result") or [{}])[0] or {})
+                trend = (((result.get("recommendationTrend") or {}).get("trend") or [{}])[0] or {})
+                financial_data = result.get("financialData") or {}
+                normalized = {name: _raw_yahoo_value(value) for name, value in financial_data.items()}
+                normalized.update({name: _raw_yahoo_value(value) for name, value in trend.items()})
+                _YAHOO_RECOMMENDATION_CACHE[key] = (now, normalized)
+                return normalized
         except Exception:
             if attempt == 1:
                 return {}
@@ -293,6 +339,7 @@ def yahoo_fundamentals(ticker: str) -> Dict[str, Any]:
         out["history_error"] = str(e)
 
     quote_snapshot = _yahoo_quote_snapshot(symbol)
+    recommendation_snapshot = _yahoo_recommendation_snapshot(symbol)
     pe = _number_or_none(quote_snapshot.get("trailingPE"))
     eps = _number_or_none(quote_snapshot.get("epsTrailingTwelveMonths") or quote_snapshot.get("trailingEps"))
     beta = _number_or_none(quote_snapshot.get("beta"))
@@ -300,6 +347,14 @@ def yahoo_fundamentals(ticker: str) -> Dict[str, Any]:
     market_cap = _number_or_none(quote_snapshot.get("marketCap"))
     shares_outstanding = _number_or_none(quote_snapshot.get("sharesOutstanding"))
     float_shares = _number_or_none(quote_snapshot.get("floatShares"))
+    target_mean = _number_or_none(quote_snapshot.get("targetMeanPrice") or recommendation_snapshot.get("targetMeanPrice"))
+    target_high = _number_or_none(quote_snapshot.get("targetHighPrice") or recommendation_snapshot.get("targetHighPrice"))
+    target_low = _number_or_none(quote_snapshot.get("targetLowPrice") or recommendation_snapshot.get("targetLowPrice"))
+    target_median = _number_or_none(quote_snapshot.get("targetMedianPrice") or recommendation_snapshot.get("targetMedianPrice"))
+    recommendation_mean = _number_or_none(quote_snapshot.get("recommendationMean") or recommendation_snapshot.get("recommendationMean"))
+    analyst_count = _number_or_none(quote_snapshot.get("numberOfAnalystOpinions") or recommendation_snapshot.get("numberOfAnalystOpinions"))
+    recommendation_key = quote_snapshot.get("recommendationKey") or recommendation_snapshot.get("recommendationKey")
+    average_analyst_rating = quote_snapshot.get("averageAnalystRating") or recommendation_snapshot.get("averageAnalystRating")
 
     if pe is not None:
         out["pe"] = pe
@@ -324,6 +379,59 @@ def yahoo_fundamentals(ticker: str) -> Dict[str, Any]:
     if float_shares is not None:
         out["float"] = float_shares
         out["floatShares"] = float_shares
+
+    recommendation_trend = recommendation_snapshot
+    strong_buy = _number_or_none(recommendation_trend.get("strongBuy"))
+    buy = _number_or_none(recommendation_trend.get("buy"))
+    hold = _number_or_none(recommendation_trend.get("hold"))
+    sell = _number_or_none(recommendation_trend.get("sell"))
+    strong_sell = _number_or_none(recommendation_trend.get("strongSell"))
+    buy_count = None if strong_buy is None and buy is None else int((strong_buy or 0) + (buy or 0))
+    hold_count = None if hold is None else int(hold)
+    sell_count = None if sell is None and strong_sell is None else int((sell or 0) + (strong_sell or 0))
+
+    analyst_targets: Dict[str, Any] = {}
+    if price is not None:
+        analyst_targets["current_price"] = price
+    if target_mean is not None:
+        out["targetMeanPrice"] = target_mean
+        analyst_targets["average_target"] = target_mean
+    if target_high is not None:
+        out["targetHighPrice"] = target_high
+        analyst_targets["high_target"] = target_high
+    if target_low is not None:
+        out["targetLowPrice"] = target_low
+        analyst_targets["low_target"] = target_low
+    if target_median is not None:
+        out["targetMedianPrice"] = target_median
+        analyst_targets["median_target"] = target_median
+    if target_mean is not None and price:
+        upside_pct = ((target_mean - float(price)) / float(price)) * 100
+        out["analyst_upside_pct"] = upside_pct
+        analyst_targets["upside_downside_pct"] = upside_pct
+    if recommendation_mean is not None:
+        out["recommendationMean"] = recommendation_mean
+        analyst_targets["recommendation_mean"] = recommendation_mean
+    if recommendation_key:
+        out["recommendationKey"] = recommendation_key
+        analyst_targets["consensus_rating"] = recommendation_key
+    if average_analyst_rating:
+        out["averageAnalystRating"] = average_analyst_rating
+        analyst_targets["average_analyst_rating"] = average_analyst_rating
+    if analyst_count is not None:
+        out["numberOfAnalystOpinions"] = int(analyst_count)
+        analyst_targets["analyst_count"] = int(analyst_count)
+    rating_distribution = {
+        key: value
+        for key, value in {"buy": buy_count, "hold": hold_count, "sell": sell_count}.items()
+        if value is not None
+    }
+    if rating_distribution:
+        out["recommendationTrend"] = rating_distribution
+        analyst_targets["rating_distribution"] = rating_distribution
+    if any(key in analyst_targets for key in ("average_target", "high_target", "low_target", "consensus_rating", "analyst_count", "rating_distribution")):
+        out["analyst_targets"] = analyst_targets
+
     if quote_snapshot and out.get("status") == "no_data":
         out["status"] = "ok"
     return out

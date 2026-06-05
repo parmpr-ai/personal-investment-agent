@@ -117,6 +117,156 @@ function TodayRangeHero({ source, hidden }: { source: any; hidden: boolean }) {
   )
 }
 
+function strictNumber(value: unknown) {
+  if (value == null || value === '') return null
+  const cleaned = String(value).replace(/[^0-9.-]/g, '')
+  if (!cleaned || cleaned === '-' || cleaned === '.') return null
+  const parsed = Number(cleaned)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function titleCase(value: string) {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function analystValue(source: any, keys: string[]) {
+  const bundle = source?.analyst_targets || source?.analystTargets || source?.fundamentals?.analyst_targets || source?.fundamentals?.analystTargets || {}
+  for (const key of keys) {
+    const nested = bundle?.[key]
+    if (nested != null && nested !== '') return nested
+    const fundamentals = source?.fundamentals?.[key]
+    if (fundamentals != null && fundamentals !== '') return fundamentals
+    const direct = source?.[key]
+    if (direct != null && direct !== '') return direct
+  }
+  return undefined
+}
+
+function analystDistributionValue(source: any, keys: string[]) {
+  const bundle = source?.analyst_targets || source?.analystTargets || source?.fundamentals?.analyst_targets || source?.fundamentals?.analystTargets || {}
+  const distribution = bundle?.rating_distribution || bundle?.ratingDistribution || source?.recommendationTrend || source?.fundamentals?.recommendationTrend || {}
+  for (const key of keys) {
+    const value = distribution?.[key] ?? bundle?.[key] ?? source?.fundamentals?.[key] ?? source?.[key]
+    if (value != null && value !== '') return value
+  }
+  return undefined
+}
+
+function analystTargetsData(source: any) {
+  const current = strictNumber(analystValue(source, ['current_price', 'currentPrice', 'last', 'price', 'regularMarketPrice']))
+  const average = strictNumber(analystValue(source, ['average_target', 'averageTarget', 'targetMeanPrice', 'target_mean_price']))
+  const low = strictNumber(analystValue(source, ['low_target', 'lowTarget', 'targetLowPrice', 'target_low_price']))
+  const high = strictNumber(analystValue(source, ['high_target', 'highTarget', 'targetHighPrice', 'target_high_price']))
+  const count = strictNumber(analystValue(source, ['analyst_count', 'analystCount', 'numberOfAnalystOpinions']))
+  const recommendationMean = strictNumber(analystValue(source, ['recommendation_mean', 'recommendationMean']))
+  const rawRating = analystValue(source, ['consensus_rating', 'consensusRating', 'recommendationKey', 'average_analyst_rating', 'averageAnalystRating'])
+  const rating = rawRating ? titleCase(String(rawRating)) : recommendationMean != null ? `Mean ${recommendationMean.toFixed(1)}` : ''
+  const buy = strictNumber(analystDistributionValue(source, ['buy', 'buy_count', 'buyCount', 'analyst_buy_count']))
+  const hold = strictNumber(analystDistributionValue(source, ['hold', 'hold_count', 'holdCount', 'analyst_hold_count']))
+  const sell = strictNumber(analystDistributionValue(source, ['sell', 'sell_count', 'sellCount', 'analyst_sell_count']))
+  const upside = average != null && current ? ((average - current) / current) * 100 : strictNumber(analystValue(source, ['upside_downside_pct', 'upsideDownsidePct', 'analyst_upside_pct']))
+  const hasData = [average, low, high, count, buy, hold, sell].some((value) => value != null) || Boolean(rating)
+  return { current, average, low, high, upside, rating, count, buy, hold, sell, hasData }
+}
+
+function AnalystTargetsWidget({ source, hidden }: { source: any; hidden: boolean }) {
+  const data = analystTargetsData(source)
+  if (!data.hasData) {
+    return (
+      <section className="stock-analyst-targets stock-analyst-targets-empty" aria-label="Analyst targets">
+        <div className="sat-head">
+          <span>Analyst Targets</span>
+          <Target size={15} />
+        </div>
+        <p>{hidden ? mask : 'Analyst targets unavailable'}</p>
+      </section>
+    )
+  }
+
+  const rangeReady = data.low != null && data.high != null && data.high > data.low
+  const rangeMin = rangeReady ? data.low || 0 : 0
+  const rangeMax = rangeReady ? data.high || 0 : 0
+  const marker = (value: number | null) => {
+    if (!rangeReady || value == null) return 0
+    return Math.max(0, Math.min(100, ((value - rangeMin) / (rangeMax - rangeMin)) * 100))
+  }
+  const ratingRows = [
+    { label: 'Buy', value: data.buy, className: 'buy' },
+    { label: 'Hold', value: data.hold, className: 'hold' },
+    { label: 'Sell', value: data.sell, className: 'sell' },
+  ].filter((item) => item.value != null)
+  const ratingTotal = ratingRows.reduce((sum, item) => sum + Number(item.value || 0), 0)
+  const statRows = [
+    data.low != null ? ['Low Target', money(data.low)] : null,
+    data.high != null ? ['High Target', money(data.high)] : null,
+    data.rating ? ['Consensus', data.rating] : null,
+    data.count != null ? ['Analysts', String(Math.trunc(data.count))] : null,
+  ].filter(Boolean) as string[][]
+
+  return (
+    <section className="stock-analyst-targets" aria-label="Analyst targets">
+      <div className="sat-head">
+        <span>Analyst Targets</span>
+        <Target size={15} />
+      </div>
+      <div className="sat-main">
+        {data.current != null ? (
+          <div>
+            <span>Current Price</span>
+            <b>{hidden ? mask : money(data.current)}</b>
+          </div>
+        ) : null}
+        {data.average != null ? (
+          <div>
+            <span>Average Target</span>
+            <b>{hidden ? mask : money(data.average)}</b>
+          </div>
+        ) : null}
+        {data.upside != null ? (
+          <strong className={data.upside >= 0 ? 'sat-upside positive' : 'sat-upside negative'}>
+            {hidden ? mask : `${data.upside >= 0 ? '+' : ''}${data.upside.toFixed(1)}%`}
+          </strong>
+        ) : null}
+      </div>
+      {rangeReady ? (
+        <div className="sat-range">
+          <div className="sat-range-labels">
+            <span>{hidden ? mask : money(data.low || 0)}</span>
+            <span>{hidden ? mask : money(data.high || 0)}</span>
+          </div>
+          <div className="sat-track">
+            {data.current != null ? <i className="sat-marker sat-current" style={{ left: `${marker(data.current)}%` }} aria-hidden="true" /> : null}
+            {data.average != null ? <i className="sat-marker sat-average" style={{ left: `${marker(data.average)}%` }} aria-hidden="true" /> : null}
+          </div>
+        </div>
+      ) : null}
+      {statRows.length ? (
+        <div className="sat-stats">
+          {statRows.map(([label, value]) => (
+            <div key={label}>
+              <span>{label}</span>
+              <b>{hidden ? mask : value}</b>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {ratingRows.length ? (
+        <div className="sat-ratings" aria-label="Analyst rating distribution">
+          {ratingRows.map((item) => (
+            <div className="sat-rating" key={item.label}>
+              <span>{item.label}</span>
+              <i><em className={item.className} style={{ width: `${hidden || !ratingTotal ? 0 : Math.max(6, (Number(item.value || 0) / ratingTotal) * 100)}%` }} /></i>
+              <b>{hidden ? mask : Math.trunc(Number(item.value || 0))}</b>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function MetricRow({ label, value, tone = 'blue', hidden }: { label: string; value: number; tone?: string; hidden: boolean }) {
   return (
     <div className="metric-bar">
@@ -565,6 +715,8 @@ export default function StockIntelligencePanel({
             <TodayRangeHero source={{ ...source, fundamentals }} hidden={hidden} />
           </div>
         </div>
+
+        <AnalystTargetsWidget source={{ ...source, ...fundamentals, fundamentals }} hidden={hidden} />
 
         <StockKeyMetrics source={{ ...source, fundamentals, company }} hidden={hidden} ticker={symbol} />
       </section>
