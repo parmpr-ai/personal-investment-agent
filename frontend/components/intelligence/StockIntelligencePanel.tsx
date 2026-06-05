@@ -171,6 +171,104 @@ function analystTargetsData(source: any) {
   return { current, average, low, high, upside, rating, count, buy, hold, sell, hasData }
 }
 
+function analystDetailContainers(source: any) {
+  const fundamentals = source?.fundamentals || {}
+  const intelligence = source?.intelligence || {}
+  return [
+    source?.analyst_targets,
+    source?.analystTargets,
+    fundamentals?.analyst_targets,
+    fundamentals?.analystTargets,
+    intelligence?.analyst_targets,
+    intelligence?.analystTargets,
+    source,
+    fundamentals,
+    intelligence,
+  ].filter(Boolean)
+}
+
+function analystDetailRows(source: any) {
+  const keys = [
+    'details',
+    'detail',
+    'history',
+    'analyst_history',
+    'analystHistory',
+    'analystPriceTargets',
+    'analyst_price_targets',
+    'priceTargetHistory',
+    'price_target_history',
+    'upgradeDowngradeHistory',
+    'upgrade_downgrade_history',
+  ]
+  const rows: any[] = []
+  for (const container of analystDetailContainers(source)) {
+    if (Array.isArray(container)) {
+      rows.push(...container)
+      continue
+    }
+    for (const key of keys) {
+      const value = container?.[key]
+      if (Array.isArray(value)) rows.push(...value)
+      else if (Array.isArray(value?.history)) rows.push(...value.history)
+      else if (Array.isArray(value?.items)) rows.push(...value.items)
+      else if (Array.isArray(value?.rows)) rows.push(...value.rows)
+      else if (value && typeof value === 'object') rows.push(value)
+    }
+  }
+
+  return rows
+    .map((row) => {
+      const target = strictNumber(row?.target_price ?? row?.targetPrice ?? row?.priceTarget ?? row?.target ?? row?.to_price ?? row?.toPrice)
+      const firm = row?.firm ?? row?.source ?? row?.company ?? row?.brokerage
+      const analyst = row?.analyst ?? row?.analyst_name ?? row?.analystName
+      const rating = row?.rating ?? row?.toGrade ?? row?.to_grade ?? row?.grade ?? row?.recommendation
+      const rawDate = row?.date ?? row?.published_at ?? row?.publishedAt ?? row?.reportDate ?? row?.actionDate ?? row?.epochGradeDate
+      const action = normalizeAnalystAction(row?.action ?? row?.type ?? row?.event)
+      const date = formatAnalystDate(rawDate)
+      return {
+        firm: firm ? String(firm) : '',
+        analyst: analyst ? String(analyst) : '',
+        target,
+        rating: rating ? String(rating) : '',
+        date,
+        action,
+      }
+    })
+    .filter((row) => row.firm || row.analyst || row.target != null || row.rating || row.date || row.action)
+    .slice(0, 8)
+}
+
+function normalizeAnalystAction(value: unknown) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return ''
+  const mapped: Record<string, string> = {
+    up: 'Raised',
+    raised: 'Raised',
+    raise: 'Raised',
+    down: 'Lowered',
+    lowered: 'Lowered',
+    lower: 'Lowered',
+    main: 'Reiterated',
+    reiterate: 'Reiterated',
+    reiterated: 'Reiterated',
+    init: 'Initiated',
+    initiated: 'Initiated',
+    initiate: 'Initiated',
+  }
+  return mapped[raw] || titleCase(raw)
+}
+
+function formatAnalystDate(value: unknown) {
+  if (value == null || value === '') return ''
+  const numericValue = typeof value === 'number' ? value : Number(value)
+  const date = Number.isFinite(numericValue)
+    ? new Date(numericValue > 100000000000 ? numericValue : numericValue * 1000)
+    : new Date(String(value))
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 function AnalystTargetsWidget({ source, hidden }: { source: any; hidden: boolean }) {
   const data = analystTargetsData(source)
   if (!data.hasData) {
@@ -204,6 +302,7 @@ function AnalystTargetsWidget({ source, hidden }: { source: any; hidden: boolean
     data.rating ? ['Consensus', data.rating] : null,
     data.count != null ? ['Analysts', String(Math.trunc(data.count))] : null,
   ].filter(Boolean) as string[][]
+  const upsideTone = data.upside == null ? 'neutral' : data.upside > 0 ? 'positive' : data.upside < 0 ? 'negative' : 'neutral'
 
   return (
     <section className="stock-analyst-targets" aria-label="Analyst targets">
@@ -225,7 +324,7 @@ function AnalystTargetsWidget({ source, hidden }: { source: any; hidden: boolean
           </div>
         ) : null}
         {data.upside != null ? (
-          <strong className={data.upside >= 0 ? 'sat-upside positive' : 'sat-upside negative'}>
+          <strong className={`sat-upside ${upsideTone}`}>
             {hidden ? mask : `${data.upside >= 0 ? '+' : ''}${data.upside.toFixed(1)}%`}
           </strong>
         ) : null}
@@ -264,6 +363,35 @@ function AnalystTargetsWidget({ source, hidden }: { source: any; hidden: boolean
         </div>
       ) : null}
     </section>
+  )
+}
+
+function AnalystTargetsDetail({ source, hidden }: { source: any; hidden: boolean }) {
+  const rows = analystDetailRows(source)
+  return (
+    <PiaCard className="stock-intel-tech-card stock-analyst-detail-card" title={hidden ? 'Workspace' : 'Analyst Targets'} badge={<Target size={16} />}>
+      {rows.length ? (
+        <div className="sat-detail-list">
+          {rows.map((row, index) => (
+            <article className="sat-detail-row" key={`${row.firm || row.analyst || row.rating || 'analyst'}-${row.date || index}`}>
+              <div className="sat-detail-copy">
+                {row.firm || row.analyst ? <strong>{hidden ? mask : [row.firm, row.analyst].filter(Boolean).join(' - ')}</strong> : null}
+                <div className="sat-detail-meta">
+                  {row.date ? <span>{hidden ? mask : row.date}</span> : null}
+                  {row.action ? <span>{hidden ? mask : row.action}</span> : null}
+                </div>
+              </div>
+              <div className="sat-detail-values">
+                {row.target != null ? <b>{hidden ? mask : money(row.target)}</b> : null}
+                {row.rating ? <span>{hidden ? mask : row.rating}</span> : null}
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="stock-analyst-detail-empty">{hidden ? mask : 'Detailed analyst history unavailable'}</p>
+      )}
+    </PiaCard>
   )
 }
 
@@ -716,8 +844,6 @@ export default function StockIntelligencePanel({
           </div>
         </div>
 
-        <AnalystTargetsWidget source={{ ...source, ...fundamentals, fundamentals }} hidden={hidden} />
-
         <StockKeyMetrics source={{ ...source, fundamentals, company }} hidden={hidden} ticker={symbol} />
       </section>
 
@@ -741,6 +867,8 @@ export default function StockIntelligencePanel({
             </PiaCard>
 
             <StockAiIntelligenceWidget source={source} overview={overview} technical={technical} targets={targets} hidden={hidden} />
+
+            <AnalystTargetsWidget source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} />
 
             <PiaCard title={hidden ? 'Updates' : 'Recent News'}>
               <RecentNewsPreview items={newsIntelligence.items || []} hidden={hidden} />
@@ -779,6 +907,8 @@ export default function StockIntelligencePanel({
               />
               <p>{hidden ? mask : techPlan.implication}</p>
             </PiaCard>
+
+            <AnalystTargetsDetail source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} />
 
             <PiaCard className="stock-intel-tech-card" title={hidden ? 'Workspace' : 'Technical Summary'}>
               <DetailGrid
