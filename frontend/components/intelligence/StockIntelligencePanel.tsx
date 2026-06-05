@@ -107,9 +107,7 @@ function TodayRangeHero({ source, hidden }: { source: any; hidden: boolean }) {
         <b>{money(low)} - {money(high)}</b>
       </div>
       <div className="stock-intel-hero-range-track">
-        <i className="stock-intel-live-marker" style={{ left: `${marker}%` }}>
-          <span>Live</span>
-        </i>
+        <i className="stock-intel-range-marker" style={{ left: `${marker}%` }} aria-hidden="true" />
       </div>
       <div className="stock-intel-range-values">
         <span>Low {money(low)}</span>
@@ -560,9 +558,11 @@ export default function StockIntelligencePanel({
               ) : null}
             </div>
           </div>
-          <TodayRangeHero source={{ ...source, fundamentals }} hidden={hidden} />
-          <div className="stock-intel-mini-spark" aria-hidden="true">
-            <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
+          <div className="stock-intel-quote-rail">
+            <div className="stock-intel-mini-spark" aria-hidden="true">
+              <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
+            </div>
+            <TodayRangeHero source={{ ...source, fundamentals }} hidden={hidden} />
           </div>
         </div>
 
