@@ -2719,7 +2719,7 @@ export default function MobileExperience() {
   const [mounted, setMounted] = useState(false)
   const [hidden, setHidden] = useState(false)
   const [portfolioView, setPortfolioView] = useState<PortfolioView>('table')
-  const [positionFilter, setPositionFilter] = useState<'all' | 'stocks' | 'options'>('all')
+  const [positionFilter, setPositionFilter] = useState<'all' | 'stocks' | 'options' | 'crypto'>('all')
   const [headerExpanded, setHeaderExpanded] = useState(true)
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const [portfolioMenuOpen, setPortfolioMenuOpen] = useState(false)
@@ -2752,8 +2752,12 @@ export default function MobileExperience() {
   const filteredPositions = useMemo(() => {
     if (positionFilter === 'all') return positions
     return positions.filter((p: any) => {
-      const isOption = p.asset_class === 'Option' || p.instrument_type === 'OPT' || String(p.symbol || '').includes(' ')
-      return positionFilter === 'options' ? isOption : !isOption
+      const sym = String(p.symbol || '')
+      const isOption = p.asset_class === 'Option' || p.instrument_type === 'OPT' || sym.includes(' ')
+      const isCrypto = p.asset_class === 'Crypto' || p.instrument_type === 'CRYPTO' || p.sec_type === 'CRYPTO' || p.asset_class === 'CRYPTO'
+      if (positionFilter === 'options') return isOption
+      if (positionFilter === 'crypto') return isCrypto
+      return !isOption && !isCrypto
     })
   }, [positions, positionFilter])
   const advancedFieldDefs = useMemo(() => discoverAdvancedFields(positions), [positions])
@@ -3059,20 +3063,12 @@ export default function MobileExperience() {
               <span className="mobile-portfolio-count">Positions</span>
               <div className="pf-header-actions">
                 <div className="pf-pos-filter" role="group" aria-label="Position type filter">
-                  {(['all', 'stocks', 'options'] as const).map((f) => (
+                  {(['all', 'stocks', 'options', 'crypto'] as const).map((f) => (
                     <button key={f} className={positionFilter === f ? 'active' : ''} onClick={() => setPositionFilter(f)}>
-                      {f === 'all' ? 'All' : f === 'stocks' ? 'Stocks' : 'Options'}
+                      {f === 'all' ? 'All' : f === 'stocks' ? 'Stocks' : f === 'options' ? 'Options' : 'Crypto'}
                     </button>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  className="pf-view-chip"
-                  aria-label={`Portfolio view: ${portfolioViewLabel(portfolioView)}`}
-                  onClick={() => setPortfolioMenuOpen(true)}
-                >
-                  View
-                </button>
                 <button
                   type="button"
                   className="pf-options-btn"

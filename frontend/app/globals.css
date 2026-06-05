@@ -1101,16 +1101,25 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .mobile-position-grid-3x3 .mobile-swipe-rail{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
 .mobile-position-grid-2x2 .mobile-swipe-slide,.mobile-position-grid-3x3 .mobile-swipe-slide{min-width:0;flex:initial;scroll-snap-align:none}
 .mobile-position-grid-2x2 .mobile-rail-dots,.mobile-position-grid-3x3 .mobile-rail-dots{display:none}
-.mobile-position-grid-2x2 .mobile-position-card,.mobile-position-grid-3x3 .mobile-position-card{min-height:0;padding:11px}
+.mobile-position-grid-2x2 .mobile-position-card{min-height:158px;padding:11px 12px;border-radius:18px}
+.mobile-position-grid-3x3 .mobile-position-card{min-height:0;padding:9px}
 .mobile-position-grid-2x2 .mobile-card-head,.mobile-position-grid-3x3 .mobile-card-head{align-items:flex-start}
-.mobile-position-grid-2x2 .mobile-card-symbol,.mobile-position-grid-3x3 .mobile-card-symbol{gap:6px}
-.mobile-position-grid-2x2 .mobile-card-symbol strong{font-size:18px}
+.mobile-position-grid-2x2 .mobile-card-symbol{flex-direction:column;align-items:flex-start;gap:2px}
+.mobile-position-grid-3x3 .mobile-card-symbol{gap:6px}
+.mobile-position-grid-2x2 .mobile-card-symbol strong{font-size:22px;letter-spacing:-.01em;line-height:1.05}
 .mobile-position-grid-3x3 .mobile-card-symbol strong{font-size:15px}
-.mobile-position-grid-2x2 .mobile-card-symbol span,.mobile-position-grid-3x3 .mobile-card-symbol span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mobile-position-grid-2x2 .mobile-card-last-price{font-size:12px!important}
+.mobile-position-grid-2x2 .mobile-card-symbol .mtt-logo{display:none}
+.mobile-position-grid-2x2 .mobile-card-symbol span{display:none}
+.mobile-position-grid-3x3 .mobile-card-symbol span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mobile-position-grid-2x2 .mobile-card-last-price{font-size:13px!important;color:#cbd5e1!important;margin-top:1px}
 .mobile-position-grid-3x3 .mobile-card-last-price{font-size:11px!important}
-.mobile-position-grid-2x2 .mobile-sparkline{height:50px}
+.mobile-position-grid-2x2 .mobile-position-spark{margin:6px 0 0}
+.mobile-position-grid-2x2 .mobile-sparkline{height:46px}
 .mobile-position-grid-3x3 .mobile-sparkline{height:38px}
+.mobile-position-grid-2x2 .mobile-position-stats{margin-top:6px;gap:3px 8px}
+.mobile-position-grid-2x2 .mps-cell span{font-size:9px;letter-spacing:.03em;color:var(--muted)}
+.mobile-position-grid-2x2 .mps-cell b{font-size:11px}
+.mobile-position-grid-2x2 .mps-bars,.mobile-position-grid-2x2 .mobile-position-bottom{display:none}
 .mobile-position-grid-3x3 .mobile-position-stats,.mobile-position-grid-3x3 .mps-bars,.mobile-position-grid-3x3 .mobile-position-bottom{display:none}
 .stock-intel-identity{grid-template-columns:auto minmax(0,1fr)!important;align-items:center}
 .stock-intel-market-line{display:grid;grid-template-columns:minmax(0,1fr);gap:9px;align-items:stretch;padding:8px 12px 12px}
@@ -1133,3 +1142,16 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
   .stock-intel-mini-spark{height:48px}
   .stock-intel-mini-spark svg{height:44px}
 }
+
+/* ATHENA-UX-042/043/044 live price emphasis, dynamic color, tick animation */
+.card-last-price{font-size:18px!important;font-weight:800;letter-spacing:-.01em;line-height:1.1;transition:color .15s ease;will-change:transform}
+.card-last-price.green{color:var(--green)!important}
+.card-last-price.red{color:var(--red)!important}
+.card-last-price.neutral{color:#f8fbff!important}
+.position-cards-2x2 .card-last-price{font-size:16px!important}
+.position-cards-3x3 .card-last-price{font-size:14px!important}
+.card-last-price.price-flash-up{animation:price-pop-up .22s ease}
+.card-last-price.price-flash-down{animation:price-pop-down .22s ease}
+@keyframes price-pop-up{0%{transform:translateY(0);text-shadow:none}45%{transform:translateY(-2px);text-shadow:0 0 10px rgba(36,209,140,.55)}100%{transform:translateY(0);text-shadow:none}}
+@keyframes price-pop-down{0%{transform:translateY(0);text-shadow:none}45%{transform:translateY(2px);text-shadow:0 0 10px rgba(255,99,117,.5)}100%{transform:translateY(0);text-shadow:none}}
+@media(prefers-reduced-motion:reduce){.card-last-price.price-flash-up,.card-last-price.price-flash-down{animation:none}}
