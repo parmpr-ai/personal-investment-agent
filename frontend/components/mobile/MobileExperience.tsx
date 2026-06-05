@@ -1077,12 +1077,14 @@ function WatchlistMovers({ scanner, positions, onSelect, hidden = false }: { sca
 }
 
 function PositionCard({
-  position, fields, order, tf, grid, hidden, onSelect,
+  position, fields, order, tf, grid, hidden, onSelect, onLongPress, context = 'portfolio',
 }: {
   position: any; fields: Set<CardFieldKey>; order: CardFieldKey[]
   tf: SparkTf; grid: PortfolioCardGrid; hidden: boolean; onSelect: (p: any) => void
+  onLongPress?: (p: any) => void; context?: 'portfolio' | 'watchlist'
 }) {
-  const show = (key: CardFieldKey) => fields.has(key)
+  const pfOnly = context === 'watchlist'
+  const show = (key: CardFieldKey) => fields.has(key) && !(pfOnly && (PORTFOLIO_ONLY_KEYS as CardFieldKey[]).includes(key))
   const [page, setPage] = useState(0)
   const bodyRef = useRef<HTMLDivElement>(null)
   const swipedRef = useRef(false)
@@ -1182,33 +1184,42 @@ function PositionCard({
     if (!usePager || pageCount <= 1) return
     const el = bodyRef.current
     if (!el) return
+    function getTrack() { return el.querySelector<HTMLElement>('.card-pager-track') }
     function onStart(e: TouchEvent) {
       touchState.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null, dx: 0 }
+      const t = getTrack(); if (t) t.style.transition = 'none'
     }
     function onMove(e: TouchEvent) {
       const t = touchState.current
       const dx = e.touches[0].clientX - t.x
       const dy = e.touches[0].clientY - t.y
       if (t.locked === null) {
-        if (Math.abs(dx) > Math.abs(dy) + 6) t.locked = true
-        else if (Math.abs(dy) > Math.abs(dx) + 6) t.locked = false
+        if (Math.abs(dx) > Math.abs(dy) + 8) t.locked = true
+        else if (Math.abs(dy) > Math.abs(dx) + 8) t.locked = false
       }
       if (t.locked === true) {
         e.preventDefault()
         t.dx = dx
-        const track = el.querySelector<HTMLElement>('.card-pager-track')
+        const track = getTrack()
         if (track) track.style.transform = `translateX(calc(${-clampedPage * 100}% + ${dx}px))`
       }
     }
     function onEnd() {
       const t = touchState.current
+      const track = getTrack()
       if (t.locked === true) {
-        if (Math.abs(t.dx) > 12) swipedRef.current = true
-        if (t.dx < -50) setPage((p) => Math.min(p + 1, pageCount - 1))
-        else if (t.dx > 50) setPage((p) => Math.max(p - 1, 0))
+        const targetPage = t.dx < -50
+          ? Math.min(clampedPage + 1, pageCount - 1)
+          : t.dx > 50 ? Math.max(clampedPage - 1, 0) : clampedPage
+        if (track) {
+          track.style.transition = ''
+          track.style.transform = `translateX(${-targetPage * 100}%)`
+        }
+        if (Math.abs(t.dx) > 30) swipedRef.current = true
+        setPage(targetPage)
+      } else {
+        if (track) { track.style.transition = ''; track.style.transform = '' }
       }
-      const track = el.querySelector<HTMLElement>('.card-pager-track')
-      if (track) track.style.transform = ''
     }
     el.addEventListener('touchstart', onStart, { passive: true })
     el.addEventListener('touchmove', onMove, { passive: false })
@@ -1241,6 +1252,7 @@ function PositionCard({
         if (swipedRef.current) { swipedRef.current = false; return }
         onSelect(position)
       }}
+      onContextMenu={onLongPress ? (e) => { e.preventDefault(); onLongPress(position) } : undefined}
       style={brandColor ? { borderTopColor: brandColor } as CSSProperties : undefined}
     >
       {header}
@@ -1348,13 +1360,17 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
   const [menuOpen, setMenuOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [manageColumnsOpen, setManageColumnsOpen] = useState(false)
+  const [wlCardManageOpen, setWlCardManageOpen] = useState(false)
   const [validation, setValidation] = useState('')
   const [newListName, setNewListName] = useState('')
   const [newTicker, setNewTicker] = useState('')
   const universe = useMemo(() => buildWatchlistUniverse(dashboard, [...positionFallback, ...scannerFallback]), [dashboard])
   const rows = useMemo(() => resolveWatchlistRows(activeList?.tickers || activeList?.symbols || [], universe), [activeList, universe])
   const view = activeList?.viewMode || 'table'
-  const [cardGrid, setCardGrid] = useState<'1x1' | '2x2'>('1x1')
+  const [cardGrid, setCardGrid] = useState<PortfolioCardGrid>('1x1')
+  const [wlCardPrefs, setWlCardPrefs] = useState<CardPrefs>(() => readWlCardPrefs())
+  const wlCardFields = wlCardPrefs[cardGrid].fields
+  const wlCardOrder = wlCardPrefs[cardGrid].order
   const [lpTarget, setLpTarget] = useState<any | null>(null)
   const [addPickerSymbol, setAddPickerSymbol] = useState<string | null>(null)
   const listHasSymbol = (list: any, sym: string) => (list?.tickers || list?.symbols || []).includes(sym)
@@ -1363,14 +1379,35 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
   const [addLookupLoading, setAddLookupLoading] = useState(false)
   const [addLookupMessage, setAddLookupMessage] = useState('')
   useEffect(() => {
-    try { const g = localStorage.getItem('pia.watchlist.cardGrid'); if (g === '1x1' || g === '2x2') setCardGrid(g) } catch {}
+    try { const g = localStorage.getItem('pia.watchlist.cardGrid'); if (g === '1x1' || g === '2x2' || g === '3x3') setCardGrid(g as PortfolioCardGrid) } catch {}
     setColOrder(readWlColOrder())
+    setWlCardPrefs(readWlCardPrefs())
   }, [])
+
+  function toggleWlCardField(key: CardFieldKey) {
+    const current = wlCardPrefs[cardGrid]
+    const next = new Set(current.fields)
+    if (next.has(key)) { next.delete(key) } else { next.add(key) }
+    const updated = { ...wlCardPrefs, [cardGrid]: { ...current, fields: next } }
+    setWlCardPrefs(updated)
+    savePrefsToKey(WL_CARD_PREFS_LS_KEY, updated)
+  }
+  function resetWlCardFields() {
+    const fresh = defaultWlCardPrefs()
+    const updated = { ...wlCardPrefs, [cardGrid]: fresh[cardGrid] }
+    setWlCardPrefs(updated)
+    savePrefsToKey(WL_CARD_PREFS_LS_KEY, updated)
+  }
+  function reorderWlCardFields(next: string[]) {
+    const updated = { ...wlCardPrefs, [cardGrid]: { ...wlCardPrefs[cardGrid], order: next as CardFieldKey[] } }
+    setWlCardPrefs(updated)
+    savePrefsToKey(WL_CARD_PREFS_LS_KEY, updated)
+  }
   function reorderCols(next: string[]) {
     setColOrder(next)
     try { localStorage.setItem(WL_COL_ORDER_KEY, JSON.stringify(next.filter((k) => k !== 'instrument'))) } catch {}
   }
-  function chooseView(list: any, mode: 'table' | 'list', grid?: '1x1' | '2x2') {
+  function chooseView(list: any, mode: 'table' | 'list', grid?: PortfolioCardGrid) {
     if (list) setListViewMode(list.id, mode)
     if (grid) { setCardGrid(grid); try { localStorage.setItem('pia.watchlist.cardGrid', grid) } catch {} }
     setMenuOpen(false)
@@ -1515,7 +1552,7 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
       ) : view === 'table' ? (
         <MobileWatchlistTable rows={rows} columns={activeList?.columns} colOrder={colOrder} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} onLongPress={setLpTarget} hidden={hidden} />
       ) : (
-        <MobileWatchlistCards rows={rows} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} onLongPress={setLpTarget} hidden={hidden} grid={cardGrid} />
+        <MobileWatchlistCards rows={rows} onSelect={onSelect} onRemove={(symbol) => activeList && removeSymbol(activeList.id, symbol)} onLongPress={setLpTarget} hidden={hidden} grid={cardGrid} fields={wlCardFields} order={wlCardOrder} />
       )}
       {menuOpen && activeList && (
         <MobileSheet title="Watchlist Actions" onClose={() => setMenuOpen(false)}>
@@ -1524,11 +1561,15 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
             <button type="button" className={view === 'table' ? 'active' : ''} onClick={() => chooseView(activeList, 'table')}>Table</button>
             <button type="button" className={view === 'list' && cardGrid === '1x1' ? 'active' : ''} onClick={() => chooseView(activeList, 'list', '1x1')}>Cards 1×1</button>
             <button type="button" className={view === 'list' && cardGrid === '2x2' ? 'active' : ''} onClick={() => chooseView(activeList, 'list', '2x2')}>Cards 2×2</button>
+            <button type="button" className={view === 'list' && cardGrid === '3x3' ? 'active' : ''} onClick={() => chooseView(activeList, 'list', '3x3')}>Cards 3×3</button>
             <span>Watchlist</span>
             <button type="button" onClick={() => { setMenuOpen(false); createPromptList() }}>New Watchlist</button>
             <button type="button" onClick={() => { setMenuOpen(false); renamePromptList() }}>Rename Watchlist</button>
             <button type="button" onClick={() => { setMenuOpen(false); setEditOpen(true) }}>Manage Watchlists</button>
             <button type="button" onClick={() => { setMenuOpen(false); setManageColumnsOpen(true) }}>Manage Columns</button>
+            {view === 'list' && (
+              <button type="button" onClick={() => { setMenuOpen(false); setWlCardManageOpen(true) }}>Manage Card Fields</button>
+            )}
           </div>
         </MobileSheet>
       )}
@@ -1552,6 +1593,29 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
             onToggle={(key) => key !== 'instrument' && toggleColumn(activeList.id, key as keyof typeof activeList.columns)}
           />
         </MobileSheet>
+      )}
+      {wlCardManageOpen && (
+        <MobileManageDisplay
+          title={`Manage ${cardGrid.toUpperCase()} Card Fields`}
+          addLabel="Add Fields"
+          order={wlCardOrder}
+          visible={wlCardFields}
+          allKeys={CARD_FIELD_DEFS.filter((d) => !(PORTFOLIO_ONLY_KEYS as CardFieldKey[]).includes(d.key)).map((d) => d.key)}
+          defsByKey={(k) => { const c = CARD_FIELD_DEFS.find((d) => d.key === k); return c ? { key: c.key, label: c.label, info: FIELD_INFO[c.key] } : undefined }}
+          sparkTf={DEFAULT_SPARK_TF}
+          onSparkTf={() => {}}
+          showSparkTf={false}
+          onToggle={(k) => toggleWlCardField(k as CardFieldKey)}
+          onReorder={reorderWlCardFields}
+          onReset={resetWlCardFields}
+          templates={CARD_TEMPLATES.map((t) => ({ ...t, fields: t.fields.filter((f) => !(PORTFOLIO_ONLY_KEYS as CardFieldKey[]).includes(f)) }))}
+          onApplyTemplate={(keys) => {
+            const updated = { ...wlCardPrefs, [cardGrid]: makeCardPrefs(keys, keys, keys)[cardGrid] }
+            setWlCardPrefs(updated)
+            savePrefsToKey(WL_CARD_PREFS_LS_KEY, updated)
+          }}
+          onClose={() => setWlCardManageOpen(false)}
+        />
       )}
       {lpTarget && (
         <MobileSheet title={hidden ? 'Actions' : (lpTarget.symbol || 'Actions')} onClose={() => setLpTarget(null)}>
@@ -1719,55 +1783,30 @@ function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, 
   )
 }
 
-function MobileWatchlistCards({ rows, onSelect, onLongPress, hidden, grid = '1x1' }: { rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; onLongPress?: (row: any) => void; hidden: boolean; grid?: '1x1' | '2x2' }) {
-  // Portfolio Card V2 design language — research card (no position metrics).
-  // Keeps ticker, company, daily %, sparkline, risk, momentum, news/macro/AI chips.
+function MobileWatchlistCards({
+  rows, onSelect, onLongPress, hidden, grid = '1x1', fields, order,
+}: {
+  rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void
+  onLongPress?: (row: any) => void; hidden: boolean; grid?: PortfolioCardGrid
+  fields: Set<CardFieldKey>; order: CardFieldKey[]
+}) {
+  const gridClass = grid === '2x2' ? ' wl-grid-2' : grid === '3x3' ? ' wl-grid-3' : ''
   return (
-    <div className={`mobile-watchlist-card-list${grid === '2x2' ? ' wl-grid-2' : ''}`}>
-      {rows.map((row) => {
-        const change = Number(row.day_change_pct || 0)
-        const last = lastPriceValue(row)
-        const risk = Number(row.risk || 0)
-        const momentum = Number(row.momentum_score || row.momentum || 52)
-        const macro = row.macro_sensitivity
-        const newsCount = Number(row.news_count ?? row.news ?? row.news_score ?? 0)
-        const hasAi = Boolean(row.ai_view || row.ai_score != null)
-        const brandColor = row.brand || row.accent || undefined
-        return (
-          <button
-            key={row.symbol}
-            type="button"
-            className={`mobile-visual-card mobile-position-card mobile-watchlist-card${brandColor ? ' themed' : ''}`}
-            style={brandColor ? { borderTopColor: brandColor } as CSSProperties : undefined}
-            onClick={() => onSelect(row)}
-            onContextMenu={(e) => { e.preventDefault(); onLongPress?.(row) }}
-          >
-            <div className="mobile-card-head">
-              <div className="mobile-card-symbol">
-                <CompanyLogo source={row} symbol={row.symbol} hidden={hidden} className="mtt-logo" />
-                <div>
-                  <strong>{hidden ? mask : row.symbol}</strong>
-                  <span>{hidden ? 'Workspace item' : row.name || 'Instrument'}</span>
-                  <small className="mobile-card-last-price">{hidden ? mask : money(last)}</small>
-                </div>
-              </div>
-              <IntelligenceBadge label={pct(change)} tone={change >= 0 ? 'good' : 'bad'} />
-            </div>
-            <Sparkline values={row.spark} tone={change >= 0 ? 'good' : 'bad'} />
-            <div className="mps-bars">
-              <RiskBar value={risk || 31} />
-              <MomentumBar value={momentum} />
-            </div>
-            {(newsCount > 0 || macro != null || hasAi) && (
-              <div className="mps-chips">
-                {newsCount > 0 ? <span className="mps-chip"><Newspaper size={12} />{newsCount}</span> : null}
-                {macro != null ? <span className="mps-chip">Macro β {Number(macro)}</span> : null}
-                {hasAi ? <span className="mps-chip mps-chip-ai"><Brain size={12} />AI</span> : null}
-              </div>
-            )}
-          </button>
-        )
-      })}
+    <div className={`mobile-watchlist-card-list${gridClass}`}>
+      {rows.map((row) => (
+        <PositionCard
+          key={row.symbol}
+          position={row}
+          fields={fields}
+          order={order}
+          tf="5D"
+          grid={grid}
+          hidden={hidden}
+          context="watchlist"
+          onSelect={onSelect}
+          onLongPress={onLongPress}
+        />
+      ))}
     </div>
   )
 }
@@ -1919,27 +1958,49 @@ const CARD_FIELD_DEFS: { key: CardFieldKey; label: string }[] = [
   { key: 'ai',            label: 'AI' },
   { key: 'news',          label: 'News' },
 ]
-// All stat-cell fields (rendered in the body, not the always-visible header)
+// Stat-cell fields (rendered in the body, not the always-visible header)
 const CARD_STAT_KEYS: CardFieldKey[] = [
   'shares', 'mktvalue', 'last', 'avgcost', 'daypnl', 'unrealized',
   'unrealizedpct', 'daychange', 'daypct', 'volume', 'marketcap',
 ]
 const CARD_INTEL_KEYS: CardFieldKey[] = ['risk', 'momentum', 'weight', 'news', 'macro', 'ai']
-const CARD_PREFS_LS_KEY = 'pia.cardPrefs.v1'
+// Fields that only make sense in a portfolio context (positions with cost basis / shares)
+const PORTFOLIO_ONLY_KEYS: CardFieldKey[] = ['shares', 'mktvalue', 'avgcost', 'daypnl', 'unrealized', 'unrealizedpct', 'daychange', 'weight']
+
+const CARD_PREFS_LS_KEY  = 'pia.cardPrefs.v1'
+const WL_CARD_PREFS_LS_KEY = 'pia.wlCardPrefs.v1'
+
+// Card templates (preset field sets)
+const CARD_TEMPLATES: { id: string; label: string; fields: CardFieldKey[] }[] = [
+  { id: 'compact',  label: 'Compact',  fields: ['sparkline'] },
+  { id: 'balanced', label: 'Balanced', fields: ['sparkline', 'risk', 'momentum'] },
+  { id: 'trader',   label: 'Trader',   fields: ['sparkline', 'daypct', 'volume', 'momentum'] },
+  { id: 'investor', label: 'Investor', fields: ['sparkline', 'mktvalue', 'avgcost', 'unrealizedpct', 'risk'] },
+]
 
 type CardModeConfig = { fields: Set<CardFieldKey>; order: CardFieldKey[] }
 type CardPrefs = Record<PortfolioCardGrid, CardModeConfig>
 
-function defaultCardPrefs(): CardPrefs {
+function makeCardPrefs(by1x1: CardFieldKey[], by2x2: CardFieldKey[], by3x3: CardFieldKey[]): CardPrefs {
   const all = CARD_FIELD_DEFS.map((c) => c.key)
-  const compact1x1: CardFieldKey[] = ['sparkline', 'shares', 'mktvalue', 'avgcost', 'daypnl', 'unrealized', 'weight', 'risk', 'momentum', 'macro', 'ai', 'news']
-  const compact2x2: CardFieldKey[] = ['sparkline', 'daypnl', 'shares', 'mktvalue']
-  const compact3x3: CardFieldKey[] = ['sparkline']
-  return {
-    '1x1': { fields: new Set(compact1x1), order: [...compact1x1, ...all.filter(k => !compact1x1.includes(k as CardFieldKey))] },
-    '2x2': { fields: new Set(compact2x2), order: [...compact2x2, ...all.filter(k => !compact2x2.includes(k as CardFieldKey))] },
-    '3x3': { fields: new Set(compact3x3), order: [...compact3x3, ...all.filter(k => !compact3x3.includes(k as CardFieldKey))] },
-  }
+  const mk = (keys: CardFieldKey[]) => ({ fields: new Set(keys), order: [...keys, ...all.filter(k => !keys.includes(k as CardFieldKey))] })
+  return { '1x1': mk(by1x1), '2x2': mk(by2x2), '3x3': mk(by3x3) }
+}
+
+function defaultCardPrefs(): CardPrefs {
+  return makeCardPrefs(
+    ['sparkline', 'shares', 'mktvalue', 'avgcost', 'daypnl', 'unrealized', 'weight', 'risk', 'momentum', 'macro', 'ai', 'news'],
+    ['sparkline'],
+    ['sparkline'],
+  )
+}
+
+function defaultWlCardPrefs(): CardPrefs {
+  return makeCardPrefs(
+    ['sparkline', 'risk', 'momentum', 'news', 'macro', 'ai'],
+    ['sparkline'],
+    ['sparkline'],
+  )
 }
 
 type ManualInstrumentMatch = InstrumentMatch
@@ -2029,19 +2090,21 @@ function resolveSpark(position: any, tf: SparkTf): number[] | undefined {
   return position?.spark
 }
 
-function readSavedCardPrefs(): CardPrefs {
-  const defaults = defaultCardPrefs()
+function saveCardPrefs(prefs: CardPrefs) { savePrefsToKey(CARD_PREFS_LS_KEY, prefs) }
+
+function loadCardPrefs(lsKey: string, defaultFn: () => CardPrefs): CardPrefs {
+  const defaults = defaultFn()
   const all = CARD_FIELD_DEFS.map((c) => c.key)
   try {
-    const raw = localStorage.getItem(CARD_PREFS_LS_KEY)
+    const raw = localStorage.getItem(lsKey)
     if (raw) {
       const saved = JSON.parse(raw) as Record<string, { fields: CardFieldKey[]; order: CardFieldKey[] }>
       const parse = (grid: PortfolioCardGrid): CardModeConfig => {
         const s = saved[grid]
         if (!s) return defaults[grid]
-        const fields = Array.isArray(s.fields) ? new Set(s.fields.filter(k => all.includes(k as CardFieldKey))) : defaults[grid].fields
+        const fields = Array.isArray(s.fields) ? new Set(s.fields.filter((k): k is CardFieldKey => all.includes(k as CardFieldKey))) : defaults[grid].fields
         const order = Array.isArray(s.order) && s.order.length
-          ? [...s.order.filter(k => all.includes(k as CardFieldKey)), ...all.filter(k => !s.order.includes(k as CardFieldKey))]
+          ? [...s.order.filter((k): k is CardFieldKey => all.includes(k as CardFieldKey)), ...all.filter(k => !s.order.includes(k as CardFieldKey))]
           : defaults[grid].order
         return { fields, order }
       }
@@ -2051,14 +2114,15 @@ function readSavedCardPrefs(): CardPrefs {
   return defaults
 }
 
-function saveCardPrefs(prefs: CardPrefs) {
+function savePrefsToKey(lsKey: string, prefs: CardPrefs) {
   try {
-    const serializable = Object.fromEntries(
-      Object.entries(prefs).map(([g, c]) => [g, { fields: [...c.fields], order: c.order }])
-    )
-    localStorage.setItem(CARD_PREFS_LS_KEY, JSON.stringify(serializable))
+    const s = Object.fromEntries(Object.entries(prefs).map(([g, c]) => [g, { fields: [...(c.fields as Set<string>)], order: c.order }]))
+    localStorage.setItem(lsKey, JSON.stringify(s))
   } catch {}
 }
+
+function readSavedCardPrefs() { return loadCardPrefs(CARD_PREFS_LS_KEY, defaultCardPrefs) }
+function readWlCardPrefs()     { return loadCardPrefs(WL_CARD_PREFS_LS_KEY, defaultWlCardPrefs) }
 
 function readSavedSparkTf(): SparkTf {
   try {
@@ -2352,7 +2416,7 @@ type ManageItem = { key: string; label: string; info?: string; locked?: boolean 
 // fields: enabled list (checkmark + name + info + reorder + grip), an
 // "+ Add" catalog of available/IBKR fields, and the sparkline timeframe.
 function MobileManageDisplay({
-  title, addLabel, order, visible, allKeys, defsByKey, sparkTf, onSparkTf, onToggle, onReorder, onReset, onClose,
+  title, addLabel, order, visible, allKeys, defsByKey, sparkTf, onSparkTf, onToggle, onReorder, onReset, onClose, templates, onApplyTemplate, showSparkTf = true,
 }: {
   title: string
   addLabel: string
@@ -2366,6 +2430,9 @@ function MobileManageDisplay({
   onReorder: (nextOrder: string[]) => void
   onReset: () => void
   onClose: () => void
+  templates?: { id: string; label: string; fields: CardFieldKey[] }[]
+  onApplyTemplate?: (keys: CardFieldKey[]) => void
+  showSparkTf?: boolean
 }) {
   const [addOpen, setAddOpen] = useState(false)
   const [info, setInfo] = useState<{ label: string; text: string } | null>(null)
@@ -2430,6 +2497,20 @@ function MobileManageDisplay({
         <button type="button" className="pf-manage-reset" onClick={onReset}>Reset</button>
       </header>
       <div className="pf-manage-body">
+        {templates && onApplyTemplate && (
+          <div className="card-template-row">
+            {templates.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={`card-template-btn${[...visible].sort().join(',') === [...new Set(t.fields)].sort().join(',') ? ' active' : ''}`}
+                onClick={() => onApplyTemplate(t.fields)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
         <ul
           className={`pf-manage-list${dragKey ? ' is-dragging' : ''}`}
           ref={listRef}
@@ -2473,7 +2554,7 @@ function MobileManageDisplay({
             )) : <li className="pf-manage-empty">All fields are shown.</li>}
           </ul>
         )}
-        <SparkTfRail value={sparkTf} onChange={onSparkTf} />
+        {showSparkTf !== false && <SparkTfRail value={sparkTf} onChange={onSparkTf} />}
       </div>
       {info && (
         <div className="pf-info-pop-root" role="presentation">
@@ -3191,6 +3272,13 @@ export default function MobileExperience() {
                 saveCardPrefs(updated)
               }}
               onReset={resetCardFields}
+              templates={CARD_TEMPLATES}
+              onApplyTemplate={(keys) => {
+                const grid = portfolioGridFromView(portfolioView)
+                const updated = { ...cardPrefs, [grid]: makeCardPrefs(keys, keys, keys)[grid] }
+                setCardPrefs(updated)
+                saveCardPrefs(updated)
+              }}
               onClose={() => setColMenuOpen(false)}
             />
           ))}

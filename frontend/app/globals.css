@@ -960,10 +960,21 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .mobile-watchlist-tabrail{width:100%;flex:initial}
 .mobile-watchlist-section .mptbl-split{max-width:100%;min-width:0;overflow:hidden}
 .mobile-watchlist-card-list.wl-grid-2{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.wl-grid-2 .mobile-watchlist-card{min-height:0;padding:11px}
-.wl-grid-2 .mobile-watchlist-card .mobile-card-head strong{font-size:18px}
-.wl-grid-2 .mobile-watchlist-card .mobile-sparkline{height:48px}
-.wl-grid-2 .mps-chip{font-size:9px;padding:3px 6px}
+.mobile-watchlist-card-list.wl-grid-3{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.wl-grid-2 .mobile-watchlist-card,.wl-grid-3 .mobile-watchlist-card{min-height:0}
+.wl-grid-2 .mobile-position-card{padding:11px}
+.wl-grid-3 .mobile-position-card{padding:9px;border-radius:14px}
+.wl-grid-3 .mobile-card-symbol strong{font-size:14px}
+.wl-grid-3 .mobile-card-symbol span{display:none}
+.wl-grid-3 .mobile-card-last-price{font-size:10px!important}
+.wl-grid-3 .mobile-sparkline{height:34px}
+.wl-grid-3 .mps-bars,.wl-grid-3 .mps-chips,.wl-grid-3 .mobile-position-stats,.wl-grid-3 .card-pager-dots{display:none}
+.wl-grid-2 .mobile-sparkline{height:44px}
+.wl-grid-2 .mps-chip,.wl-grid-3 .mps-chip{font-size:9px;padding:3px 6px}
+.card-template-row{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid rgba(148,163,184,.12);margin-bottom:4px}
+.card-template-btn{border:1px solid rgba(148,163,184,.2);border-radius:999px;background:rgba(9,14,24,.88);color:#94a3b8;padding:5px 13px;font-size:11px;font-weight:800;letter-spacing:.03em;transition:background .15s,border-color .15s,color .15s}
+.card-template-btn:hover{border-color:rgba(96,165,250,.35);color:#dbeafe;background:#102036}
+.card-template-btn.active{border-color:rgba(36,209,140,.4);background:rgba(5,46,26,.65);color:#24d18c}
 
 /* WATCHLIST-V1-006 locked column row */
 .reorder-row.locked{opacity:.92}
@@ -1109,20 +1120,21 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .card-pager-clip{flex:1;overflow:hidden;min-height:0}
 .card-pager-track{display:flex;height:100%;transition:transform .22s cubic-bezier(.32,.72,0,1)}
 .card-pager-page{flex:0 0 100%;min-width:0;padding-top:4px;box-sizing:border-box}
-.card-pager-dots{display:flex;justify-content:center;align-items:center;gap:5px;padding:4px 0 2px;flex-shrink:0}
-.card-pager-dots span{width:5px;height:5px;border-radius:50%;background:rgba(148,163,184,.28);transition:background .18s ease,width .18s ease;cursor:pointer;flex-shrink:0}
-.card-pager-dots span.active{width:14px;border-radius:999px;background:#60a5fa}
+.card-pager-dots{display:flex;justify-content:center;align-items:center;gap:4px;padding:5px 0 1px;flex-shrink:0}
+.card-pager-dots span{width:4px;height:4px;border-radius:50%;background:rgba(148,163,184,.32);transition:background .2s ease,width .2s ease,opacity .2s ease;cursor:pointer;flex-shrink:0;opacity:.7}
+.card-pager-dots span.active{width:16px;border-radius:999px;background:rgba(96,165,250,.9);opacity:1}
 .mobile-position-grid-3x3 .mobile-position-card{min-height:0;padding:9px}
 .mobile-position-grid-2x2 .mobile-card-head,.mobile-position-grid-3x3 .mobile-card-head{align-items:flex-start}
-.mobile-position-grid-2x2 .mobile-card-symbol{flex-direction:column;align-items:flex-start;gap:2px}
+.mobile-position-grid-2x2 .mobile-card-symbol{flex-direction:row;align-items:center;gap:8px}
+.mobile-position-grid-2x2 .mobile-card-symbol>div{display:grid;gap:1px}
 .mobile-position-grid-3x3 .mobile-card-symbol{gap:6px}
-.mobile-position-grid-2x2 .mobile-card-symbol strong{font-size:22px;letter-spacing:-.01em;line-height:1.05}
+.mobile-position-grid-2x2 .mobile-card-symbol strong{font-size:17px;letter-spacing:-.01em;line-height:1.1}
 .mobile-position-grid-3x3 .mobile-card-symbol strong{font-size:15px}
-.mobile-position-grid-2x2 .mobile-card-symbol .mtt-logo{display:none}
 .mobile-position-grid-2x2 .mobile-card-symbol span{display:none}
 .mobile-position-grid-3x3 .mobile-card-symbol span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mobile-position-grid-2x2 .mobile-card-last-price{font-size:13px!important;color:#cbd5e1!important;margin-top:1px}
+.mobile-position-grid-2x2 .mobile-card-last-price{font-size:12px!important;color:#cbd5e1!important;margin-top:1px}
 .mobile-position-grid-3x3 .mobile-card-last-price{font-size:11px!important}
+.mobile-position-grid-2x2 .mobile-card-symbol .mtt-logo{width:28px;height:28px;border-radius:7px;flex-shrink:0}
 .mobile-position-grid-2x2 .mobile-position-spark{margin:6px 0 0}
 .mobile-position-grid-2x2 .mobile-sparkline{height:46px}
 .mobile-position-grid-3x3 .mobile-sparkline{height:38px}
