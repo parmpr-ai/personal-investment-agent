@@ -1124,7 +1124,17 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .stock-intel-identity{grid-template-columns:auto minmax(0,1fr)!important;align-items:center}
 .stock-intel-market-line{display:grid;grid-template-columns:minmax(0,1fr);gap:9px;align-items:stretch;padding:8px 12px 12px}
 .stock-intel-price-row{align-items:baseline}
-.stock-intel-range-slot{min-height:12px}
+.stock-intel-today-range{display:grid;gap:6px;max-width:520px}
+.stock-intel-range-head,.stock-intel-range-values{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.stock-intel-range-head span{color:#8ab4ff;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.stock-intel-range-head b{color:#eef4fb;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stock-intel-range-values span{color:#8fa2b5;font-size:10px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stock-intel-hero-range-track{position:relative;height:18px;margin:0 6px}
+.stock-intel-hero-range-track::before{content:"";position:absolute;left:0;right:0;top:9px;height:3px;border-radius:999px;background:linear-gradient(90deg,rgba(96,165,250,.42),rgba(36,209,140,.7))}
+.stock-intel-live-marker{position:absolute;top:1px;transform:translateX(-50%);display:grid;justify-items:center;gap:1px;font-style:normal;color:#f8fbff}
+.stock-intel-live-marker::before{content:"";width:9px;height:9px;border-radius:999px;background:#24d18c;box-shadow:0 0 0 4px rgba(36,209,140,.16),0 0 18px rgba(36,209,140,.65)}
+.stock-intel-live-marker span{position:absolute;top:-17px;border:1px solid rgba(36,209,140,.32);border-radius:999px;background:rgba(5,46,26,.78);color:#bbf7d0;padding:2px 6px;font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.stock-intel-today-range-empty{min-height:30px}
 .stock-intel-mini-spark{width:100%;height:58px;display:grid;align-items:end;justify-items:stretch}
 .stock-intel-mini-spark svg{width:100%;height:54px}
 .stock-intel-spark-empty{text-align:left;justify-self:stretch}
@@ -1138,7 +1148,9 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
   .mobile-portfolio-header .pf-header-actions{margin-left:auto;display:flex;justify-content:flex-end}
   .mobile-position-grid-3x3 .mobile-swipe-rail{grid-template-columns:repeat(2,minmax(0,1fr))}
   .stock-intel-market-line{padding:6px 10px 10px;gap:7px}
-  .stock-intel-range-slot{min-height:8px}
+  .stock-intel-today-range{gap:5px}
+  .stock-intel-range-head b{font-size:11px}
+  .stock-intel-range-values span{font-size:9px}
   .stock-intel-mini-spark{height:48px}
   .stock-intel-mini-spark svg{height:44px}
 }

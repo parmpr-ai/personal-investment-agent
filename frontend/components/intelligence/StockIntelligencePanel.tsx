@@ -54,6 +54,71 @@ function formatDistance(level: number, last: number) {
   return `${distance >= 0 ? '+' : ''}${distance.toFixed(1)}%`
 }
 
+const marketPick = (source: any, keys: string[]) => {
+  for (const key of keys) {
+    const fundamentals = source?.fundamentals?.[key]
+    if (fundamentals != null && fundamentals !== '') return fundamentals
+    const company = source?.company?.[key]
+    if (company != null && company !== '') return company
+    const direct = source?.[key]
+    if (direct != null && direct !== '') return direct
+  }
+  return undefined
+}
+
+function marketNumber(value: unknown) {
+  const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function TodayRangeHero({ source, hidden }: { source: any; hidden: boolean }) {
+  const low = marketNumber(marketPick(source, ['day_low', 'dayLow', 'regular_market_day_low', 'regularMarketDayLow', 'low']))
+  const high = marketNumber(marketPick(source, ['day_high', 'dayHigh', 'regular_market_day_high', 'regularMarketDayHigh', 'high']))
+  const current = marketNumber(marketPick(source, ['last', 'price', 'market_price', 'marketPrice', 'last_price', 'lastPrice', 'regularMarketPrice']))
+
+  if (hidden) {
+    return (
+      <div className="stock-intel-today-range">
+        <div className="stock-intel-range-head">
+          <span>Today Range</span>
+          <b>{mask}</b>
+        </div>
+        <div className="stock-intel-hero-range-track" />
+      </div>
+    )
+  }
+
+  if (low == null || high == null || high <= low) {
+    return (
+      <div className="stock-intel-today-range stock-intel-today-range-empty">
+        <div className="stock-intel-range-head">
+          <span>Today Range</span>
+          <b>{EMPTY}</b>
+        </div>
+      </div>
+    )
+  }
+
+  const marker = Math.max(0, Math.min(100, (((current ?? low) - low) / (high - low)) * 100))
+  return (
+    <div className="stock-intel-today-range" aria-label={`Today range ${money(low)} to ${money(high)}`}>
+      <div className="stock-intel-range-head">
+        <span>Today Range</span>
+        <b>{money(low)} - {money(high)}</b>
+      </div>
+      <div className="stock-intel-hero-range-track">
+        <i className="stock-intel-live-marker" style={{ left: `${marker}%` }}>
+          <span>Live</span>
+        </i>
+      </div>
+      <div className="stock-intel-range-values">
+        <span>Low {money(low)}</span>
+        <span>High {money(high)}</span>
+      </div>
+    </div>
+  )
+}
+
 function MetricRow({ label, value, tone = 'blue', hidden }: { label: string; value: number; tone?: string; hidden: boolean }) {
   return (
     <div className="metric-bar">
@@ -169,25 +234,74 @@ function ConfidenceMeter({ value, hidden }: { value: number; hidden: boolean }) 
   )
 }
 
-function TradingViewChart({ ticker, hidden }: { ticker: string; hidden: boolean }) {
+const TV_EXCHANGE_ALIASES: Record<string, string> = {
+  NAS: 'NASDAQ',
+  NMS: 'NASDAQ',
+  NCM: 'NASDAQ',
+  NGM: 'NASDAQ',
+  NASDAQ: 'NASDAQ',
+  NYQ: 'NYSE',
+  NYSE: 'NYSE',
+  ASE: 'AMEX',
+  AMEX: 'AMEX',
+  ARCA: 'AMEX',
+}
+
+const TV_SYMBOL_DEFAULT_EXCHANGES: Record<string, string[]> = {
+  TE: ['NYSE', 'NASDAQ', 'AMEX'],
+  TSM: ['NYSE', 'NASDAQ'],
+  IONQ: ['NYSE', 'NASDAQ'],
+  QBTS: ['NYSE', 'NASDAQ'],
+  NKE: ['NYSE', 'NASDAQ'],
+  ZETA: ['NYSE', 'NASDAQ'],
+}
+
+function normalizeTvExchange(value: unknown) {
+  const raw = String(value || '').trim().toUpperCase()
+  if (!raw) return null
+  return TV_EXCHANGE_ALIASES[raw] || TV_EXCHANGE_ALIASES[raw.replace(/[^A-Z]/g, '')] || null
+}
+
+function tradingViewSymbols(rawSymbol: string, source?: any) {
+  const exchanges: string[] = []
+  const add = (value: unknown) => {
+    const exchange = normalizeTvExchange(value)
+    if (exchange && !exchanges.includes(exchange)) exchanges.push(exchange)
+  }
+
+  ;(TV_SYMBOL_DEFAULT_EXCHANGES[rawSymbol] || []).forEach(add)
+  ;[
+    source?.exchange,
+    source?.primary_exchange,
+    source?.primaryExchange,
+    source?.listing_exchange,
+    source?.market,
+    source?.fullExchangeName,
+  ].forEach(add)
+  ;['NASDAQ', 'NYSE', 'AMEX'].forEach(add)
+
+  return exchanges.map((exchange) => `${exchange}:${rawSymbol}`)
+}
+
+function TradingViewChart({ ticker, hidden, source }: { ticker: string; hidden: boolean; source?: any }) {
   const rawSymbol = String(ticker || '').split(' ')[0].toUpperCase()
-  const exchange = rawSymbol === 'PLTR' || rawSymbol === 'TSM' ? 'NYSE' : 'NASDAQ'
-  const symbol = `${exchange}:${rawSymbol}`
+  const symbols = tradingViewSymbols(rawSymbol, source)
   const [attempt, setAttempt] = useState(0)
   const [loaded, setLoaded] = useState(false)
+  const symbol = symbols[Math.min(attempt, Math.max(symbols.length - 1, 0))] || `NASDAQ:${rawSymbol}`
 
   useEffect(() => {
     setAttempt(0)
     setLoaded(false)
-  }, [symbol])
+  }, [rawSymbol, symbols.join('|')])
 
   useEffect(() => {
-    if (hidden || loaded || attempt >= 3) return
+    if (hidden || loaded || attempt >= symbols.length - 1) return
     const timeout = window.setTimeout(() => {
       setAttempt((current) => current + 1)
     }, attempt === 0 ? 4200 : 6800)
     return () => window.clearTimeout(timeout)
-  }, [attempt, hidden, loaded, symbol])
+  }, [attempt, hidden, loaded, symbols.length])
 
   if (hidden) {
     return (
@@ -212,6 +326,10 @@ function TradingViewChart({ ticker, hidden }: { ticker: string; hidden: boolean 
         referrerPolicy="origin"
         allowFullScreen
         onLoad={() => setLoaded(true)}
+        onError={() => {
+          setLoaded(false)
+          setAttempt((current) => Math.min(current + 1, Math.max(symbols.length - 1, 0)))
+        }}
       />
     </div>
   )
@@ -442,7 +560,7 @@ export default function StockIntelligencePanel({
               ) : null}
             </div>
           </div>
-          <div className="stock-intel-range-slot" aria-hidden="true" />
+          <TodayRangeHero source={{ ...source, fundamentals }} hidden={hidden} />
           <div className="stock-intel-mini-spark" aria-hidden="true">
             <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
           </div>
@@ -467,7 +585,7 @@ export default function StockIntelligencePanel({
             {position ? <StockPositionSummary source={{ ...source, ...position }} hidden={hidden} /> : null}
 
             <PiaCard className="stock-intel-chart-card" title={hidden ? 'Workspace chart' : 'Price Chart'}>
-              <TradingViewChart ticker={symbol} hidden={hidden} />
+              <TradingViewChart ticker={symbol} source={{ ...source, fundamentals }} hidden={hidden} />
             </PiaCard>
 
             <StockAiIntelligenceWidget source={source} overview={overview} technical={technical} targets={targets} hidden={hidden} />
@@ -481,7 +599,7 @@ export default function StockIntelligencePanel({
         {!loading && tab === 'Chart' && (
           <div className="stock-intel-section">
             <PiaCard className="stock-intel-chart-card" title={hidden ? 'Workspace chart' : 'Price Chart'}>
-              <TradingViewChart ticker={symbol} hidden={hidden} />
+              <TradingViewChart ticker={symbol} source={{ ...source, fundamentals }} hidden={hidden} />
             </PiaCard>
           </div>
         )}

@@ -5,7 +5,7 @@ import type { PointerEvent } from 'react'
 import { ChevronDown, GripVertical, Pencil } from 'lucide-react'
 import { mask } from '../../lib/pia-api'
 
-type Fmt = 'price' | 'compact' | 'compact$' | 'num' | 'pct' | 'range'
+type Fmt = 'price' | 'compact' | 'compact$' | 'num' | 'pct'
 type MetricDef = { key: string; label: string; fmt: Fmt; get: (source: any) => unknown }
 type Prefs = { order: string[]; hidden: string[]; version?: number }
 
@@ -31,15 +31,6 @@ const KEY_METRIC_DEFS: MetricDef[] = [
   { key: 'volume', label: 'Volume', fmt: 'compact', get: (source) => pick(source, ['volume', 'regularMarketVolume']) },
   { key: 'avg_volume', label: 'Avg Volume', fmt: 'compact', get: (source) => pick(source, ['avg_volume', 'average_volume', 'averageDailyVolume3Month', 'averageVolume']) },
   { key: 'last_price', label: 'Last Price', fmt: 'price', get: (source) => pick(source, ['last', 'price', 'regularMarketPrice']) },
-  {
-    key: 'today_range',
-    label: 'Today Range',
-    fmt: 'range',
-    get: (source) => [
-      pick(source, ['day_low', 'dayLow', 'regular_market_day_low', 'regularMarketDayLow', 'low']),
-      pick(source, ['day_high', 'dayHigh', 'regular_market_day_high', 'regularMarketDayHigh', 'high']),
-    ],
-  },
   { key: 'high_52w', label: '52W High', fmt: 'price', get: (source) => pick(source, ['52w_high', 'week52_high', 'high_52w', 'fiftyTwoWeekHigh']) },
   { key: 'low_52w', label: '52W Low', fmt: 'price', get: (source) => pick(source, ['52w_low', 'week52_low', 'low_52w', 'fiftyTwoWeekLow']) },
   { key: 'market_cap', label: 'Market Cap', fmt: 'compact$', get: (source) => pick(source, ['market_cap', 'marketCap']) },
@@ -57,11 +48,11 @@ const KEY_METRIC_DEFS: MetricDef[] = [
 ]
 
 const DEF_BY_KEY = new Map(KEY_METRIC_DEFS.map((def) => [def.key, def]))
-const APPROVED_FIRST_PAGE = ['last_price', 'open', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'today_range']
+const APPROVED_FIRST_PAGE = ['last_price', 'open', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume']
 const LEGACY_DEFAULT_PREFIX = ['open', 'day_high', 'day_low', 'prev_close', 'volume', 'avg_volume', 'last_price', 'today_range']
 const DEFAULT_ORDER = [...APPROVED_FIRST_PAGE, ...KEY_METRIC_DEFS.map((def) => def.key).filter((key) => !APPROVED_FIRST_PAGE.includes(key))]
 const DEFAULT_VISIBLE = [...APPROVED_FIRST_PAGE, 'high_52w', 'low_52w', 'vwap', 'market_cap', 'pe', 'beta', 'eps', 'div_yield']
-const PREFS_VERSION = 2
+const PREFS_VERSION = 3
 const DEFAULT_PREFS: Prefs = { order: DEFAULT_ORDER, hidden: DEFAULT_ORDER.filter((key) => !DEFAULT_VISIBLE.includes(key)), version: PREFS_VERSION }
 const GLOBAL_PREFS_KEY = 'pia.stockView.defaults.keyMetrics'
 
@@ -77,16 +68,6 @@ function compact(value: number): string {
 function formatMetric(value: unknown, fmt: Fmt): string {
   if (value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value))) return EMPTY
   if (typeof value === 'string' && value.trim() === '') return EMPTY
-  if (fmt === 'range') {
-    const range = Array.isArray(value) ? value : []
-    const low = range[0]
-    const high = range[1]
-    if (low == null || low === '' || high == null || high === '') return EMPTY
-    const lowNumber = Number(low)
-    const highNumber = Number(high)
-    if (!Number.isFinite(lowNumber) || !Number.isFinite(highNumber)) return EMPTY
-    return `${lowNumber.toLocaleString('en-US', { maximumFractionDigits: 2 })}-${highNumber.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
-  }
   if (fmt === 'pct' && typeof value === 'string' && value.includes('%')) return value
   const n = Number(value)
   if (!Number.isFinite(n)) return String(value)
@@ -110,35 +91,6 @@ function formatMetric(value: unknown, fmt: Fmt): string {
 
 function hasMetricValue(def: MetricDef, source: any) {
   return formatMetric(def.get(source), def.fmt) !== EMPTY
-}
-
-function metricNumber(value: unknown) {
-  const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''))
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function TodayRangeMetric({ source, hidden }: { source: any; hidden: boolean }) {
-  if (hidden) return <b>{mask}</b>
-  const low = metricNumber(pick(source, ['day_low', 'dayLow', 'regular_market_day_low', 'regularMarketDayLow', 'low']))
-  const high = metricNumber(pick(source, ['day_high', 'dayHigh', 'regular_market_day_high', 'regularMarketDayHigh', 'high']))
-  const current = metricNumber(pick(source, ['last', 'price', 'regularMarketPrice']))
-  if (low == null || high == null || high <= low) return <b>{EMPTY}</b>
-  const marker = Math.max(0, Math.min(100, (((current ?? low) - low) / (high - low)) * 100))
-  return (
-    <div className="skm-range">
-      <div className="skm-range-labels">
-        <span>LOW</span>
-        <span>HIGH</span>
-      </div>
-      <div className="skm-range-track">
-        <i style={{ left: `${marker}%` }}>▲</i>
-      </div>
-      <div className="skm-range-values">
-        <b>{formatMetric(low, 'price')}</b>
-        <b>{formatMetric(high, 'price')}</b>
-      </div>
-    </div>
-  )
 }
 
 function normalizedPrefs(raw: unknown): Prefs | null {
@@ -284,12 +236,9 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
             {pages.map((page, pageIndex) => (
               <div className="skm-page" key={pageIndex}>
                 {page.map((def) => (
-                  <div className={`skm-cell${def.key === 'today_range' ? ' skm-cell-range' : ''}`} key={def.key}>
+                  <div className="skm-cell" key={def.key}>
                     <span>{def.label}</span>
-                    {def.key === 'today_range'
-                      ? <TodayRangeMetric source={source} hidden={hidden} />
-                      : <b>{hidden ? mask : formatMetric(def.get(source), def.fmt)}</b>
-                    }
+                    <b>{hidden ? mask : formatMetric(def.get(source), def.fmt)}</b>
                   </div>
                 ))}
               </div>
