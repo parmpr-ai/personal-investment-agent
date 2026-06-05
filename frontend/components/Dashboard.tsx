@@ -183,6 +183,27 @@ const metricValue = (p: any, key: string) =>
                       : String(p.symbol || '')
 
 const lastPriceValue = (item: any) => item?.last ?? item?.price ?? item?.market_price ?? item?.marketPrice ?? 0
+// ATHENA-UX-043: price color follows the existing daily change (positive/negative/flat).
+const priceTone = (change: any) => {
+  const n = Number(change || 0)
+  return n > 0 ? 'green' : n < 0 ? 'red' : 'neutral'
+}
+
+// ATHENA-UX-042/044: emphasized live price that pops/pulses when the value ticks.
+function LivePrice({ value, hidden, tone }: { value: number; hidden: boolean; tone: string }) {
+  const [flash, setFlash] = useState('')
+  const prev = useRef<number | null>(null)
+  useEffect(() => {
+    if (prev.current != null && value !== prev.current) {
+      setFlash(value > prev.current ? 'price-flash-up' : 'price-flash-down')
+      prev.current = value
+      const timer = window.setTimeout(() => setFlash(''), 240)
+      return () => window.clearTimeout(timer)
+    }
+    prev.current = value
+  }, [value])
+  return <small className={`card-last-price ${tone}${flash ? ` ${flash}` : ''}`.trim()}>{hidden ? mask : money(value)}</small>
+}
 
 type PortfolioViewMode = 'table' | 'cards-1x1' | 'cards-2x2' | 'cards-3x3'
 type PortfolioCardGrid = '1x1' | '2x2' | '3x3'
@@ -1065,7 +1086,7 @@ function PositionCards({ rows, hidden, setSelected, grid = '3x3' }: any) {
                   <div>
                     <b>{hidden ? mask : p.symbol}</b>
                     <span>{hidden ? 'Workspace item' : p.name}</span>
-                    <small className="card-last-price">{hidden ? mask : money(last)}</small>
+                    <LivePrice value={last} hidden={hidden} tone={priceTone(p.day_change_pct)} />
                   </div>
                 </div>
                 <strong className="card-market-value">{hidden ? mask : money(p.market_value)}</strong>
@@ -1414,7 +1435,7 @@ function WatchlistCards({ rows, hidden, setSelected, onRemove }: any) {
                 <div>
                   <b>{hidden ? mask : p.symbol}</b>
                   <span>{hidden ? 'Workspace item' : p.name}</span>
-                  <small className="card-last-price">{hidden ? mask : money(last)}</small>
+                  <LivePrice value={last} hidden={hidden} tone={priceTone(p.day_change_pct)} />
                   <small className="muted">{hidden ? 'Market' : p.exchange || 'NASDAQ'}</small>
                 </div>
               </div>
