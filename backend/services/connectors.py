@@ -423,7 +423,15 @@ def yahoo_fundamentals(ticker: str) -> Dict[str, Any]:
         analyst_targets["analyst_count"] = int(analyst_count)
     rating_distribution = {
         key: value
-        for key, value in {"buy": buy_count, "hold": hold_count, "sell": sell_count}.items()
+        for key, value in {
+            "strong_buy": int(strong_buy) if strong_buy is not None else None,
+            "buy_only": int(buy) if buy is not None else None,
+            "buy": buy_count,
+            "hold": hold_count,
+            "sell_only": int(sell) if sell is not None else None,
+            "strong_sell": int(strong_sell) if strong_sell is not None else None,
+            "sell": sell_count,
+        }.items()
         if value is not None
     }
     if rating_distribution:

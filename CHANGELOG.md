@@ -1,5 +1,32 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.19 - Analyst Targets V2
+
+Date: 2026-06-08
+Status: Implemented and locally validated.
+
+### Added
+
+* Analyst Targets Overview card now opens the Analysis tab on tap/click.
+* Analysis tab now includes a dedicated Analyst Targets section with consensus target, bull target, bear target, recommendation summary, analyst count, and analyst history empty state.
+* Yahoo recommendation payload now preserves raw Strong Buy / Buy / Hold / Sell detail where available while keeping existing aggregate overview counts.
+
+### Enhanced
+
+* Upside/downside is now the primary visual element on the Overview card.
+* Dollar difference from current price to consensus target is shown directly below the percentage.
+* Positive target deltas use green treatment; negative deltas use red treatment; neutral/unavailable values stay muted.
+
+### Known limitations
+
+* Yahoo fallback provides consensus and recommendation summary, but not reliable firm-by-firm previous/new analyst target history. The UI shows "Analyst history not available" when provider history is absent.
+
+### Validation
+
+* `npm run build` passed.
+* `/`, `/mobile`, and `/setup` route smoke checks returned 200.
+* UAT tickers checked: NVDA, AMD, MSFT, SOFI.
+
 ## v0.3.18 - Portfolio Mobile Card V2
 
 Date: 2026-05-30

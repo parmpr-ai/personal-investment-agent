@@ -163,12 +163,17 @@ function analystTargetsData(source: any) {
   const recommendationMean = strictNumber(analystValue(source, ['recommendation_mean', 'recommendationMean']))
   const rawRating = analystValue(source, ['consensus_rating', 'consensusRating', 'recommendationKey', 'average_analyst_rating', 'averageAnalystRating'])
   const rating = rawRating ? titleCase(String(rawRating)) : recommendationMean != null ? `Mean ${recommendationMean.toFixed(1)}` : ''
+  const strongBuy = strictNumber(analystDistributionValue(source, ['strong_buy', 'strongBuy', 'analyst_strong_buy_count']))
+  const buyOnly = strictNumber(analystDistributionValue(source, ['buy_only', 'buyOnly', 'buy_raw', 'analyst_buy_only_count']))
   const buy = strictNumber(analystDistributionValue(source, ['buy', 'buy_count', 'buyCount', 'analyst_buy_count']))
   const hold = strictNumber(analystDistributionValue(source, ['hold', 'hold_count', 'holdCount', 'analyst_hold_count']))
+  const sellOnly = strictNumber(analystDistributionValue(source, ['sell_only', 'sellOnly', 'sell_raw', 'analyst_sell_only_count']))
+  const strongSell = strictNumber(analystDistributionValue(source, ['strong_sell', 'strongSell', 'analyst_strong_sell_count']))
   const sell = strictNumber(analystDistributionValue(source, ['sell', 'sell_count', 'sellCount', 'analyst_sell_count']))
   const upside = average != null && current ? ((average - current) / current) * 100 : strictNumber(analystValue(source, ['upside_downside_pct', 'upsideDownsidePct', 'analyst_upside_pct']))
-  const hasData = [average, low, high, count, buy, hold, sell].some((value) => value != null) || Boolean(rating)
-  return { current, average, low, high, upside, rating, count, buy, hold, sell, hasData }
+  const difference = average != null && current != null ? average - current : null
+  const hasData = [average, low, high, count, strongBuy, buyOnly, buy, hold, sellOnly, strongSell, sell].some((value) => value != null) || Boolean(rating)
+  return { current, average, low, high, upside, difference, rating, count, strongBuy, buyOnly, buy, hold, sellOnly, strongSell, sell, hasData }
 }
 
 function analystDetailContainers(source: any) {
@@ -219,7 +224,8 @@ function analystDetailRows(source: any) {
 
   return rows
     .map((row) => {
-      const target = strictNumber(row?.target_price ?? row?.targetPrice ?? row?.priceTarget ?? row?.target ?? row?.to_price ?? row?.toPrice)
+      const previousTarget = strictNumber(row?.previous_target ?? row?.previousTarget ?? row?.from_target ?? row?.fromTarget ?? row?.target_from ?? row?.targetFrom ?? row?.old_target ?? row?.oldTarget)
+      const newTarget = strictNumber(row?.new_target ?? row?.newTarget ?? row?.target_price ?? row?.targetPrice ?? row?.priceTarget ?? row?.target ?? row?.to_price ?? row?.toPrice ?? row?.target_to ?? row?.targetTo)
       const firm = row?.firm ?? row?.source ?? row?.company ?? row?.brokerage
       const analyst = row?.analyst ?? row?.analyst_name ?? row?.analystName
       const rating = row?.rating ?? row?.toGrade ?? row?.to_grade ?? row?.grade ?? row?.recommendation
@@ -229,13 +235,14 @@ function analystDetailRows(source: any) {
       return {
         firm: firm ? String(firm) : '',
         analyst: analyst ? String(analyst) : '',
-        target,
+        previousTarget,
+        newTarget,
         rating: rating ? String(rating) : '',
         date,
         action,
       }
     })
-    .filter((row) => row.firm || row.analyst || row.target != null || row.rating || row.date || row.action)
+    .filter((row) => row.firm || row.analyst || row.previousTarget != null || row.newTarget != null || row.rating || row.date || row.action)
     .slice(0, 8)
 }
 
@@ -269,17 +276,17 @@ function formatAnalystDate(value: unknown) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function AnalystTargetsWidget({ source, hidden }: { source: any; hidden: boolean }) {
+function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden: boolean; onOpen?: () => void }) {
   const data = analystTargetsData(source)
   if (!data.hasData) {
     return (
-      <section className="stock-analyst-targets stock-analyst-targets-empty" aria-label="Analyst targets">
+      <button type="button" className="stock-analyst-targets stock-analyst-targets-empty stock-analyst-targets-action" aria-label="Open analyst targets details" onClick={onOpen}>
         <div className="sat-head">
           <span>Analyst Targets</span>
           <Target size={15} />
         </div>
         <p>{hidden ? mask : 'Analyst targets unavailable'}</p>
-      </section>
+      </button>
     )
   }
 
@@ -303,30 +310,27 @@ function AnalystTargetsWidget({ source, hidden }: { source: any; hidden: boolean
     data.count != null ? ['Analysts', String(Math.trunc(data.count))] : null,
   ].filter(Boolean) as string[][]
   const upsideTone = data.upside == null ? 'neutral' : data.upside > 0 ? 'positive' : data.upside < 0 ? 'negative' : 'neutral'
+  const signedDifference = data.difference == null ? '' : `${data.difference >= 0 ? '+' : '-'}${money(Math.abs(data.difference))}`
+  const upsideLabel = data.upside == null ? '' : `${data.upside >= 0 ? '+' : ''}${data.upside.toFixed(1)}%`
 
   return (
-    <section className="stock-analyst-targets" aria-label="Analyst targets">
+    <button type="button" className="stock-analyst-targets stock-analyst-targets-action" aria-label="Open analyst targets details" onClick={onOpen}>
       <div className="sat-head">
         <span>Analyst Targets</span>
         <Target size={15} />
       </div>
       <div className="sat-main">
-        {data.current != null ? (
-          <div>
-            <span>Current Price</span>
-            <b>{hidden ? mask : money(data.current)}</b>
-          </div>
-        ) : null}
         {data.average != null ? (
-          <div>
-            <span>Average Target</span>
+          <div className="sat-consensus">
+            <span>Consensus Target</span>
             <b>{hidden ? mask : money(data.average)}</b>
           </div>
         ) : null}
         {data.upside != null ? (
-          <strong className={`sat-upside ${upsideTone}`}>
-            {hidden ? mask : `${data.upside >= 0 ? '+' : ''}${data.upside.toFixed(1)}%`}
-          </strong>
+          <div className={`sat-upside ${upsideTone}`}>
+            <strong>{hidden ? mask : upsideLabel}</strong>
+            {data.difference != null ? <small>{hidden ? mask : signedDifference}</small> : null}
+          </div>
         ) : null}
       </div>
       {rangeReady ? (
@@ -362,16 +366,64 @@ function AnalystTargetsWidget({ source, hidden }: { source: any; hidden: boolean
           ))}
         </div>
       ) : null}
-    </section>
+    </button>
   )
 }
 
 function AnalystTargetsDetail({ source, hidden }: { source: any; hidden: boolean }) {
+  const data = analystTargetsData(source)
   const rows = analystDetailRows(source)
+  const detailRows = [
+    data.average != null ? ['Consensus Target', money(data.average)] : null,
+    data.high != null ? ['Bull Target', money(data.high)] : null,
+    data.low != null ? ['Bear Target', money(data.low)] : null,
+    data.count != null ? ['Analyst Count', String(Math.trunc(data.count))] : null,
+  ].filter(Boolean) as string[][]
+  const recommendationRows = [
+    { label: 'Strong Buy', value: data.strongBuy },
+    { label: 'Buy', value: data.buyOnly ?? (data.strongBuy == null ? data.buy : null) },
+    { label: 'Hold', value: data.hold },
+    { label: 'Sell', value: data.sellOnly != null || data.strongSell != null ? Number(data.sellOnly || 0) + Number(data.strongSell || 0) : data.sell },
+  ].filter((row) => row.value != null)
+  const hasSummary = detailRows.length > 0 || recommendationRows.length > 0 || Boolean(data.rating)
   return (
-    <PiaCard className="stock-intel-tech-card stock-analyst-detail-card" title={hidden ? 'Workspace' : 'Analyst Targets'} badge={<Target size={16} />}>
-      {rows.length ? (
-        <div className="sat-detail-list">
+    <PiaCard className="stock-intel-tech-card stock-analyst-detail-card" title={hidden ? 'Workspace' : 'Analyst Targets'}>
+      {hasSummary ? (
+        <div className="sat-analysis-detail">
+          {detailRows.length ? (
+            <div className="sat-analysis-grid">
+              {detailRows.map(([label, value]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <b>{hidden ? mask : value}</b>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {data.rating || recommendationRows.length ? (
+            <section className="sat-recommendation-summary" aria-label="Recommendation summary">
+              <h4>Recommendation Summary</h4>
+              {data.rating ? <strong>{hidden ? mask : data.rating}</strong> : null}
+              {recommendationRows.length ? (
+                <div className="sat-recommendation-grid">
+                  {recommendationRows.map((row) => (
+                    <div key={row.label}>
+                      <span>{row.label}</span>
+                      <b>{hidden ? mask : Math.trunc(Number(row.value || 0))}</b>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+        </div>
+      ) : (
+        <p className="stock-analyst-detail-empty">{hidden ? mask : 'Analyst target details unavailable from the current provider.'}</p>
+      )}
+      <section className="sat-history" aria-label="Analyst history">
+        <h4>Analyst History</h4>
+        {rows.length ? (
+          <div className="sat-detail-list">
           {rows.map((row, index) => (
             <article className="sat-detail-row" key={`${row.firm || row.analyst || row.rating || 'analyst'}-${row.date || index}`}>
               <div className="sat-detail-copy">
@@ -382,15 +434,18 @@ function AnalystTargetsDetail({ source, hidden }: { source: any; hidden: boolean
                 </div>
               </div>
               <div className="sat-detail-values">
-                {row.target != null ? <b>{hidden ? mask : money(row.target)}</b> : null}
+                {row.previousTarget != null || row.newTarget != null ? (
+                  <b>{hidden ? mask : `${row.previousTarget != null ? money(row.previousTarget) : EMPTY} -> ${row.newTarget != null ? money(row.newTarget) : EMPTY}`}</b>
+                ) : null}
                 {row.rating ? <span>{hidden ? mask : row.rating}</span> : null}
               </div>
             </article>
           ))}
-        </div>
-      ) : (
-        <p className="stock-analyst-detail-empty">{hidden ? mask : 'Detailed analyst history unavailable'}</p>
-      )}
+          </div>
+        ) : (
+          <p className="stock-analyst-detail-empty">{hidden ? mask : 'Analyst history not available'}</p>
+        )}
+      </section>
     </PiaCard>
   )
 }
@@ -791,6 +846,7 @@ export default function StockIntelligencePanel({
     lastActiveStockPanelTab = value
     setTab(value)
   }
+  const openAnalystTargetsDetail = () => handleTabChange('Analysis')
 
   return (
     <div className={`stock-intel-panel ${variant === 'mobile' ? 'stock-intel-panel-mobile' : 'stock-intel-panel-desktop'}`.trim()}>
@@ -868,7 +924,7 @@ export default function StockIntelligencePanel({
 
             <StockAiIntelligenceWidget source={source} overview={overview} technical={technical} targets={targets} hidden={hidden} />
 
-            <AnalystTargetsWidget source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} />
+            <AnalystTargetsWidget source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} onOpen={openAnalystTargetsDetail} />
 
             <PiaCard title={hidden ? 'Updates' : 'Recent News'}>
               <RecentNewsPreview items={newsIntelligence.items || []} hidden={hidden} />
@@ -886,6 +942,8 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Analysis' && (
           <div className="stock-intel-section stock-intel-technical-layout">
+            <AnalystTargetsDetail source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} />
+
             <PiaCard className="stock-intel-tech-card" title={hidden ? 'Workspace plan' : 'Trade Decision Snapshot'} badge={<PiaBadge variant="ai">{hidden ? 'AI' : timeframe}</PiaBadge>}>
               <div className="stock-timeframe-tabs">
                 {timeframes.map((item) => (
@@ -907,8 +965,6 @@ export default function StockIntelligencePanel({
               />
               <p>{hidden ? mask : techPlan.implication}</p>
             </PiaCard>
-
-            <AnalystTargetsDetail source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} />
 
             <PiaCard className="stock-intel-tech-card" title={hidden ? 'Workspace' : 'Technical Summary'}>
               <DetailGrid

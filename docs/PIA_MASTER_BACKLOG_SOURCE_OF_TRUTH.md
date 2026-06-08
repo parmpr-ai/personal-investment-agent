@@ -1,7 +1,7 @@
 # PIA Master Backlog Source Of Truth
 
 Status: Active AI memory engine
-Last updated: 2026-05-28
+Last updated: 2026-06-08
 Branch: `feat/pia-v3-foundation-integration`
 
 This Markdown is the canonical readable operating memory for PIA. The Excel workbook is the PM operational database. Both must stay synchronized after every approved sprint, merge, or implementation.
@@ -26,7 +26,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Enforce mock-first design governance before any further UI implementation.
   - Interaction stabilization on Home and mobile.
   - Mobile density refinement across cards, scanner rails, and intelligence surfaces.
-  - Stock workspace expansion around Technical, Company, News, and Videos. Completed for Sprint 2C HERMES scope.
+  - Stock workspace expansion around Technical, Company, News, Videos, and Analyst Targets. Analyst Targets V2 completed for HERMES scope.
   - Notification Center refactor for mobile-safe visibility.
   - Performance smoothing for motion/render cost.
   - Mobile correction mock review for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
@@ -105,7 +105,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Mobile correction mock pack created for PO review.
   - Keep mobile settings useful and visible.
 - P1 Stock Intelligence:
-  - Analyst Targets widget per stock.
+  - Analyst Targets V2 per stock. DONE 2026-06-08: Overview card appears before News, emphasizes consensus upside/downside and dollar delta, taps into Analysis, and Analysis tab includes consensus/bull/bear targets, recommendation summary, analyst count, and analyst history empty state.
   - Stock targets required per stock.
   - Technical Snapshot expansion. Sprint 2C HERMES implementation complete; live data integration remains.
   - Company Research Hub refactor. Sprint 2C HERMES implementation complete with placeholder-marked fundamentals.
@@ -241,7 +241,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - Future:
   - Create Product Owner-reviewed mobile mock for Portfolio Snapshot before redesign.
   - News UX V2.
-  - Analyst Targets widget.
+  - Analyst target history provider integration. Yahoo fallback covers consensus/recommendation summary; firm/date previous-target/new-target history requires Finnhub/FMP or another paid provider.
   - Unified Intelligence Feed: Yahoo, Discord, Seeking Alpha, Reuters, PIA, X, IBKR.
 
 ## Architecture Decisions
@@ -416,6 +416,7 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - v0.3.16: Global search universe expansion + Enter-to-open, and per-ticker mock news fallback so every symbol shows source-badged news (demo flag only when real provider returns nothing).
 
 - v0.3.17: Watchlists IBKR UX upgrade with custom tabs, dense table/list modes, add/remove instruments, edit instruments, settings sheet, desktop parity, shared localStorage persistence, and Stock Intelligence launch from watchlist tickers.
+- v0.3.19: Analyst Targets V2 with prominent upside/downside badge, consensus dollar delta, tap-to-Analysis behavior, Analysis detail section, recommendation summary, and explicit history unavailable state when provider data is absent.
 
 ## Guardrails
 

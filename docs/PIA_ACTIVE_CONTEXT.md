@@ -84,6 +84,29 @@ Fix defined in: docs/PIA_WORKSPACE_ARCHITECTURE_FINAL.md (PIA-ARCH-001-C).
 
 
 
+### Analyst Targets V2
+
+Task ID: CR-AT-003 / CR-AT-004 / BUG-AT-001 / CR-AT-005
+
+Status: IMPLEMENTED (2026-06-08)
+
+Area: Stock Intelligence
+
+Commit: latest HERMES Analyst Targets V2 commit
+
+Validation: `npm run build` passed; `/`, `/mobile`, `/setup` route smoke passed.
+
+Notes:
+
+* Overview Analyst Targets card appears before News and now emphasizes consensus target upside/downside plus dollar delta.
+* Tapping the Overview card opens the Analysis tab.
+* Analysis tab contains Analyst Targets detail: consensus/bull/bear targets, recommendation summary, analyst count, and analyst history empty state.
+* Yahoo fallback provides consensus and recommendation summary but not reliable firm/date previous-target/new-target history.
+
+---
+
+
+
 ### Workspace Manager UX Trap
 
 Task ID: PIA-UX-019
