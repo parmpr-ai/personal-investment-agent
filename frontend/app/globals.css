@@ -1197,3 +1197,28 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 @keyframes price-pop-up{0%{transform:translateY(0);text-shadow:none}45%{transform:translateY(-2px);text-shadow:0 0 10px rgba(36,209,140,.55)}100%{transform:translateY(0);text-shadow:none}}
 @keyframes price-pop-down{0%{transform:translateY(0);text-shadow:none}45%{transform:translateY(2px);text-shadow:0 0 10px rgba(255,99,117,.5)}100%{transform:translateY(0);text-shadow:none}}
 @media(prefers-reduced-motion:reduce){.card-last-price.price-flash-up,.card-last-price.price-flash-down{animation:none}}
+
+/* ATHENA-049..053 Card Visual System V2 — portfolio + watchlist (CSS only) */
+/* 049 Logo emphasis: larger, consistent anchor across 1x1/2x2/3x3 */
+.card-symbol .logo{width:44px;height:44px;border-radius:14px}
+.position-cards-2x2 .card-symbol .logo{width:40px;height:40px}
+.position-cards-3x3 .card-symbol .logo{width:36px;height:36px}
+.mobile-card-symbol .mtt-logo{width:42px;height:42px}
+.mobile-position-grid-2x2 .mobile-card-symbol .mtt-logo,.wl-grid-2 .mobile-card-symbol .mtt-logo{width:38px;height:38px}
+.mobile-position-grid-3x3 .mobile-card-symbol .mtt-logo,.wl-grid-3 .mobile-card-symbol .mtt-logo{width:32px;height:32px}
+/* 050 Price hierarchy: price > ticker > daily% > company name */
+.card-symbol>div{gap:1px}
+.card-symbol b{font-size:15px;font-weight:800;line-height:1.15}
+.card-symbol>div>span{font-size:11px;color:var(--muted);line-height:1.2}
+.position-card .position-pnl span{font-weight:700}
+/* 051 2x2 density: premium, not compressed */
+.position-cards-2x2 .position-card button{padding:16px}
+.position-cards-2x2 .position-pnl{margin:11px 0}
+.position-cards-3x3 .position-card button{padding:12px}
+.position-cards-3x3 .position-pnl{margin:8px 0}
+/* 053 Animation/feedback: subtle terminal feel, no layout shift */
+.position-card{transition:transform .14s ease,border-color .14s ease}
+.position-card:hover{transform:translateY(-2px)}
+.position-card:active{transform:translateY(0)}
+.mobile-position-card:active{transform:scale(.992)}
+@media(prefers-reduced-motion:reduce){.position-card,.mobile-position-card{transition:none}.position-card:hover{transform:none}}
