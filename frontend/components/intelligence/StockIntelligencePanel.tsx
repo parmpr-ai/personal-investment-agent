@@ -27,7 +27,6 @@ const INITIAL_TAB_ALIASES: Record<string, StockPanelTab> = {
   analysis: 'Analysis',
   ai: 'Analysis',
   'ai coach': 'Analysis',
-  options: 'Options',
 }
 const COMPANY_NAMES: Record<string, string> = {
   AAPL: 'Apple',
@@ -304,8 +303,9 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
   ].filter((item) => item.value != null)
   const ratingTotal = ratingRows.reduce((sum, item) => sum + Number(item.value || 0), 0)
   const statRows = [
-    data.low != null ? ['Low Target', money(data.low)] : null,
-    data.high != null ? ['High Target', money(data.high)] : null,
+    data.high != null ? ['Bull', money(data.high)] : null,
+    data.average != null ? ['Base', money(data.average)] : null,
+    data.low != null ? ['Bear', money(data.low)] : null,
     data.rating ? ['Consensus', data.rating] : null,
     data.count != null ? ['Analysts', String(Math.trunc(data.count))] : null,
   ].filter(Boolean) as string[][]
@@ -346,7 +346,7 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
         </div>
       ) : null}
       {statRows.length ? (
-        <div className="sat-stats">
+        <div className="sat-stats sat-targets-grid">
           {statRows.map(([label, value]) => (
             <div key={label}>
               <span>{label}</span>
@@ -374,8 +374,8 @@ function AnalystTargetsDetail({ source, hidden }: { source: any; hidden: boolean
   const data = analystTargetsData(source)
   const rows = analystDetailRows(source)
   const detailRows = [
-    data.average != null ? ['Consensus Target', money(data.average)] : null,
     data.high != null ? ['Bull Target', money(data.high)] : null,
+    data.average != null ? ['Base Target', money(data.average)] : null,
     data.low != null ? ['Bear Target', money(data.low)] : null,
     data.count != null ? ['Analyst Count', String(Math.trunc(data.count))] : null,
   ].filter(Boolean) as string[][]
@@ -390,8 +390,15 @@ function AnalystTargetsDetail({ source, hidden }: { source: any; hidden: boolean
     <PiaCard className="stock-intel-tech-card stock-analyst-detail-card" title={hidden ? 'Workspace' : 'Analyst Targets'}>
       {hasSummary ? (
         <div className="sat-analysis-detail">
+          {data.average != null || data.rating ? (
+            <section className="sat-consensus-panel" aria-label="Analyst consensus">
+              <span>Consensus</span>
+              {data.average != null ? <b>{hidden ? mask : money(data.average)}</b> : null}
+              {data.rating ? <strong>{hidden ? mask : data.rating}</strong> : null}
+            </section>
+          ) : null}
           {detailRows.length ? (
-            <div className="sat-analysis-grid">
+            <div className="sat-analysis-grid sat-analysis-targets" aria-label="Bull base bear analyst targets">
               {detailRows.map(([label, value]) => (
                 <div key={label}>
                   <span>{label}</span>
@@ -401,8 +408,8 @@ function AnalystTargetsDetail({ source, hidden }: { source: any; hidden: boolean
             </div>
           ) : null}
           {data.rating || recommendationRows.length ? (
-            <section className="sat-recommendation-summary" aria-label="Recommendation summary">
-              <h4>Recommendation Summary</h4>
+            <section className="sat-recommendation-summary" aria-label="Analyst ratings">
+              <h4>Analyst Ratings</h4>
               {data.rating ? <strong>{hidden ? mask : data.rating}</strong> : null}
               {recommendationRows.length ? (
                 <div className="sat-recommendation-grid">
@@ -918,10 +925,6 @@ export default function StockIntelligencePanel({
           <div className="stock-intel-section stock-overview-v2">
             {position ? <StockPositionSummary source={{ ...source, ...position }} hidden={hidden} /> : null}
 
-            <PiaCard className="stock-intel-chart-card" title={hidden ? 'Workspace chart' : 'Price Chart'}>
-              <TradingViewChart ticker={symbol} source={{ ...source, fundamentals }} hidden={hidden} />
-            </PiaCard>
-
             <StockAiIntelligenceWidget source={source} overview={overview} technical={technical} targets={targets} hidden={hidden} />
 
             <AnalystTargetsWidget source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} onOpen={openAnalystTargetsDetail} />
@@ -1072,13 +1075,6 @@ export default function StockIntelligencePanel({
           </div>
         )}
 
-        {!loading && tab === 'Options' && (
-          <div className="stock-intel-section">
-            <PiaCard title={hidden ? 'Options' : 'Options'} badge={<PiaBadge variant="warning">Pending</PiaBadge>}>
-              <p className="muted">{hidden ? mask : 'Options chain data gathering in progress.'}</p>
-            </PiaCard>
-          </div>
-        )}
       </div>
     </div>
   )
