@@ -1132,11 +1132,11 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .mobile-position-grid-3x3 .mobile-card-symbol strong{font-size:15px}
 .mobile-position-grid-2x2 .mobile-card-symbol span{display:none}
 .mobile-position-grid-3x3 .mobile-card-symbol span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mobile-position-grid-2x2 .mobile-card-last-price{font-size:12px!important;color:#cbd5e1!important;margin-top:1px}
+.mobile-position-grid-2x2 .mobile-card-last-price{font-size:15px!important;color:#eef4fb!important;font-weight:900;margin-top:2px}.mobile-position-grid-2x2 .intelligence-badge{font-size:10px;padding:3px 8px}
 .mobile-position-grid-3x3 .mobile-card-last-price{font-size:11px!important}
-.mobile-position-grid-2x2 .mobile-card-symbol .mtt-logo{width:28px;height:28px;border-radius:7px;flex-shrink:0}
+.mobile-position-grid-2x2 .mobile-card-symbol .mtt-logo{border-radius:10px;flex-shrink:0}
 .mobile-position-grid-2x2 .mobile-position-spark{margin:6px 0 0}
-.mobile-position-grid-2x2 .mobile-sparkline{height:46px}
+.mobile-position-grid-2x2 .mobile-sparkline{height:52px}
 .mobile-position-grid-3x3 .mobile-sparkline{height:38px}
 .mobile-position-grid-2x2 .mobile-position-stats{margin-top:6px;gap:3px 8px}
 .mobile-position-grid-2x2 .mps-cell span{font-size:9px;letter-spacing:.03em;color:var(--muted)}
@@ -1209,7 +1209,7 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .position-cards-2x2 .card-symbol .logo{width:40px;height:40px}
 .position-cards-3x3 .card-symbol .logo{width:36px;height:36px}
 .mobile-card-symbol .mtt-logo{width:42px;height:42px}
-.mobile-position-grid-2x2 .mobile-card-symbol .mtt-logo,.wl-grid-2 .mobile-card-symbol .mtt-logo{width:38px;height:38px}
+.mobile-position-grid-2x2 .mobile-card-symbol .mtt-logo,.wl-grid-2 .mobile-card-symbol .mtt-logo{width:44px;height:44px;border-radius:10px}
 .mobile-position-grid-3x3 .mobile-card-symbol .mtt-logo,.wl-grid-3 .mobile-card-symbol .mtt-logo{width:32px;height:32px}
 /* 050 Price hierarchy: price > ticker > daily% > company name */
 .card-symbol>div{gap:1px}
