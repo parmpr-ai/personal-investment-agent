@@ -315,7 +315,6 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
     data.high != null ? { label: 'Bull', value: data.high, percent: targetPercent(data.high) } : null,
   ].filter(Boolean) as { label: string; value: number; percent: number | null }[]
   const upsideTone = data.upside == null ? 'neutral' : data.upside > 0 ? 'positive' : data.upside < 0 ? 'negative' : 'neutral'
-  const percentTone = (value: number | null) => value == null ? 'neutral' : value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral'
   const percentLabel = (value: number | null) => value == null ? '' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
   const signedDifference = data.difference == null ? '' : `${data.difference >= 0 ? '+' : '-'}${money(Math.abs(data.difference))}`
   const upsideLabel = data.upside == null ? '' : `${data.upside >= 0 ? '+' : ''}${data.upside.toFixed(1)}%`
@@ -357,8 +356,10 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
           {targetRows.map((row) => (
             <div key={row.label}>
               <span>{row.label}</span>
-              <b>{hidden ? mask : money(row.value)}</b>
-              {row.percent != null ? <small className={percentTone(row.percent)}>{hidden ? mask : percentLabel(row.percent)}</small> : null}
+              <b className="sat-target-value">
+                <span>{hidden ? mask : money(row.value)}</span>
+                {row.percent != null ? <small>{hidden ? mask : percentLabel(row.percent)}</small> : null}
+              </b>
             </div>
           ))}
         </div>
