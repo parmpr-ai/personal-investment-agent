@@ -1,5 +1,39 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.20 - Portfolio Density + Analyst Targets V3 + UAT Fix Pack
+
+Date: 2026-06-09
+Status: Implemented and locally validated (`npm run build` PASS; `/`, `/mobile`, `/setup` 200). Pending Product Owner real-device UAT.
+Commit range: 02dfcdf … e5736e9 (through requested anchor 72499e9).
+
+### Added — Analyst Targets V3 (HERMES)
+
+* V3 layout: Options tab removed (tabs: Overview, Chart, News, Financials, Analysis); chart now lives only in the Chart tab; fixed/sticky stock header.
+* Overview Analyst Targets: Bull / Base / Bear (percentage + target price), target range with current + consensus markers, consensus + analyst count, and analyst distribution bars.
+* Tapping the Overview Analyst Targets card navigates to Analysis → Analyst Targets; analyst history rendered as mobile cards (no tables).
+* Commits: 2b9d1de, 5602655, ecbe06d, ac0ca6f (current data source only; no Finnhub/FMP this sprint).
+
+### Added — Portfolio Density Sprint (ATHENA)
+
+* Portfolio/Watchlist cards v2, card customization framework, grid + filters, 2x2 compact IBKR style, live price emphasis (dynamic color + tick pop), visual system v2 (larger logo, price hierarchy, 2x2 density), logo ring, portfolio view selector, mobile density pass + persistence validation.
+* Commits: 23bce57, 54bf30e, b7c646f, 6038934, edca406, 5e8daca, 72499e9, e5736e9.
+
+### Watchlist UAT findings
+
+* Carried forward (still OPEN): PIA-WL-008..014 — column switches, Open Chart destination, Add-to-list, AI Coach, add-instrument UX, table sorting, watchlist columns.
+
+### Open items discovered during latest UAT / visual audit (2026-06-09)
+
+* PIA-UX-060 — card logo still under-weighted as a visual anchor.
+* PIA-BUG-032 — empty workspace preview widgets read as broken-premium.
+* PIA-CSS-001 — duplicated/overriding `.stock-intel-header` CSS; consolidate before the V3 fixed header.
+* PIA-UX-061 — Cards view discoverability (view mode behind the overflow menu).
+
+### Governance
+
+* Design Lock process locked (DEC-DESIGN-LOCK): a DESIGN LOCKED feature freezes layout/IA; implementation must match the locked spec; deviations require re-approval.
+* Next.js cache governance locked (DEC-NEXT-CACHE): on `PageNotFoundError` during page-data collection, clear `.next` then rebuild; never delete `.next` while a server holds it; avoid concurrent `.next` access in the shared tree.
+
 ## v0.3.19 - Analyst Targets V2
 
 Date: 2026-06-08

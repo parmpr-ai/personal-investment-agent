@@ -1,7 +1,7 @@
 # PIA Master Backlog Source Of Truth
 
 Status: Active AI memory engine
-Last updated: 2026-06-08
+Last updated: 2026-06-09
 Branch: `feat/pia-v3-foundation-integration`
 
 This Markdown is the canonical readable operating memory for PIA. The Excel workbook is the PM operational database. Both must stay synchronized after every approved sprint, merge, or implementation.
@@ -105,7 +105,15 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Mobile correction mock pack created for PO review.
   - Keep mobile settings useful and visible.
 - P1 Stock Intelligence:
+  - Analyst Targets V3 per stock (CR-AT-V3). IMPLEMENTED 2026-06-09 (HERMES): Options tab removed (tabs Overview/Chart/News/Financials/Analysis), chart only in Chart tab, fixed sticky header; Overview Bull/Base/Bear + target range (current + consensus markers) + consensus + analyst distribution; tap Overview card → Analysis > Analyst Targets; analyst history as mobile cards (no tables). Current data source only (no Finnhub/FMP). Commits 2b9d1de,5602655,ecbe06d,ac0ca6f through e5736e9.
   - Analyst Targets V2 per stock. DONE 2026-06-08: Overview card appears before News, emphasizes consensus upside/downside and dollar delta, taps into Analysis, and Analysis tab includes consensus/bull/bear targets, recommendation summary, analyst count, and analyst history empty state.
+- P1 Portfolio Density Sprint (SPRINT-PORT-DENSITY). IMPLEMENTED 2026-06-09 (ATHENA): cards v2, card customization framework, grid + filters, 2x2 compact IBKR style, live price emphasis (dynamic color + tick pop), visual system v2 (larger logo / price hierarchy / 2x2 density), logo ring, portfolio view selector, mobile density pass + persistence validation. Commits 23bce57,54bf30e,b7c646f,6038934,edca406,5e8daca,72499e9,e5736e9.
+- P1/P2 Open items from latest UAT + visual audit (2026-06-09):
+  - PIA-UX-060 (Medium, ATHENA, OPEN): card logo still under-weighted as a visual anchor.
+  - PIA-BUG-032 (Medium, ATHENA/Platform, OPEN): empty workspace preview widgets read as broken-premium.
+  - PIA-CSS-001 (Medium, HERMES, OPEN): duplicated/overriding `.stock-intel-header` CSS; consolidate before V3 fixed header.
+  - PIA-UX-061 (Low, PO decision, OPEN): Cards view discoverability — view mode buried in overflow menu.
+  - Watchlist UAT carry-forward (OPEN): PIA-WL-008..014 (column switches, Open Chart target, Add-to-list, AI Coach, add-instrument UX, table sorting, columns).
   - Stock targets required per stock.
   - Technical Snapshot expansion. Sprint 2C HERMES implementation complete; live data integration remains.
   - Company Research Hub refactor. Sprint 2C HERMES implementation complete with placeholder-marked fundamentals.
@@ -268,6 +276,8 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - Every UI change must reference an approved mock, design-system rule, mobile-first principle, and changelog entry.
 - Portfolio Snapshot must be redesigned only after an approved mobile mock.
 - Mobile correction mock pack is the required gate before final UI corrections for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
+- DEC-DESIGN-LOCK (LOCKED): Design Lock process — a feature marked DESIGN LOCKED has its layout/IA frozen; implementation must match the locked spec; deviations require re-approval. Introduced with the Analyst Targets V3 design-locked spec.
+- DEC-NEXT-CACHE (LOCKED): Next.js cache governance — on `PageNotFoundError` during page-data collection (`/_not-found`, `/_document`), clear `.next` then rebuild; never delete `.next` while a dev/prod server holds it (file lock); avoid concurrent `.next` access in the shared working tree. Recurring build contention during 2026-06 multi-agent sprints.
 
 ## PM Operating Model
 
@@ -430,6 +440,15 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.20 - Portfolio Density + Analyst Targets V3 + UAT Fix Pack
+Date: 2026-06-09
+Status: Implemented and locally validated (build PASS; `/`, `/mobile`, `/setup` 200); pending Product Owner real-device UAT.
+Commit range: 02dfcdf … e5736e9 (through requested anchor 72499e9).
+- Analyst Targets V3 (HERMES): Options tab removed; chart only in Chart tab; fixed sticky header; Overview Bull/Base/Bear + range + consensus + distribution; tap → Analysis history cards. Commits 2b9d1de,5602655,ecbe06d,ac0ca6f.
+- Portfolio Density Sprint (ATHENA): cards v2, customization framework, grid+filters, 2x2 compact IBKR, live price emphasis, visual system v2, logo ring, view selector, mobile density+persistence. Commits 23bce57,54bf30e,b7c646f,6038934,edca406,5e8daca,72499e9,e5736e9.
+- New OPEN (visual audit): PIA-UX-060 (logo anchor), PIA-BUG-032 (empty preview widgets), PIA-CSS-001 (stock header CSS), PIA-UX-061 (cards view discoverability). Watchlist UAT PIA-WL-008..014 still open.
+- Governance LOCKED: DEC-DESIGN-LOCK (Design Lock process), DEC-NEXT-CACHE (Next.js cache rule).
 
 ### v0.3.16 - Global Search + Mobile News Regression Fix
 Date: 2026-05-28

@@ -309,3 +309,38 @@ Use MASTER_BACKLOG only for historical lookup.
 
 
 
+---
+
+## 2026-06-09 Documentation Sync (incremental)
+
+Latest Validated Commit: e5736e9 (range 02dfcdf … e5736e9; requested anchor 72499e9). `npm run build` PASS; `/`, `/mobile`, `/setup` 200.
+
+### Analyst Targets V3 — Task CR-AT-V3 — IMPLEMENTED (HERMES)
+
+* Options tab removed (tabs: Overview, Chart, News, Financials, Analysis); chart only in Chart tab; fixed sticky stock header.
+* Overview: Bull/Base/Bear (percent + target price), target range (current + consensus markers), consensus + analyst count, analyst distribution bars.
+* Tap Overview Analyst Targets card → Analysis > Analyst Targets; analyst history as mobile cards (no tables).
+* Current data source only (no Finnhub/FMP this sprint). Commits 2b9d1de, 5602655, ecbe06d, ac0ca6f.
+
+### Portfolio Density Sprint — SPRINT-PORT-DENSITY — IMPLEMENTED (ATHENA)
+
+* Cards v2, card customization framework, grid + filters, 2x2 compact IBKR style, live price emphasis (dynamic color + tick pop), visual system v2 (larger logo / price hierarchy / 2x2 density), logo ring, portfolio view selector, mobile density pass + persistence validation.
+* Commits 23bce57, 54bf30e, b7c646f, 6038934, edca406, 5e8daca, 72499e9, e5736e9.
+
+### Open items from latest UAT / visual audit (2026-06-09)
+
+* PIA-UX-060 (Medium, ATHENA, OPEN): card logo still under-weighted as a visual anchor.
+* PIA-BUG-032 (Medium, ATHENA/Platform, OPEN): empty workspace preview widgets read as broken-premium.
+* PIA-CSS-001 (Medium, HERMES, OPEN): duplicated/overriding `.stock-intel-header` CSS; consolidate before V3 fixed header.
+* PIA-UX-061 (Low, PO decision, OPEN): Cards view discoverability — view mode buried in overflow menu.
+* Watchlist UAT carry-forward (OPEN): PIA-WL-008..014.
+
+### Governance additions (LOCKED)
+
+* DEC-DESIGN-LOCK — Design Lock process: a DESIGN LOCKED feature freezes layout/IA; implementation must match the locked spec; deviations require re-approval.
+* DEC-NEXT-CACHE — Next.js cache rule: on PageNotFoundError during page-data collection, clear `.next` then rebuild; never delete `.next` while a server holds it (file lock); avoid concurrent `.next` access in the shared working tree.
+
+Backlog parity: these items are mirrored identically in PIA_MASTER_BACKLOG_SOURCE_OF_TRUTH.md and .xlsx (Backlog / UAT Log / Architecture Decisions / CHANGELOG sheets).
+
+
+
