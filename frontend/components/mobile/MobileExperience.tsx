@@ -3310,6 +3310,18 @@ export default function MobileExperience() {
                   <MoreVertical size={18} />
                 </button>
               </div>
+              <div className="pf-view-selector" role="group" aria-label="Portfolio view">
+                {([
+                  { id: 'table' as const, label: 'Table' },
+                  { id: 'cards-1x1' as const, label: '1×1' },
+                  { id: 'cards-2x2' as const, label: '2×2' },
+                  { id: 'cards-3x3' as const, label: '3×3' },
+                ]).map((opt) => (
+                  <button key={opt.id} type="button" className={portfolioView === opt.id ? 'active' : ''} onClick={() => updatePortfolioView(opt.id)}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
             {portfolioView === 'table'
               ? <MobilePortfolioTable rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} advancedDefs={advancedFieldDefs} />
