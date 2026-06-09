@@ -303,10 +303,9 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
   ].filter((item) => item.value != null)
   const ratingTotal = ratingRows.reduce((sum, item) => sum + Number(item.value || 0), 0)
   const statRows = [
-    data.high != null ? ['Bull', money(data.high)] : null,
-    data.average != null ? ['Base', money(data.average)] : null,
     data.low != null ? ['Bear', money(data.low)] : null,
-    data.rating ? ['Consensus', data.rating] : null,
+    data.average != null ? ['Base', money(data.average)] : null,
+    data.high != null ? ['Bull', money(data.high)] : null,
     data.count != null ? ['Analysts', String(Math.trunc(data.count))] : null,
   ].filter(Boolean) as string[][]
   const upsideTone = data.upside == null ? 'neutral' : data.upside > 0 ? 'positive' : data.upside < 0 ? 'negative' : 'neutral'
@@ -319,17 +318,17 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
         <span>Analyst Targets</span>
         <Target size={15} />
       </div>
-      <div className="sat-main">
-        {data.average != null ? (
-          <div className="sat-consensus">
-            <span>Consensus Target</span>
-            <b>{hidden ? mask : money(data.average)}</b>
-          </div>
-        ) : null}
+      <div className="sat-main sat-main-primary">
         {data.upside != null ? (
           <div className={`sat-upside ${upsideTone}`}>
             <strong>{hidden ? mask : upsideLabel}</strong>
             {data.difference != null ? <small>{hidden ? mask : signedDifference}</small> : null}
+          </div>
+        ) : null}
+        {data.rating ? (
+          <div className="sat-consensus-rating">
+            <span>Consensus Rating</span>
+            <b>{hidden ? mask : data.rating}</b>
           </div>
         ) : null}
       </div>
