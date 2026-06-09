@@ -152,7 +152,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 export default function StockKeyMetrics({ source, hidden, ticker }: { source: any; hidden: boolean; ticker: string }) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const [editing, setEditing] = useState(false)
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
   const [activePage, setActivePage] = useState(0)
@@ -212,6 +212,7 @@ export default function StockKeyMetrics({ source, hidden, ticker }: { source: an
     <section className="skm" aria-label="Key metrics">
       <div className="skm-head">
         <button type="button" className="skm-title" aria-expanded={!collapsed} onClick={() => setCollapsed((current) => !current)}>
+          <ChevronDown size={15} className={`skm-title-arrow${collapsed ? '' : ' open'}`} aria-hidden="true" />
           <span>Key Metrics</span>
         </button>
         <div className="skm-head-actions">

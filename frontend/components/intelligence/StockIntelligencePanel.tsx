@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, BarChart3, Bell, Gauge, MoreVertical, Star, Target } from 'lucide-react'
 import { PiaBadge, PiaCard, PiaTabs } from '../ui-v3'
 import { mask, money, pct } from '../../lib/pia-api'
@@ -79,10 +79,13 @@ function TodayRangeHero({ source, hidden }: { source: any; hidden: boolean }) {
     return (
       <div className="stock-intel-today-range">
         <div className="stock-intel-range-head">
-          <span>Today Range</span>
+          <span>Today's Range</span>
+        </div>
+        <div className="stock-intel-range-row">
+          <b>{mask}</b>
+          <div className="stock-intel-hero-range-track" />
           <b>{mask}</b>
         </div>
-        <div className="stock-intel-hero-range-track" />
       </div>
     )
   }
@@ -91,7 +94,11 @@ function TodayRangeHero({ source, hidden }: { source: any; hidden: boolean }) {
     return (
       <div className="stock-intel-today-range stock-intel-today-range-empty">
         <div className="stock-intel-range-head">
-          <span>Today Range</span>
+          <span>Today's Range</span>
+        </div>
+        <div className="stock-intel-range-row">
+          <b>{EMPTY}</b>
+          <div className="stock-intel-hero-range-track" />
           <b>{EMPTY}</b>
         </div>
       </div>
@@ -102,15 +109,14 @@ function TodayRangeHero({ source, hidden }: { source: any; hidden: boolean }) {
   return (
     <div className="stock-intel-today-range" aria-label={`Today range ${money(low)} to ${money(high)}`}>
       <div className="stock-intel-range-head">
-        <span>Today Range</span>
-        <b>{money(low)} - {money(high)}</b>
+        <span>Today's Range</span>
       </div>
-      <div className="stock-intel-hero-range-track">
-        <i className="stock-intel-range-marker" style={{ left: `${marker}%` }} aria-hidden="true" />
-      </div>
-      <div className="stock-intel-range-values">
-        <span>Low {money(low)}</span>
-        <span>High {money(high)}</span>
+      <div className="stock-intel-range-row">
+        <b>{money(low)}</b>
+        <div className="stock-intel-hero-range-track">
+          <i className="stock-intel-range-marker" style={{ left: `${marker}%` }} aria-hidden="true" />
+        </div>
+        <b>{money(high)}</b>
       </div>
     </div>
   )
@@ -302,13 +308,15 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
     { label: 'Sell', value: data.sell, className: 'sell' },
   ].filter((item) => item.value != null)
   const ratingTotal = ratingRows.reduce((sum, item) => sum + Number(item.value || 0), 0)
-  const statRows = [
-    data.low != null ? ['Bear', money(data.low)] : null,
-    data.average != null ? ['Base', money(data.average)] : null,
-    data.high != null ? ['Bull', money(data.high)] : null,
-    data.count != null ? ['Analysts', String(Math.trunc(data.count))] : null,
-  ].filter(Boolean) as string[][]
+  const targetPercent = (value: number | null) => data.current ? ((Number(value) - data.current) / data.current) * 100 : null
+  const targetRows = [
+    data.low != null ? { label: 'Bear', value: data.low, percent: targetPercent(data.low) } : null,
+    data.average != null ? { label: 'Base', value: data.average, percent: targetPercent(data.average) } : null,
+    data.high != null ? { label: 'Bull', value: data.high, percent: targetPercent(data.high) } : null,
+  ].filter(Boolean) as { label: string; value: number; percent: number | null }[]
   const upsideTone = data.upside == null ? 'neutral' : data.upside > 0 ? 'positive' : data.upside < 0 ? 'negative' : 'neutral'
+  const percentTone = (value: number | null) => value == null ? 'neutral' : value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral'
+  const percentLabel = (value: number | null) => value == null ? '' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
   const signedDifference = data.difference == null ? '' : `${data.difference >= 0 ? '+' : '-'}${money(Math.abs(data.difference))}`
   const upsideLabel = data.upside == null ? '' : `${data.upside >= 0 ? '+' : ''}${data.upside.toFixed(1)}%`
 
@@ -326,9 +334,9 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
           </div>
         ) : null}
         {data.rating ? (
-          <div className="sat-consensus-rating">
-            <span>Consensus Rating</span>
-            <b>{hidden ? mask : data.rating}</b>
+          <div className="sat-consensus-rating" aria-label="Consensus rating">
+            <strong>{hidden ? mask : data.rating}</strong>
+            {data.count != null ? <small>{hidden ? mask : `${Math.trunc(data.count)} Analysts`}</small> : null}
           </div>
         ) : null}
       </div>
@@ -344,12 +352,13 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
           </div>
         </div>
       ) : null}
-      {statRows.length ? (
+      {targetRows.length ? (
         <div className="sat-stats sat-targets-grid">
-          {statRows.map(([label, value]) => (
-            <div key={label}>
-              <span>{label}</span>
-              <b>{hidden ? mask : value}</b>
+          {targetRows.map((row) => (
+            <div key={row.label}>
+              <span>{row.label}</span>
+              <b>{hidden ? mask : money(row.value)}</b>
+              {row.percent != null ? <small className={percentTone(row.percent)}>{hidden ? mask : percentLabel(row.percent)}</small> : null}
             </div>
           ))}
         </div>
@@ -828,6 +837,8 @@ export default function StockIntelligencePanel({
   const requestedInitialTab = initialTabFromSeed(seedPosition)
   const [tab, setTab] = useState<StockPanelTab>(() => requestedInitialTab || (STOCK_PANEL_TABS.includes(lastActiveStockPanelTab) ? lastActiveStockPanelTab : 'Overview'))
   const [timeframe, setTimeframe] = useState<Timeframe>('Swing')
+  const [analysisFocus, setAnalysisFocus] = useState<'analystTargets' | null>(null)
+  const analystTargetsRef = useRef<HTMLDivElement>(null)
   const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition, dashboard)
 
   useEffect(() => {
@@ -848,11 +859,21 @@ export default function StockIntelligencePanel({
   const techPlan = buildTechnicalPlan(technical, source, last || 100, timeframe)
 
   const tabLabel = (value: StockPanelTab) => (hidden ? PRIVATE_TAB_LABELS[value] : value)
-  const handleTabChange = (value: StockPanelTab) => {
+  useEffect(() => {
+    if (tab !== 'Analysis' || analysisFocus !== 'analystTargets') return
+    const frame = window.requestAnimationFrame(() => {
+      analystTargetsRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      analystTargetsRef.current?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [analysisFocus, tab])
+
+  const handleTabChange = (value: StockPanelTab, focus: 'analystTargets' | null = null) => {
     lastActiveStockPanelTab = value
+    setAnalysisFocus(value === 'Analysis' ? focus : null)
     setTab(value)
   }
-  const openAnalystTargetsDetail = () => handleTabChange('Analysis')
+  const openAnalystTargetsDetail = () => handleTabChange('Analysis', 'analystTargets')
 
   return (
     <div className={`stock-intel-panel ${variant === 'mobile' ? 'stock-intel-panel-mobile' : 'stock-intel-panel-desktop'}`.trim()}>
@@ -902,9 +923,10 @@ export default function StockIntelligencePanel({
             <div className="stock-intel-mini-spark" aria-hidden="true">
               <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
             </div>
-            <TodayRangeHero source={{ ...source, fundamentals }} hidden={hidden} />
           </div>
         </div>
+
+        <TodayRangeHero source={{ ...source, fundamentals }} hidden={hidden} />
 
         <StockKeyMetrics source={{ ...source, fundamentals, company }} hidden={hidden} ticker={symbol} />
       </section>
@@ -944,7 +966,9 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Analysis' && (
           <div className="stock-intel-section stock-intel-technical-layout">
-            <AnalystTargetsDetail source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} />
+            <div ref={analystTargetsRef} className={`stock-analysis-anchor${analysisFocus === 'analystTargets' ? ' is-selected' : ''}`} tabIndex={-1}>
+              <AnalystTargetsDetail source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} />
+            </div>
 
             <PiaCard className="stock-intel-tech-card" title={hidden ? 'Workspace plan' : 'Trade Decision Snapshot'} badge={<PiaBadge variant="ai">{hidden ? 'AI' : timeframe}</PiaBadge>}>
               <div className="stock-timeframe-tabs">
