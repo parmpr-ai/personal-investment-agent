@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, BarChart3, Bell, Gauge, MoreVertical, Star, Target } from 'lucide-react'
+import { ArrowLeft, BarChart3, Bell, Gauge, Info, MoreVertical, Star, Target } from 'lucide-react'
 import { PiaBadge, PiaCard, PiaTabs } from '../ui-v3'
 import { mask, money, pct } from '../../lib/pia-api'
 import TickerNewsList from './TickerNewsList'
@@ -15,6 +15,13 @@ import CompanyLogo from './CompanyLogo'
 let lastActiveStockPanelTab: StockPanelTab = 'Overview'
 const timeframes = ['Intraday', 'Swing', 'Position'] as const
 type Timeframe = (typeof timeframes)[number]
+const ANALYSIS_SUB_TABS = [
+  { id: 'analystTargets', label: 'Analyst Targets' },
+  { id: 'aiAnalysis', label: 'AI Analysis' },
+  { id: 'risks', label: 'Risks' },
+  { id: 'valuation', label: 'Valuation' },
+] as const
+type AnalysisSubTab = (typeof ANALYSIS_SUB_TABS)[number]['id']
 const FINANCIAL_UNAVAILABLE = 'Financial data unavailable'
 const TARGET_UNAVAILABLE = 'Analyst target data unavailable'
 const INITIAL_TAB_ALIASES: Record<string, StockPanelTab> = {
@@ -237,6 +244,7 @@ function analystDetailRows(source: any) {
       const rawDate = row?.date ?? row?.published_at ?? row?.publishedAt ?? row?.reportDate ?? row?.actionDate ?? row?.epochGradeDate
       const action = normalizeAnalystAction(row?.action ?? row?.type ?? row?.event)
       const date = formatAnalystDate(rawDate)
+      const age = formatAnalystAge(rawDate)
       return {
         firm: firm ? String(firm) : '',
         analyst: analyst ? String(analyst) : '',
@@ -244,6 +252,7 @@ function analystDetailRows(source: any) {
         newTarget,
         rating: rating ? String(rating) : '',
         date,
+        age,
         action,
       }
     })
@@ -271,14 +280,26 @@ function normalizeAnalystAction(value: unknown) {
   return mapped[raw] || titleCase(raw)
 }
 
-function formatAnalystDate(value: unknown) {
+function parseAnalystDate(value: unknown) {
   if (value == null || value === '') return ''
   const numericValue = typeof value === 'number' ? value : Number(value)
   const date = Number.isFinite(numericValue)
     ? new Date(numericValue > 100000000000 ? numericValue : numericValue * 1000)
     : new Date(String(value))
-  if (Number.isNaN(date.getTime())) return ''
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function formatAnalystDate(value: unknown) {
+  const date = parseAnalystDate(value)
+  if (!date) return ''
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatAnalystAge(value: unknown) {
+  const date = parseAnalystDate(value)
+  if (!date) return ''
+  const days = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000))
+  return days <= 0 ? 'Today' : `${days}d`
 }
 
 function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden: boolean; onOpen?: () => void }) {
@@ -314,10 +335,24 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
     data.average != null ? { label: 'Base', value: data.average, percent: targetPercent(data.average) } : null,
     data.high != null ? { label: 'Bull', value: data.high, percent: targetPercent(data.high) } : null,
   ].filter(Boolean) as { label: string; value: number; percent: number | null }[]
-  const upsideTone = data.upside == null ? 'neutral' : data.upside > 0 ? 'positive' : data.upside < 0 ? 'negative' : 'neutral'
+  const current = data.current
+  const baseTarget = data.average
+  const currentBelowBasePercent = current != null && baseTarget != null ? ((baseTarget - current) / current) * 100 : null
+  const consensusTone =
+    data.rating === 'Strong Buy' || data.rating === 'Buy'
+      ? currentBelowBasePercent != null && currentBelowBasePercent >= 7
+        ? 'positive'
+        : 'warning'
+      : data.rating === 'Sell' || data.rating === 'Strong Sell'
+      ? current != null && baseTarget != null && current > baseTarget
+        ? 'negative'
+        : 'warning'
+      : 'warning'
   const percentLabel = (value: number | null) => value == null ? '' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
   const signedDifference = data.difference == null ? '' : `${data.difference >= 0 ? '+' : '-'}${money(Math.abs(data.difference))}`
   const upsideLabel = data.upside == null ? '' : `${data.upside >= 0 ? '+' : ''}${data.upside.toFixed(1)}%`
+
+  const avgMarkerPct = data.average != null ? marker(data.average) : 50
 
   return (
     <button type="button" className="stock-analyst-targets stock-analyst-targets-action" aria-label="Open analyst targets details" onClick={onOpen}>
@@ -325,45 +360,75 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
         <span>Analyst Targets</span>
         <Target size={15} />
       </div>
+
+      {/* Block 1: IBKR-style Target + Consensus header */}
       <div className="sat-main sat-main-primary">
-        {data.upside != null ? (
-          <div className={`sat-upside ${upsideTone}`}>
-            <strong>{hidden ? mask : upsideLabel}</strong>
-            {data.difference != null ? <small>{hidden ? mask : signedDifference}</small> : null}
+        {/* Target card — integrated header band, thick colored border */}
+        {data.average != null ? (
+          <div className={`sat-target-ibkr sat-target-ibkr-${consensusTone}`}>
+            <div className="sat-target-ibkr-hdr"><span>Target</span></div>
+            <div className="sat-target-ibkr-body">
+              <strong className="sat-target-ibkr-val">{hidden ? mask : money(data.average)}</strong>
+              {data.upside != null ? <span className="sat-target-ibkr-pct">{hidden ? mask : upsideLabel}</span> : null}
+            </div>
           </div>
         ) : null}
+        {/* Consensus card — neutral border, no tone coloring */}
         {data.rating ? (
-          <div className="sat-consensus-rating" aria-label="Consensus rating">
-            <strong>{hidden ? mask : data.rating}</strong>
-            {data.count != null ? <small>{hidden ? mask : `${Math.trunc(data.count)} Analysts`}</small> : null}
+          <div className="sat-consensus-ibkr" aria-label="Consensus rating">
+            <div className="sat-consensus-ibkr-hdr">
+              <span>Consensus</span>
+              <Info size={10} />
+            </div>
+            <div className="sat-consensus-ibkr-body">
+              <strong className="sat-consensus-ibkr-val">{hidden ? mask : data.rating}</strong>
+              {data.count != null ? <span className="sat-consensus-ibkr-count">{hidden ? mask : `${Math.trunc(data.count)} Analysts`}</span> : null}
+            </div>
+            {ratingRows.length > 0 ? (
+              <div className="sat-consensus-strip" aria-hidden="true">
+                {ratingRows.map((item) => (
+                  <em key={item.label} className={`sat-cs-${item.className}`} style={{ flexGrow: Number(item.value || 0) }} />
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
+
+      {/* Block 2: Range visualization — replaces Bull/Base/Bear table */}
       {rangeReady ? (
-        <div className="sat-range">
-          <div className="sat-range-labels">
-            <span>{hidden ? mask : money(data.low || 0)}</span>
-            <span>{hidden ? mask : money(data.high || 0)}</span>
+        <div className="sat-range-v2">
+          <div className="sat-range-v2-endpoints">
+            <div className="sat-range-v2-ep">
+              <b>{hidden ? mask : money(data.low || 0)}</b>
+              <span>{hidden ? mask : percentLabel(targetPercent(data.low))}</span>
+            </div>
+            <div className="sat-range-v2-ep sat-range-v2-ep-right">
+              <b>{hidden ? mask : money(data.high || 0)}</b>
+              <span>{hidden ? mask : percentLabel(targetPercent(data.high))}</span>
+            </div>
           </div>
-          <div className="sat-track">
+          <div className="sat-range-v2-track">
             {data.current != null ? <i className="sat-marker sat-current" style={{ left: `${marker(data.current)}%` }} aria-hidden="true" /> : null}
             {data.average != null ? <i className="sat-marker sat-average" style={{ left: `${marker(data.average)}%` }} aria-hidden="true" /> : null}
           </div>
-        </div>
-      ) : null}
-      {targetRows.length ? (
-        <div className="sat-stats sat-targets-grid">
-          {targetRows.map((row) => (
-            <div key={row.label}>
-              <span>{row.label}</span>
-              <b className="sat-target-value">
-                <span>{hidden ? mask : money(row.value)}</span>
-                {row.percent != null ? <small>{hidden ? mask : percentLabel(row.percent)}</small> : null}
-              </b>
+          {data.average != null ? (
+            <div className="sat-range-v2-base-wrap">
+              <div className="sat-range-v2-base" style={{ left: `${avgMarkerPct}%` }}>
+                <b>{hidden ? mask : money(data.average)}</b>
+                <span>{hidden ? mask : upsideLabel}</span>
+                <em><em className="sat-base-lbl">Base</em> (Current)</em>
+              </div>
             </div>
-          ))}
+          ) : null}
+          <div className="sat-range-v2-axis">
+            <span className="sat-rv2-bear">Bear</span>
+            <span className="sat-rv2-bull">Bull</span>
+          </div>
         </div>
       ) : null}
+
+      {/* Block 3: Analyst distribution — keep existing bars */}
       {ratingRows.length ? (
         <div className="sat-ratings" aria-label="Analyst rating distribution">
           {ratingRows.map((item) => (
@@ -382,17 +447,19 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
 function AnalystTargetsDetail({ source, hidden }: { source: any; hidden: boolean }) {
   const data = analystTargetsData(source)
   const rows = analystDetailRows(source)
+  const targetPercent = (value: number | null) => data.current ? ((Number(value) - data.current) / data.current) * 100 : null
+  const percentLabel = (value: number | null) => value == null ? '' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
   const detailRows = [
-    data.high != null ? ['Bull Target', money(data.high)] : null,
-    data.average != null ? ['Base Target', money(data.average)] : null,
-    data.low != null ? ['Bear Target', money(data.low)] : null,
-    data.count != null ? ['Analyst Count', String(Math.trunc(data.count))] : null,
-  ].filter(Boolean) as string[][]
+    data.high != null ? { label: 'Bull', value: data.high, percent: targetPercent(data.high) } : null,
+    data.average != null ? { label: 'Base', value: data.average, percent: targetPercent(data.average) } : null,
+    data.low != null ? { label: 'Bear', value: data.low, percent: targetPercent(data.low) } : null,
+  ].filter(Boolean) as { label: string; value: number; percent: number | null }[]
   const recommendationRows = [
     { label: 'Strong Buy', value: data.strongBuy },
     { label: 'Buy', value: data.buyOnly ?? (data.strongBuy == null ? data.buy : null) },
     { label: 'Hold', value: data.hold },
-    { label: 'Sell', value: data.sellOnly != null || data.strongSell != null ? Number(data.sellOnly || 0) + Number(data.strongSell || 0) : data.sell },
+    { label: 'Sell', value: data.sellOnly ?? (data.strongSell == null ? data.sell : null) },
+    { label: 'Strong Sell', value: data.strongSell },
   ].filter((row) => row.value != null)
   const hasSummary = detailRows.length > 0 || recommendationRows.length > 0 || Boolean(data.rating)
   return (
@@ -404,21 +471,25 @@ function AnalystTargetsDetail({ source, hidden }: { source: any; hidden: boolean
               <span>Consensus</span>
               {data.average != null ? <b>{hidden ? mask : money(data.average)}</b> : null}
               {data.rating ? <strong>{hidden ? mask : data.rating}</strong> : null}
+              {data.count != null ? <small>{hidden ? mask : `${Math.trunc(data.count)} Analysts`}</small> : null}
             </section>
           ) : null}
           {detailRows.length ? (
             <div className="sat-analysis-grid sat-analysis-targets" aria-label="Bull base bear analyst targets">
-              {detailRows.map(([label, value]) => (
-                <div key={label}>
-                  <span>{label}</span>
-                  <b>{hidden ? mask : value}</b>
+              {detailRows.map((row) => (
+                <div key={row.label}>
+                  <span>{row.label}</span>
+                  <b className="sat-target-value">
+                    <span>{hidden ? mask : money(row.value)}</span>
+                    {row.percent != null ? <small>{hidden ? mask : percentLabel(row.percent)}</small> : null}
+                  </b>
                 </div>
               ))}
             </div>
           ) : null}
           {data.rating || recommendationRows.length ? (
             <section className="sat-recommendation-summary" aria-label="Analyst ratings">
-              <h4>Analyst Ratings</h4>
+              <h4>Distribution</h4>
               {data.rating ? <strong>{hidden ? mask : data.rating}</strong> : null}
               {recommendationRows.length ? (
                 <div className="sat-recommendation-grid">
@@ -439,24 +510,21 @@ function AnalystTargetsDetail({ source, hidden }: { source: any; hidden: boolean
       <section className="sat-history" aria-label="Analyst history">
         <h4>Analyst History</h4>
         {rows.length ? (
-          <div className="sat-detail-list">
-          {rows.map((row, index) => (
-            <article className="sat-detail-row" key={`${row.firm || row.analyst || row.rating || 'analyst'}-${row.date || index}`}>
-              <div className="sat-detail-copy">
-                {row.firm || row.analyst ? <strong>{hidden ? mask : [row.firm, row.analyst].filter(Boolean).join(' - ')}</strong> : null}
-                <div className="sat-detail-meta">
-                  {row.date ? <span>{hidden ? mask : row.date}</span> : null}
-                  {row.action ? <span>{hidden ? mask : row.action}</span> : null}
-                </div>
+          <div className="sat-history-table" role="table">
+            <div className="sat-history-head" role="row">
+              <span>Firm</span>
+              <span>Rating</span>
+              <span>Target Change</span>
+              <span>Date</span>
+            </div>
+            {rows.map((row, index) => (
+              <div className="sat-history-row" role="row" key={`${row.firm || row.analyst || row.rating || 'analyst'}-${row.date || index}`}>
+                <span>{hidden ? mask : row.firm || row.analyst || EMPTY}</span>
+                <b>{hidden ? mask : row.rating || row.action || EMPTY}</b>
+                <strong>{hidden ? mask : row.previousTarget != null || row.newTarget != null ? `${row.previousTarget != null ? money(row.previousTarget) : EMPTY} -> ${row.newTarget != null ? money(row.newTarget) : EMPTY}` : EMPTY}</strong>
+                <em>{hidden ? mask : row.age || row.date || EMPTY}</em>
               </div>
-              <div className="sat-detail-values">
-                {row.previousTarget != null || row.newTarget != null ? (
-                  <b>{hidden ? mask : `${row.previousTarget != null ? money(row.previousTarget) : EMPTY} -> ${row.newTarget != null ? money(row.newTarget) : EMPTY}`}</b>
-                ) : null}
-                {row.rating ? <span>{hidden ? mask : row.rating}</span> : null}
-              </div>
-            </article>
-          ))}
+            ))}
           </div>
         ) : (
           <p className="stock-analyst-detail-empty">{hidden ? mask : 'Analyst history not available'}</p>
@@ -837,6 +905,7 @@ export default function StockIntelligencePanel({
 }) {
   const requestedInitialTab = initialTabFromSeed(seedPosition)
   const [tab, setTab] = useState<StockPanelTab>(() => requestedInitialTab || (STOCK_PANEL_TABS.includes(lastActiveStockPanelTab) ? lastActiveStockPanelTab : 'Overview'))
+  const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisSubTab>('analystTargets')
   const [timeframe, setTimeframe] = useState<Timeframe>('Swing')
   const [analysisFocus, setAnalysisFocus] = useState<'analystTargets' | null>(null)
   const analystTargetsRef = useRef<HTMLDivElement>(null)
@@ -871,10 +940,15 @@ export default function StockIntelligencePanel({
 
   const handleTabChange = (value: StockPanelTab, focus: 'analystTargets' | null = null) => {
     lastActiveStockPanelTab = value
+    if (value === 'Analysis' && (focus === 'analystTargets' || tab !== 'Analysis')) setAnalysisSubTab('analystTargets')
     setAnalysisFocus(value === 'Analysis' ? focus : null)
     setTab(value)
   }
   const openAnalystTargetsDetail = () => handleTabChange('Analysis', 'analystTargets')
+  const handleAnalysisSubTabChange = (value: AnalysisSubTab) => {
+    setAnalysisSubTab(value)
+    setAnalysisFocus(value === 'analystTargets' ? 'analystTargets' : null)
+  }
 
   return (
     <div className={`stock-intel-panel ${variant === 'mobile' ? 'stock-intel-panel-mobile' : 'stock-intel-panel-desktop'}`.trim()}>
@@ -966,72 +1040,106 @@ export default function StockIntelligencePanel({
         )}
 
         {!loading && tab === 'Analysis' && (
-          <div className="stock-intel-section stock-intel-technical-layout">
-            <div ref={analystTargetsRef} className={`stock-analysis-anchor${analysisFocus === 'analystTargets' ? ' is-selected' : ''}`} tabIndex={-1}>
-              <AnalystTargetsDetail source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} />
-            </div>
-
-            <PiaCard className="stock-intel-tech-card" title={hidden ? 'Workspace plan' : 'Trade Decision Snapshot'} badge={<PiaBadge variant="ai">{hidden ? 'AI' : timeframe}</PiaBadge>}>
-              <div className="stock-timeframe-tabs">
-                {timeframes.map((item) => (
-                  <button key={item} type="button" className={timeframe === item ? 'active' : ''} onClick={() => setTimeframe(item)}>
-                    {item}
+          <div className="stock-intel-section stock-intel-technical-layout stock-analysis-layout">
+            <div className="stock-analysis-shell">
+              <div className="stock-analysis-subtabs" role="tablist" aria-label="Analysis sections">
+                {ANALYSIS_SUB_TABS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={analysisSubTab === item.id}
+                    className={analysisSubTab === item.id ? 'active' : ''}
+                    onClick={() => handleAnalysisSubTabChange(item.id)}
+                  >
+                    {hidden ? 'Workspace' : item.label}
                   </button>
                 ))}
               </div>
-              <DetailGrid
-                hidden={hidden}
-                rows={[
-                  { label: 'Bias', value: textOrDash(technical.trend || 'Neutral') },
-                  { label: 'Confidence', value: `${techPlan.confidence}` },
-                  { label: 'Entry', value: `${money(techPlan.conservativeEntry)} - ${money(techPlan.aggressiveEntry)}` },
-                  { label: 'Invalid', value: money(techPlan.invalidation) },
-                  { label: 'TP', value: techPlan.takeProfitZones.slice(0, 2).map((level) => money(level)).join(' / ') },
-                  { label: 'R/R', value: techPlan.riskReward },
-                ]}
-              />
-              <p>{hidden ? mask : techPlan.implication}</p>
-            </PiaCard>
 
-            <PiaCard className="stock-intel-tech-card" title={hidden ? 'Workspace' : 'Technical Summary'}>
-              <DetailGrid
-                hidden={hidden}
-                rows={[
-                  { label: 'Trend', value: String(technical.trend || 'Neutral') },
-                  { label: 'Strength', value: `${techPlan.strength}` },
-                  { label: 'Support', value: technical.support ? money(Number(technical.support)) : EMPTY },
-                  { label: 'Resistance', value: technical.resistance ? money(Number(technical.resistance)) : EMPTY },
-                  { label: 'Macro', value: textOrDash(overview.macro_sensitivity) },
-                ]}
-              />
-            </PiaCard>
-            <PiaCard className="stock-intel-tech-card" title={hidden ? 'Levels' : 'Support levels'}>
-              <div className="stock-level-list">
-                {techPlan.supportLevels.map((level, index) => (
-                  <div key={`support-${index}`}>
-                    <span>S{index + 1}</span>
-                    <b>{hidden ? mask : money(level)}</b>
-                    <small>{hidden ? mask : `${formatDistance(level, last)} from price`}</small>
+              <div className="stock-analysis-panel">
+                {analysisSubTab === 'analystTargets' && (
+                  <div ref={analystTargetsRef} className={`stock-analysis-anchor${analysisFocus === 'analystTargets' ? ' is-selected' : ''}`} tabIndex={-1}>
+                    <AnalystTargetsDetail source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} />
                   </div>
-                ))}
-              </div>
-            </PiaCard>
-            <PiaCard className="stock-intel-tech-card" title={hidden ? 'Levels' : 'Resistance / take-profit zones'}>
-              <div className="stock-level-list">
-                {techPlan.takeProfitZones.map((level, index) => (
-                  <div key={`target-${index}`}>
-                    <span>{index === 0 ? `R${index + 1}` : `TP${index}`}</span>
-                    <b>{hidden ? mask : money(level)}</b>
-                    <small>{hidden ? mask : `${formatDistance(level, last)} from price`}</small>
+                )}
+
+                {analysisSubTab === 'aiAnalysis' && (
+                  <div className="stock-analysis-card-stack">
+                    <PiaCard className="stock-intel-tech-card" title={hidden ? 'Workspace plan' : 'Trade Decision Snapshot'} badge={<PiaBadge variant="ai">{hidden ? 'AI' : timeframe}</PiaBadge>}>
+                      <div className="stock-timeframe-tabs">
+                        {timeframes.map((item) => (
+                          <button key={item} type="button" className={timeframe === item ? 'active' : ''} onClick={() => setTimeframe(item)}>
+                            {item}
+                          </button>
+                        ))}
+                      </div>
+                      <DetailGrid
+                        hidden={hidden}
+                        rows={[
+                          { label: 'Bias', value: textOrDash(technical.trend || 'Neutral') },
+                          { label: 'Confidence', value: `${techPlan.confidence}` },
+                          { label: 'Entry', value: `${money(techPlan.conservativeEntry)} - ${money(techPlan.aggressiveEntry)}` },
+                          { label: 'Invalid', value: money(techPlan.invalidation) },
+                          { label: 'TP', value: techPlan.takeProfitZones.slice(0, 2).map((level) => money(level)).join(' / ') },
+                          { label: 'R/R', value: techPlan.riskReward },
+                        ]}
+                      />
+                      <p>{hidden ? mask : techPlan.implication}</p>
+                    </PiaCard>
+                    <PiaCard className="stock-intel-tech-card" title={hidden ? 'AI summary' : 'AI interpretation summary'}>
+                      <p>{hidden ? mask : techPlan.aiSummary}</p>
+                      <MetricRow label={hidden ? 'Overview' : 'Day change'} value={Math.abs(Number(technical.day_change_pct || change || 0))} tone={change >= 0 ? 'green' : 'red'} hidden={hidden} />
+                      <MetricRow label={hidden ? 'Controls' : 'Risk score'} value={Number(source.risk || 0)} tone="red" hidden={hidden} />
+                    </PiaCard>
                   </div>
-                ))}
+                )}
+
+                {analysisSubTab === 'risks' && (
+                  <div className="stock-analysis-card-stack">
+                    <PiaCard className="stock-intel-tech-card" title={hidden ? 'Workspace' : 'Technical Summary'}>
+                      <DetailGrid
+                        hidden={hidden}
+                        rows={[
+                          { label: 'Trend', value: String(technical.trend || 'Neutral') },
+                          { label: 'Strength', value: `${techPlan.strength}` },
+                          { label: 'Support', value: technical.support ? money(Number(technical.support)) : EMPTY },
+                          { label: 'Resistance', value: technical.resistance ? money(Number(technical.resistance)) : EMPTY },
+                          { label: 'Macro', value: textOrDash(overview.macro_sensitivity) },
+                        ]}
+                      />
+                    </PiaCard>
+                    <PiaCard className="stock-intel-tech-card" title={hidden ? 'Levels' : 'Support levels'}>
+                      <div className="stock-level-list">
+                        {techPlan.supportLevels.map((level, index) => (
+                          <div key={`support-${index}`}>
+                            <span>S{index + 1}</span>
+                            <b>{hidden ? mask : money(level)}</b>
+                            <small>{hidden ? mask : `${formatDistance(level, last)} from price`}</small>
+                          </div>
+                        ))}
+                      </div>
+                    </PiaCard>
+                  </div>
+                )}
+
+                {analysisSubTab === 'valuation' && (
+                  <div className="stock-analysis-card-stack">
+                    <PiaCard className="stock-intel-tech-card" title={hidden ? 'Levels' : 'Resistance / take-profit zones'}>
+                      <div className="stock-level-list">
+                        {techPlan.takeProfitZones.map((level, index) => (
+                          <div key={`target-${index}`}>
+                            <span>{index === 0 ? `R${index + 1}` : `TP${index}`}</span>
+                            <b>{hidden ? mask : money(level)}</b>
+                            <small>{hidden ? mask : `${formatDistance(level, last)} from price`}</small>
+                          </div>
+                        ))}
+                      </div>
+                    </PiaCard>
+                  </div>
+                )}
               </div>
-            </PiaCard>
-            <PiaCard className="stock-intel-tech-card" title={hidden ? 'AI summary' : 'AI interpretation summary'}>
-              <p>{hidden ? mask : techPlan.aiSummary}</p>
-              <MetricRow label={hidden ? 'Overview' : 'Day change'} value={Math.abs(Number(technical.day_change_pct || change || 0))} tone={change >= 0 ? 'green' : 'red'} hidden={hidden} />
-              <MetricRow label={hidden ? 'Controls' : 'Risk score'} value={Number(source.risk || 0)} tone="red" hidden={hidden} />
-            </PiaCard>
+            </div>
           </div>
         )}
 
