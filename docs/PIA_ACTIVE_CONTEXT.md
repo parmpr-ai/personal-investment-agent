@@ -344,3 +344,18 @@ Backlog parity: these items are mirrored identically in PIA_MASTER_BACKLOG_SOURC
 
 
 
+---
+
+## 2026-06-10 AI Intelligence V2 — DESIGN LOCK (PO approved)
+
+* AI Intelligence V2 is approved (Product Owner, design score 10/10) and is the official design. V1 is superseded / deprecated.
+* Implementation may proceed: **CR-AI-010 — READY FOR IMPLEMENTATION** (HERMES). No code in this entry (governance/docs only).
+* All future AI Intelligence work must reference V2: `docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md`.
+* Locked decisions:
+  * DEC-AI-001 — KPI Cards (replace rings with cards; full-card tap; score vs directional families).
+  * DEC-AI-002 — Single Bottom Sheet Explainability (Why It Matters → Score Breakdown → Historical Evolution → Disclaimer; no nested drilldowns).
+  * DEC-AI-003 — No Widget Collapse (missing values render as `--`; never replace the section with "Data gathering in progress").
+* Mirrored identically in MASTER_BACKLOG .md and .xlsx (Architecture Decisions DEC-AI-001/002/003, Backlog CR-AI-010, CHANGELOG).
+
+
+

@@ -1,5 +1,21 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.21 - AI Intelligence V2 Design Lock
+
+Date: 2026-06-10
+Status: Design Lock approved by Product Owner (10/10). Documentation only — no code/implementation in this entry. Implementation tracked as CR-AI-010 (READY FOR IMPLEMENTATION, HERMES).
+
+### Approved (LOCKED) — AI Intelligence V2 supersedes V1 (V1 deprecated)
+
+* **DEC-AI-001 — KPI Cards:** replace KPI rings with KPI cards (Value, Trend Delta, Label, Status, Chevron); full-card tap target; no ring gauges, no flat tiles. Score family (Momentum/Trend/Sentiment, 0–100) is visually distinct from the Directional family (Institutional Flow, Price vs Fair Value).
+* **DEC-AI-002 — Single Bottom Sheet Explainability:** tap a KPI opens one scrollable bottom sheet — Why It Matters → Score Breakdown → Historical Evolution → Disclaimer. No nested drilldowns, no multiple screens, no modal chains.
+* **DEC-AI-003 — No Widget Collapse:** missing data never collapses the widget; render the structure and show missing values as `--`; the "Data gathering in progress" full-section replacement is forbidden.
+
+### Approved architecture
+
+* KPI Card architecture, Explainability architecture, Bottom Sheet architecture, No-Collapse policy.
+* Spec (locked): `docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md`. All future AI Intelligence work must follow V2.
+
 ## v0.3.20 - Portfolio Density + Analyst Targets V3 + UAT Fix Pack
 
 Date: 2026-06-09

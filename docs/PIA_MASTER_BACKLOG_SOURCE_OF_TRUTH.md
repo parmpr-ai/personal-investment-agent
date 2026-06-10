@@ -104,6 +104,8 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Market Pulse swipe gestures fixed.
   - Mobile correction mock pack created for PO review.
   - Keep mobile settings useful and visible.
+- P0 Stock Intelligence:
+  - CR-AI-010 AI Intelligence V2 Implementation. READY FOR IMPLEMENTATION (HERMES). Design LOCKED (PO-approved, 10/10): KPI cards, single bottom-sheet explainability, no-collapse policy, score vs directional KPI families (DEC-AI-001/002/003). V1 deprecated. Spec: docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md.
 - P1 Stock Intelligence:
   - Analyst Targets V3 per stock (CR-AT-V3). IMPLEMENTED 2026-06-09 (HERMES): Options tab removed (tabs Overview/Chart/News/Financials/Analysis), chart only in Chart tab, fixed sticky header; Overview Bull/Base/Bear + target range (current + consensus markers) + consensus + analyst distribution; tap Overview card → Analysis > Analyst Targets; analyst history as mobile cards (no tables). Current data source only (no Finnhub/FMP). Commits 2b9d1de,5602655,ecbe06d,ac0ca6f through e5736e9.
   - Analyst Targets V2 per stock. DONE 2026-06-08: Overview card appears before News, emphasizes consensus upside/downside and dollar delta, taps into Analysis, and Analysis tab includes consensus/bull/bear targets, recommendation summary, analyst count, and analyst history empty state.
@@ -278,6 +280,10 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - Mobile correction mock pack is the required gate before final UI corrections for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
 - DEC-DESIGN-LOCK (LOCKED): Design Lock process — a feature marked DESIGN LOCKED has its layout/IA frozen; implementation must match the locked spec; deviations require re-approval. Introduced with the Analyst Targets V3 design-locked spec.
 - DEC-NEXT-CACHE (LOCKED): Next.js cache governance — on `PageNotFoundError` during page-data collection (`/_not-found`, `/_document`), clear `.next` then rebuild; never delete `.next` while a dev/prod server holds it (file lock); avoid concurrent `.next` access in the shared working tree. Recurring build contention during 2026-06 multi-agent sprints.
+- DEC-AI-001 (LOCKED): AI Intelligence KPI Cards — replace KPI rings with KPI cards (Value, Trend Delta, Label, Status, Chevron); full-card tap target; no ring gauges, no flat tiles; Score family (Momentum/Trend/Sentiment, 0–100) visually distinct from Directional family (Institutional Flow, Price vs Fair Value). Reason: density, mobile usability, larger tap targets, explainability.
+- DEC-AI-002 (LOCKED): AI Intelligence Single Bottom Sheet Explainability — tap KPI → one scrollable bottom sheet: Why It Matters → Score Breakdown → Historical Evolution → Disclaimer. No nested drilldowns / multiple screens / modal chains.
+- DEC-AI-003 (LOCKED): AI Intelligence No Widget Collapse — missing data never collapses the widget; render structure and show missing values as `--`; "Data gathering in progress" full-section replacement forbidden; maintain layout stability.
+- AI Intelligence V2 is the official approved design (PO-approved, 10/10); V1 deprecated. Spec: docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md. All future AI Intelligence work must follow V2.
 
 ## PM Operating Model
 
@@ -440,6 +446,12 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.21 - AI Intelligence V2 Design Lock
+Date: 2026-06-10
+Status: Design Lock approved by Product Owner (10/10); documentation only. Implementation = CR-AI-010 (READY).
+- LOCKED: DEC-AI-001 (KPI Cards), DEC-AI-002 (Single Bottom Sheet Explainability), DEC-AI-003 (No Widget Collapse).
+- AI Intelligence V2 supersedes V1 (V1 deprecated). Spec: docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md. All future AI work must follow V2.
 
 ### v0.3.20 - Portfolio Density + Analyst Targets V3 + UAT Fix Pack
 Date: 2026-06-09
