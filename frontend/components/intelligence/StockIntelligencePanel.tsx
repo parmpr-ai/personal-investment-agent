@@ -354,8 +354,13 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
 
   const avgMarkerPct = data.average != null ? marker(data.average) : 50
 
-  return (
-    <button type="button" className="stock-analyst-targets stock-analyst-targets-action" aria-label="Open analyst targets details" onClick={onOpen}>
+    return (
+    <button
+      type="button"
+      className={`stock-analyst-targets stock-analyst-targets-action ${consensusTone ? `tone-${consensusTone}` : ''}`}
+      aria-label="Open analyst targets details"
+      onClick={onOpen}
+    >
       <div className="sat-head">
         <span>Analyst Targets</span>
         <Target size={15} />
