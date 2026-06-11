@@ -338,16 +338,9 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
   const current = data.current
   const baseTarget = data.average
   const currentBelowBasePercent = current != null && baseTarget != null ? ((baseTarget - current) / current) * 100 : null
-  const consensusTone =
-    data.rating === 'Strong Buy' || data.rating === 'Buy'
-      ? currentBelowBasePercent != null && currentBelowBasePercent >= 7
-        ? 'positive'
-        : 'warning'
-      : data.rating === 'Sell' || data.rating === 'Strong Sell'
-      ? current != null && baseTarget != null && current > baseTarget
-        ? 'negative'
-        : 'warning'
-      : 'warning'
+  const targetTone = data.upside != null ? (data.upside >= 0 ? 'positive' : 'negative') : ''
+  // kept for potential future use; not applied to root widget border
+  const _consensusTone = currentBelowBasePercent
   const percentLabel = (value: number | null) => value == null ? '' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
   const signedDifference = data.difference == null ? '' : `${data.difference >= 0 ? '+' : '-'}${money(Math.abs(data.difference))}`
   const upsideLabel = data.upside == null ? '' : `${data.upside >= 0 ? '+' : ''}${data.upside.toFixed(1)}%`
@@ -357,7 +350,7 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
     return (
     <button
       type="button"
-      className={`stock-analyst-targets stock-analyst-targets-action ${consensusTone ? `tone-${consensusTone}` : ''}`}
+      className="stock-analyst-targets stock-analyst-targets-action"
       aria-label="Open analyst targets details"
       onClick={onOpen}
     >
@@ -370,7 +363,7 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
       <div className="sat-main sat-main-primary">
         {/* Target card — integrated header band, thick colored border */}
         {data.average != null ? (
-          <div className={`sat-target-ibkr sat-target-ibkr-${consensusTone}`}>
+          <div className={`sat-target-ibkr${targetTone ? ` sat-target-ibkr-${targetTone}` : ''}`}>
             <div className="sat-target-ibkr-hdr"><span>Target</span></div>
             <div className="sat-target-ibkr-body">
               <strong className="sat-target-ibkr-val">{hidden ? mask : money(data.average)}</strong>

@@ -1241,7 +1241,7 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sat-target-ibkr-body,.sat-consensus-ibkr-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 8px 10px}
 .sat-target-ibkr-val,.sat-consensus-ibkr-val{display:block;font-size:32px;font-weight:800;color:#f8fbff;line-height:1;letter-spacing:-.01em}
 .sat-target-ibkr-pct{display:block;font-size:18px;font-weight:700;color:#f8fbff}
-.sat-consensus-ibkr-count{display:block;font-size:18px;font-weight:600;color:#f8fbff}
+.sat-consensus-ibkr-count{display:block;font-size:14px;font-weight:600;color:#f8fbff}
 .sat-consensus-strip{display:flex;height:4px;overflow:hidden}
 .sat-cs-buy{background:#24d18c}.sat-cs-hold{background:#fbbf24}.sat-cs-sell{background:#ff6375}
 /* Range visualization v2 */

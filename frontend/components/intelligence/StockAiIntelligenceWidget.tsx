@@ -302,12 +302,6 @@ export default function StockAiIntelligenceWidget({
   const priceFvNum = numberValue(priceFvRaw)
   const priceFvDelta = numberValue(source?.price_fv_delta)
 
-  // Footer
-  const footRisk = riskLabel(risk)
-  const footQuality = hasValue(source?.data_quality) ? String(source.data_quality) : DASH
-  const footConfidence = source?.confidence != null ? `${Math.round(Number(source.confidence))}%` : DASH
-  const footNextUpdate = hasValue(source?.next_update) ? String(source.next_update) : DASH
-
   // Sheet meta (CR-3)
   const lastUpdated = hasValue(source?.last_updated ?? source?.updated_at) ? String(source?.last_updated ?? source?.updated_at) : DASH
   const dataSource = hasValue(source?.data_source ?? source?.provider) ? String(source?.data_source ?? source?.provider) : DASH
@@ -428,25 +422,6 @@ export default function StockAiIntelligenceWidget({
           <KpiCard key={def.id} def={def} hidden={hidden} onTap={setActiveSheet} />
         ))}
       </div>
-
-      <footer className="sai-footer">
-        <div className="sai-footer-item">
-          <span>Risk Level</span>
-          <b>{footRisk}</b>
-        </div>
-        <div className="sai-footer-item">
-          <span>Data Quality</span>
-          <b>{footQuality}</b>
-        </div>
-        <div className="sai-footer-item">
-          <span>Confidence</span>
-          <b>{footConfidence}</b>
-        </div>
-        <div className="sai-footer-item">
-          <span>Next Update</span>
-          <b>{footNextUpdate}</b>
-        </div>
-      </footer>
 
       {activeSheet != null ? (
         <BottomSheet
