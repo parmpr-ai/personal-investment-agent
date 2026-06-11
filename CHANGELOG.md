@@ -1,5 +1,34 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.22 - Governance: Approved Mock Preservation & Design Lock Traceability (PIA-GOV-004)
+
+Date: 2026-06-11
+Status: LOCKED. Governance/documentation only — no code.
+
+### Locked
+
+* **DEC-GOV-004 — Approved Mock Preservation & Design Lock Traceability.** Every Design Lock must archive the approved mock under `docs/mocks/<feature>/APPROVED_<feature>_v<version>.png` and **commit it before implementation starts**. Record the approved-mock path in the backlog item, UAT ticket, and Design Lock notes.
+* **Process (locked):** Requirement → UX Mockup → Design Review → Design Lock → **SAVE approved mock → COMMIT approved mock** → Implementation → UAT.
+* **UAT requirement:** every UAT report must contain `Approved Mock: <repo path>`, `Design Lock Commit: <id>`, `Implementation Commit: <id>`.
+* **Non-compliance:** any implementation started without an archived approved mock is a governance violation and is **blocked** until the mock is committed.
+
+### Compliance audit (existing approved mocks are NON-COMPLIANT with the naming convention)
+
+* `docs/mocks/AI Intelligence/mock v1.png` → should be `docs/mocks/ai-intelligence/APPROVED_ai_intelligence_v2.png` (folder has a space; file labeled v1 but locked design is V2 — version to confirm).
+* `docs/mocks/analyst-targets/Approved_mobile_mock_analyst_target.jpg` → `APPROVED_analyst_targets_v3.png`.
+* `docs/mocks/stock-intelligence/stock-intelligence-v1-approved.png` → `APPROVED_stock_intelligence_v1.png`.
+* `docs/mocks/watchlists/watchlists-mobile-v1-approved.md` (markdown, not PNG).
+* Structural note: mocks live in two places (`docs/mocks/` and `docs/design-system/mocks/`); policy mandates `docs/mocks/<feature>/`.
+
+### Remediation
+
+* **GOV-004-REMEDIATION (OPEN, ATHENA):** rename existing approved mocks to the convention, consolidate the two mock locations, resolve the AI version ambiguity, and backfill traceability triples. Renames deferred pending PO confirmation of versions (avoid mislabeling locked assets).
+
+### Traceability backfill (existing locks)
+
+* AI Intelligence V2 — Approved Mock: `docs/mocks/AI Intelligence/mock v1.png` (rename pending) · Design Lock Commit: `3bb14df` · Implementation Commit: `b7d591e` (CR-AI-010 recovery).
+* Analyst Targets — Approved Mock: `docs/mocks/analyst-targets/Approved_mobile_mock_analyst_target.jpg` (+ `analyst-targets-v3-desktop.png`); historical drift is the motivating incident for this policy.
+
 ## v0.3.21 - AI Intelligence V2 Design Lock
 
 Date: 2026-06-10

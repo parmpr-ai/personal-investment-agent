@@ -104,6 +104,8 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Market Pulse swipe gestures fixed.
   - Mobile correction mock pack created for PO review.
   - Keep mobile settings useful and visible.
+- P1 Governance:
+  - GOV-004-REMEDIATION (OPEN, ATHENA): normalize existing approved mocks to `APPROVED_<feature>_v<version>.png`; consolidate `docs/mocks` vs `docs/design-system/mocks`; resolve "AI Intelligence/mock v1.png" vs locked V2 version; backfill traceability triples. Non-compliant assets: AI Intelligence/mock v1.png; analyst-targets/Approved_mobile_mock_analyst_target.jpg; stock-intelligence/stock-intelligence-v1-approved.png; watchlists md. Created by PIA-GOV-004 (DEC-GOV-004 LOCKED).
 - P0 Stock Intelligence:
   - CR-AI-010 AI Intelligence V2 Implementation. READY FOR IMPLEMENTATION (HERMES). Design LOCKED (PO-approved, 10/10): KPI cards, single bottom-sheet explainability, no-collapse policy, score vs directional KPI families (DEC-AI-001/002/003). V1 deprecated. Spec: docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md.
 - P1 Stock Intelligence:
@@ -284,6 +286,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - DEC-AI-002 (LOCKED): AI Intelligence Single Bottom Sheet Explainability — tap KPI → one scrollable bottom sheet: Why It Matters → Score Breakdown → Historical Evolution → Disclaimer. No nested drilldowns / multiple screens / modal chains.
 - DEC-AI-003 (LOCKED): AI Intelligence No Widget Collapse — missing data never collapses the widget; render structure and show missing values as `--`; "Data gathering in progress" full-section replacement forbidden; maintain layout stability.
 - AI Intelligence V2 is the official approved design (PO-approved, 10/10); V1 deprecated. Spec: docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md. All future AI Intelligence work must follow V2.
+- DEC-GOV-004 (LOCKED): Approved Mock Preservation & Design Lock Traceability — every Design Lock must archive the approved mock under `docs/mocks/<feature>/APPROVED_<feature>_v<version>.png` and COMMIT it before implementation starts; record the approved-mock path in the backlog item, UAT ticket, and Design Lock notes. Process: Requirement → UX Mockup → Design Review → Design Lock → SAVE approved mock → COMMIT approved mock → Implementation → UAT. UAT reports must include Approved Mock <path>, Design Lock Commit <id>, Implementation Commit <id>. Non-compliance: implementation started without an archived approved mock is a governance violation and is blocked until the mock is committed. Reason: Analyst Targets drifted because the approved mock was not preserved as a repo source of truth.
 
 ## PM Operating Model
 
@@ -446,6 +449,13 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.22 - Governance: Approved Mock Preservation & Design Lock Traceability (PIA-GOV-004)
+Date: 2026-06-11
+Status: LOCKED; documentation only.
+- DEC-GOV-004 LOCKED: archive approved mock under docs/mocks/<feature>/APPROVED_<feature>_v<version>.png and commit before implementation; record path in backlog/UAT/Design Lock; UAT triple (Approved Mock / Design Lock Commit / Implementation Commit); non-compliance blocks implementation.
+- Compliance audit: existing approved mocks are non-compliant with the naming convention; GOV-004-REMEDIATION (OPEN) tracks normalization + traceability backfill.
+- Traceability: AI Intelligence V2 (mock docs/mocks/AI Intelligence/mock v1.png, lock 3bb14df, impl b7d591e); Analyst Targets (mock docs/mocks/analyst-targets/Approved_mobile_mock_analyst_target.jpg).
 
 ### v0.3.21 - AI Intelligence V2 Design Lock
 Date: 2026-06-10

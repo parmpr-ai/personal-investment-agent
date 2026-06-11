@@ -359,3 +359,19 @@ Backlog parity: these items are mirrored identically in PIA_MASTER_BACKLOG_SOURC
 
 
 
+---
+
+## 2026-06-11 PIA-GOV-004 — Approved Mock Preservation & Design Lock Traceability (LOCKED)
+
+* **DEC-GOV-004 (LOCKED):** every Design Lock must archive the approved mock under `docs/mocks/<feature>/APPROVED_<feature>_v<version>.png` and COMMIT it **before implementation starts**. Record the approved-mock path in the backlog item, UAT ticket, and Design Lock notes.
+* **Process (locked):** Requirement → UX Mockup → Design Review → Design Lock → SAVE approved mock → COMMIT approved mock → Implementation → UAT.
+* **UAT requirement:** every UAT report must contain `Approved Mock: <repo path>`, `Design Lock Commit: <id>`, `Implementation Commit: <id>`.
+* **Non-compliance:** implementation started without an archived approved mock is a governance violation and is blocked until the mock is committed.
+* **Compliance audit:** existing approved mocks are non-compliant with the naming convention and split across `docs/mocks/` and `docs/design-system/mocks/`. Tracked by **GOV-004-REMEDIATION (OPEN, ATHENA)**.
+* **Traceability backfill:**
+  * AI Intelligence V2 — Approved Mock `docs/mocks/AI Intelligence/mock v1.png` (rename pending) · Design Lock `3bb14df` · Implementation `b7d591e`.
+  * Analyst Targets — Approved Mock `docs/mocks/analyst-targets/Approved_mobile_mock_analyst_target.jpg` (+ `analyst-targets-v3-desktop.png`); historical drift motivated this policy.
+* Mirrored identically in MASTER_BACKLOG .md and .xlsx (Architecture Decisions DEC-GOV-004, Backlog GOV-004-REMEDIATION, CHANGELOG).
+
+
+
