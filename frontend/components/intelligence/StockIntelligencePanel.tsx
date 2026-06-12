@@ -307,10 +307,6 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
   if (!data.hasData) {
     return (
       <button type="button" className="stock-analyst-targets stock-analyst-targets-empty stock-analyst-targets-action" aria-label="Open analyst targets details" onClick={onOpen}>
-        <div className="sat-head">
-          <span>Analyst Targets</span>
-          <Target size={15} />
-        </div>
         <p>{hidden ? mask : 'Analyst targets unavailable'}</p>
       </button>
     )
@@ -338,14 +334,26 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
   const current = data.current
   const baseTarget = data.average
   const currentBelowBasePercent = current != null && baseTarget != null ? ((baseTarget - current) / current) * 100 : null
-  const targetTone = data.upside != null ? (data.upside >= 0 ? 'positive' : 'negative') : ''
+  const targetTone = data.upside != null ? (data.upside > 2 ? 'positive' : data.upside < -2 ? 'negative' : 'warning') : ''
   // kept for potential future use; not applied to root widget border
   const _consensusTone = currentBelowBasePercent
   const percentLabel = (value: number | null) => value == null ? '' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
-  const signedDifference = data.difference == null ? '' : `${data.difference >= 0 ? '+' : '-'}${money(Math.abs(data.difference))}`
+  const _signedDifference = data.difference == null ? '' : `${data.difference >= 0 ? '+' : '-'}${money(Math.abs(data.difference))}`
   const upsideLabel = data.upside == null ? '' : `${data.upside >= 0 ? '+' : ''}${data.upside.toFixed(1)}%`
 
-  const avgMarkerPct = data.average != null ? marker(data.average) : 50
+  const _avgMarkerPct = data.average != null ? marker(data.average) : 50
+  const fmt = (value: number | null) => value == null ? '' : Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const outOfRangeLow = rangeReady && data.current != null && data.current < (data.low || 0)
+  const outOfRangeHigh = rangeReady && data.current != null && data.current > (data.high || 0)
+  const currentMarkerPct = data.current != null ? Math.max(0, Math.min(100, marker(data.current))) : null
+  const aboveLabelTransform = currentMarkerPct == null ? 'translateX(-50%)' : currentMarkerPct <= 8 ? 'translateX(0%)' : currentMarkerPct >= 92 ? 'translateX(-100%)' : 'translateX(-50%)'
+  const rangeSpan = (data.high ?? 0) - (data.low ?? 0)
+  const oorLowPct = outOfRangeLow && rangeSpan > 0 && data.current != null && data.low != null
+    ? Math.min(60, ((data.low - data.current) / rangeSpan) * 100)
+    : 0
+  const oorHighPct = outOfRangeHigh && rangeSpan > 0 && data.current != null && data.high != null
+    ? Math.min(60, ((data.current - data.high) / rangeSpan) * 100)
+    : 0
 
     return (
     <button
@@ -354,11 +362,6 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
       aria-label="Open analyst targets details"
       onClick={onOpen}
     >
-      <div className="sat-head">
-        <span>Analyst Targets</span>
-        <Target size={15} />
-      </div>
-
       {/* Block 1: IBKR-style Target + Consensus header */}
       <div className="sat-main sat-main-primary">
         {/* Target card — integrated header band, thick colored border */}
@@ -366,8 +369,8 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
           <div className={`sat-target-ibkr${targetTone ? ` sat-target-ibkr-${targetTone}` : ''}`}>
             <div className="sat-target-ibkr-hdr"><span>Target</span></div>
             <div className="sat-target-ibkr-body">
-              <strong className="sat-target-ibkr-val">{hidden ? mask : money(data.average)}</strong>
-              {data.upside != null ? <span className="sat-target-ibkr-pct">{hidden ? mask : upsideLabel}</span> : null}
+              <strong className="sat-target-ibkr-val">{hidden ? mask : fmt(data.average)}</strong>
+              {data.upside != null ? <span className={`sat-target-ibkr-pct${targetTone ? ` sat-tip-${targetTone}` : ''}`}>{hidden ? mask : `${data.upside >= 0 ? '▲' : '▼'} ${upsideLabel}`}</span> : null}
             </div>
           </div>
         ) : null}
@@ -380,7 +383,7 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
             </div>
             <div className="sat-consensus-ibkr-body">
               <strong className="sat-consensus-ibkr-val">{hidden ? mask : data.rating}</strong>
-              {data.count != null ? <span className="sat-consensus-ibkr-count">{hidden ? mask : `${Math.trunc(data.count)} Analysts`}</span> : null}
+              {data.count != null ? <span className="sat-consensus-ibkr-count">{hidden ? mask : `Based on ${Math.trunc(data.count)} Analyst Ratings`}</span> : null}
             </div>
             {ratingRows.length > 0 ? (
               <div className="sat-consensus-strip" aria-hidden="true">
@@ -393,35 +396,41 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
         ) : null}
       </div>
 
-      {/* Block 2: Range visualization — replaces Bull/Base/Bear table */}
+      {/* Block 2: Range visualization */}
       {rangeReady ? (
         <div className="sat-range-v2">
-          <div className="sat-range-v2-endpoints">
-            <div className="sat-range-v2-ep">
-              <b>{hidden ? mask : money(data.low || 0)}</b>
-              <span>{hidden ? mask : percentLabel(targetPercent(data.low))}</span>
-            </div>
-            <div className="sat-range-v2-ep sat-range-v2-ep-right">
-              <b>{hidden ? mask : money(data.high || 0)}</b>
-              <span>{hidden ? mask : percentLabel(targetPercent(data.high))}</span>
-            </div>
-          </div>
-          <div className="sat-range-v2-track">
-            {data.current != null ? <i className="sat-marker sat-current" style={{ left: `${marker(data.current)}%` }} aria-hidden="true" /> : null}
-            {data.average != null ? <i className="sat-marker sat-average" style={{ left: `${marker(data.average)}%` }} aria-hidden="true" /> : null}
-          </div>
-          {data.average != null ? (
-            <div className="sat-range-v2-base-wrap">
-              <div className="sat-range-v2-base" style={{ left: `${avgMarkerPct}%` }}>
-                <b>{hidden ? mask : money(data.average)}</b>
-                <span>{hidden ? mask : upsideLabel}</span>
-                <em><em className="sat-base-lbl">Base</em> (Current)</em>
+          {/* Arrow only above the track */}
+          {currentMarkerPct != null ? (
+            <div className="sat-range-v2-above-wrap">
+              <div className="sat-range-v2-above" style={{ left: `${currentMarkerPct}%`, transform: aboveLabelTransform }}>
+                <em className="sat-above-arrow">▲</em>
               </div>
             </div>
           ) : null}
-          <div className="sat-range-v2-axis">
-            <span className="sat-rv2-bear">Bear</span>
-            <span className="sat-rv2-bull">Bull</span>
+          {/* Track with proportional OOR dashed extensions */}
+          <div className="sat-range-v2-track">
+            {outOfRangeLow ? <i className="sat-oor-line sat-oor-left" style={{ width: `${oorLowPct}%` }} aria-hidden="true" /> : null}
+            {outOfRangeHigh ? <i className="sat-oor-line sat-oor-right" style={{ width: `${oorHighPct}%` }} aria-hidden="true" /> : null}
+          </div>
+          {/* All labels below the track */}
+          <div className="sat-range-v2-labels">
+            <div className="sat-rv2-lbl sat-rv2-lbl-bear">
+              <b>{hidden ? mask : fmt(data.low || 0)}</b>
+              <span>{hidden ? mask : percentLabel(targetPercent(data.low))}</span>
+              <em className="sat-rv2-bear">Bear</em>
+            </div>
+            {currentMarkerPct != null ? (
+              <div className="sat-rv2-lbl sat-rv2-lbl-cur" style={{ left: `${currentMarkerPct}%`, transform: aboveLabelTransform }}>
+                <b>{hidden ? mask : fmt(data.current)}</b>
+                <span>{hidden ? mask : upsideLabel}</span>
+                <em className="sat-rv2-cur-lbl">Current</em>
+              </div>
+            ) : null}
+            <div className="sat-rv2-lbl sat-rv2-lbl-bull">
+              <b>{hidden ? mask : fmt(data.high || 0)}</b>
+              <span>{hidden ? mask : percentLabel(targetPercent(data.high))}</span>
+              <em className="sat-rv2-bull">Bull</em>
+            </div>
           </div>
         </div>
       ) : null}
