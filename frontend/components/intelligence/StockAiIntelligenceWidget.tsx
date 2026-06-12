@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  ArrowLeft,
   Building2,
   ChevronRight,
   Clock,
@@ -11,23 +12,24 @@ import {
   Scale,
   ShieldAlert,
   TrendingUp,
-  X,
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useState, type CSSProperties } from 'react'
 import { mask } from '../../lib/pia-api'
 
-const EMPTY = '-'
+const EMPTY = '--'
 const METRIC_EMPTY = 'Not enough data available to calculate this metric.'
 
 type MetricKey = 'momentum' | 'trend' | 'sentiment' | 'institutional' | 'fairValue' | 'risk'
+type InsightKey = 'earningsRevisions' | 'institutionalFlow' | 'narrativeRisk'
 type Tone = 'blue' | 'green' | 'red' | 'amber' | 'gray'
+type DataSourceLabel = 'Yahoo' | 'IBKR' | 'Seeking Alpha' | 'Internal Calculation' | 'Derived Signal'
+type ActiveView = { type: 'metric'; key: MetricKey } | { type: 'insight'; key: InsightKey } | null
 
 type DetailRow = {
   label: string
-  score: number | null
-  contribution?: number | null
-  value?: string
+  value: string
+  score?: number | null
 }
 
 type Metric = {
@@ -41,8 +43,43 @@ type Metric = {
   deltaUnit: '%' | 'pts'
   tone: Tone
   icon: LucideIcon
-  spark: number[]
+  history: number[] | null
+  historyBacked: boolean
+  sourceLabel: DataSourceLabel
+  lastUpdated: string
+  calculation: string
+  evidence: string[]
+  relatedSignals: string[]
+  detailRows: DetailRow[]
+  missingInputs: string[]
+  requiredInputs: string[]
   lowerIsBetter?: boolean
+}
+
+type FairValueState = {
+  available: boolean
+  current: number | null
+  fairValue: number | null
+  upside: number | null
+  bull: string
+  base: string
+  bear: string
+  missingInputs: string[]
+  requiredInputs: string[]
+  unavailableReason: string
+}
+
+type Insight = {
+  key: InsightKey
+  headline: string
+  summary: string
+  explanation: string
+  evidence: string[]
+  relatedMetrics: string[]
+  relatedSignals: string[]
+  commentary: string
+  sourceLabel: DataSourceLabel
+  lastUpdated: string
 }
 
 function hasValue(value: unknown) {
@@ -63,12 +100,6 @@ function clampScore(value: unknown): number | null {
   return parsed == null ? null : Math.max(0, Math.min(100, Math.round(parsed)))
 }
 
-function scoreFromParts(parts: Array<number | null>, fallback: number | null = null) {
-  const usable = parts.filter((part): part is number => part != null)
-  if (!usable.length) return fallback
-  return clampScore(usable.reduce((sum, part) => sum + part, 0) / usable.length)
-}
-
 function cleanText(value: unknown, max = 180) {
   const raw = String(value || '')
     .replace(/\s+/g, ' ')
@@ -78,32 +109,165 @@ function cleanText(value: unknown, max = 180) {
   return raw.length > max ? `${raw.slice(0, max - 3).trim()}...` : raw
 }
 
-function sentimentFrom(value: unknown, score: number | null): 'Bullish' | 'Bearish' | 'Neutral' {
-  const raw = String(value || '').toLowerCase()
-  if (raw.includes('bear') || raw.includes('negative') || raw.includes('weak') || raw.includes('down')) return 'Bearish'
-  if (raw.includes('bull') || raw.includes('positive') || raw.includes('strong') || raw.includes('constructive') || raw.includes('uptrend')) return 'Bullish'
-  if (score != null) {
-    if (score >= 62) return 'Bullish'
-    if (score <= 42) return 'Bearish'
-  }
-  return 'Neutral'
+function normalizeList(values: Array<unknown>) {
+  return values
+    .map((value) => cleanText(value, 150))
+    .filter(Boolean)
+    .slice(0, 5)
 }
 
-function deriveTrend(technical: any, source: any): number | null {
-  const explicit = clampScore(technical?.trend_score ?? source?.trend_score ?? source?.trend_strength)
-  if (explicit != null) return explicit
+function firstValue(containers: Array<any>, keys: string[]) {
+  for (const container of containers) {
+    if (!container || typeof container !== 'object') continue
+    for (const key of keys) {
+      const value = container?.[key]
+      if (hasValue(value)) return { value, key, container }
+    }
+  }
+  return null
+}
 
-  const trendText = String(technical?.trend || source?.trend || '').toLowerCase()
-  if (trendText.includes('strong') && trendText.includes('up')) return 78
-  if (trendText.includes('uptrend')) return 74
-  if (trendText.includes('mild uptrend')) return 64
-  if (trendText.includes('sideways')) return 50
-  if (trendText.includes('pullback')) return 40
-  if (trendText.includes('downtrend')) return 28
+function isPlaceholderScore(metricKey: MetricKey, key: string, value: unknown, source: any) {
+  const parsed = numberValue(value)
+  if (parsed == null) return false
+  const keyName = key.toLowerCase()
+  const placeholderFlag =
+    source?.placeholder_scores === true ||
+    source?.scores_are_placeholders === true ||
+    String(source?.score_status || '').toLowerCase().includes('placeholder') ||
+    String(source?.data_quality || '').toLowerCase().includes('placeholder')
 
-  const change = numberValue(technical?.day_change_pct ?? source?.day_change_pct ?? source?.change_pct)
-  if (change == null) return null
-  return clampScore(52 + change * 8)
+  if (placeholderFlag) return true
+  if (parsed === 50 && source?.manual && ['momentum', 'sentiment', 'trend'].includes(metricKey)) return true
+  if (parsed === 50 && String(source?.pricing_status || '').toLowerCase().includes('manual') && ['momentum', 'sentiment'].includes(metricKey)) return true
+  if (parsed === 50 && ['news_score', 'sentiment_score', 'momentum_score'].includes(keyName) && source?.manual) return true
+  return false
+}
+
+function explicitScore(metricKey: MetricKey, containers: Array<any>, keys: string[], source: any) {
+  const found = firstValue(containers, keys)
+  if (!found) return null
+  const score = clampScore(found.value)
+  if (score == null || isPlaceholderScore(metricKey, found.key, found.value, source)) return null
+  return score
+}
+
+function scoreAverage(parts: Array<number | null>, minimumParts = 1) {
+  const usable = parts.filter((part): part is number => part != null)
+  if (usable.length < minimumParts) return null
+  return clampScore(usable.reduce((sum, part) => sum + part, 0) / usable.length)
+}
+
+function normalizeSource(value: unknown): DataSourceLabel | null {
+  const raw = String(value || '').toLowerCase()
+  if (!raw) return null
+  if (raw.includes('ibkr') || raw.includes('interactive brokers')) return 'IBKR'
+  if (raw.includes('yahoo')) return 'Yahoo'
+  if (raw.includes('seeking alpha') || raw.includes('seekingalpha')) return 'Seeking Alpha'
+  if (raw.includes('derived') || raw.includes('manual') || raw.includes('rule')) return 'Derived Signal'
+  if (raw.includes('internal') || raw.includes('pia')) return 'Internal Calculation'
+  return null
+}
+
+function sourceForMetric(metricKey: MetricKey, source: any, targets: any, score: number | null): DataSourceLabel {
+  const keyAliases: Record<MetricKey, string[]> = {
+    momentum: ['momentum_source', 'momentumSource'],
+    trend: ['trend_source', 'trendSource'],
+    sentiment: ['sentiment_source', 'news_source', 'sentimentSource', 'newsSource'],
+    institutional: ['institutional_source', 'institutionalSource', 'inst_flow_source'],
+    fairValue: ['fair_value_source', 'fairValueSource', 'target_source', 'targetSource'],
+    risk: ['risk_source', 'riskSource'],
+  }
+  const mapSource = firstValue(
+    [source?.metric_sources, source?.metricSources, source?.data_sources, source?.dataSources, source, source?.fundamentals, targets],
+    [...keyAliases[metricKey], metricKey],
+  )
+  const explicit = normalizeSource(mapSource?.value)
+  if (explicit) return explicit
+
+  const rawProvider = normalizeSource(source?.source ?? source?.pricing_source ?? source?.provider ?? source?.fundamentals?.source ?? targets?.source)
+  if (rawProvider && metricKey !== 'institutional') return rawProvider
+  if (source?.broker === 'IBKR' || String(source?.source || '').includes('IBKR')) return 'IBKR'
+  if (metricKey === 'sentiment' && score != null) return rawProvider || 'Derived Signal'
+  if (metricKey === 'institutional') return score == null ? 'Derived Signal' : rawProvider || 'Derived Signal'
+  if (metricKey === 'fairValue') return rawProvider || 'Internal Calculation'
+  if (source?.manual) return 'Derived Signal'
+  return 'Internal Calculation'
+}
+
+function formatUpdated(value: unknown) {
+  if (!hasValue(value)) return 'Not recorded'
+  const date = new Date(String(value))
+  if (Number.isNaN(date.getTime())) return String(value)
+  const minutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60000))
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 48) return `${hours}h ago`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function lastUpdatedForMetric(metricKey: MetricKey, source: any, targets: any) {
+  const keyAliases: Record<MetricKey, string[]> = {
+    momentum: ['momentum_updated_at', 'momentumUpdatedAt'],
+    trend: ['trend_updated_at', 'trendUpdatedAt'],
+    sentiment: ['sentiment_updated_at', 'news_updated_at', 'sentimentUpdatedAt', 'newsUpdatedAt'],
+    institutional: ['institutional_updated_at', 'inst_flow_updated_at', 'institutionalUpdatedAt'],
+    fairValue: ['fair_value_updated_at', 'fairValueUpdatedAt', 'target_updated_at', 'targetUpdatedAt'],
+    risk: ['risk_updated_at', 'riskUpdatedAt'],
+  }
+  const found = firstValue(
+    [source?.metric_updated_at, source?.metricUpdatedAt, source, source?.fundamentals, targets],
+    [metricKey, ...keyAliases[metricKey], 'last_updated', 'lastUpdated', 'updated_at', 'updatedAt', 'as_of', 'asOf'],
+  )
+  return formatUpdated(found?.value)
+}
+
+function metricHistory(metricKey: MetricKey, source: any) {
+  const keyAliases: Record<MetricKey, string[]> = {
+    momentum: ['momentum', 'momentum_score', 'momentumScore', 'momentum_history', 'momentumScoreHistory'],
+    trend: ['trend', 'trend_score', 'trendScore', 'trend_history', 'trendScoreHistory'],
+    sentiment: ['sentiment', 'sentiment_score', 'news_score', 'sentiment_history', 'newsScoreHistory'],
+    institutional: ['institutional', 'institutional_score', 'institutionalFlow', 'institutional_history'],
+    fairValue: ['fairValue', 'fair_value', 'fair_value_score', 'fairValueHistory'],
+    risk: ['risk', 'risk_score', 'riskScore', 'risk_history', 'riskScoreHistory'],
+  }
+
+  const parseArray = (raw: unknown): number[] | null => {
+    if (!Array.isArray(raw)) return null
+    const values = raw
+      .map((item) => {
+        if (typeof item === 'object' && item !== null) {
+          const row = item as Record<string, unknown>
+          return clampScore(row.score ?? row.value ?? row.close ?? row[metricKey])
+        }
+        return clampScore(item)
+      })
+      .filter((value): value is number => value != null)
+    return values.length >= 2 ? values : null
+  }
+
+  const containers = [
+    source?.ai_metric_history,
+    source?.aiMetricHistory,
+    source?.metric_history,
+    source?.metricHistory,
+    source?.metrics_history,
+    source?.historical_metrics,
+    source?.history,
+    source,
+  ]
+
+  for (const container of containers) {
+    if (!container || typeof container !== 'object') continue
+    for (const key of keyAliases[metricKey]) {
+      const direct = parseArray(container?.[key])
+      if (direct) return direct
+      const nested = parseArray(container?.[key]?.history ?? container?.[key]?.values)
+      if (nested) return nested
+    }
+  }
+  return null
 }
 
 function riskBadge(score: number | null) {
@@ -149,6 +313,17 @@ function fairValueScore(upside: number | null) {
   return clampScore(50 + upside * 1.1)
 }
 
+function sentimentFrom(value: unknown, score: number | null): 'Bullish' | 'Bearish' | 'Neutral' {
+  const raw = String(value || '').toLowerCase()
+  if (raw.includes('bear') || raw.includes('negative') || raw.includes('weak') || raw.includes('down')) return 'Bearish'
+  if (raw.includes('bull') || raw.includes('positive') || raw.includes('strong') || raw.includes('constructive') || raw.includes('uptrend')) return 'Bullish'
+  if (score != null) {
+    if (score >= 62) return 'Bullish'
+    if (score <= 42) return 'Bearish'
+  }
+  return 'Neutral'
+}
+
 function money(value: number | null) {
   if (value == null) return EMPTY
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })
@@ -164,56 +339,62 @@ function scoreDisplay(score: number | null) {
   return score == null ? EMPTY : String(score)
 }
 
-function updatedLabel(source: any) {
-  const raw = source?.last_updated ?? source?.updated_at ?? source?.as_of
-  if (!hasValue(raw)) return '2m ago'
-  const date = new Date(String(raw))
-  if (Number.isNaN(date.getTime())) return String(raw)
-  const minutes = Math.max(1, Math.round((Date.now() - date.getTime()) / 60000))
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.round(minutes / 60)
-  return `${hours}h ago`
-}
-
-function formatTargetCase(value: unknown, fallback: string) {
-  const text = cleanText(value, 120)
-  return text || fallback
-}
-
-function buildSpark(score: number | null, delta: number | null, lowerIsBetter = false) {
-  const base = score ?? 50
-  const drift = delta ?? (lowerIsBetter ? 3 : 6)
-  const direction = lowerIsBetter ? -drift : drift
-  return [
-    base - direction * 0.8 - 6,
-    base - direction * 0.5 - 2,
-    base - direction * 0.3 + 3,
-    base - direction * 0.15 - 1,
-    base + direction * 0.1 + 2,
-    base + direction * 0.35,
-    base + direction * 0.55 + 4,
-    base + direction * 0.75,
-    base + direction,
-  ].map((value) => Math.max(4, Math.min(96, Math.round(value))))
-}
-
-function contributionRows(score: number | null, labels: string[], weights: number[]): DetailRow[] {
-  return labels.map((label, index) => {
-    if (score == null) return { label, score: null, contribution: null }
-    const contribution = Math.max(1, Math.round(score * weights[index]))
-    return {
-      label,
-      score: Math.max(8, Math.min(100, Math.round((contribution / Math.max(1, score * Math.max(...weights))) * 88))),
-      contribution,
-    }
-  })
+function targetText(value: unknown) {
+  const parsed = numberValue(value)
+  if (parsed != null && String(value).replace(/[^a-zA-Z]/g, '') === '') return money(parsed)
+  return cleanText(value, 120)
 }
 
 function parseUpside(source: any, targets: any, price: number | null, fairValue: number | null) {
-  const explicit = numberValue(source?.price_vs_fair_value ?? source?.fair_value_gap ?? targets?.upside_downside ?? targets?.upside)
-  if (explicit != null) return explicit
   if (price != null && fairValue != null && price > 0) return ((fairValue - price) / price) * 100
-  return null
+  const explicit = numberValue(source?.price_vs_fair_value ?? source?.fair_value_gap ?? targets?.upside_downside ?? targets?.upside)
+  return explicit
+}
+
+function detailRow(label: string, value: unknown, score?: number | null): DetailRow | null {
+  const text = typeof value === 'number' ? String(value) : cleanText(value, 120)
+  if (!text) return null
+  return { label, value: text, score }
+}
+
+function buildRows(rows: Array<DetailRow | null>) {
+  return rows.filter((row): row is DetailRow => row != null)
+}
+
+function buildMetricEvidence(items: Array<unknown>) {
+  const evidence = normalizeList(items)
+  return evidence.length ? evidence : ['No provider evidence is attached to this metric yet.']
+}
+
+function miniHistoryLabel(metric: Metric) {
+  if (metric.historyBacked) return 'Stored history'
+  return 'No stored history'
+}
+
+function deriveConfidence(metrics: Metric[]) {
+  const valid = metrics.filter((metric) => metric.score != null)
+  if (!valid.length) {
+    return {
+      value: null,
+      notes: ['Confidence is unavailable because no scored AI metrics are backed by usable inputs.'],
+    }
+  }
+
+  const sourceCoverage = valid.filter((metric) => metric.sourceLabel !== 'Internal Calculation' || metric.lastUpdated !== 'Not recorded').length
+  const historyCoverage = valid.filter((metric) => metric.historyBacked).length
+  const freshnessCoverage = valid.filter((metric) => metric.lastUpdated !== 'Not recorded').length
+  const missingCount = metrics.length - valid.length
+  const value = clampScore(32 + valid.length * 7 + sourceCoverage * 3 + freshnessCoverage * 2 + historyCoverage * 2 - missingCount * 5)
+
+  return {
+    value,
+    notes: [
+      `${valid.length} of ${metrics.length} metrics have usable scores.`,
+      `${sourceCoverage} metrics expose a provider or calculation source.`,
+      `${historyCoverage} metrics include stored history.`,
+      missingCount ? `${missingCount} missing metrics reduce confidence.` : 'No metric is currently missing.',
+    ],
+  }
 }
 
 function MiniSparkline({ values, tone }: { values: number[]; tone: Tone }) {
@@ -266,10 +447,11 @@ function MetricCard({ metric, hidden, onOpen }: { metric: Metric; hidden: boolea
         {metric.score != null ? <small>/100</small> : null}
       </div>
       <span className={`sai-card-badge sai-tone-${metric.tone}`}>{hidden ? mask : metric.badge}</span>
-      <MiniSparkline values={metric.spark} tone={metric.tone} />
+      {metric.score == null ? <p className="sai-card-empty">{hidden ? mask : METRIC_EMPTY}</p> : null}
+      {metric.historyBacked && metric.history ? <MiniSparkline values={metric.history} tone={metric.tone} /> : <span className="sai-card-history-note">{hidden ? mask : miniHistoryLabel(metric)}</span>}
       <footer>
-        <span>vs. 3M avg</span>
-        <b className={deltaGood ? 'good' : 'bad'}>{hidden ? mask : signed(metric.delta, metric.deltaUnit)}</b>
+        <span>{metric.delta == null ? 'Baseline unavailable' : 'Change'}</span>
+        <b className={deltaGood ? 'good' : 'bad'}>{hidden ? mask : metric.delta == null ? EMPTY : signed(metric.delta, metric.deltaUnit)}</b>
       </footer>
     </button>
   )
@@ -277,185 +459,263 @@ function MetricCard({ metric, hidden, onOpen }: { metric: Metric; hidden: boolea
 
 function DetailMetricRow({ row, tone }: { row: DetailRow; tone: Tone }) {
   const width = row.score == null ? 0 : row.score
-  const display = row.value ?? (row.contribution == null ? EMPTY : `+${row.contribution}`)
   return (
-    <div className="sai-detail-row">
+    <div className={`sai-detail-row${row.score == null ? ' sai-detail-row-text' : ''}`}>
       <span>{row.label}</span>
       <i aria-hidden="true">
         <em className={`sai-tone-${tone}`} style={{ width: `${width}%` }} />
       </i>
-      <b>{display}</b>
+      <b>{row.value}</b>
     </div>
   )
 }
 
-function EmptyMetricState({ label }: { label: string }) {
+function SourceGrid({ sourceLabel, lastUpdated, hidden }: { sourceLabel: DataSourceLabel; lastUpdated: string; hidden: boolean }) {
+  return (
+    <section className="sai-source-grid" aria-label="Metric source and update time">
+      <span><em>Source</em><b>{hidden ? mask : sourceLabel}</b></span>
+      <span><em>Last Updated</em><b>{hidden ? mask : lastUpdated}</b></span>
+    </section>
+  )
+}
+
+function EmptyMetricState({ metric, hidden }: { metric: Metric; hidden: boolean }) {
   return (
     <div className="sai-empty-metric">
-      <strong>{METRIC_EMPTY}</strong>
-      <p>{label} needs enough price history, volume, and provider inputs before PIA can calculate a reliable score.</p>
+      <strong>{hidden ? mask : METRIC_EMPTY}</strong>
+      <p>{hidden ? mask : `${metric.label} needs explicit provider or calculation inputs before PIA can show a defensible score.`}</p>
+      {metric.missingInputs.length ? (
+        <ul>
+          {metric.missingInputs.map((item) => <li key={item}>{hidden ? mask : item}</li>)}
+        </ul>
+      ) : null}
     </div>
   )
 }
 
 function HistoryBlock({ metric }: { metric: Metric }) {
+  if (!metric.historyBacked || !metric.history) return null
   return (
     <div className="sai-history-block">
-      <MiniSparkline values={metric.spark} tone={metric.tone} />
+      <MiniSparkline values={metric.history} tone={metric.tone} />
       <div>
-        <span>3M</span>
-        <span>Now</span>
+        <span>Stored start</span>
+        <span>Latest</span>
       </div>
     </div>
   )
 }
 
-function FairValueVisual({
-  current,
-  fairValue,
-  upside,
-  bull,
-  base,
-  bear,
-  hidden,
-}: {
-  current: number | null
-  fairValue: number | null
-  upside: number | null
-  bull: string
-  base: string
-  bear: string
-  hidden: boolean
-}) {
-  const marker = upside == null ? 50 : Math.max(4, Math.min(96, 50 + upside * 1.5))
+function FairValueVisual({ fairValue, hidden }: { fairValue: FairValueState; hidden: boolean }) {
+  const marker = fairValue.upside == null ? 50 : Math.max(4, Math.min(96, 50 + fairValue.upside * 1.5))
+  const scenarios = [
+    fairValue.bear ? { label: 'Bear Case', text: fairValue.bear } : null,
+    fairValue.base ? { label: 'Base Case', text: fairValue.base } : null,
+    fairValue.bull ? { label: 'Bull Case', text: fairValue.bull } : null,
+  ].filter(Boolean) as Array<{ label: string; text: string }>
 
   return (
     <div className="sai-fair-value-block">
       <div className="sai-price-grid">
-        <span><em>Current Price</em><b>{hidden ? mask : money(current)}</b></span>
-        <span><em>Fair Value</em><b>{hidden ? mask : money(fairValue)}</b></span>
-        <span><em>Upside / Downside</em><b className={upside != null && upside < 0 ? 'red' : 'green'}>{hidden ? mask : signed(upside, '%', 1)}</b></span>
+        <span><em>Current Price</em><b>{hidden ? mask : money(fairValue.current)}</b></span>
+        <span><em>Fair Value</em><b>{hidden ? mask : money(fairValue.fairValue)}</b></span>
+        <span><em>Upside / Downside</em><b className={fairValue.upside != null && fairValue.upside < 0 ? 'red' : 'green'}>{hidden ? mask : signed(fairValue.upside, '%', 1)}</b></span>
       </div>
       <div className="sai-fv-range" aria-hidden="true">
         <i style={{ left: `${marker}%` }} />
       </div>
-      <div className="sai-scenario-grid">
-        <article><span>Bear Case</span><p>{hidden ? mask : bear}</p></article>
-        <article><span>Base Case</span><p>{hidden ? mask : base}</p></article>
-        <article><span>Bull Case</span><p>{hidden ? mask : bull}</p></article>
-      </div>
+      {scenarios.length ? (
+        <div className="sai-scenario-grid">
+          {scenarios.map((scenario) => <article key={scenario.label}><span>{scenario.label}</span><p>{hidden ? mask : scenario.text}</p></article>)}
+        </div>
+      ) : null}
     </div>
   )
 }
 
-function MetricDetailSheet({
+function FairValueUnavailable({ fairValue, hidden }: { fairValue: FairValueState; hidden: boolean }) {
+  return (
+    <div className="sai-fair-no-data">
+      <div className="sai-price-grid sai-price-grid-single">
+        <span><em>Current Price</em><b>{hidden ? mask : money(fairValue.current)}</b></span>
+      </div>
+      <section>
+        <h4>Missing Inputs</h4>
+        <ul>
+          {fairValue.missingInputs.map((item) => <li key={item}>{hidden ? mask : item}</li>)}
+        </ul>
+      </section>
+      <section>
+        <h4>Required Inputs</h4>
+        <ul>
+          {fairValue.requiredInputs.map((item) => <li key={item}>{hidden ? mask : item}</li>)}
+        </ul>
+      </section>
+      <p><strong>Reason calculation unavailable</strong>{hidden ? ` ${mask}` : ` ${fairValue.unavailableReason}`}</p>
+    </div>
+  )
+}
+
+function MetricFullScreenView({
   metric,
   allMetrics,
-  detailRows,
   fairValue,
   hidden,
-  onClose,
+  onBack,
 }: {
   metric: Metric
-  allMetrics: Record<MetricKey, Metric>
-  detailRows: Record<MetricKey, DetailRow[]>
-  fairValue: {
-    current: number | null
-    fairValue: number | null
-    upside: number | null
-    bull: string
-    base: string
-    bear: string
-  }
+  allMetrics: Metric[]
+  fairValue: FairValueState
   hidden: boolean
-  onClose: () => void
+  onBack: () => void
 }) {
   const Icon = metric.icon
   const hasMetricData = metric.score != null
-  const commentary: Record<MetricKey, string> = {
-    momentum: 'Price action is strongest when moving averages, volume trend, and relative strength confirm the same direction.',
-    trend: 'The trend remains useful when higher highs, higher lows, ADX, and moving-average alignment agree.',
-    sentiment: 'News tone, analyst revisions, social flow, and insider activity help identify whether the narrative is improving or fading.',
-    institutional: 'Institutional accumulation can support follow-through when fund ownership and volume signals move together.',
-    fairValue: 'Fair value compares current price against base-case estimates and scenario targets before sizing new risk.',
-    risk: 'Risk combines volatility, beta, balance-sheet stress, earnings stability, and drawdown behavior. Lower Is Better.',
-  }
 
   return (
-    <>
-      <button type="button" className="sai-detail-backdrop" aria-label="Close metric detail" onClick={onClose} />
-      <section className="sai-detail-sheet" role="dialog" aria-modal="true" aria-label={`${metric.label} detail`}>
-        <header className="sai-detail-head">
-          <div className={`sai-detail-icon sai-tone-${metric.tone}`} aria-hidden="true"><Icon size={18} /></div>
+    <section className="sai-fullscreen-view" role="dialog" aria-modal="true" aria-label={`${metric.label} intelligence detail`}>
+      <header className="sai-fullscreen-head">
+        <button type="button" className="sai-fullscreen-back" onClick={onBack} aria-label="Back to AI Intelligence">
+          <ArrowLeft size={18} />
+          <span>Back</span>
+        </button>
+        <div className={`sai-detail-icon sai-tone-${metric.tone}`} aria-hidden="true"><Icon size={18} /></div>
+        <div>
+          <h3>{metric.label}</h3>
+          <span>{metric.lowerIsBetter ? 'Lower Is Better' : metric.badge}</span>
+        </div>
+      </header>
+
+      <div className="sai-fullscreen-body">
+        <section className="sai-detail-score-band">
           <div>
-            <h3>{metric.label}</h3>
-            {metric.key === 'risk' ? <span>Lower Is Better</span> : null}
+            <strong>{hidden ? mask : metric.display}</strong>
+            {metric.score != null ? <span>/100</span> : null}
           </div>
-          <button type="button" className="sai-detail-close" onClick={onClose} aria-label="Close">
-            <X size={18} />
-          </button>
-        </header>
+          <b className={`sai-tone-${metric.tone}`}>{hidden ? mask : metric.badge}</b>
+        </section>
 
-        <div className="sai-detail-body">
-          <section className="sai-detail-score-band">
-            <div>
-              <strong>{hidden ? mask : metric.display}</strong>
-              {metric.score != null ? <span>/100</span> : null}
-            </div>
-            <b className={`sai-tone-${metric.tone}`}>{hidden ? mask : metric.badge}</b>
+        <SourceGrid sourceLabel={metric.sourceLabel} lastUpdated={metric.lastUpdated} hidden={hidden} />
+
+        {!hasMetricData ? <EmptyMetricState metric={metric} hidden={hidden} /> : null}
+
+        {metric.key === 'fairValue' ? (
+          <section className="sai-detail-section">
+            <h4>Fair Value</h4>
+            {fairValue.available ? <FairValueVisual fairValue={fairValue} hidden={hidden} /> : <FairValueUnavailable fairValue={fairValue} hidden={hidden} />}
           </section>
+        ) : (
+          <section className="sai-detail-section">
+            <h4>How It Is Calculated</h4>
+            <p>{hidden ? mask : metric.calculation}</p>
+            {metric.detailRows.length ? metric.detailRows.map((row) => (
+              <DetailMetricRow key={row.label} row={row} tone={metric.tone} />
+            )) : null}
+          </section>
+        )}
 
-          {!hasMetricData ? <EmptyMetricState label={metric.label} /> : null}
+        <section className="sai-detail-section">
+          <h4>Evidence</h4>
+          <ul className="sai-evidence-list">
+            {metric.evidence.map((item) => <li key={item}>{hidden ? mask : item}</li>)}
+          </ul>
+        </section>
 
-          {metric.key === 'fairValue' ? (
-            <section className="sai-detail-section">
-              <h4>Fair Value Range</h4>
-              <FairValueVisual {...fairValue} hidden={hidden} />
-            </section>
-          ) : (
-            <section className="sai-detail-section">
-              <h4>How It Is Calculated</h4>
-              {detailRows[metric.key].map((row) => (
-                <DetailMetricRow key={row.label} row={row} tone={metric.tone} />
-              ))}
-            </section>
-          )}
-
-          {metric.key === 'momentum' ? (
-            <section className="sai-detail-section">
-              <h4>Contribution Breakdown</h4>
-              {detailRows.momentum.map((row) => (
-                <DetailMetricRow key={`contribution-${row.label}`} row={row} tone="blue" />
-              ))}
-            </section>
-          ) : null}
-
+        {metric.historyBacked ? (
           <section className="sai-detail-section">
             <h4>Historical Evolution</h4>
             <HistoryBlock metric={metric} />
           </section>
+        ) : (
+          <p className="sai-history-note">{hidden ? mask : 'Stored metric history is unavailable, so historical evolution is hidden until persisted snapshots exist.'}</p>
+        )}
 
-          <section className="sai-detail-section">
-            <h4>{metric.key === 'momentum' || metric.key === 'fairValue' ? 'Why It Matters' : 'AI Commentary'}</h4>
-            <p>{hidden ? mask : commentary[metric.key]}</p>
+        <section className="sai-detail-section">
+          <h4>Related Signals</h4>
+          <ul className="sai-evidence-list">
+            {metric.relatedSignals.map((item) => <li key={item}>{hidden ? mask : item}</li>)}
+          </ul>
+        </section>
+
+        {metric.key === 'risk' ? (
+          <section className="sai-risk-note">
+            <ShieldAlert size={16} />
+            <strong>Lower Is Better</strong>
           </section>
+        ) : null}
 
-          {metric.key === 'risk' ? (
-            <section className="sai-risk-note">
-              <ShieldAlert size={16} />
-              <strong>Lower Is Better</strong>
-            </section>
-          ) : null}
-
-          <section className="sai-detail-mini-factors">
-            {Object.values(allMetrics).map((item) => (
-              <FactorRow key={`sheet-${item.key}`} metric={item} hidden={hidden} />
-            ))}
-          </section>
-        </div>
-      </section>
-    </>
+        <section className="sai-detail-mini-factors">
+          {allMetrics.map((item) => (
+            <FactorRow key={`detail-${item.key}`} metric={item} hidden={hidden} />
+          ))}
+        </section>
+      </div>
+    </section>
   )
+}
+
+function InsightFullScreenView({ insight, hidden, onBack }: { insight: Insight; hidden: boolean; onBack: () => void }) {
+  return (
+    <section className="sai-fullscreen-view sai-insight-detail-view" role="dialog" aria-modal="true" aria-label={`${insight.headline} insight detail`}>
+      <header className="sai-fullscreen-head">
+        <button type="button" className="sai-fullscreen-back" onClick={onBack} aria-label="Back to AI Insights">
+          <ArrowLeft size={18} />
+          <span>Back</span>
+        </button>
+        <div className="sai-detail-icon sai-tone-blue" aria-hidden="true"><MessageCircle size={18} /></div>
+        <div>
+          <h3>AI Insight</h3>
+          <span>{hidden ? mask : insight.sourceLabel}</span>
+        </div>
+      </header>
+
+      <div className="sai-fullscreen-body">
+        <section className="sai-insight-detail-hero">
+          <em>Headline</em>
+          <h2>{hidden ? mask : insight.headline}</h2>
+          <p>{hidden ? mask : insight.summary}</p>
+        </section>
+
+        <SourceGrid sourceLabel={insight.sourceLabel} lastUpdated={insight.lastUpdated} hidden={hidden} />
+
+        <section className="sai-detail-section">
+          <h4>Explanation</h4>
+          <p>{hidden ? mask : insight.explanation}</p>
+        </section>
+
+        <section className="sai-detail-section">
+          <h4>Evidence</h4>
+          <ul className="sai-evidence-list">
+            {insight.evidence.map((item) => <li key={item}>{hidden ? mask : item}</li>)}
+          </ul>
+        </section>
+
+        <section className="sai-detail-section">
+          <h4>Related Metrics</h4>
+          <div className="sai-chip-list">
+            {insight.relatedMetrics.map((item) => <span key={item}>{hidden ? mask : item}</span>)}
+          </div>
+        </section>
+
+        <section className="sai-detail-section">
+          <h4>Related Signals</h4>
+          <ul className="sai-evidence-list">
+            {insight.relatedSignals.map((item) => <li key={item}>{hidden ? mask : item}</li>)}
+          </ul>
+        </section>
+
+        <section className="sai-detail-section">
+          <h4>AI Commentary</h4>
+          <p>{hidden ? mask : insight.commentary}</p>
+        </section>
+      </div>
+    </section>
+  )
+}
+
+function insightEvidence(metric: Metric, fallback: string) {
+  if (metric.score == null) return fallback
+  return `${metric.label}: ${metric.score}/100 from ${metric.sourceLabel}`
 }
 
 export default function StockAiIntelligenceWidget({
@@ -471,201 +731,306 @@ export default function StockAiIntelligenceWidget({
   targets: any
   hidden: boolean
 }) {
-  const [activeSheet, setActiveSheet] = useState<MetricKey | null>(null)
+  const [activeView, setActiveView] = useState<ActiveView>(null)
 
   useEffect(() => {
-    if (!activeSheet) return
+    if (!activeView) return
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setActiveSheet(null)
+      if (event.key === 'Escape') setActiveView(null)
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeSheet])
+  }, [activeView])
 
-  const sourcePrice = numberValue(source?.last ?? source?.price ?? source?.regularMarketPrice ?? source?.market_price)
-  const targetBase = numberValue(source?.fair_value ?? targets?.average_target ?? targets?.averageTarget ?? targets?.base)
-  const fairValueEstimate = targetBase ?? null
-  const upside = parseUpside(source, targets, sourcePrice, fairValueEstimate)
-
-  const momentum = clampScore(source?.momentum_score ?? source?.momentum)
-  const trend = deriveTrend(technical, source)
-  const sentimentScore = clampScore(source?.sentiment_score ?? source?.news_score)
-  const risk = clampScore(source?.risk)
-  const institutional = clampScore(
-    source?.institutional_score ??
-      source?.institutional_flow_score ??
-      scoreFromParts([
-        clampScore(source?.volume_trend),
-        momentum != null ? Math.round(momentum * 0.82) : null,
-        sentimentScore != null ? Math.round(sentimentScore * 0.72) : null,
-      ]),
+  const scoreContainers = [source?.fundamentals, source?.metrics, source?.intelligence, technical, overview, source].filter(Boolean)
+  const sourcePrice = numberValue(source?.fundamentals?.last ?? source?.fundamentals?.price ?? source?.fundamentals?.regularMarketPrice ?? source?.last ?? source?.price ?? source?.regularMarketPrice ?? source?.market_price)
+  const fairValueEstimate = numberValue(
+    source?.fundamentals?.fair_value ??
+      source?.fundamentals?.fairValue ??
+      source?.fundamentals?.targetMeanPrice ??
+      source?.fair_value ??
+      source?.fairValue ??
+      targets?.average_target ??
+      targets?.averageTarget ??
+      targets?.targetMeanPrice ??
+      targets?.base ??
+      source?.fundamentals?.targetMeanPrice,
   )
-  const fairScore = fairValueScore(upside)
-  const composite = clampScore(
-    source?.ai_score ??
-      source?.intelligence_score ??
-      scoreFromParts([
-        momentum,
-        trend,
-        sentimentScore,
-        institutional,
-        fairScore,
-        risk != null ? 100 - risk : null,
-      ], 78),
-  )
+  const fairValueReady = sourcePrice != null && sourcePrice > 0 && fairValueEstimate != null && fairValueEstimate > 0
+  const upside = fairValueReady ? parseUpside(source, targets, sourcePrice, fairValueEstimate) : null
 
-  const view = sentimentFrom(source?.sentiment ?? source?.bias ?? source?.label ?? technical?.trend ?? overview?.momentum_state, sentimentScore ?? composite)
-  const heroBadge = momentumBadge(momentum ?? composite)
-  const confidence = clampScore(source?.confidence ?? (composite != null ? composite + 4 : null)) ?? 82
-  const updated = updatedLabel(source)
-  const summary =
-    cleanText(overview?.summary || source?.ai_view || overview?.why_moving, 210) ||
-    `${source?.symbol || 'This stock'} continues to show ${heroBadge.toLowerCase()} with improving price action, supportive sentiment, and disciplined risk context.`
+  const momentum = explicitScore('momentum', scoreContainers, ['momentum_score', 'momentumScore', 'momentum'], source)
+  const trend = explicitScore('trend', scoreContainers, ['trend_score', 'trendScore', 'trend_strength_score', 'trendStrengthScore'], source)
+  const sentimentScore = explicitScore('sentiment', scoreContainers, ['sentiment_score', 'sentimentScore', 'news_score', 'newsScore'], source)
+  const institutional = explicitScore('institutional', scoreContainers, ['institutional_score', 'institutionalScore', 'institutional_flow_score', 'institutionalFlowScore', 'inst_score'], source)
+  const risk = explicitScore('risk', scoreContainers, ['risk_score', 'riskScore', 'risk'], source)
+  const fairScore = fairValueReady ? fairValueScore(upside) : null
 
-  const metricsArray: Metric[] = [
+  const fairValue: FairValueState = {
+    available: fairValueReady,
+    current: sourcePrice,
+    fairValue: fairValueEstimate,
+    upside,
+    bear: targetText(targets?.bear ?? targets?.low_target ?? targets?.lowTarget ?? targets?.targetLowPrice),
+    base: fairValueEstimate != null ? money(fairValueEstimate) : targetText(targets?.base),
+    bull: targetText(targets?.bull ?? targets?.high_target ?? targets?.highTarget ?? targets?.targetHighPrice),
+    missingInputs: [
+      sourcePrice == null || sourcePrice <= 0 ? 'Current market price' : '',
+      fairValueEstimate == null || fairValueEstimate <= 0 ? 'Fair value estimate or average analyst target' : '',
+    ].filter(Boolean),
+    requiredInputs: ['Current price', 'Fair value estimate or average analyst target', 'Timestamped valuation source'],
+    unavailableReason: 'PIA requires both current price and a fair value estimate before it can calculate valuation score, scenarios, chart, or upside/downside.',
+  }
+
+  const metricSeed: Array<Omit<Metric, 'sourceLabel' | 'lastUpdated' | 'history' | 'historyBacked' | 'display'>> = [
     {
       key: 'momentum',
       label: 'Momentum',
       shortLabel: 'Momentum',
       score: momentum,
-      display: scoreDisplay(momentum),
       badge: momentumBadge(momentum),
-      delta: numberValue(source?.momentum_delta ?? source?.momentum_change) ?? (momentum == null ? null : Math.round((momentum - 50) / 1.6)),
+      delta: numberValue(source?.momentum_delta ?? source?.momentum_change ?? source?.momentumDelta),
       deltaUnit: '%',
       tone: 'blue',
       icon: Gauge,
-      spark: buildSpark(momentum, numberValue(source?.momentum_delta ?? source?.momentum_change)),
+      calculation: 'Uses an explicit momentum score from portfolio, watchlist, or provider data. It no longer derives a neutral score from missing inputs.',
+      evidence: buildMetricEvidence([
+        momentum != null ? `Explicit momentum score ${momentum}/100` : '',
+        source?.momentum_state ?? overview?.momentum_state,
+        source?.day_change_pct != null ? `Day change ${signed(numberValue(source.day_change_pct), '%', 2)}` : '',
+        source?.volume_trend != null ? `Volume trend ${source.volume_trend}` : '',
+      ]),
+      relatedSignals: normalizeList(['Price action', 'Relative strength', 'Volume trend', overview?.momentum_state]),
+      detailRows: buildRows([
+        detailRow('Momentum Score', momentum == null ? '' : `${momentum}/100`, momentum),
+        detailRow('Day Change', signed(numberValue(source?.day_change_pct ?? technical?.day_change_pct), '%', 2)),
+        detailRow('Volume Trend', source?.volume_trend),
+        detailRow('Relative Strength', source?.relative_strength ?? source?.relativeStrength),
+      ]),
+      missingInputs: momentum == null ? ['Explicit momentum score', 'Momentum data source', 'Timestamp or as-of date'] : [],
+      requiredInputs: ['momentum_score or momentum', 'Source/provider', 'Last updated timestamp'],
     },
     {
       key: 'trend',
       label: 'Trend',
       shortLabel: 'Trend',
       score: trend,
-      display: scoreDisplay(trend),
       badge: trendBadge(trend),
-      delta: numberValue(source?.trend_delta ?? source?.trend_change) ?? (trend == null ? null : Math.round((trend - 50) / 2)),
+      delta: numberValue(source?.trend_delta ?? source?.trend_change ?? source?.trendDelta),
       deltaUnit: '%',
       tone: 'green',
       icon: TrendingUp,
-      spark: buildSpark(trend, numberValue(source?.trend_delta ?? source?.trend_change)),
+      calculation: 'Uses only an explicit trend score. Text labels such as Uptrend or Sideways are shown as evidence but are not converted into scores.',
+      evidence: buildMetricEvidence([
+        trend != null ? `Explicit trend score ${trend}/100` : '',
+        technical?.trend ? `Technical trend label: ${technical.trend}` : '',
+        technical?.day_change_pct != null ? `Technical day change ${signed(numberValue(technical.day_change_pct), '%', 2)}` : '',
+      ]),
+      relatedSignals: normalizeList(['Trend score', technical?.trend, 'Moving-average alignment', 'Higher highs/lows']),
+      detailRows: buildRows([
+        detailRow('Trend Score', trend == null ? '' : `${trend}/100`, trend),
+        detailRow('Trend Label', technical?.trend ?? source?.trend),
+        detailRow('Day Change', signed(numberValue(technical?.day_change_pct ?? source?.day_change_pct), '%', 2)),
+        detailRow('Trend Strength', source?.trend_strength ?? technical?.trend_strength),
+      ]),
+      missingInputs: trend == null ? ['Explicit trend_score or trend_strength_score', 'Technical calculation source', 'Timestamp or as-of date'] : [],
+      requiredInputs: ['trend_score or trend_strength_score', 'Calculation source', 'Last updated timestamp'],
     },
     {
       key: 'sentiment',
       label: 'Sentiment',
       shortLabel: 'Sentiment',
       score: sentimentScore,
-      display: scoreDisplay(sentimentScore),
-      badge: sentimentFrom(source?.sentiment, sentimentScore),
-      delta: numberValue(source?.sentiment_delta ?? source?.sentiment_change) ?? (sentimentScore == null ? null : Math.round((sentimentScore - 50) / 2.2)),
+      badge: sentimentFrom(source?.sentiment ?? source?.bias ?? source?.label, sentimentScore),
+      delta: numberValue(source?.sentiment_delta ?? source?.sentiment_change ?? source?.news_delta ?? source?.sentimentDelta),
       deltaUnit: '%',
       tone: sentimentScore != null && sentimentScore < 45 ? 'red' : sentimentScore != null && sentimentScore < 62 ? 'amber' : 'green',
       icon: MessageCircle,
-      spark: buildSpark(sentimentScore, numberValue(source?.sentiment_delta ?? source?.sentiment_change)),
+      calculation: 'Uses an explicit sentiment or news score. Manual placeholder news scores of 50 are suppressed.',
+      evidence: buildMetricEvidence([
+        sentimentScore != null ? `Explicit sentiment score ${sentimentScore}/100` : '',
+        source?.sentiment ? `Sentiment label: ${source.sentiment}` : '',
+        source?.why_moving ?? overview?.why_moving,
+      ]),
+      relatedSignals: normalizeList(['News tone', 'Analyst revisions', 'Catalyst quality', overview?.why_moving]),
+      detailRows: buildRows([
+        detailRow('Sentiment Score', sentimentScore == null ? '' : `${sentimentScore}/100`, sentimentScore),
+        detailRow('Sentiment Label', source?.sentiment ?? source?.bias),
+        detailRow('News Score', source?.news_score),
+        detailRow('Catalyst', source?.why_moving ?? overview?.why_moving),
+      ]),
+      missingInputs: sentimentScore == null ? ['Explicit sentiment_score or news_score', 'News or sentiment source', 'Timestamp or published-at evidence'] : [],
+      requiredInputs: ['sentiment_score or news_score', 'News/sentiment provider', 'Last updated timestamp'],
     },
     {
       key: 'institutional',
       label: 'Institutional',
       shortLabel: 'Institutional',
       score: institutional,
-      display: scoreDisplay(institutional),
       badge: scoreBadge(institutional, 'Accumulating', 'Neutral', 'Distribution'),
-      delta: numberValue(source?.inst_flow_delta ?? source?.institutional_delta) ?? (institutional == null ? null : Math.round((institutional - 50) / 2.4)),
+      delta: numberValue(source?.inst_flow_delta ?? source?.institutional_delta ?? source?.institutionalDelta),
       deltaUnit: '%',
       tone: 'blue',
       icon: Building2,
-      spark: buildSpark(institutional, numberValue(source?.inst_flow_delta ?? source?.institutional_delta)),
+      calculation: 'Uses only explicit institutional flow or ownership scores. It no longer derives institutional score from volume, momentum, or sentiment.',
+      evidence: buildMetricEvidence([
+        institutional != null ? `Explicit institutional score ${institutional}/100` : '',
+        source?.institutional_flow,
+        source?.ownership_change,
+        source?.volume_trend != null ? `Volume trend ${source.volume_trend}` : '',
+      ]),
+      relatedSignals: normalizeList(['13F activity', 'Fund ownership change', 'Flow score', 'Volume anomaly']),
+      detailRows: buildRows([
+        detailRow('Institutional Score', institutional == null ? '' : `${institutional}/100`, institutional),
+        detailRow('Flow Signal', source?.institutional_flow ?? source?.institutionalFlow),
+        detailRow('Ownership Change', source?.ownership_change ?? source?.ownershipChange),
+        detailRow('Volume Trend', source?.volume_trend),
+      ]),
+      missingInputs: institutional == null ? ['Explicit institutional_score or institutional_flow_score', 'Institutional flow source', 'Timestamp or filing date'] : [],
+      requiredInputs: ['institutional_score or institutional_flow_score', 'Flow/ownership source', 'Last updated timestamp'],
     },
     {
       key: 'fairValue',
       label: 'Fair Value',
       shortLabel: 'Fair Value',
       score: fairScore,
-      display: scoreDisplay(fairScore),
       badge: fairValueBadge(upside),
-      delta: upside == null ? null : Math.round(upside),
+      delta: upside == null ? null : Number(upside.toFixed(1)),
       deltaUnit: '%',
       tone: upside != null && upside < -4 ? 'red' : upside != null && upside < 8 ? 'amber' : 'green',
       icon: Scale,
-      spark: buildSpark(fairScore, upside == null ? null : Math.round(upside)),
+      calculation: 'Compares current market price with a fair value estimate or average analyst target. If either input is missing, valuation score and scenarios are hidden.',
+      evidence: buildMetricEvidence([
+        sourcePrice != null ? `Current price ${money(sourcePrice)}` : '',
+        fairValueEstimate != null ? `Fair value estimate ${money(fairValueEstimate)}` : '',
+        upside != null ? `Upside/downside ${signed(upside, '%', 1)}` : '',
+      ]),
+      relatedSignals: normalizeList(['Current price', 'Average analyst target', 'Upside/downside', 'Valuation range']),
+      detailRows: [],
+      missingInputs: fairValue.missingInputs,
+      requiredInputs: fairValue.requiredInputs,
     },
     {
       key: 'risk',
       label: 'Risk',
       shortLabel: 'Risk',
       score: risk,
-      display: scoreDisplay(risk),
       badge: riskBadge(risk),
-      delta: numberValue(source?.risk_delta ?? source?.risk_change) ?? (risk == null ? null : Math.round((risk - 50) / 2)),
+      delta: numberValue(source?.risk_delta ?? source?.risk_change ?? source?.riskDelta),
       deltaUnit: '%',
       tone: risk != null && risk <= 35 ? 'green' : risk != null && risk <= 60 ? 'amber' : 'red',
       icon: ShieldAlert,
-      spark: buildSpark(risk, numberValue(source?.risk_delta ?? source?.risk_change), true),
+      calculation: 'Uses an explicit risk score from the holding or watchlist source. Manual holdings may expose a derived asset-type risk signal.',
+      evidence: buildMetricEvidence([
+        risk != null ? `Explicit risk score ${risk}/100` : '',
+        source?.risk_mode ? `Risk mode ${source.risk_mode}` : '',
+        source?.macro_sensitivity != null ? `Macro sensitivity ${source.macro_sensitivity}` : '',
+        overview?.volatility_state,
+      ]),
+      relatedSignals: normalizeList(['Volatility', 'Macro sensitivity', 'Position size', overview?.volatility_state]),
+      detailRows: buildRows([
+        detailRow('Risk Score', risk == null ? '' : `${risk}/100`, risk),
+        detailRow('Risk Mode', source?.risk_mode),
+        detailRow('Macro Sensitivity', source?.macro_sensitivity),
+        detailRow('Volatility State', overview?.volatility_state),
+      ]),
+      missingInputs: risk == null ? ['Explicit risk or risk_score', 'Risk calculation source', 'Timestamp or as-of date'] : [],
+      requiredInputs: ['risk or risk_score', 'Risk source', 'Last updated timestamp'],
       lowerIsBetter: true,
     },
   ]
+
+  const metricsArray: Metric[] = metricSeed.map((metric) => {
+    const history = metricHistory(metric.key, source)
+    return {
+      ...metric,
+      display: scoreDisplay(metric.score),
+      history,
+      historyBacked: Boolean(history),
+      sourceLabel: sourceForMetric(metric.key, source, targets, metric.score),
+      lastUpdated: lastUpdatedForMetric(metric.key, source, targets),
+    }
+  })
 
   const metrics = metricsArray.reduce((acc, metric) => {
     acc[metric.key] = metric
     return acc
   }, {} as Record<MetricKey, Metric>)
 
-  const detailRows: Record<MetricKey, DetailRow[]> = {
-    momentum: contributionRows(
-      momentum,
-      ['Price vs 20DMA', 'Price vs 50DMA', 'Price vs 200DMA', 'Volume Trend', 'Relative Strength'],
-      [0.26, 0.23, 0.17, 0.16, 0.18],
-    ),
-    trend: contributionRows(
-      trend,
-      ['Higher Highs', 'Higher Lows', 'ADX', 'Moving Average Alignment', 'Trend Consistency'],
-      [0.22, 0.2, 0.18, 0.22, 0.18],
-    ),
-    sentiment: contributionRows(
-      sentimentScore,
-      ['News Sentiment', 'Analyst Revisions', 'Social Sentiment', 'Insider Activity'],
-      [0.35, 0.3, 0.2, 0.15],
-    ),
-    institutional: contributionRows(
-      institutional,
-      ['13F Activity', 'Fund Ownership Change', 'Volume Anomaly', 'Dark Pool Signal'],
-      [0.34, 0.28, 0.22, 0.16],
-    ),
-    fairValue: [],
-    risk: contributionRows(
-      risk,
-      ['Volatility', 'Beta', 'Debt Level', 'Earnings Stability', 'Drawdown Risk'],
-      [0.26, 0.18, 0.16, 0.18, 0.22],
-    ),
-  }
+  const composite = clampScore(source?.ai_score ?? source?.intelligence_score) ?? scoreAverage([
+    momentum,
+    trend,
+    sentimentScore,
+    institutional,
+    fairScore,
+    risk != null ? 100 - risk : null,
+  ], 3)
 
-  const fairValue = {
-    current: sourcePrice,
-    fairValue: fairValueEstimate,
-    upside,
-    bull: formatTargetCase(targets?.bull, 'Bull case depends on stronger growth, higher estimates, and multiple expansion.'),
-    base: formatTargetCase(targets?.base ?? targets?.average_target, 'Base case reflects the current fair value estimate.'),
-    bear: formatTargetCase(targets?.bear, 'Bear case reflects lower demand, weaker margins, or multiple compression.'),
-  }
+  const view = sentimentFrom(source?.sentiment ?? source?.bias ?? source?.label ?? technical?.trend ?? overview?.momentum_state, sentimentScore ?? composite)
+  const heroBadge = composite == null ? 'Needs Data' : momentumBadge(composite)
+  const confidence = deriveConfidence(metricsArray)
+  const summary =
+    cleanText(overview?.summary || source?.ai_view || overview?.why_moving, 210) ||
+    (composite == null
+      ? 'PIA needs more sourced metric inputs before it can summarize this AI Intelligence view.'
+      : `${source?.symbol || 'This stock'} has enough scored inputs for a sourced AI Intelligence summary.`)
 
-  const insights = [
+  const insights: Insight[] = [
     {
-      title: 'Earnings Revisions Turning Higher',
-      text: sentimentScore != null && sentimentScore >= 60 ? 'Analyst and news tone are leaning constructive.' : 'Revision signals need more confirmation before they become a tailwind.',
+      key: 'earningsRevisions',
+      headline: 'Earnings Revisions Turning Higher',
+      summary: sentimentScore != null && sentimentScore >= 60 ? 'Sentiment inputs are leaning constructive.' : 'Revision evidence is incomplete or not yet supportive.',
+      explanation: 'PIA connects sentiment, analyst-revision tone, and catalyst quality. This insight opens only as commentary unless those source inputs are present.',
+      evidence: [
+        insightEvidence(metrics.sentiment, 'Sentiment score is unavailable.'),
+        metrics.fairValue.score == null ? 'Fair value score is unavailable.' : `Fair Value: ${metrics.fairValue.score}/100`,
+        overview?.earnings_proximity || 'Earnings calendar is not attached to this metric.',
+      ],
+      relatedMetrics: ['Sentiment', 'Fair Value'],
+      relatedSignals: ['Analyst revision trend', 'Related sentiment impact', 'Earnings calendar proximity'],
+      commentary: sentimentScore != null ? 'Constructive sentiment can support multiple expansion when valuation and trend also confirm.' : 'Treat this as watch-only until sentiment and revision feeds attach explicit scores.',
+      sourceLabel: metrics.sentiment.sourceLabel,
+      lastUpdated: metrics.sentiment.lastUpdated,
     },
     {
-      title: 'Institutional Accumulation Accelerating',
-      text: institutional != null && institutional >= 60 ? 'Flow proxies support the current price action.' : 'Flow data is mixed and should be confirmed with volume.',
+      key: 'institutionalFlow',
+      headline: 'Institutional Accumulation Accelerating',
+      summary: institutional != null && institutional >= 60 ? 'Institutional score indicates accumulation.' : 'Institutional evidence is not strong enough to score.',
+      explanation: 'Institutional accumulation needs a dedicated flow, ownership, or filing signal. Momentum and volume are no longer used as substitutes.',
+      evidence: [
+        insightEvidence(metrics.institutional, 'Institutional score is unavailable.'),
+        metrics.momentum.score == null ? 'Momentum score is unavailable.' : `Momentum: ${metrics.momentum.score}/100`,
+        source?.volume_trend != null ? `Volume trend: ${source.volume_trend}` : 'Volume trend is not attached.',
+      ],
+      relatedMetrics: ['Institutional', 'Momentum'],
+      relatedSignals: ['13F activity', 'Fund ownership change', 'Volume anomaly'],
+      commentary: institutional != null ? 'Flow confirmation can increase conviction, but only if price action and risk are aligned.' : 'No institutional score is shown because the current payload does not include a dedicated flow source.',
+      sourceLabel: metrics.institutional.sourceLabel,
+      lastUpdated: metrics.institutional.lastUpdated,
     },
     {
-      title: 'AI Demand Remains Strong Tailwind',
-      text: momentum != null && momentum >= 60 ? 'Momentum is aligned with the core growth narrative.' : 'The narrative remains relevant, but price confirmation is still developing.',
+      key: 'narrativeRisk',
+      headline: 'Narrative Strength Versus Risk',
+      summary: momentum != null && risk != null ? 'Momentum and risk can be evaluated together.' : 'Risk/narrative coverage is incomplete.',
+      explanation: 'This combines momentum, sentiment, and risk context to avoid treating a strong narrative as a complete trade thesis.',
+      evidence: [
+        insightEvidence(metrics.momentum, 'Momentum score is unavailable.'),
+        insightEvidence(metrics.risk, 'Risk score is unavailable.'),
+        insightEvidence(metrics.sentiment, 'Sentiment score is unavailable.'),
+      ],
+      relatedMetrics: ['Momentum', 'Risk', 'Sentiment'],
+      relatedSignals: ['Price action', 'Volatility state', 'Macro sensitivity'],
+      commentary: risk != null && momentum != null ? 'A higher momentum score is more useful when risk is controlled and sentiment confirms.' : 'PIA needs both momentum and risk inputs before this becomes actionable.',
+      sourceLabel: metrics.risk.sourceLabel,
+      lastUpdated: metrics.risk.lastUpdated,
     },
   ]
 
-  const activeMetric = activeSheet ? metrics[activeSheet] : null
+  const activeMetric = activeView?.type === 'metric' ? metrics[activeView.key] : null
+  const activeInsight = activeView?.type === 'insight' ? insights.find((insight) => insight.key === activeView.key) || null : null
 
   return (
-    <section className={`sai sai-cr-si-026 sentiment-${view.toLowerCase()}`} aria-label="AI Intelligence">
+    <section className={`sai sai-cr-si-026 sai-cr-si-027 sentiment-${view.toLowerCase()}`} aria-label="AI Intelligence">
       <header className="sai-shell-head">
         <div className="sai-shell-title">
           <span>AI Intelligence</span>
@@ -681,7 +1046,7 @@ export default function StockAiIntelligenceWidget({
         <div className="sai-hero-score">
           <div className="sai-gauge" style={{ '--sai-score': `${hidden || composite == null ? 0 : composite}%` } as CSSProperties}>
             <strong>{hidden ? mask : composite ?? EMPTY}</strong>
-            <span>/100</span>
+            {composite != null ? <span>/100</span> : null}
           </div>
           <b>{hidden ? mask : heroBadge}</b>
         </div>
@@ -692,9 +1057,10 @@ export default function StockAiIntelligenceWidget({
           <em>Executive Summary</em>
           <p>{hidden ? mask : summary}</p>
           <div className="sai-hero-meta">
-            <span><Activity size={13} /> Confidence {hidden ? mask : `${confidence}%`}</span>
-            <span><Clock size={13} /> Updated {hidden ? mask : updated}</span>
+            <span><Activity size={13} /> Confidence {hidden ? mask : confidence.value == null ? EMPTY : `${confidence.value}%`}</span>
+            <span><Clock size={13} /> Updated {hidden ? mask : metricsArray.some((metric) => metric.lastUpdated !== 'Not recorded') ? metricsArray.find((metric) => metric.lastUpdated !== 'Not recorded')?.lastUpdated : 'Not recorded'}</span>
           </div>
+          <p className="sai-confidence-note">{hidden ? mask : confidence.notes.join(' ')}</p>
         </div>
 
         <div className="sai-hero-factors" aria-label="AI Intelligence factor scores">
@@ -706,7 +1072,7 @@ export default function StockAiIntelligenceWidget({
 
       <div className="sai-metric-carousel" aria-label="AI Intelligence metric cards">
         {metricsArray.map((metric) => (
-          <MetricCard key={metric.key} metric={metric} hidden={hidden} onOpen={setActiveSheet} />
+          <MetricCard key={metric.key} metric={metric} hidden={hidden} onOpen={(key) => setActiveView({ type: 'metric', key })} />
         ))}
       </div>
 
@@ -714,25 +1080,32 @@ export default function StockAiIntelligenceWidget({
         <h3>AI Insights</h3>
         <div className="sai-insight-list">
           {insights.map((insight) => (
-            <article key={insight.title} className="sai-insight-item">
+            <button key={insight.key} type="button" className="sai-insight-item sai-insight-button" onClick={() => setActiveView({ type: 'insight', key: insight.key })} aria-label={`${insight.headline} detail`}>
               <div>
-                <strong>{hidden ? mask : insight.title}</strong>
-                <p>{hidden ? mask : insight.text}</p>
+                <strong>{hidden ? mask : insight.headline}</strong>
+                <p>{hidden ? mask : insight.summary}</p>
               </div>
               <ChevronRight size={16} aria-hidden="true" />
-            </article>
+            </button>
           ))}
         </div>
       </section>
 
       {activeMetric ? (
-        <MetricDetailSheet
+        <MetricFullScreenView
           metric={activeMetric}
-          allMetrics={metrics}
-          detailRows={detailRows}
+          allMetrics={metricsArray}
           fairValue={fairValue}
           hidden={hidden}
-          onClose={() => setActiveSheet(null)}
+          onBack={() => setActiveView(null)}
+        />
+      ) : null}
+
+      {activeInsight ? (
+        <InsightFullScreenView
+          insight={activeInsight}
+          hidden={hidden}
+          onBack={() => setActiveView(null)}
         />
       ) : null}
     </section>
