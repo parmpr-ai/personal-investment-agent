@@ -2958,6 +2958,16 @@ export default function MobileExperience() {
 
   const portfolio = dashboard?.portfolio || {}
   const positions = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
+  // Dev/test helper: ?si=NVDA auto-opens SI panel (used by UAT scripts)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const si = params.get('si')
+    if (!si) return
+    const sym = si.toUpperCase()
+    const pos = positionFallback.find((p) => p.symbol === sym) ?? { symbol: sym, quantity: 100, market_value: 10000, avg_price: 100, day_pnl: 50, unrealized: 200 }
+    setSelected(pos)
+  }, [])
   useEffect(() => {
     if (!positions.length) return
     const symbols = positions

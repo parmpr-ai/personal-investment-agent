@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react'
-import { CalendarDays, GripVertical, MoreHorizontal, X } from 'lucide-react'
+import type { KeyboardEvent, PointerEvent } from 'react'
+import { CalendarDays, GripVertical, Info, MessageSquare, MoreHorizontal, ShieldAlert, TrendingUp, X } from 'lucide-react'
 import { mask, money } from '../../lib/pia-api'
 
 const EMPTY = '-'
@@ -23,20 +23,15 @@ type MetricKey =
 type Tone = 'positive' | 'negative' | 'neutral' | 'accent'
 type MetricValue = { label: string; value: string; sub?: string; tone: Tone; subTone?: Tone }
 type Prefs = { order: MetricKey[]; hidden: MetricKey[] }
+type Insight = { icon: 'trend' | 'sentiment' | 'risk'; text: string }
+type NewsItem = { headline: string; time: string }
 type PositionSummaryData = {
   metrics: Record<MetricKey, MetricValue>
-  marketValue: number
-  avgCost: number
-  current: number
-  costBasis: number
   weekPct: number
   weekPnl: number
-  bestDay: { label: string; value: number }
-  worstDay: { label: string; value: number }
-  health: { score: number; label: string }
-  contribution: number
-  distancePct: number
   journey: number[]
+  insights: Insight[]
+  news: NewsItem[]
 }
 
 const DEFAULT_ORDER: MetricKey[] = [
@@ -177,6 +172,31 @@ function buildJourney(marketValue: number, weekPct: number) {
   return points
 }
 
+function buildInsights(weekPct: number, pnl: number | null, healthScore: number): Insight[] {
+  const ins1 = weekPct > 1.5
+    ? 'Strong upward momentum with increasing volume.'
+    : weekPct > 0
+    ? 'Moderate upward momentum this week.'
+    : weekPct < -1.5
+    ? 'Downward momentum - position under pressure.'
+    : 'Price action is consolidating this week.'
+  const ins2 = pnl != null && pnl > 0
+    ? 'Positive sentiment and news catalysts.'
+    : pnl != null && pnl < 0
+    ? 'Negative sentiment may be weighing on position.'
+    : 'Sentiment remains neutral on this position.'
+  const ins3 = healthScore >= 75
+    ? 'Risk level is low - position in good health.'
+    : healthScore >= 55
+    ? 'Risk level is moderate - monitor volatility.'
+    : 'Risk level is elevated - consider position sizing.'
+  return [
+    { icon: 'trend', text: ins1 },
+    { icon: 'sentiment', text: ins2 },
+    { icon: 'risk', text: ins3 },
+  ]
+}
+
 function buildSummaryData(source: any, hidden: boolean): PositionSummaryData {
   const shares = firstNumber(source.quantity, source.qty, source.shares)
   const avgCost = firstNumber(source.avg_price, source.avg_cost, source.avgCost)
@@ -197,26 +217,24 @@ function buildSummaryData(source: any, hidden: boolean): PositionSummaryData {
   const portfolioPct = firstNumber(source.portfolio_pct, source.weight, source.allocation_pct)
   const weekPct = firstNumber(source.week_change_pct, source.week_pct, dayPct != null ? clamp(dayPct * 1.9, -9.5, 9.5) : pnlPct != null ? clamp(pnlPct / 10, -9.5, 9.5) : 0) || 0
   const weekPnl = marketValue ? (marketValue * weekPct) / 100 : 0
-  const bestDayValue = Math.max(0, weekPnl * 0.48)
-  const worstDayValue = -Math.max(0, Math.abs(weekPnl) * 0.16)
   const risk = firstNumber(source.risk, source.risk_score)
   const momentum = firstNumber(source.momentum_score, source.momentum)
   const healthScore = Math.round(clamp(72 + Math.max(0, pnlPct || 0) * 0.25 + Math.max(0, (momentum || 0) - 50) * 0.18 - Math.max(0, (risk || 0) - 75) * 0.25, 0, 100))
-  const distancePct = avgCost ? ((current - avgCost) / avgCost) * 100 : pnlPct || 0
+
+  const rawNews = source.news_catalysts || source.news_items || source.news || []
+  const news: NewsItem[] = Array.isArray(rawNews)
+    ? rawNews.slice(0, 3).map((n: any) => ({
+        headline: String(n.headline || n.title || n.summary || n),
+        time: String(n.time || n.published_at || n.published || ''),
+      }))
+    : []
 
   return {
-    marketValue,
-    avgCost: avgCost || 0,
-    current,
-    costBasis,
     weekPct,
     weekPnl,
-    bestDay: { label: weekPct >= 0 ? 'Thursday' : 'Monday', value: bestDayValue },
-    worstDay: { label: weekPct >= 0 ? 'Tuesday' : 'Friday', value: worstDayValue },
-    health: { score: healthScore, label: healthScore >= 75 ? 'Strong' : healthScore >= 55 ? 'Stable' : 'Watch' },
-    contribution: portfolioPct || 0,
-    distancePct,
     journey: buildJourney(marketValue, weekPct),
+    insights: buildInsights(weekPct, pnl, healthScore),
+    news,
     metrics: {
       marketValue: { label: METRIC_LABELS.marketValue.compact, value: formatMoney(marketValue, hidden, false, true), sub: formatMove(dayPct, hidden), tone: 'neutral', subTone: toneFrom(dayPct) },
       pnl: { label: METRIC_LABELS.pnl.compact, value: formatMoney(pnl, hidden, true, true), sub: formatMove(pnlPct, hidden), tone: toneFrom(pnl), subTone: toneFrom(pnlPct) },
@@ -300,6 +318,12 @@ function PositionJourneyChart({ points }: { points: number[] }) {
   )
 }
 
+function InsightIcon({ icon }: { icon: Insight['icon'] }) {
+  if (icon === 'trend') return <TrendingUp size={15} />
+  if (icon === 'sentiment') return <MessageSquare size={15} />
+  return <ShieldAlert size={15} />
+}
+
 function DetailSheet({ data, hidden, keys, onClose }: { data: PositionSummaryData; hidden: boolean; keys: MetricKey[]; onClose: () => void }) {
   const weekTone = toneFrom(data.weekPnl)
   return (
@@ -307,19 +331,11 @@ function DetailSheet({ data, hidden, keys, onClose }: { data: PositionSummaryDat
       <button type="button" className="sps-sheet-overlay" aria-label="Close position summary details" onClick={onClose} />
       <section className="sps-detail-sheet" role="dialog" aria-modal="true" aria-label="Position Summary Details">
         <header className="sps-sheet-head">
-          <div>
-            <h3>Position Summary</h3>
-            <span>This Week</span>
-          </div>
+          <h3>Position Summary</h3>
           <button type="button" className="sps-sheet-close" aria-label="Close position summary details" onClick={onClose}>
             <X size={24} />
           </button>
         </header>
-
-        <div className={`sps-week-hero ${weekTone}`}>
-          <strong>{formatMoney(data.weekPnl, hidden, true, true)}</strong>
-          <b>{formatPct(data.weekPct, hidden, true)}</b>
-        </div>
 
         <MetricRows keys={keys} metrics={data.metrics} className="sps-detail-metrics" />
 
@@ -336,56 +352,35 @@ function DetailSheet({ data, hidden, keys, onClose }: { data: PositionSummaryDat
 
         <section className="sps-evolution">
           <header>
-            <div>
-              <h4>Position Value Evolution</h4>
-              <span>Performance (1W)</span>
-            </div>
+            <h4>Performance (1W) <Info size={13} className="sps-info-icon" /></h4>
             <strong className={weekTone}>{formatPct(data.weekPct, hidden, true)}</strong>
           </header>
           <PositionJourneyChart points={data.journey} />
         </section>
 
-        <div className="sps-detail-grid">
-          <section>
-            <h4>Week Insights</h4>
-            <div className="sps-insight-pair">
-              <span>Best Day</span>
-              <b className="positive">{formatMoney(data.bestDay.value, hidden, true)}</b>
-              <em>{data.bestDay.label}</em>
-            </div>
-            <div className="sps-insight-pair">
-              <span>Worst Day</span>
-              <b className="negative">{formatMoney(data.worstDay.value, hidden, true)}</b>
-              <em>{data.worstDay.label}</em>
-            </div>
-          </section>
-          <section>
-            <h4>Position Health</h4>
-            <div className="sps-health">
-              <i style={{ '--sps-health': `${data.health.score}%` } as CSSProperties}><span>{data.health.score}</span></i>
-              <div>
-                <b>{hidden ? mask : `${data.health.score} / 100`}</b>
-                <em>{hidden ? mask : data.health.label}</em>
+        <div className="sps-bottom-grid">
+          <section className="sps-key-insights">
+            <h4>Key Insights</h4>
+            {data.insights.map((ins, i) => (
+              <div key={i} className={`sps-insight-item${i === 0 ? ' first' : ''}`}>
+                <span className={`sps-insight-icon${ins.icon === 'risk' ? ' risk' : ''}`}>
+                  <InsightIcon icon={ins.icon} />
+                </span>
+                <p>{ins.text}</p>
               </div>
-            </div>
+            ))}
           </section>
-          <section>
-            <h4>Portfolio Contribution</h4>
-            <strong>{hidden ? mask : `${data.contribution.toFixed(1)}%`}</strong>
-            <div className="sps-contribution"><i style={{ width: `${clamp(data.contribution, 0, 100)}%` }} /></div>
+          <section className="sps-news-catalysts">
+            <h4>Top News / Catalysts</h4>
+            {data.news.length > 0
+              ? data.news.map((n, i) => (
+                  <div key={i} className={`sps-news-item${i === 0 ? ' first' : ''}`}>
+                    <p>{n.headline}</p>
+                    {n.time ? <span>{n.time}</span> : null}
+                  </div>
+                ))
+              : <p className="sps-news-empty">No recent news</p>}
           </section>
-          <section>
-            <h4>Cost Basis Insight</h4>
-            <div className="sps-cost-grid">
-              <span>Average Cost<b>{formatMoney(data.avgCost, hidden)}</b></span>
-              <span>Current<b>{formatMoney(data.current, hidden)}</b></span>
-              <span>Distance<b className={toneFrom(data.distancePct)}>{formatPct(data.distancePct, hidden, true)}</b></span>
-            </div>
-          </section>
-        </div>
-
-        <div className="sps-quick-actions" aria-label="Position quick actions">
-          {['Alert', 'Add', 'Trim', 'Hedge'].map((item) => <button key={item} type="button" className="tab">{item}</button>)}
         </div>
       </section>
     </div>
@@ -499,7 +494,10 @@ function CustomizeSheet({
             )
           })}
         </ul>
-        <p className="sps-custom-tip">Tip: Changes are saved automatically</p>
+        <p className="sps-custom-tip">
+          <Info size={14} className="sps-tip-icon" />
+          Tip: Changes are saved automatically
+        </p>
       </section>
     </div>
   )

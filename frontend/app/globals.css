@@ -1519,8 +1519,23 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sps-cost-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
 .sps-cost-grid span{min-width:0;display:grid;gap:4px}
 .sps-cost-grid b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f8fbff;font-size:13px;font-weight:900}
-.sps-quick-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-.sps-quick-actions .tab{margin:0;min-height:40px}
+.sps-evolution h4{display:flex;align-items:center;gap:5px}
+.sps-info-icon{color:#8ea2b6;flex:0 0 auto}
+.sps-bottom-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.sps-bottom-grid section{min-width:0;border:1px solid rgba(92,136,180,.18);border-radius:14px;background:rgba(3,9,16,.42);padding:12px}
+.sps-bottom-grid h4{margin:0 0 10px;color:#f8fbff;font-size:13px;font-weight:800;letter-spacing:0}
+.sps-insight-item{display:flex;align-items:flex-start;gap:7px;padding-top:9px}
+.sps-insight-item.first{padding-top:0}
+.sps-insight-icon{display:flex;flex:0 0 auto;margin-top:1px;color:#25ed55}
+.sps-insight-icon.risk{color:#f59e0b}
+.sps-insight-item p{margin:0;color:#c8d4df;font-size:11px;font-weight:700;line-height:1.5}
+.sps-news-item{padding-top:9px}
+.sps-news-item.first{padding-top:0}
+.sps-news-item p{margin:0 0 3px;color:#c8d4df;font-size:11px;font-weight:700;line-height:1.4}
+.sps-news-item span{display:block;color:#7f91a5;font-size:10px;font-weight:700}
+.sps-news-empty{margin:0;color:#7f91a5;font-size:12px;font-style:normal}
+.sps-custom-tip{display:flex;align-items:center;gap:6px;margin:18px 0 0;color:#25ed55;font-size:14px;font-weight:700}
+.sps-tip-icon{flex:0 0 auto}
 .sps-custom-sheet{grid-template-rows:auto auto minmax(0,1fr) auto}
 .sps-custom-head{display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:12px;padding:0 0 18px;border-bottom:1px solid rgba(92,136,180,.18)}
 .sps-custom-reset{border:0;background:transparent;color:#a78bfa;font-size:16px;font-weight:800;padding:8px 0}
