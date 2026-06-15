@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, BarChart3, Bell, Gauge, Info, MoreVertical, Search, Star, Target } from 'lucide-react'
+import { ArrowLeft, BarChart3, Bell, Gauge, Info, Menu, MoreVertical, Search, Star, Target } from 'lucide-react'
 import { PiaBadge, PiaCard, PiaTabs } from '../ui-v3'
 import { mask, money, pct } from '../../lib/pia-api'
 import TickerNewsList from './TickerNewsList'
@@ -345,12 +345,13 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
   const _signedDifference = data.difference == null ? '' : `${data.difference >= 0 ? '+' : '-'}${money(Math.abs(data.difference))}`
   const upsideLabel = data.upside == null ? '' : `${data.upside >= 0 ? '+' : ''}${data.upside.toFixed(1)}%`
 
-  const _avgMarkerPct = data.average != null ? marker(data.average) : 50
+  const avgMarkerPct = data.average != null ? Math.max(0, Math.min(100, marker(data.average))) : null
   const fmt = (value: number | null) => value == null ? '' : Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const outOfRangeLow = rangeReady && data.current != null && data.current < (data.low || 0)
   const outOfRangeHigh = rangeReady && data.current != null && data.current > (data.high || 0)
   const currentMarkerPct = data.current != null ? Math.max(0, Math.min(100, marker(data.current))) : null
   const aboveLabelTransform = currentMarkerPct == null ? 'translateX(-50%)' : currentMarkerPct <= 8 ? 'translateX(0%)' : currentMarkerPct >= 92 ? 'translateX(-100%)' : 'translateX(-50%)'
+  const avgLabelTransform = avgMarkerPct == null ? 'translateX(-50%)' : avgMarkerPct <= 8 ? 'translateX(0%)' : avgMarkerPct >= 92 ? 'translateX(-100%)' : 'translateX(-50%)'
   const rangeSpan = (data.high ?? 0) - (data.low ?? 0)
   const oorLowPct = outOfRangeLow && rangeSpan > 0 && data.current != null && data.low != null
     ? Math.min(60, ((data.low - data.current) / rangeSpan) * 100)
@@ -373,7 +374,7 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
           <div className={`sat-target-ibkr${targetTone ? ` sat-target-ibkr-${targetTone}` : ''}`}>
             <div className="sat-target-ibkr-hdr"><span>Target</span></div>
             <div className="sat-target-ibkr-body">
-              <strong className="sat-target-ibkr-val">{hidden ? mask : fmt(data.average)}</strong>
+              <strong className={`sat-target-ibkr-val${(fmt(data.average)?.length ?? 0) > 6 ? ' sat-tiv-long' : ''}`}>{hidden ? mask : fmt(data.average)}</strong>
               {data.upside != null ? <span className={`sat-target-ibkr-pct${targetTone ? ` sat-tip-${targetTone}` : ''}`}>{hidden ? mask : `${data.upside >= 0 ? '▲' : '▼'} ${upsideLabel}`}</span> : null}
             </div>
           </div>
@@ -389,12 +390,24 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
               <strong className="sat-consensus-ibkr-val">{hidden ? mask : data.rating}</strong>
               {data.count != null ? <span className="sat-consensus-ibkr-count">{hidden ? mask : `Based on ${Math.trunc(data.count)} Analyst Ratings`}</span> : null}
             </div>
-            {ratingRows.length > 0 ? (
-              <div className="sat-consensus-strip" aria-hidden="true">
-                {ratingRows.map((item) => (
-                  <em key={item.label} className={`sat-cs-${item.className}`} style={{ flexGrow: Number(item.value || 0) }} />
-                ))}
-              </div>
+            {ratingRows.length > 0 && ratingTotal > 0 ? (
+              <div
+                className="sat-consensus-strip"
+                aria-hidden="true"
+                style={{
+                  background: (() => {
+                    const clr: Record<string, string> = { buy: '#22c55e', hold: '#f97316', sell: '#ef4444' }
+                    let acc = 0
+                    const stops = ratingRows.map(item => {
+                      const pct = (Number(item.value || 0) / ratingTotal) * 100
+                      const s = `${clr[item.className] ?? '#94a3b8'} ${acc.toFixed(1)}% ${(acc + pct).toFixed(1)}%`
+                      acc += pct
+                      return s
+                    })
+                    return `linear-gradient(to right,${stops.join(',')})`
+                  })()
+                }}
+              />
             ) : null}
           </div>
         ) : null}
@@ -403,34 +416,37 @@ function AnalystTargetsWidget({ source, hidden, onOpen }: { source: any; hidden:
       {/* Block 2: Range visualization */}
       {rangeReady ? (
         <div className="sat-range-v2">
-          {/* Arrow only above the track */}
+          {/* Downward arrow above the track — points at current price position */}
           {currentMarkerPct != null ? (
             <div className="sat-range-v2-above-wrap">
               <div className="sat-range-v2-above" style={{ left: `${currentMarkerPct}%`, transform: aboveLabelTransform }}>
-                <em className="sat-above-arrow">▲</em>
+                <em className="sat-above-arrow">▼</em>
               </div>
             </div>
           ) : null}
-          {/* Track with proportional OOR dashed extensions */}
-          <div className="sat-range-v2-track">
+          {/* Track with proportional OOR dashed segments — drawn inside track bounds to stay within panel overflow */}
+          <div
+            className="sat-range-v2-track"
+            style={outOfRangeLow ? { '--oor-l': `${oorLowPct}%` } as React.CSSProperties : outOfRangeHigh ? { '--oor-r': `${oorHighPct}%` } as React.CSSProperties : undefined}
+          >
             {outOfRangeLow ? <i className="sat-oor-line sat-oor-left" style={{ width: `${oorLowPct}%` }} aria-hidden="true" /> : null}
             {outOfRangeHigh ? <i className="sat-oor-line sat-oor-right" style={{ width: `${oorHighPct}%` }} aria-hidden="true" /> : null}
           </div>
           {/* All labels below the track */}
           <div className="sat-range-v2-labels">
-            <div className="sat-rv2-lbl sat-rv2-lbl-bear">
+            <div className="sat-rv2-lbl sat-rv2-lbl-bear" style={outOfRangeLow ? { left: `${oorLowPct}%` } : undefined}>
               <b>{hidden ? mask : fmt(data.low || 0)}</b>
               <span>{hidden ? mask : percentLabel(targetPercent(data.low))}</span>
               <em className="sat-rv2-bear">Bear</em>
             </div>
-            {currentMarkerPct != null ? (
-              <div className="sat-rv2-lbl sat-rv2-lbl-cur" style={{ left: `${currentMarkerPct}%`, transform: aboveLabelTransform }}>
-                <b>{hidden ? mask : fmt(data.current)}</b>
-                <span>{hidden ? mask : upsideLabel}</span>
-                <em className="sat-rv2-cur-lbl">Current</em>
+            {avgMarkerPct != null ? (
+              <div className="sat-rv2-lbl sat-rv2-lbl-base" style={{ left: `${avgMarkerPct}%`, transform: avgLabelTransform }}>
+                <b>{hidden ? mask : fmt(data.average)}</b>
+                <span>{hidden ? mask : percentLabel(targetPercent(data.average))}</span>
+                <em className="sat-rv2-base-lbl">Base</em>
               </div>
             ) : null}
-            <div className="sat-rv2-lbl sat-rv2-lbl-bull">
+            <div className="sat-rv2-lbl sat-rv2-lbl-bull" style={outOfRangeHigh ? { right: `${oorHighPct}%` } : undefined}>
               <b>{hidden ? mask : fmt(data.high || 0)}</b>
               <span>{hidden ? mask : percentLabel(targetPercent(data.high))}</span>
               <em className="sat-rv2-bull">Bull</em>
@@ -1031,7 +1047,7 @@ export default function StockIntelligencePanel({
   const inferredDailyChange = previousClose != null && previousClose > 0 && last ? last - previousClose : last && change ? last - (last / (1 + change / 100)) : 0
   const dailyChange = rawDailyChange != null && (rawDailyChange !== 0 || change === 0) ? rawDailyChange : inferredDailyChange
   const movement = dailyChange !== 0 ? dailyChange : change
-  const changeTone = movement >= 0 ? 'green' : 'red'
+  const changeTone = movement > 0 ? 'green' : movement < 0 ? 'red' : 'neutral'
 
   return (
     <div className={panelClassName}>
@@ -1095,16 +1111,10 @@ export default function StockIntelligencePanel({
         <div className="stock-intel-compact-header-shell" aria-hidden={!isCompactHeader}>
           <header className="stock-intel-compact-header">
             <CompanyLogo source={{ ...source, company }} symbol={symbol} hidden={hidden} className="stock-intel-compact-logo" />
-            <div className="stock-intel-compact-quote">
-              <div className="stock-intel-compact-row">
-                <strong className="stock-intel-compact-symbol">{hidden ? mask : symbol}</strong>
-                <span className="stock-intel-compact-price">{hidden ? mask : money(last)}</span>
-              </div>
-              <div className="stock-intel-compact-market-row">
-                <small className={`stock-intel-compact-change ${changeTone}`}>{hidden ? mask : signedPlain(dailyChange)}</small>
-                <small className={`stock-intel-compact-percent ${changeTone}`}>{hidden ? mask : `${change >= 0 ? '+' : ''}${pct(change)}`}</small>
-              </div>
-            </div>
+            <strong className="stock-intel-compact-symbol">{hidden ? mask : symbol}</strong>
+            <span className="stock-intel-compact-price">{hidden ? mask : money(last)}</span>
+            <small className={`stock-intel-compact-change ${changeTone}`}>{hidden ? mask : signedPlain(dailyChange)}</small>
+            <span className={`stock-intel-compact-percent ${changeTone}`}>{hidden ? mask : `${change >= 0 ? '+' : ''}${pct(change)}`}</span>
             <div className="stock-intel-compact-actions" aria-label="Compact stock actions">
               <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label="Search stocks" title="Search stocks">
                 <Search size={17} />
@@ -1112,8 +1122,8 @@ export default function StockIntelligencePanel({
               <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label={hidden ? 'Alerts' : 'Set alert'} title={hidden ? 'Alerts' : 'Set alert'}>
                 <Bell size={17} />
               </button>
-              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label="More stock actions" title="More stock actions">
-                <MoreVertical size={18} />
+              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label="Menu" title="Menu">
+                <Menu size={18} />
               </button>
             </div>
           </header>

@@ -1231,7 +1231,7 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sat-target-ibkr,.sat-consensus-ibkr{display:flex;flex-direction:column;border-radius:14px;overflow:hidden;background:rgba(7,16,27,.72);font-variant-numeric:tabular-nums;text-align:center}
 .sat-target-ibkr span,.sat-consensus-ibkr span{font-size:inherit;font-weight:inherit;color:inherit;letter-spacing:0;text-transform:none;overflow:visible;white-space:normal;min-width:0;text-overflow:unset}
 .sat-main-primary>.sat-target-ibkr,.sat-main-primary>.sat-consensus-ibkr{height:100%;align-self:stretch}
-.sat-consensus-ibkr>.sat-consensus-strip{margin-top:auto}
+.sat-consensus-ibkr>.sat-consensus-strip{margin-top:auto;margin-left:10px;margin-right:10px}
 .sat-target-ibkr{border:2.5px solid rgba(148,163,184,.4)}
 .sat-target-ibkr.sat-target-ibkr-positive{border-color:rgba(36,209,140,.72)}
 .sat-target-ibkr.sat-target-ibkr-positive .sat-target-ibkr-hdr{background:linear-gradient(135deg,#22c55e,#15803d);border-bottom-color:transparent;color:#fff}
@@ -1240,17 +1240,16 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sat-target-ibkr.sat-target-ibkr-negative{border-color:rgba(248,113,113,.72)}
 .sat-target-ibkr.sat-target-ibkr-negative .sat-target-ibkr-hdr{background:linear-gradient(135deg,#ef4444,#b91c1c);border-bottom-color:transparent;color:#fff}
 .sat-target-ibkr-hdr,.sat-consensus-ibkr-hdr{padding:10px;background:rgba(0,0,0,.22);border-bottom:1px solid rgba(148,163,184,.14);font-size:13px;font-weight:600;letter-spacing:0;text-transform:none;color:#f8fbff;display:flex;align-items:center;justify-content:center;gap:4px}
-.sat-consensus-ibkr{border:2px solid rgba(148,163,184,.28);text-align:left}
+.sat-consensus-ibkr{border:2px solid rgba(148,163,184,.28);text-align:left;padding-bottom:8px}
 .sat-target-ibkr-body,.sat-consensus-ibkr-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 8px 10px}
-.sat-target-ibkr-val,.sat-consensus-ibkr-val{display:block;font-size:29px;font-weight:800;color:#f8fbff;line-height:1;letter-spacing:-.01em}
-.sat-consensus-ibkr-hdr{justify-content:flex-start;padding-left:12px}
+.sat-target-ibkr-val,.sat-consensus-ibkr-val{display:block;font-size:29px;font-weight:800;color:#f8fbff;line-height:1;letter-spacing:-.01em}.sat-tiv-long{font-size:20px}
+.sat-consensus-ibkr-hdr{justify-content:flex-start;padding-left:12px;font-size:11px}
 .sat-consensus-ibkr-body{align-items:flex-start;justify-content:flex-start;padding:10px 10px 8px 12px}
-.sat-consensus-ibkr-val{font-size:22px}
+.sat-consensus-ibkr-val{font-size:28px;color:#f8fbff!important}
 .sat-consensus-ibkr .sat-consensus-ibkr-count{color:#94a3b8!important}
 .sat-target-ibkr-pct{display:block;font-size:18px;font-weight:700;color:#f8fbff}.sat-target-ibkr .sat-tip-positive{color:#22c55e!important}.sat-target-ibkr .sat-tip-negative{color:#f87171!important}.sat-target-ibkr .sat-tip-warning{color:#fbbf24!important}
 .sat-consensus-ibkr-count{display:block;font-size:11px;font-weight:600;color:#94a3b8;line-height:1.3}
-.sat-consensus-strip{display:flex;height:10px;overflow:hidden}
-.sat-cs-buy{background:#22c55e}.sat-cs-hold{background:#f97316}.sat-cs-sell{background:#ef4444}
+.sat-consensus-strip{height:8px;border-radius:999px}
 /* Range visualization v2 */
 .sat-range-v2{display:grid;gap:0}
 .sat-range-v2-endpoints{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
@@ -1260,20 +1259,21 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sat-range-v2-ep-right{text-align:right}
 .sat-range-v2-above-wrap{position:relative;height:16px;margin:0 5px}
 .sat-range-v2-above{position:absolute;bottom:0;transform:translateX(-50%);text-align:center;white-space:nowrap}
-.sat-above-arrow{display:block;font-style:normal;color:#f8fbff;font-size:10px;line-height:1}
+@keyframes sat-breathe{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(1.4)}}.sat-above-arrow{display:block;font-style:normal;color:#f8fbff;font-size:10px;line-height:1;animation:sat-breathe 2.2s ease-in-out infinite;transform-origin:center bottom}
 .sat-range-v2-track{position:relative;height:18px;margin:0 5px;overflow:visible}
-.sat-range-v2-track::before{content:"";position:absolute;left:0;right:0;top:9px;height:2px;border-radius:999px;background:linear-gradient(90deg,rgba(248,113,113,.5),rgba(251,191,36,.5),rgba(36,209,140,.7))}
+.sat-range-v2-track::before{content:"";position:absolute;left:var(--oor-l,0);right:var(--oor-r,0);top:9px;height:2px;border-radius:999px;background:linear-gradient(90deg,rgba(248,113,113,.5),rgba(251,191,36,.5),rgba(36,209,140,.7))}
 .sat-oor-line{position:absolute;top:7px;height:4px}
-.sat-oor-left{right:100%;background:repeating-linear-gradient(90deg,#f87171 0,#f87171 5px,transparent 5px,transparent 9px)}
-.sat-oor-right{left:100%;background:repeating-linear-gradient(90deg,#22c55e 0,#22c55e 5px,transparent 5px,transparent 9px)}
+.sat-oor-left{left:0;background:repeating-linear-gradient(90deg,#f87171 0,#f87171 5px,transparent 5px,transparent 9px)}
+.sat-oor-right{right:0;background:repeating-linear-gradient(90deg,#22c55e 0,#22c55e 5px,transparent 5px,transparent 9px)}
 .sat-range-v2-labels{position:relative;height:48px;margin:3px 5px 0}
 .sat-rv2-lbl{position:absolute;top:0;display:grid;gap:1px}
 .sat-rv2-lbl b{color:#f8fbff;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums}
 .sat-rv2-lbl span{color:#94a3b8;font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
 .sat-rv2-lbl-bear{left:0;text-align:left}
 .sat-rv2-lbl-bull{right:0;text-align:right}
-.sat-rv2-lbl-cur{text-align:center;white-space:nowrap}
-.sat-rv2-cur-lbl{font-style:normal;color:#94a3b8;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.sat-rv2-lbl-cur,.sat-rv2-lbl-base{text-align:center;white-space:nowrap}
+.sat-rv2-cur-lbl,.sat-rv2-base-lbl{font-style:normal;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.sat-rv2-cur-lbl{color:#94a3b8}.sat-rv2-base-lbl{color:#60a5fa}
 .sat-range-v2-base-wrap{position:relative;height:50px;margin:0 5px}
 .sat-range-v2-base{position:absolute;text-align:center;display:grid;gap:1px;white-space:nowrap}
 .sat-range-v2-base b{color:#f8fbff;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
@@ -1322,7 +1322,7 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .stock-intel-panel-mobile .stock-intel-expanded-header-content{display:grid;grid-template-rows:1fr;opacity:1;transform:translateY(0);transition:grid-template-rows .26s cubic-bezier(.2,.8,.2,1),opacity .24s ease,transform .26s cubic-bezier(.2,.8,.2,1);will-change:grid-template-rows,opacity,transform}
 .stock-intel-panel-mobile .stock-intel-expanded-header-inner{min-height:0;overflow:hidden;opacity:1;transform:translateY(0);transition:opacity .22s ease,transform .26s cubic-bezier(.2,.8,.2,1)}
 .stock-intel-panel-mobile .stock-intel-compact-header-shell{display:grid;grid-template-rows:0fr;opacity:0;transform:translateY(-8px);pointer-events:none;transition:grid-template-rows .26s cubic-bezier(.2,.8,.2,1),opacity .24s ease,transform .26s cubic-bezier(.2,.8,.2,1);will-change:grid-template-rows,opacity,transform}
-.stock-intel-panel-mobile .stock-intel-compact-header{min-height:0;overflow:hidden;display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:9px;padding:0 10px;transition:padding .26s cubic-bezier(.2,.8,.2,1)}
+.stock-intel-panel-mobile .stock-intel-compact-header{min-height:0;overflow:hidden;display:flex;align-items:center;gap:6px;padding:0 10px;transition:padding .26s cubic-bezier(.2,.8,.2,1)}
 .stock-intel-panel-mobile.stock-intel-panel-header-collapsed .stock-intel-expanded-header-content{grid-template-rows:0fr;opacity:0;transform:translateY(-8px);pointer-events:none}
 .stock-intel-panel-mobile.stock-intel-panel-header-collapsed .stock-intel-expanded-header-inner{opacity:0;transform:translateY(-10px)}
 .stock-intel-panel-mobile.stock-intel-panel-header-collapsed .stock-intel-compact-header-shell{grid-template-rows:1fr;opacity:1;transform:translateY(0);pointer-events:auto}
@@ -1333,16 +1333,18 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .stock-intel-compact-logo.has-logo img{width:100%;height:100%;object-fit:contain;padding:5px}
 .stock-intel-compact-quote{min-width:0;display:grid;gap:4px}
 .stock-intel-compact-row{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:10px}
-.stock-intel-compact-symbol,.stock-intel-compact-price{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f8fbff;font-weight:900;line-height:1.05;font-variant-numeric:tabular-nums}
-.stock-intel-compact-symbol{font-size:17px;letter-spacing:0}
-.stock-intel-compact-price{font-size:16px}
-.stock-intel-compact-market-row{display:flex;align-items:center;gap:7px;min-width:0}
-.stock-intel-compact-change,.stock-intel-compact-percent{flex:0 0 auto;border-radius:999px;padding:3px 7px;font-size:11px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
-.stock-intel-compact-change.green{color:#bbf7d0;background:rgba(22,163,74,.22)}
-.stock-intel-compact-change.red{color:#fecaca;background:rgba(239,68,68,.2)}
+.stock-intel-compact-symbol,.stock-intel-compact-price{flex-shrink:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f8fbff;font-weight:900;line-height:1.05;font-variant-numeric:tabular-nums}
+.stock-intel-compact-symbol{font-size:15px;letter-spacing:0}
+.stock-intel-compact-price{font-size:14px}
+.stock-intel-compact-change{flex-shrink:0;font-size:12px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.stock-intel-compact-change.green{color:#24d18c}
+.stock-intel-compact-change.red{color:#ff6375}
+.stock-intel-compact-change.neutral{color:#8fa2b5}
+.stock-intel-compact-percent{flex-shrink:0;border-radius:999px;padding:3px 7px;font-size:11px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
 .stock-intel-compact-percent.green{color:#bbf7d0;background:rgba(22,163,74,.16)}
 .stock-intel-compact-percent.red{color:#fecaca;background:rgba(239,68,68,.16)}
-.stock-intel-compact-actions{display:flex;align-items:center;gap:3px}
+.stock-intel-compact-percent.neutral{color:#8fa2b5;background:rgba(148,163,184,.15)}
+.stock-intel-compact-actions{display:flex;align-items:center;gap:3px;margin-left:auto}
 .stock-intel-compact-action.stock-intel-icon-action{width:30px;height:30px;color:#7fc4ff;border-radius:9px}
 
 /* ATHENA-UX-042/043/044 live price emphasis, dynamic color, tick animation */
