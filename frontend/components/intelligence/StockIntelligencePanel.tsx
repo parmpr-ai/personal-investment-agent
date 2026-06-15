@@ -948,6 +948,7 @@ export default function StockIntelligencePanel({
   const lastScrollTopRef = useRef(0)
   const headerCollapsedRef = useRef(false)
   const collapsedHighWaterRef = useRef(0)
+  const lockUntilRef = useRef(0)
   const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition, dashboard)
   const { lists, addSymbol, removeSymbol } = useCustomWatchlists()
   const favList = lists.find((l) => l.id === 'favorites')
@@ -1009,8 +1010,12 @@ export default function StockIntelligencePanel({
     lastScrollTopRef.current = body.scrollTop
     collapsedHighWaterRef.current = body.scrollTop
 
-    const updateCollapsed = (next: boolean) => {
+    // force=true bypasses the transition lock (used for "at top" guarantee)
+    const updateCollapsed = (next: boolean, force = false) => {
       if (headerCollapsedRef.current === next) return
+      const now = Date.now()
+      if (!force && now < lockUntilRef.current) return
+      lockUntilRef.current = now + 300
       headerCollapsedRef.current = next
       setHeaderCollapsed(next)
     }
@@ -1023,9 +1028,10 @@ export default function StockIntelligencePanel({
         const delta = nextScrollTop - lastScrollTopRef.current
         lastScrollTopRef.current = nextScrollTop
 
+        // Hard rule: always expanded at top regardless of lock
         if (nextScrollTop <= 2) {
           collapsedHighWaterRef.current = 0
-          updateCollapsed(false)
+          updateCollapsed(false, true)
           return
         }
         if (Math.abs(delta) < 2) return
@@ -1036,7 +1042,10 @@ export default function StockIntelligencePanel({
           return
         }
 
-        if (headerCollapsedRef.current && collapsedHighWaterRef.current - nextScrollTop >= 24) {
+        // Expand only when back BELOW the collapse threshold (40px) with 24px pullback.
+        // This prevents oscillation: after expanding at scrollTop<40, re-collapse
+        // requires scrolling back down to 40px — a deliberate gesture.
+        if (headerCollapsedRef.current && nextScrollTop < 40 && collapsedHighWaterRef.current - nextScrollTop >= 24) {
           collapsedHighWaterRef.current = nextScrollTop
           updateCollapsed(false)
         }
@@ -1055,6 +1064,15 @@ export default function StockIntelligencePanel({
     if (value === 'Analysis' && (focus === 'analystTargets' || tab !== 'Analysis')) setAnalysisSubTab('analystTargets')
     setAnalysisFocus(value === 'Analysis' ? focus : null)
     setTab(value)
+    // Reset scroll position and header state on every tab switch.
+    // Prevents browser scroll-clamp events (from short-content tabs having lower
+    // max-scrollTop than the current position) from triggering false expand/collapse.
+    if (bodyRef.current) bodyRef.current.scrollTop = 0
+    lastScrollTopRef.current = 0
+    collapsedHighWaterRef.current = 0
+    lockUntilRef.current = 0
+    headerCollapsedRef.current = false
+    setHeaderCollapsed(false)
   }
   const openAnalystTargetsDetail = () => handleTabChange('Analysis', 'analystTargets')
   const handleAnalysisSubTabChange = (value: AnalysisSubTab) => {
