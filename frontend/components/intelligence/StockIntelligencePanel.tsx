@@ -1092,6 +1092,7 @@ export default function StockIntelligencePanel({
   const dailyChange = rawDailyChange != null && (rawDailyChange !== 0 || change === 0) ? rawDailyChange : inferredDailyChange
   const movement = dailyChange !== 0 ? dailyChange : change
   const changeTone = movement > 0 ? 'green' : movement < 0 ? 'red' : 'neutral'
+  const renderPositionSummary = () => (position ? <StockPositionSummary source={{ ...source, ...position }} hidden={hidden} /> : null)
 
   return (
     <div className={panelClassName} ref={panelRef}>
@@ -1191,7 +1192,7 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Overview' && (
           <div className="stock-intel-section stock-overview-v2">
-            {position ? <StockPositionSummary source={{ ...source, ...position }} hidden={hidden} /> : null}
+            {renderPositionSummary()}
 
             <StockAiIntelligenceWidget source={source} overview={overview} technical={technical} targets={targets} hidden={hidden} />
 
@@ -1205,6 +1206,7 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Chart' && (
           <div className="stock-intel-section">
+            {renderPositionSummary()}
             <PiaCard className="stock-intel-chart-card" title={hidden ? 'Workspace chart' : 'Price Chart'}>
               <TradingViewChart ticker={symbol} source={{ ...source, fundamentals }} hidden={hidden} />
             </PiaCard>
@@ -1213,6 +1215,7 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Analysis' && (
           <div className="stock-intel-section stock-intel-technical-layout stock-analysis-layout">
+            {renderPositionSummary()}
             <div className="stock-analysis-shell">
               <div className="stock-analysis-subtabs" role="tablist" aria-label="Analysis sections">
                 {ANALYSIS_SUB_TABS.map((item) => (
@@ -1316,66 +1319,72 @@ export default function StockIntelligencePanel({
         )}
 
         {!loading && tab === 'News' && (
-          <TickerNewsList
-            items={newsIntelligence.items || []}
-            digest={newsIntelligence.digest || ''}
-            isDemo={Boolean(newsIntelligence.is_demo)}
-            hidden={hidden}
-          />
+          <div className="stock-intel-section">
+            {renderPositionSummary()}
+            <TickerNewsList
+              items={newsIntelligence.items || []}
+              digest={newsIntelligence.digest || ''}
+              isDemo={Boolean(newsIntelligence.is_demo)}
+              hidden={hidden}
+            />
+          </div>
         )}
 
         {!loading && tab === 'Financials' && (
-          <div className="stock-company-hub">
-            <PiaCard title="Earnings" badge={<PiaBadge variant="neutral">{hidden ? 'Data' : 'Estimate vs actual'}</PiaBadge>}>
-              <DetailGrid
-                hidden={hidden}
-                rows={[
-                  { label: 'EPS estimate', value: financialText(fundamentals.eps_estimate), placeholder: !hasDisplayValue(fundamentals.eps_estimate) },
-                  { label: 'EPS actual', value: financialText(fundamentals.eps_actual), placeholder: !hasDisplayValue(fundamentals.eps_actual) },
-                  { label: 'Surprise', value: financialText(fundamentals.eps_surprise_pct), placeholder: !hasDisplayValue(fundamentals.eps_surprise_pct) },
-                  { label: 'Next earnings', value: financialText(fundamentals.next_earnings), placeholder: !hasDisplayValue(fundamentals.next_earnings) },
-                ]}
-              />
-            </PiaCard>
-            <PiaCard title="Financials" badge={<BarChart3 size={16} />}>
-              <DetailGrid
-                hidden={hidden}
-                rows={[
-                  { label: 'Revenue', value: financialText(fundamentals.revenue), placeholder: !hasDisplayValue(fundamentals.revenue) },
-                  { label: 'Net income', value: financialText(fundamentals.net_income), placeholder: !hasDisplayValue(fundamentals.net_income) },
-                  { label: 'EBITDA', value: financialText(fundamentals.ebitda), placeholder: !hasDisplayValue(fundamentals.ebitda) },
-                  { label: 'Free cash flow', value: financialText(fundamentals.free_cash_flow), placeholder: !hasDisplayValue(fundamentals.free_cash_flow) },
-                  { label: 'Margins', value: financialText(fundamentals.margins), placeholder: !hasDisplayValue(fundamentals.margins) },
-                ]}
-              />
-            </PiaCard>
-            <PiaCard title="Key Ratios" badge={<Gauge size={16} />}>
-              <DetailGrid
-                hidden={hidden}
-                rows={[
-                  { label: 'PE', value: financialText(fundamentals.pe), placeholder: !hasDisplayValue(fundamentals.pe) },
-                  { label: 'Forward PE', value: financialText(fundamentals.forward_pe), placeholder: !hasDisplayValue(fundamentals.forward_pe) },
-                  { label: 'PEG', value: financialText(fundamentals.peg), placeholder: !hasDisplayValue(fundamentals.peg) },
-                  { label: 'EV/EBITDA', value: financialText(fundamentals.ev_ebitda), placeholder: !hasDisplayValue(fundamentals.ev_ebitda) },
-                  { label: 'ROE', value: financialText(fundamentals.roe), placeholder: !hasDisplayValue(fundamentals.roe) },
-                  { label: 'Debt/Equity', value: financialText(fundamentals.debt_equity), placeholder: !hasDisplayValue(fundamentals.debt_equity) },
-                  { label: 'FCF Yield', value: financialText(fundamentals.fcf_yield), placeholder: !hasDisplayValue(fundamentals.fcf_yield) },
-                ]}
-              />
-            </PiaCard>
-            <PiaCard title="Targets" badge={<Target size={16} />}>
-              <DetailGrid
-                hidden={hidden}
-                rows={[
-                  { label: 'Consensus', value: targetText(targets.consensus), placeholder: !hasDisplayValue(targets.consensus) },
-                  { label: 'Bull', value: targetText(targets.bull), placeholder: !hasDisplayValue(targets.bull) },
-                  { label: 'Base', value: targetText(targets.base), placeholder: !hasDisplayValue(targets.base) },
-                  { label: 'Bear', value: targetText(targets.bear), placeholder: !hasDisplayValue(targets.bear) },
-                  { label: 'Upside/downside', value: targetText(targets.upside_downside), placeholder: !hasDisplayValue(targets.upside_downside) },
-                ]}
-              />
-              <p className="muted">{hidden ? mask : 'Analyst target data unavailable from the current provider.'}</p>
-            </PiaCard>
+          <div className="stock-intel-section">
+            {renderPositionSummary()}
+            <div className="stock-company-hub">
+              <PiaCard title="Earnings" badge={<PiaBadge variant="neutral">{hidden ? 'Data' : 'Estimate vs actual'}</PiaBadge>}>
+                <DetailGrid
+                  hidden={hidden}
+                  rows={[
+                    { label: 'EPS estimate', value: financialText(fundamentals.eps_estimate), placeholder: !hasDisplayValue(fundamentals.eps_estimate) },
+                    { label: 'EPS actual', value: financialText(fundamentals.eps_actual), placeholder: !hasDisplayValue(fundamentals.eps_actual) },
+                    { label: 'Surprise', value: financialText(fundamentals.eps_surprise_pct), placeholder: !hasDisplayValue(fundamentals.eps_surprise_pct) },
+                    { label: 'Next earnings', value: financialText(fundamentals.next_earnings), placeholder: !hasDisplayValue(fundamentals.next_earnings) },
+                  ]}
+                />
+              </PiaCard>
+              <PiaCard title="Financials" badge={<BarChart3 size={16} />}>
+                <DetailGrid
+                  hidden={hidden}
+                  rows={[
+                    { label: 'Revenue', value: financialText(fundamentals.revenue), placeholder: !hasDisplayValue(fundamentals.revenue) },
+                    { label: 'Net income', value: financialText(fundamentals.net_income), placeholder: !hasDisplayValue(fundamentals.net_income) },
+                    { label: 'EBITDA', value: financialText(fundamentals.ebitda), placeholder: !hasDisplayValue(fundamentals.ebitda) },
+                    { label: 'Free cash flow', value: financialText(fundamentals.free_cash_flow), placeholder: !hasDisplayValue(fundamentals.free_cash_flow) },
+                    { label: 'Margins', value: financialText(fundamentals.margins), placeholder: !hasDisplayValue(fundamentals.margins) },
+                  ]}
+                />
+              </PiaCard>
+              <PiaCard title="Key Ratios" badge={<Gauge size={16} />}>
+                <DetailGrid
+                  hidden={hidden}
+                  rows={[
+                    { label: 'PE', value: financialText(fundamentals.pe), placeholder: !hasDisplayValue(fundamentals.pe) },
+                    { label: 'Forward PE', value: financialText(fundamentals.forward_pe), placeholder: !hasDisplayValue(fundamentals.forward_pe) },
+                    { label: 'PEG', value: financialText(fundamentals.peg), placeholder: !hasDisplayValue(fundamentals.peg) },
+                    { label: 'EV/EBITDA', value: financialText(fundamentals.ev_ebitda), placeholder: !hasDisplayValue(fundamentals.ev_ebitda) },
+                    { label: 'ROE', value: financialText(fundamentals.roe), placeholder: !hasDisplayValue(fundamentals.roe) },
+                    { label: 'Debt/Equity', value: financialText(fundamentals.debt_equity), placeholder: !hasDisplayValue(fundamentals.debt_equity) },
+                    { label: 'FCF Yield', value: financialText(fundamentals.fcf_yield), placeholder: !hasDisplayValue(fundamentals.fcf_yield) },
+                  ]}
+                />
+              </PiaCard>
+              <PiaCard title="Targets" badge={<Target size={16} />}>
+                <DetailGrid
+                  hidden={hidden}
+                  rows={[
+                    { label: 'Consensus', value: targetText(targets.consensus), placeholder: !hasDisplayValue(targets.consensus) },
+                    { label: 'Bull', value: targetText(targets.bull), placeholder: !hasDisplayValue(targets.bull) },
+                    { label: 'Base', value: targetText(targets.base), placeholder: !hasDisplayValue(targets.base) },
+                    { label: 'Bear', value: targetText(targets.bear), placeholder: !hasDisplayValue(targets.bear) },
+                    { label: 'Upside/downside', value: targetText(targets.upside_downside), placeholder: !hasDisplayValue(targets.upside_downside) },
+                  ]}
+                />
+                <p className="muted">{hidden ? mask : 'Analyst target data unavailable from the current provider.'}</p>
+              </PiaCard>
+            </div>
           </div>
         )}
 
