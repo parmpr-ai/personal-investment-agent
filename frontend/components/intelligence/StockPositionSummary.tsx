@@ -483,12 +483,12 @@ function CustomizeSheet({
             const on = !hiddenSet.has(key)
             return (
               <li className={`sps-custom-row${dragKey === key ? ' dragging' : ''}`} key={key} data-key={key}>
-                <button type="button" className="stock-reorder-grip sps-custom-grip" data-grip aria-label={`Drag to reorder ${METRIC_LABELS[key].customize}`}>
-                  <GripVertical size={22} />
-                </button>
                 <span>{METRIC_LABELS[key].customize}</span>
                 <button type="button" className={`skm-edit-toggle${on ? ' on' : ''}`} aria-label={`${on ? 'Hide' : 'Show'} ${METRIC_LABELS[key].customize}`} aria-pressed={on} onClick={() => toggle(key)}>
                   <span />
+                </button>
+                <button type="button" className="stock-reorder-grip sps-custom-grip" data-grip aria-label={`Drag to reorder ${METRIC_LABELS[key].customize}`}>
+                  <GripVertical size={22} />
                 </button>
               </li>
             )
