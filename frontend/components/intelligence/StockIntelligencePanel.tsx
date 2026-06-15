@@ -915,7 +915,10 @@ export default function StockIntelligencePanel({
   const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisSubTab>('analystTargets')
   const [timeframe, setTimeframe] = useState<Timeframe>('Swing')
   const [analysisFocus, setAnalysisFocus] = useState<'analystTargets' | null>(null)
+  const [headerCollapsed, setHeaderCollapsed] = useState(false)
   const analystTargetsRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const lastScrollTopRef = useRef(0)
   const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition, dashboard)
 
   useEffect(() => {
@@ -945,6 +948,41 @@ export default function StockIntelligencePanel({
     return () => window.cancelAnimationFrame(frame)
   }, [analysisFocus, tab])
 
+  useEffect(() => {
+    if (variant !== 'mobile') {
+      setHeaderCollapsed(false)
+      return
+    }
+    const body = bodyRef.current
+    if (!body) return
+
+    let frame = 0
+    lastScrollTopRef.current = body.scrollTop
+
+    const handleScroll = () => {
+      if (frame) return
+      frame = window.requestAnimationFrame(() => {
+        frame = 0
+        const nextScrollTop = body.scrollTop
+        const delta = nextScrollTop - lastScrollTopRef.current
+        lastScrollTopRef.current = nextScrollTop
+
+        if (nextScrollTop <= 24) {
+          setHeaderCollapsed(false)
+          return
+        }
+        if (delta > 2) setHeaderCollapsed(true)
+        else if (delta < -2) setHeaderCollapsed(false)
+      })
+    }
+
+    body.addEventListener('scroll', handleScroll, { passive: true })
+    return () => {
+      body.removeEventListener('scroll', handleScroll)
+      if (frame) window.cancelAnimationFrame(frame)
+    }
+  }, [variant])
+
   const handleTabChange = (value: StockPanelTab, focus: 'analystTargets' | null = null) => {
     lastActiveStockPanelTab = value
     if (value === 'Analysis' && (focus === 'analystTargets' || tab !== 'Analysis')) setAnalysisSubTab('analystTargets')
@@ -957,60 +995,89 @@ export default function StockIntelligencePanel({
     setAnalysisFocus(value === 'analystTargets' ? 'analystTargets' : null)
   }
 
+  const isCompactHeader = variant === 'mobile' && headerCollapsed
+  const panelClassName = [
+    'stock-intel-panel',
+    variant === 'mobile' ? 'stock-intel-panel-mobile' : 'stock-intel-panel-desktop',
+    isCompactHeader ? 'stock-intel-panel-header-collapsed' : '',
+  ].filter(Boolean).join(' ')
+  const changeTone = change >= 0 ? 'green' : 'red'
+
   return (
-    <div className={`stock-intel-panel ${variant === 'mobile' ? 'stock-intel-panel-mobile' : 'stock-intel-panel-desktop'}`.trim()}>
+    <div className={panelClassName}>
       <section className="stock-intel-hero-card" aria-label="Stock header and key metrics">
-        <header className="stock-intel-header">
-          <button type="button" className="stock-intel-close" onClick={onClose} aria-label="Close intelligence panel">
-            <ArrowLeft size={variant === 'mobile' ? 22 : 18} />
-          </button>
-          <div className="stock-intel-title-block">
-            <div className="stock-intel-identity">
-              <CompanyLogo source={{ ...source, company }} symbol={symbol} hidden={hidden} className="stock-intel-symbol-mark" />
-              <div className="stock-intel-name-block">
-                <div className="stock-intel-name-row">
-                  <h2>{hidden ? mask : symbol}</h2>
-                  <button type="button" className="stock-intel-inline-action" aria-label={hidden ? 'Monitor' : 'Watch'} disabled title="Planned">
-                    <Star size={18} />
-                  </button>
+        <div className="stock-intel-expanded-header-content" aria-hidden={isCompactHeader}>
+          <div className="stock-intel-expanded-header-inner">
+            <header className="stock-intel-header">
+              <button type="button" className="stock-intel-close" onClick={onClose} aria-label="Close intelligence panel" tabIndex={isCompactHeader ? -1 : undefined}>
+                <ArrowLeft size={variant === 'mobile' ? 22 : 18} />
+              </button>
+              <div className="stock-intel-title-block">
+                <div className="stock-intel-identity">
+                  <CompanyLogo source={{ ...source, company }} symbol={symbol} hidden={hidden} className="stock-intel-symbol-mark" />
+                  <div className="stock-intel-name-block">
+                    <div className="stock-intel-name-row">
+                      <h2>{hidden ? mask : symbol}</h2>
+                      <button type="button" className="stock-intel-inline-action" aria-label={hidden ? 'Monitor' : 'Watch'} disabled title="Planned">
+                        <Star size={18} />
+                      </button>
+                    </div>
+                    <span className="stock-intel-kicker">{hidden ? 'Workspace' : `${name} - ${source.exchange || 'NASDAQ'} - ${source.asset_type || 'Stock'}`}</span>
+                  </div>
                 </div>
-                <span className="stock-intel-kicker">{hidden ? 'Workspace' : `${name} - ${source.exchange || 'NASDAQ'} - ${source.asset_type || 'Stock'}`}</span>
+              </div>
+              <div className="stock-intel-header-actions" aria-label="Stock actions">
+                <button type="button" className="stock-intel-icon-action" aria-label={hidden ? 'Alerts' : 'Set alert'} disabled title="Planned">
+                  <Bell size={18} />
+                </button>
+                <button type="button" className="stock-intel-icon-action" aria-label="More stock actions" disabled title="Planned">
+                  <MoreVertical size={18} />
+                </button>
+              </div>
+            </header>
+
+            <div className="stock-intel-market-line">
+              <div className="stock-intel-price-block">
+                <div className="stock-intel-price-row">
+                  <strong>{hidden ? mask : money(last)}</strong>
+                  <span>{hidden ? 'USD' : source.currency || fundamentals.currency || 'USD'}</span>
+                  <small className={changeTone}>{hidden ? mask : `${change >= 0 ? '+' : ''}${pct(change)}`}</small>
+                  {position ? (
+                    <PiaBadge variant={unrealized >= 0 ? 'bullish' : 'bearish'} size="compact">
+                      {hidden ? mask : `${unrealized >= 0 ? '+' : ''}${money(unrealized)} P/L`}
+                    </PiaBadge>
+                  ) : null}
+                </div>
+              </div>
+              <div className="stock-intel-quote-rail">
+                <div className="stock-intel-mini-spark" aria-hidden="true">
+                  <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
+                </div>
               </div>
             </div>
-          </div>
-          <div className="stock-intel-header-actions" aria-label="Stock actions">
-            <button type="button" className="stock-intel-icon-action" aria-label={hidden ? 'Alerts' : 'Set alert'} disabled title="Planned">
-              <Bell size={18} />
-            </button>
-            <button type="button" className="stock-intel-icon-action" aria-label="More stock actions" disabled title="Planned">
-              <MoreVertical size={18} />
-            </button>
-          </div>
-        </header>
 
-        <div className="stock-intel-market-line">
-          <div className="stock-intel-price-block">
-            <div className="stock-intel-price-row">
-              <strong>{hidden ? mask : money(last)}</strong>
-              <span>{hidden ? 'USD' : source.currency || fundamentals.currency || 'USD'}</span>
-              <small className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : `${change >= 0 ? '+' : ''}${pct(change)}`}</small>
-              {position ? (
-                <PiaBadge variant={unrealized >= 0 ? 'bullish' : 'bearish'} size="compact">
-                  {hidden ? mask : `${unrealized >= 0 ? '+' : ''}${money(unrealized)} P/L`}
-                </PiaBadge>
-              ) : null}
-            </div>
-          </div>
-          <div className="stock-intel-quote-rail">
-            <div className="stock-intel-mini-spark" aria-hidden="true">
-              <MiniSpark source={{ ...source, ...fundamentals }} hidden={hidden} />
-            </div>
+            <TodayRangeHero source={{ ...source, fundamentals }} hidden={hidden} />
+
+            <StockKeyMetrics source={{ ...source, fundamentals, company }} hidden={hidden} ticker={symbol} />
           </div>
         </div>
 
-        <TodayRangeHero source={{ ...source, fundamentals }} hidden={hidden} />
-
-        <StockKeyMetrics source={{ ...source, fundamentals, company }} hidden={hidden} ticker={symbol} />
+        <div className="stock-intel-compact-header-shell" aria-hidden={!isCompactHeader}>
+          <header className="stock-intel-compact-header">
+            <div className="stock-intel-compact-quote">
+              <div className="stock-intel-compact-row">
+                <strong className="stock-intel-compact-symbol">{hidden ? mask : symbol}</strong>
+                <small className={`stock-intel-compact-change ${changeTone}`}>{hidden ? mask : `${change >= 0 ? '+' : ''}${pct(change)}`}</small>
+              </div>
+              <div className="stock-intel-compact-row">
+                <span className="stock-intel-compact-price">{hidden ? mask : money(last)}</span>
+              </div>
+            </div>
+            <button type="button" className="stock-intel-icon-action stock-intel-compact-more" aria-label="More stock actions" disabled title="Planned">
+              <MoreVertical size={20} />
+            </button>
+          </header>
+        </div>
       </section>
 
       <PiaTabs
@@ -1021,7 +1088,7 @@ export default function StockIntelligencePanel({
         tabs={STOCK_PANEL_TABS.map((item) => ({ id: item, label: tabLabel(item) }))}
       />
 
-      <div className="stock-intel-body">
+      <div className="stock-intel-body" ref={bodyRef}>
         {loading ? <p className="muted">Loading intelligence workspace...</p> : null}
 
         {!loading && tab === 'Overview' && (
