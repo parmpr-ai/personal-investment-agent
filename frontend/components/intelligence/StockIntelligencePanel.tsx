@@ -1092,7 +1092,6 @@ export default function StockIntelligencePanel({
   const dailyChange = rawDailyChange != null && (rawDailyChange !== 0 || change === 0) ? rawDailyChange : inferredDailyChange
   const movement = dailyChange !== 0 ? dailyChange : change
   const changeTone = movement > 0 ? 'green' : movement < 0 ? 'red' : 'neutral'
-  const renderPositionSummary = () => (position ? <StockPositionSummary source={{ ...source, ...position }} hidden={hidden} /> : null)
 
   return (
     <div className={panelClassName} ref={panelRef}>
@@ -1192,7 +1191,7 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Overview' && (
           <div className="stock-intel-section stock-overview-v2">
-            {renderPositionSummary()}
+            {position ? <StockPositionSummary source={{ ...source, ...position }} hidden={hidden} /> : null}
 
             <StockAiIntelligenceWidget source={source} overview={overview} technical={technical} targets={targets} hidden={hidden} />
 
@@ -1206,7 +1205,6 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Chart' && (
           <div className="stock-intel-section">
-            {renderPositionSummary()}
             <PiaCard className="stock-intel-chart-card" title={hidden ? 'Workspace chart' : 'Price Chart'}>
               <TradingViewChart ticker={symbol} source={{ ...source, fundamentals }} hidden={hidden} />
             </PiaCard>
@@ -1215,7 +1213,6 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Analysis' && (
           <div className="stock-intel-section stock-intel-technical-layout stock-analysis-layout">
-            {renderPositionSummary()}
             <div className="stock-analysis-shell">
               <div className="stock-analysis-subtabs" role="tablist" aria-label="Analysis sections">
                 {ANALYSIS_SUB_TABS.map((item) => (
@@ -1320,7 +1317,6 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'News' && (
           <div className="stock-intel-section">
-            {renderPositionSummary()}
             <TickerNewsList
               items={newsIntelligence.items || []}
               digest={newsIntelligence.digest || ''}
@@ -1332,7 +1328,6 @@ export default function StockIntelligencePanel({
 
         {!loading && tab === 'Financials' && (
           <div className="stock-intel-section">
-            {renderPositionSummary()}
             <div className="stock-company-hub">
               <PiaCard title="Earnings" badge={<PiaBadge variant="neutral">{hidden ? 'Data' : 'Estimate vs actual'}</PiaBadge>}>
                 <DetailGrid
