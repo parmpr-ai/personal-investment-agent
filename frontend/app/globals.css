@@ -1318,23 +1318,32 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 
 /* SI-HEADER-001 collapsible Stock Intelligence mobile header */
 .stock-intel-compact-header-shell{display:none}
-.stock-intel-panel-mobile .stock-intel-expanded-header-content{display:grid;grid-template-rows:1fr;opacity:1;transform:translateY(0);transition:grid-template-rows .2s ease,opacity .2s ease,transform .2s ease}
-.stock-intel-panel-mobile .stock-intel-expanded-header-inner{min-height:0;overflow:hidden}
-.stock-intel-panel-mobile .stock-intel-compact-header-shell{display:grid;grid-template-rows:0fr;opacity:0;transform:translateY(-4px);pointer-events:none;transition:grid-template-rows .2s ease,opacity .2s ease,transform .2s ease}
-.stock-intel-panel-mobile .stock-intel-compact-header{min-height:0;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:center;gap:8px;padding:0 10px}
-.stock-intel-panel-mobile.stock-intel-panel-header-collapsed .stock-intel-expanded-header-content{grid-template-rows:0fr;opacity:0;transform:translateY(-4px);pointer-events:none}
+.stock-intel-panel-mobile .stock-intel-hero-card{transition:border-radius .26s cubic-bezier(.2,.8,.2,1)}
+.stock-intel-panel-mobile .stock-intel-expanded-header-content{display:grid;grid-template-rows:1fr;opacity:1;transform:translateY(0);transition:grid-template-rows .26s cubic-bezier(.2,.8,.2,1),opacity .24s ease,transform .26s cubic-bezier(.2,.8,.2,1);will-change:grid-template-rows,opacity,transform}
+.stock-intel-panel-mobile .stock-intel-expanded-header-inner{min-height:0;overflow:hidden;opacity:1;transform:translateY(0);transition:opacity .22s ease,transform .26s cubic-bezier(.2,.8,.2,1)}
+.stock-intel-panel-mobile .stock-intel-compact-header-shell{display:grid;grid-template-rows:0fr;opacity:0;transform:translateY(-8px);pointer-events:none;transition:grid-template-rows .26s cubic-bezier(.2,.8,.2,1),opacity .24s ease,transform .26s cubic-bezier(.2,.8,.2,1);will-change:grid-template-rows,opacity,transform}
+.stock-intel-panel-mobile .stock-intel-compact-header{min-height:0;overflow:hidden;display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:9px;padding:0 10px;transition:padding .26s cubic-bezier(.2,.8,.2,1)}
+.stock-intel-panel-mobile.stock-intel-panel-header-collapsed .stock-intel-expanded-header-content{grid-template-rows:0fr;opacity:0;transform:translateY(-8px);pointer-events:none}
+.stock-intel-panel-mobile.stock-intel-panel-header-collapsed .stock-intel-expanded-header-inner{opacity:0;transform:translateY(-10px)}
 .stock-intel-panel-mobile.stock-intel-panel-header-collapsed .stock-intel-compact-header-shell{grid-template-rows:1fr;opacity:1;transform:translateY(0);pointer-events:auto}
-.stock-intel-panel-mobile.stock-intel-panel-header-collapsed .stock-intel-compact-header{padding:8px 10px 9px}
+.stock-intel-panel-mobile.stock-intel-panel-header-collapsed .stock-intel-compact-header{padding:8px 10px}
 .stock-intel-panel-mobile.stock-intel-panel-header-collapsed .stock-intel-hero-card{z-index:4;border-radius:14px}
-.stock-intel-compact-quote{min-width:0;display:grid;gap:3px}
+.stock-intel-compact-logo{width:34px;height:34px;border-radius:10px;font-size:10px}
+.stock-intel-compact-logo.has-logo{overflow:hidden;background:#f8fafc}
+.stock-intel-compact-logo.has-logo img{width:100%;height:100%;object-fit:contain;padding:5px}
+.stock-intel-compact-quote{min-width:0;display:grid;gap:4px}
 .stock-intel-compact-row{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .stock-intel-compact-symbol,.stock-intel-compact-price{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f8fbff;font-weight:900;line-height:1.05;font-variant-numeric:tabular-nums}
-.stock-intel-compact-symbol{font-size:18px;letter-spacing:0}
-.stock-intel-compact-price{font-size:18px}
-.stock-intel-compact-change{flex:0 0 auto;border-radius:999px;padding:3px 7px;font-size:12px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+.stock-intel-compact-symbol{font-size:17px;letter-spacing:0}
+.stock-intel-compact-price{font-size:16px}
+.stock-intel-compact-market-row{display:flex;align-items:center;gap:7px;min-width:0}
+.stock-intel-compact-change,.stock-intel-compact-percent{flex:0 0 auto;border-radius:999px;padding:3px 7px;font-size:11px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
 .stock-intel-compact-change.green{color:#bbf7d0;background:rgba(22,163,74,.22)}
 .stock-intel-compact-change.red{color:#fecaca;background:rgba(239,68,68,.2)}
-.stock-intel-compact-more.stock-intel-icon-action{align-self:end;width:34px;height:34px;color:#7fc4ff}
+.stock-intel-compact-percent.green{color:#bbf7d0;background:rgba(22,163,74,.16)}
+.stock-intel-compact-percent.red{color:#fecaca;background:rgba(239,68,68,.16)}
+.stock-intel-compact-actions{display:flex;align-items:center;gap:3px}
+.stock-intel-compact-action.stock-intel-icon-action{width:30px;height:30px;color:#7fc4ff;border-radius:9px}
 
 /* ATHENA-UX-042/043/044 live price emphasis, dynamic color, tick animation */
 .card-last-price{font-size:18px!important;font-weight:800;letter-spacing:-.01em;line-height:1.1;transition:color .15s ease;will-change:transform}

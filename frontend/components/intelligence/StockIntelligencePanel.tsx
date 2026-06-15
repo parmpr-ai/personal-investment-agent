@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, BarChart3, Bell, Gauge, Info, MoreVertical, Star, Target } from 'lucide-react'
+import { ArrowLeft, BarChart3, Bell, Gauge, Info, MoreVertical, Search, Star, Target } from 'lucide-react'
 import { PiaBadge, PiaCard, PiaTabs } from '../ui-v3'
 import { mask, money, pct } from '../../lib/pia-api'
 import TickerNewsList from './TickerNewsList'
@@ -75,6 +75,10 @@ const marketPick = (source: any, keys: string[]) => {
 function marketNumber(value: unknown) {
   const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''))
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function signedPlain(value: number) {
+  return `${value >= 0 ? '+' : '-'}${Math.abs(value).toFixed(2)}`
 }
 
 function TodayRangeHero({ source, hidden }: { source: any; hidden: boolean }) {
@@ -919,6 +923,8 @@ export default function StockIntelligencePanel({
   const analystTargetsRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const lastScrollTopRef = useRef(0)
+  const headerCollapsedRef = useRef(false)
+  const collapsedHighWaterRef = useRef(0)
   const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition, dashboard)
 
   useEffect(() => {
@@ -950,6 +956,7 @@ export default function StockIntelligencePanel({
 
   useEffect(() => {
     if (variant !== 'mobile') {
+      headerCollapsedRef.current = false
       setHeaderCollapsed(false)
       return
     }
@@ -958,6 +965,13 @@ export default function StockIntelligencePanel({
 
     let frame = 0
     lastScrollTopRef.current = body.scrollTop
+    collapsedHighWaterRef.current = body.scrollTop
+
+    const updateCollapsed = (next: boolean) => {
+      if (headerCollapsedRef.current === next) return
+      headerCollapsedRef.current = next
+      setHeaderCollapsed(next)
+    }
 
     const handleScroll = () => {
       if (frame) return
@@ -967,12 +981,23 @@ export default function StockIntelligencePanel({
         const delta = nextScrollTop - lastScrollTopRef.current
         lastScrollTopRef.current = nextScrollTop
 
-        if (nextScrollTop <= 24) {
-          setHeaderCollapsed(false)
+        if (nextScrollTop <= 2) {
+          collapsedHighWaterRef.current = 0
+          updateCollapsed(false)
           return
         }
-        if (delta > 2) setHeaderCollapsed(true)
-        else if (delta < -2) setHeaderCollapsed(false)
+        if (Math.abs(delta) < 2) return
+
+        if (delta > 0) {
+          collapsedHighWaterRef.current = Math.max(collapsedHighWaterRef.current, nextScrollTop)
+          if (!headerCollapsedRef.current && nextScrollTop >= 40) updateCollapsed(true)
+          return
+        }
+
+        if (headerCollapsedRef.current && collapsedHighWaterRef.current - nextScrollTop >= 24) {
+          collapsedHighWaterRef.current = nextScrollTop
+          updateCollapsed(false)
+        }
       })
     }
 
@@ -1001,7 +1026,12 @@ export default function StockIntelligencePanel({
     variant === 'mobile' ? 'stock-intel-panel-mobile' : 'stock-intel-panel-desktop',
     isCompactHeader ? 'stock-intel-panel-header-collapsed' : '',
   ].filter(Boolean).join(' ')
-  const changeTone = change >= 0 ? 'green' : 'red'
+  const rawDailyChange = marketNumber(marketPick({ ...source, fundamentals }, ['day_change', 'dayChange', 'regularMarketChange', 'regular_market_change', 'price_change', 'priceChange', 'change_amount', 'changeAmount', 'change_abs', 'changeAbsolute']))
+  const previousClose = marketNumber(marketPick({ ...source, fundamentals }, ['previous_close', 'prev_close', 'prior_close', 'regularMarketPreviousClose']))
+  const inferredDailyChange = previousClose != null && previousClose > 0 && last ? last - previousClose : last && change ? last - (last / (1 + change / 100)) : 0
+  const dailyChange = rawDailyChange != null && (rawDailyChange !== 0 || change === 0) ? rawDailyChange : inferredDailyChange
+  const movement = dailyChange !== 0 ? dailyChange : change
+  const changeTone = movement >= 0 ? 'green' : 'red'
 
   return (
     <div className={panelClassName}>
@@ -1064,18 +1094,28 @@ export default function StockIntelligencePanel({
 
         <div className="stock-intel-compact-header-shell" aria-hidden={!isCompactHeader}>
           <header className="stock-intel-compact-header">
+            <CompanyLogo source={{ ...source, company }} symbol={symbol} hidden={hidden} className="stock-intel-compact-logo" />
             <div className="stock-intel-compact-quote">
               <div className="stock-intel-compact-row">
                 <strong className="stock-intel-compact-symbol">{hidden ? mask : symbol}</strong>
-                <small className={`stock-intel-compact-change ${changeTone}`}>{hidden ? mask : `${change >= 0 ? '+' : ''}${pct(change)}`}</small>
-              </div>
-              <div className="stock-intel-compact-row">
                 <span className="stock-intel-compact-price">{hidden ? mask : money(last)}</span>
               </div>
+              <div className="stock-intel-compact-market-row">
+                <small className={`stock-intel-compact-change ${changeTone}`}>{hidden ? mask : signedPlain(dailyChange)}</small>
+                <small className={`stock-intel-compact-percent ${changeTone}`}>{hidden ? mask : `${change >= 0 ? '+' : ''}${pct(change)}`}</small>
+              </div>
             </div>
-            <button type="button" className="stock-intel-icon-action stock-intel-compact-more" aria-label="More stock actions" disabled title="Planned">
-              <MoreVertical size={20} />
-            </button>
+            <div className="stock-intel-compact-actions" aria-label="Compact stock actions">
+              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label="Search stocks" title="Search stocks">
+                <Search size={17} />
+              </button>
+              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label={hidden ? 'Alerts' : 'Set alert'} title={hidden ? 'Alerts' : 'Set alert'}>
+                <Bell size={17} />
+              </button>
+              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label="More stock actions" title="More stock actions">
+                <MoreVertical size={18} />
+              </button>
+            </div>
           </header>
         </div>
       </section>
