@@ -1117,6 +1117,9 @@ export default function StockIntelligencePanel({
                 </div>
               </div>
               <div className="stock-intel-header-actions" aria-label="Stock actions">
+                <button type="button" className="stock-intel-icon-action" aria-label="Search stocks" title="Search stocks" onClick={() => onOpenSearch?.()}>
+                  <Search size={18} />
+                </button>
                 <button type="button" className="stock-intel-icon-action" aria-label="Notifications" onClick={() => onOpenNotifications?.()}>
                   <Bell size={18} />
                 </button>
