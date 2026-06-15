@@ -1121,7 +1121,7 @@ function PositionCard({
       case 'last': return <div key={k} className="mps-cell"><span>Last</span><b>{hidden ? mask : money(last)}</b></div>
       case 'avgcost': return <div key={k} className="mps-cell"><span>Avg Cost</span><b>{hidden ? mask : money(avgCost)}</b></div>
       case 'daypnl': return <div key={k} className="mps-cell"><span>Today P&amp;L</span><b className={dayPnl >= 0 ? 'green' : 'red'}>{hidden ? mask : `${signed(dayPnl, money)} (${signed(change, (n) => `${n.toFixed(2)}%`)})`}</b></div>
-      case 'unrealized': return <div key={k} className="mps-cell"><span>Unrealized</span><b className={unreal >= 0 ? 'green' : 'red'}>{hidden ? mask : `${signed(unreal, money)} (${signed(unrealPct, (n) => `${n.toFixed(1)}%`)})`}</b></div>
+      case 'unrealized': return <div key={k} className="mps-cell mps-cell-full"><span>Unrealized</span><b className={unreal >= 0 ? 'green' : 'red'}>{hidden ? mask : `${signed(unreal, money)} (${signed(unrealPct, (n) => `${n.toFixed(1)}%`)})`}</b></div>
       case 'unrealizedpct': return <div key={k} className="mps-cell"><span>Unreal %</span><b className={unrealPct >= 0 ? 'green' : 'red'}>{hidden ? mask : signed(unrealPct, (n) => `${n.toFixed(2)}%`)}</b></div>
       case 'daychange': return <div key={k} className="mps-cell"><span>Day $</span><b className={dayChange >= 0 ? 'green' : 'red'}>{hidden ? mask : signed(dayChange, money)}</b></div>
       case 'daypct': return <div key={k} className="mps-cell"><span>Day %</span><b className={change >= 0 ? 'green' : 'red'}>{hidden ? mask : signed(change, (n) => `${n.toFixed(2)}%`)}</b></div>

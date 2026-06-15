@@ -1451,4 +1451,8 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sai-fair-no-data p{margin:0;border:1px solid rgba(245,158,11,.22);border-radius:12px;background:rgba(69,45,6,.22);padding:10px;color:#cbd5e1;font-size:12px;line-height:1.44}
 .sai-fair-no-data p strong{color:#fde68a}
 .sai-price-grid-single{grid-template-columns:minmax(0,1fr)}
+/* BUG-PF-CARD-012: Unrealized P&L must never truncate. Allow wrap, no ellipsis. */
+.mps-cell-full b{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35}
+.mobile-position-grid-2x2 .mps-cell-full b{font-size:10px}
+.mobile-position-grid-3x3 .mps-cell-full b{font-size:9px}
 @media(max-width:720px){.sai-fullscreen-head{grid-template-columns:auto auto minmax(0,1fr);padding-top:calc(10px + env(safe-area-inset-top))}.sai-fullscreen-back span{display:none}.sai-fullscreen-body{width:100%;padding-top:12px}.sai-source-grid{grid-template-columns:1fr}.sai-insight-detail-hero h2{font-size:21px}.sai-card-history-note{min-height:36px}.sai-cr-si-027 .sai-card-empty{font-size:10px}.sai-detail-row-text{grid-template-columns:1fr}}
