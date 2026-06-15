@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, BarChart3, Bell, Gauge, Info, Menu, MoreVertical, Search, Star, Target } from 'lucide-react'
+import { ArrowLeft, BarChart3, Bell, Gauge, Info, MoreVertical, Search, Star, Target } from 'lucide-react'
 import { PiaBadge, PiaCard, PiaTabs } from '../ui-v3'
 import { mask, money, pct } from '../../lib/pia-api'
 import TickerNewsList from './TickerNewsList'
@@ -11,6 +11,7 @@ import StockKeyMetrics from './StockKeyMetrics'
 import StockPositionSummary from './StockPositionSummary'
 import { useStockIntelligence } from './useStockIntelligence'
 import CompanyLogo from './CompanyLogo'
+import { useCustomWatchlists } from '../watchlists/customWatchlists'
 
 let lastActiveStockPanelTab: StockPanelTab = 'Overview'
 const timeframes = ['Intraday', 'Swing', 'Position'] as const
@@ -921,6 +922,8 @@ export default function StockIntelligencePanel({
   onHiddenChange,
   onClose,
   variant,
+  onOpenSearch,
+  onOpenNotifications,
 }: {
   ticker: string
   seedPosition?: Record<string, unknown> | null
@@ -929,6 +932,8 @@ export default function StockIntelligencePanel({
   onHiddenChange?: (hidden: boolean) => void
   onClose: () => void
   variant: 'desktop' | 'mobile'
+  onOpenSearch?: () => void
+  onOpenNotifications?: () => void
 }) {
   const requestedInitialTab = initialTabFromSeed(seedPosition)
   const [tab, setTab] = useState<StockPanelTab>(() => requestedInitialTab || (STOCK_PANEL_TABS.includes(lastActiveStockPanelTab) ? lastActiveStockPanelTab : 'Overview'))
@@ -942,6 +947,13 @@ export default function StockIntelligencePanel({
   const headerCollapsedRef = useRef(false)
   const collapsedHighWaterRef = useRef(0)
   const { loading, source, position, intelligence, newsIntelligence } = useStockIntelligence(ticker, seedPosition, dashboard)
+  const { lists, addSymbol, removeSymbol } = useCustomWatchlists()
+  const favList = lists.find((l) => l.id === 'favorites')
+  const inFavorites = Boolean(favList?.tickers.includes(ticker.toUpperCase()))
+  const toggleWatchlist = () => {
+    if (inFavorites) removeSymbol('favorites', ticker)
+    else addSymbol('favorites', ticker)
+  }
 
   useEffect(() => {
     const nextTab = initialTabFromSeed(seedPosition)
@@ -1064,8 +1076,8 @@ export default function StockIntelligencePanel({
                   <div className="stock-intel-name-block">
                     <div className="stock-intel-name-row">
                       <h2>{hidden ? mask : symbol}</h2>
-                      <button type="button" className="stock-intel-inline-action" aria-label={hidden ? 'Monitor' : 'Watch'} disabled title="Planned">
-                        <Star size={18} />
+                      <button type="button" className={`stock-intel-inline-action${inFavorites ? ' active' : ''}`} aria-label={inFavorites ? 'Remove from watchlist' : 'Add to watchlist'} onClick={toggleWatchlist}>
+                        <Star size={18} fill={inFavorites ? 'currentColor' : 'none'} />
                       </button>
                     </div>
                     <span className="stock-intel-kicker">{hidden ? 'Workspace' : `${name} - ${source.exchange || 'NASDAQ'} - ${source.asset_type || 'Stock'}`}</span>
@@ -1073,7 +1085,7 @@ export default function StockIntelligencePanel({
                 </div>
               </div>
               <div className="stock-intel-header-actions" aria-label="Stock actions">
-                <button type="button" className="stock-intel-icon-action" aria-label={hidden ? 'Alerts' : 'Set alert'} disabled title="Planned">
+                <button type="button" className="stock-intel-icon-action" aria-label="Notifications" onClick={() => onOpenNotifications?.()}>
                   <Bell size={18} />
                 </button>
                 <button type="button" className="stock-intel-icon-action" aria-label="More stock actions" disabled title="Planned">
@@ -1116,14 +1128,14 @@ export default function StockIntelligencePanel({
             <small className={`stock-intel-compact-change ${changeTone}`}>{hidden ? mask : signedPlain(dailyChange)}</small>
             <span className={`stock-intel-compact-percent ${changeTone}`}>{hidden ? mask : `${change >= 0 ? '+' : ''}${pct(change)}`}</span>
             <div className="stock-intel-compact-actions" aria-label="Compact stock actions">
-              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label="Search stocks" title="Search stocks">
+              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label="Search stocks" title="Search stocks" onClick={() => onOpenSearch?.()}>
                 <Search size={17} />
               </button>
-              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label={hidden ? 'Alerts' : 'Set alert'} title={hidden ? 'Alerts' : 'Set alert'}>
+              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label="Notifications" title="Notifications" onClick={() => onOpenNotifications?.()}>
                 <Bell size={17} />
               </button>
-              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label="Menu" title="Menu">
-                <Menu size={18} />
+              <button type="button" className="stock-intel-icon-action stock-intel-compact-action" aria-label="More stock actions" title="More stock actions" disabled>
+                <MoreVertical size={18} />
               </button>
             </div>
           </header>

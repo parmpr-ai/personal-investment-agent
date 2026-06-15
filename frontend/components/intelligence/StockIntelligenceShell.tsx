@@ -11,6 +11,8 @@ export default function StockIntelligenceShell({
   onHiddenChange,
   onClose,
   variant,
+  onOpenSearch,
+  onOpenNotifications,
 }: {
   ticker: string
   position?: Record<string, unknown> | null
@@ -19,6 +21,8 @@ export default function StockIntelligenceShell({
   onHiddenChange?: (hidden: boolean) => void
   onClose: () => void
   variant: 'desktop' | 'mobile'
+  onOpenSearch?: () => void
+  onOpenNotifications?: () => void
 }) {
   const mobileSheetRef = useRef<HTMLDivElement>(null)
 
@@ -54,7 +58,7 @@ export default function StockIntelligenceShell({
           tabIndex={-1}
           onClick={(event) => event.stopPropagation()}
         >
-          <StockIntelligencePanel ticker={ticker} seedPosition={position} dashboard={dashboard} hidden={hidden} onHiddenChange={onHiddenChange} onClose={onClose} variant="mobile" />
+          <StockIntelligencePanel ticker={ticker} seedPosition={position} dashboard={dashboard} hidden={hidden} onHiddenChange={onHiddenChange} onClose={onClose} variant="mobile" onOpenSearch={onOpenSearch} onOpenNotifications={onOpenNotifications} />
         </div>
       </div>
     )
@@ -64,7 +68,7 @@ export default function StockIntelligenceShell({
     <>
       <div className="stock-intel-backdrop" onClick={onClose} />
       <aside className="stock-intel-modal" role="dialog" aria-modal="true" aria-label={`${ticker} intelligence`}>
-        <StockIntelligencePanel ticker={ticker} seedPosition={position} dashboard={dashboard} hidden={hidden} onHiddenChange={onHiddenChange} onClose={onClose} variant="desktop" />
+        <StockIntelligencePanel ticker={ticker} seedPosition={position} dashboard={dashboard} hidden={hidden} onHiddenChange={onHiddenChange} onClose={onClose} variant="desktop" onOpenSearch={onOpenSearch} onOpenNotifications={onOpenNotifications} />
       </aside>
     </>
   )

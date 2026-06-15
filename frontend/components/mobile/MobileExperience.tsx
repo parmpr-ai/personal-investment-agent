@@ -3364,6 +3364,8 @@ export default function MobileExperience() {
           hidden={privacyHidden}
           onHiddenChange={updateHidden}
           onClose={() => setSelected(null)}
+          onOpenSearch={() => setGlobalSearchOpen(true)}
+          onOpenNotifications={() => setNotificationsOpen(true)}
         />
       )}
       <MobileQuickControls
