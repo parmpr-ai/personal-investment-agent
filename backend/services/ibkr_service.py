@@ -1,4 +1,4 @@
-import os
+import os, re
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from ib_insync import IB, util
@@ -45,3 +45,40 @@ def get_ibkr_portfolio():
   positions.append({"symbol":display,"underlying":symbol,"sec_type":sec,"name":display,"sector":"Options" if sec=='OPT' else sec or 'Stock',"qty":qty,"avg_price":round(avg,4),"last":round(price,4),"day_change_pct":0,"day_change":0,"market_value":round(mv,2),"cost_basis":round(cb,2),"unrealized":round(unr,2),"realized":round(real,2),"unrealized_pct":round((unr/cb*100),2) if cb else 0,"portfolio_pct":round((mv/net*100),2) if net else 0,"risk":90 if sec=='OPT' else 70,"brand":"#3B82F6","accent":"#60A5FA","logo":symbol[:2],"momentum_score":55,"news_score":50,"macro_sensitivity":75,"ai_view":"Live IBKR position"})
   total_mv+=mv; total_cb+=cb; total_unr+=unr
  return {"source":"IBKR_LIVE","as_of":datetime.now(timezone.utc).isoformat(),"total_value":round(net or total_mv,2),"cost_basis":round(total_cb,2),"daily_pnl":0,"daily_pnl_pct":0,"unrealized":round(total_unr,2),"unrealized_pct":round(total_unr/total_cb*100,2) if total_cb else 0,"cash":round(cash,2),"buying_power":round(bp,2),"margin_used":round(maint/net*100,2) if net else 0,"risk_mode":"LIVE IBKR","positions":positions,"exposures":{"rows":[]},"guardrails":[],"today_actions":[],"stress_tests":[],"journal":[]}
+
+def _normalize_side(side):
+ s=(side or '').upper()
+ if s in('BOT','B','BUY'):return 'BUY'
+ if s in('SLD','S','SELL','SS'):return 'SELL'
+ return s or 'UNKNOWN'
+
+def _parse_exec_time(t):
+ t=(t or '').strip()
+ m=re.match(r'(\d{8})\s+(\d{2}:\d{2}:\d{2})',t)
+ if m:
+  try:
+   dt=datetime.strptime(f"{m.group(1)} {m.group(2)}","%Y%m%d %H:%M:%S")
+   return dt.replace(tzinfo=timezone.utc).isoformat()
+  except ValueError:pass
+ return t
+
+def get_ibkr_executions(symbol=None):
+ from ib_insync import ExecutionFilter
+ ib=ensure_connection()
+ try:fills=ib.reqExecutions(ExecutionFilter())
+ except Exception:fills=ib.fills()
+ result=[]
+ for fill in fills:
+  try:
+   c=fill.contract; ex=fill.execution; cr=fill.commissionReport
+   sec=getattr(c,'secType','STK') or 'STK'
+   sym=getattr(c,'symbol','') or ''
+   display=clean_option_symbol(c) if sec=='OPT' else sym
+   commission=_num(getattr(cr,'commission',None))
+   realized=_num(getattr(cr,'realizedPNL',None))
+   normalized={'execution_id':getattr(ex,'execId','') or '','symbol':display,'underlying':sym,'sec_type':sec,'side':_normalize_side(getattr(ex,'side','') or ''),'quantity':abs(_num(getattr(ex,'shares',0))),'price':_num(getattr(ex,'price',0)),'execution_time':_parse_exec_time(str(getattr(ex,'time','') or '')),'commission':commission if commission else None,'currency':getattr(cr,'currency','') or getattr(c,'currency','USD') or 'USD','account':getattr(ex,'acctNumber',None) or None,'order_id':str(getattr(ex,'orderId','')) or None,'realized_pnl':realized if realized else None}
+   if symbol and sym.upper()!=symbol.upper() and display.upper()!=symbol.upper():continue
+   if not normalized['execution_id']:continue
+   result.append(normalized)
+  except Exception:continue
+ return result

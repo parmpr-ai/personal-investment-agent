@@ -259,6 +259,53 @@ def qa_checklist():
   ]
  }
 
+@app.get('/ibkr/executions')
+def ibkr_executions(symbol:str|None=None):
+ """
+ Fetch live executions from IBKR (if enabled), persist to DB, return full history.
+ GET /ibkr/executions
+ GET /ibkr/executions?symbol=AMD
+ """
+ from services.analytics_store import get_executions, store_executions
+ newly_imported=0
+ ibkr_fetch=False
+ fetch_error=None
+ if os.getenv('IBKR_ENABLED','false').lower()=='true' and get_ibkr_portfolio:
+  try:
+   from services.ibkr_service import get_ibkr_executions
+   fills=get_ibkr_executions(symbol)
+   if fills:
+    result=store_executions(fills)
+    newly_imported=result['stored']
+   ibkr_fetch=True
+  except Exception as e:
+   fetch_error=str(e)
+ executions=get_executions(symbol)
+ return {'ok':True,'symbol':symbol,'ibkr_fetch':ibkr_fetch,'fetch_error':fetch_error,'newly_imported':newly_imported,'count':len(executions),'executions':executions}
+
+@app.post('/portfolio/snapshot')
+def portfolio_snapshot_capture(force:bool=False):
+ """
+ Capture today's portfolio and position snapshots.
+ Safe to call multiple times — duplicates are skipped unless ?force=true.
+ POST /portfolio/snapshot
+ POST /portfolio/snapshot?force=true
+ """
+ from services.analytics_store import capture_portfolio_snapshot
+ portfolio=get_portfolio_payload()
+ return capture_portfolio_snapshot(portfolio,force=force)
+
+@app.get('/positions/{symbol}/history')
+def position_history(symbol:str,range:str='ALL'):
+ """
+ Return position value series, trade markers, and analytics summary for a symbol.
+ Supported ranges: 1W, 1M, 3M, YTD, 1Y, ALL
+ GET /positions/AMD/history
+ GET /positions/AMD/history?range=1M
+ """
+ from services.analytics_store import get_position_history
+ return get_position_history(symbol.upper(),range.upper())
+
 @app.websocket('/ws')
 async def ws(ws:WebSocket):
  await manager.connect(ws)
