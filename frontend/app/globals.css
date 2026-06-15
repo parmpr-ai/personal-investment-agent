@@ -1347,6 +1347,10 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .stock-intel-compact-actions{display:flex;align-items:center;gap:3px;margin-left:auto}
 .stock-intel-compact-action.stock-intel-icon-action{width:30px;height:30px;color:#7fc4ff;border-radius:9px}
 
+/* CR-SI-HEADER-004: tab frame ensures the body can ALWAYS scroll ≥ 80px on any tab.
+   Content min-height = 100vh+80px > body element (both expanded ~574px and collapsed ~744px). */
+.stock-intel-panel-mobile .stock-intel-tab-frame{min-height:calc(100vh + 80px)}
+
 /* ATHENA-UX-042/043/044 live price emphasis, dynamic color, tick animation */
 .card-last-price{font-size:18px!important;font-weight:800;letter-spacing:-.01em;line-height:1.1;transition:color .15s ease;will-change:transform}
 .card-last-price.green{color:var(--green)!important}

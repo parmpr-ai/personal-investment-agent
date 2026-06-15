@@ -943,6 +943,8 @@ export default function StockIntelligencePanel({
   const [headerCollapsed, setHeaderCollapsed] = useState(false)
   const analystTargetsRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const heroCardRef = useRef<HTMLElement>(null)
   const lastScrollTopRef = useRef(0)
   const headerCollapsedRef = useRef(false)
   const collapsedHighWaterRef = useRef(0)
@@ -981,6 +983,18 @@ export default function StockIntelligencePanel({
     })
     return () => window.cancelAnimationFrame(frame)
   }, [analysisFocus, tab])
+
+  // Track hero card height → CSS variable --si-hero-h (drives sticky tabs position)
+  useEffect(() => {
+    const hero = heroCardRef.current
+    const panel = panelRef.current
+    if (!hero || !panel) return
+    const update = () => panel.style.setProperty('--si-hero-h', `${hero.offsetHeight}px`)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(hero)
+    return () => ro.disconnect()
+  }, [])
 
   useEffect(() => {
     if (variant !== 'mobile') {
@@ -1062,8 +1076,8 @@ export default function StockIntelligencePanel({
   const changeTone = movement > 0 ? 'green' : movement < 0 ? 'red' : 'neutral'
 
   return (
-    <div className={panelClassName}>
-      <section className="stock-intel-hero-card" aria-label="Stock header and key metrics">
+    <div className={panelClassName} ref={panelRef}>
+      <section className="stock-intel-hero-card" aria-label="Stock header and key metrics" ref={heroCardRef}>
         <div className="stock-intel-expanded-header-content" aria-hidden={isCompactHeader}>
           <div className="stock-intel-expanded-header-inner">
             <header className="stock-intel-header">
@@ -1151,6 +1165,7 @@ export default function StockIntelligencePanel({
       />
 
       <div className="stock-intel-body" ref={bodyRef}>
+        <div className="stock-intel-tab-frame">
         {loading ? <p className="muted">Loading intelligence workspace...</p> : null}
 
         {!loading && tab === 'Overview' && (
@@ -1343,6 +1358,7 @@ export default function StockIntelligencePanel({
           </div>
         )}
 
+        </div>{/* stock-intel-tab-frame */}
       </div>
     </div>
   )
