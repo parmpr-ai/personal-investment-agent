@@ -12,6 +12,7 @@ from services.connectors import InstrumentSearchError, source_health, test_sourc
 from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding
 from services.news_intelligence import get_news_intelligence
 from services.stock_intelligence import build_stock_panel_intelligence, get_ticker_news_intelligence
+from services.ai_intelligence import build_ai_intelligence, build_ai_intelligence_test
 load_dotenv()
 try:
  from services.ibkr_service import get_ibkr_portfolio
@@ -172,6 +173,12 @@ def news_intelligence(): return get_news_intelligence()
 def ticker_news(ticker:str): return yahoo_news(ticker.upper()) or [n for n in news_items() if n.get('ticker')==ticker.upper()]
 @app.get('/fundamentals/{ticker}')
 def fundamentals(ticker:str): return yahoo_fundamentals(ticker.upper())
+@app.get('/ai-intelligence/test')
+def ai_intelligence_test(symbols:str='NVDA,AMD,SOFI,NBIS', refresh:bool=False):
+ return build_ai_intelligence_test([s.strip() for s in symbols.split(',') if s.strip()], refresh=refresh)
+@app.get('/ai-intelligence/{symbol}')
+def ai_intelligence(symbol:str, refresh:bool=False):
+ return build_ai_intelligence(symbol, refresh=refresh)
 @app.get('/scanner')
 def scanner():
  p=get_portfolio_payload(); return scanner_items(p.get('positions',[]),macro_snapshot(),WATCHLIST)
