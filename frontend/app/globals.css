@@ -1487,6 +1487,7 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sps-detail-metrics{margin:0 0 12px}
 .sps-detail-metrics .sps-metric{padding-top:12px;padding-bottom:13px}
 .sps-detail-metrics .sps-metric b{font-size:18px}
+.sps-detail-metrics .sps-metric small{white-space:normal;overflow:visible;text-overflow:unset}
 .sps-compact-grid .sps-metric{padding:11px 8px 12px 0}
 .sps-compact-grid .sps-metric b{font-size:15px;white-space:normal;overflow:visible;text-overflow:unset;word-break:break-word}
 .sps-compact-grid .sps-metric span{font-size:11px;white-space:normal;overflow:visible;text-overflow:unset}
@@ -1540,8 +1541,12 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sps-news-empty{margin:0;color:#7f91a5;font-size:12px;font-style:normal}
 .sps-custom-tip{display:flex;align-items:center;gap:6px;margin:18px 0 0;color:#25ed55;font-size:14px;font-weight:700}
 .sps-tip-icon{flex:0 0 auto}
+.sps-max-warning{position:absolute;bottom:88px;left:50%;transform:translateX(-50%);background:#111c2b;border:1px solid rgba(251,191,36,.5);border-radius:14px;padding:11px 20px;text-align:center;z-index:10;pointer-events:none;white-space:nowrap;box-shadow:0 8px 32px rgba(0,0,0,.48);animation:sps-warn-in .18s ease}
+.sps-max-warning strong{display:block;color:#fbbf24;font-size:13px;font-weight:800;margin-bottom:2px}
+.sps-max-warning span{display:block;color:#b4c0cc;font-size:12px;font-weight:600}
+@keyframes sps-warn-in{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 .sps-custom-sheet{grid-template-rows:auto auto minmax(0,1fr) auto}
-.sps-custom-head{display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:12px;padding:0 0 18px;border-bottom:1px solid rgba(92,136,180,.18)}
+.sps-custom-head{display:grid;grid-template-columns:minmax(0,1fr) auto 38px;align-items:center;gap:12px;padding:0 0 18px;border-bottom:1px solid rgba(92,136,180,.18)}
 .sps-custom-reset{border:0;background:transparent;color:#a78bfa;font-size:16px;font-weight:800;padding:8px 0}
 .sps-custom-subhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 0 10px}
 .sps-custom-subhead strong{color:#f8fbff;font-size:18px;font-weight:800}

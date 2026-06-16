@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import { ChevronDown, GripVertical, Pencil } from 'lucide-react'
 import { mask } from '../../lib/pia-api'
+import { useDoubleTapToClose } from '../../hooks/useDoubleTapToClose'
 
 type Fmt = 'price' | 'compact' | 'compact$' | 'num' | 'pct'
 type MetricDef = { key: string; label: string; fmt: Fmt; get: (source: any) => unknown }
@@ -286,6 +287,7 @@ function EditKeyMetricsSheet({
   const [dragKey, setDragKey] = useState<string | null>(null)
   const dragRef = useRef<string | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  const onDoubleTap = useDoubleTapToClose(onClose)
 
   function toggle(key: string) {
     const nextHidden = new Set(prefs.hidden)
@@ -342,7 +344,7 @@ function EditKeyMetricsSheet({
   return (
     <div className="skm-sheet-root" role="presentation">
       <button type="button" className="skm-sheet-overlay" aria-label="Close key metrics editor" onClick={onClose} />
-      <div className="skm-sheet" role="dialog" aria-modal="true" aria-label="Edit key metrics">
+      <div className="skm-sheet" role="dialog" aria-modal="true" aria-label="Edit key metrics" onClick={onDoubleTap}>
         <header className="skm-sheet-head">
           <h3>Customize Key Metrics</h3>
           <button type="button" className="skm-sheet-done" onClick={onClose}>Done</button>

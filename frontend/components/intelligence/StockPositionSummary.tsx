@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import { CalendarDays, GripVertical, Info, MessageSquare, MoreHorizontal, ShieldAlert, TrendingUp, X } from 'lucide-react'
 import { mask, money } from '../../lib/pia-api'
+import { useDoubleTapToClose } from '../../hooks/useDoubleTapToClose'
 
 const EMPTY = '-'
 const STORAGE_KEY = 'pia.positionSummary.mobile.v2'
@@ -330,10 +331,11 @@ function InsightIcon({ icon }: { icon: Insight['icon'] }) {
 
 function DetailSheet({ data, hidden, keys, onClose }: { data: PositionSummaryData; hidden: boolean; keys: MetricKey[]; onClose: () => void }) {
   const weekTone = toneFrom(data.weekPnl)
+  const onDoubleTap = useDoubleTapToClose(onClose)
   return (
     <div className="sps-detail-root" role="presentation">
       <button type="button" className="sps-sheet-overlay" aria-label="Close position summary details" onClick={onClose} />
-      <section className="sps-detail-sheet" role="dialog" aria-modal="true" aria-label="Position Summary Details">
+      <section className="sps-detail-sheet" role="dialog" aria-modal="true" aria-label="Position Summary Details" onClick={onDoubleTap}>
         <header className="sps-sheet-head">
           <h3>Position Summary</h3>
           <button type="button" className="sps-sheet-close" aria-label="Close position summary details" onClick={onClose}>
@@ -391,6 +393,8 @@ function DetailSheet({ data, hidden, keys, onClose }: { data: PositionSummaryDat
   )
 }
 
+const MAX_COMPACT_METRICS = 9
+
 function CustomizeSheet({
   prefs,
   onChange,
@@ -404,13 +408,27 @@ function CustomizeSheet({
 }) {
   const hiddenSet = new Set(prefs.hidden)
   const [dragKey, setDragKey] = useState<MetricKey | null>(null)
+  const [maxWarning, setMaxWarning] = useState(false)
   const dragRef = useRef<MetricKey | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  const warnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onDoubleTap = useDoubleTapToClose(onClose)
+
+  function showMaxWarning() {
+    setMaxWarning(true)
+    if (warnTimerRef.current) clearTimeout(warnTimerRef.current)
+    warnTimerRef.current = setTimeout(() => setMaxWarning(false), 2000)
+  }
 
   function toggle(key: MetricKey) {
     const nextHidden = new Set(prefs.hidden)
-    if (nextHidden.has(key)) nextHidden.delete(key)
-    else nextHidden.add(key)
+    if (nextHidden.has(key)) {
+      const currentVisible = prefs.order.length - nextHidden.size
+      if (currentVisible >= MAX_COMPACT_METRICS) { showMaxWarning(); return }
+      nextHidden.delete(key)
+    } else {
+      nextHidden.add(key)
+    }
     onChange({ order: prefs.order, hidden: [...nextHidden] })
   }
 
@@ -463,13 +481,13 @@ function CustomizeSheet({
   return (
     <div className="sps-custom-root" role="presentation">
       <button type="button" className="sps-sheet-overlay" aria-label="Close position summary customization" onClick={onClose} />
-      <section className="sps-custom-sheet" role="dialog" aria-modal="true" aria-label="Customize Position Summary">
+      <section className="sps-custom-sheet" role="dialog" aria-modal="true" aria-label="Customize Position Summary" onClick={onDoubleTap}>
         <header className="sps-custom-head">
+          <h3>Customize</h3>
+          <button type="button" className="sps-custom-reset" onClick={onReset}>Reset</button>
           <button type="button" className="sps-custom-close" aria-label="Close customize" onClick={onClose}>
             <X size={24} />
           </button>
-          <h3>Customize</h3>
-          <button type="button" className="sps-custom-reset" onClick={onReset}>Reset</button>
         </header>
         <div className="sps-custom-subhead">
           <strong>Sort / Order</strong>
@@ -503,6 +521,12 @@ function CustomizeSheet({
           Tip: Changes are saved automatically
         </p>
       </section>
+      {maxWarning && (
+        <div className="sps-max-warning" role="alert" aria-live="assertive">
+          <strong>Maximum reached</strong>
+          <span>You can select up to 9 metrics.</span>
+        </div>
+      )}
     </div>
   )
 }

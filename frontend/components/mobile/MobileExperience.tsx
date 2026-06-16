@@ -61,6 +61,7 @@ import {
   resolveWatchlistRows,
   useCustomWatchlists,
 } from '../watchlists/customWatchlists'
+import { useDoubleTapToClose } from '../../hooks/useDoubleTapToClose'
 
 type RailItem = Record<string, any>
 type Tone = 'good' | 'bad' | 'neutral'
@@ -527,6 +528,7 @@ function MobileSheet({
   children: ReactNode
   closeOnOverlay?: boolean
 }) {
+  const onDoubleTap = useDoubleTapToClose(onClose)
   return (
     <div className="mobile-sheet-root" role="presentation">
       <button
@@ -536,7 +538,7 @@ function MobileSheet({
         onClick={closeOnOverlay ? onClose : undefined}
         tabIndex={closeOnOverlay ? 0 : -1}
       />
-      <section className="mobile-sheet" role="dialog" aria-modal="true" aria-label={title}>
+      <section className="mobile-sheet" role="dialog" aria-modal="true" aria-label={title} onClick={onDoubleTap}>
         <header className="mobile-sheet-head">
           <h2>{title}</h2>
           <button type="button" className="mobile-sheet-close" onClick={onClose} aria-label="Close panel">
