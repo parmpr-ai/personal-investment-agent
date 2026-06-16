@@ -1,204 +1,228 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, PointerEvent } from 'react'
-import { CalendarDays, GripVertical, Info, MessageSquare, MoreHorizontal, ShieldAlert, TrendingUp, X } from 'lucide-react'
-import { mask, money } from '../../lib/pia-api'
+import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react'
+import { ChevronDown, ChevronUp, GripVertical, Info, MoreHorizontal, Settings2, X } from 'lucide-react'
+import { getApiBase, mask, money } from '../../lib/pia-api'
 import { useDoubleTapToClose } from '../../hooks/useDoubleTapToClose'
 
 const EMPTY = '-'
-const STORAGE_KEY = 'pia.positionSummary.mobile.v2'
+const COMPACT_STORAGE_KEY = 'pia.positionSummary.mobile.v2'
+const EXPANDED_STORAGE_KEY = 'pia.positionSummaryExpanded.v1'
+
+// ── Compact metric types ───────────────────────────────────────────────────────
 
 type MetricKey =
-  | 'marketValue'
-  | 'pnl'
-  | 'pnlPct'
-  | 'portfolioPct'
-  | 'shares'
-  | 'avgCost'
-  | 'costBasis'
-  | 'todayPnl'
-  | 'realizedPnl'
-  | 'unrealizedPnl'
+  | 'marketValue' | 'pnl' | 'pnlPct' | 'portfolioPct' | 'shares'
+  | 'avgCost' | 'costBasis' | 'todayPnl' | 'realizedPnl' | 'unrealizedPnl'
 
 type Tone = 'positive' | 'negative' | 'neutral' | 'accent'
 type MetricValue = { label: string; value: string; sub?: string; tone: Tone; subTone?: Tone }
 type Prefs = { order: MetricKey[]; hidden: MetricKey[] }
-type Insight = { icon: 'trend' | 'sentiment' | 'risk'; text: string }
-type NewsItem = { headline: string; time: string }
-type PositionSummaryData = {
-  metrics: Record<MetricKey, MetricValue>
-  weekPct: number
-  weekPnl: number
-  journey: number[]
-  insights: Insight[]
-  news: NewsItem[]
+
+// ── Section types ──────────────────────────────────────────────────────────────
+
+type SectionKey =
+  | 'positionHealth' | 'positionAnalytics' | 'positionValueEvolution'
+  | 'costBasisAnalysis' | 'positionContribution' | 'tradeTimeline'
+
+type SectionPrefs = { order: SectionKey[]; hidden: SectionKey[]; collapsed: SectionKey[] }
+
+const DEFAULT_SECTION_ORDER: SectionKey[] = [
+  'positionHealth', 'positionAnalytics', 'positionValueEvolution',
+  'costBasisAnalysis', 'positionContribution', 'tradeTimeline',
+]
+const DEFAULT_SECTION_COLLAPSED: SectionKey[] = ['costBasisAnalysis', 'positionContribution', 'tradeTimeline']
+const DEFAULT_SECTION_PREFS: SectionPrefs = { order: DEFAULT_SECTION_ORDER, hidden: [], collapsed: DEFAULT_SECTION_COLLAPSED }
+
+const SECTION_LABELS: Record<SectionKey, string> = {
+  positionHealth: 'Position Health',
+  positionAnalytics: 'Position Analytics',
+  positionValueEvolution: 'Position Value Evolution',
+  costBasisAnalysis: 'Cost Basis Analysis',
+  positionContribution: 'Position Contribution',
+  tradeTimeline: 'Trade Timeline',
 }
 
-const DEFAULT_ORDER: MetricKey[] = [
-  'shares',        // Row 1 col 1
-  'avgCost',       // Row 1 col 2
-  'todayPnl',      // Row 1 col 3
-  'pnl',           // Row 2 col 1
-  'pnlPct',        // Row 2 col 2
-  'marketValue',   // Row 2 col 3
-  'costBasis',     // Row 3 col 1
-  'unrealizedPnl', // Row 3 col 2
-  'portfolioPct',  // Row 3 col 3
-  'realizedPnl',   // 10th — customize only, not shown in compact 3×3
-]
+// ── Compact metric constants ───────────────────────────────────────────────────
 
+const DEFAULT_ORDER: MetricKey[] = [
+  'shares', 'avgCost', 'todayPnl',
+  'pnl', 'pnlPct', 'marketValue',
+  'costBasis', 'unrealizedPnl', 'portfolioPct',
+  'realizedPnl',
+]
 const DEFAULT_PREFS: Prefs = { order: DEFAULT_ORDER, hidden: [] }
 
 const METRIC_LABELS: Record<MetricKey, { compact: string; customize: string }> = {
-  marketValue: { compact: 'MV', customize: 'Market Value (MV)' },
-  pnl: { compact: 'P&L', customize: 'P&L (Value)' },
-  pnlPct: { compact: 'P&L %', customize: 'P&L %' },
-  portfolioPct: { compact: 'Portfolio %', customize: 'Portfolio %' },
-  shares: { compact: 'Shares', customize: 'Shares' },
-  avgCost: { compact: 'Avg Cost', customize: 'Avg Cost' },
-  costBasis: { compact: 'Cost Basis', customize: 'Cost Basis' },
-  todayPnl: { compact: "Today's P&L", customize: "Today's P&L" },
-  realizedPnl: { compact: 'Realized P&L', customize: 'Realized P&L' },
-  unrealizedPnl: { compact: 'Unrealized P&L', customize: 'Unrealized P&L' },
+  marketValue:  { compact: 'MV',            customize: 'Market Value (MV)' },
+  pnl:          { compact: 'P&L',           customize: 'P&L (Value)' },
+  pnlPct:       { compact: 'P&L %',         customize: 'P&L %' },
+  portfolioPct: { compact: 'Portfolio %',   customize: 'Portfolio %' },
+  shares:       { compact: 'Shares',        customize: 'Shares' },
+  avgCost:      { compact: 'Avg Cost',      customize: 'Avg Cost' },
+  costBasis:    { compact: 'Cost Basis',    customize: 'Cost Basis' },
+  todayPnl:     { compact: "Today's P&L",  customize: "Today's P&L" },
+  realizedPnl:  { compact: 'Realized P&L', customize: 'Realized P&L' },
+  unrealizedPnl:{ compact: 'Unrealized P&L', customize: 'Unrealized P&L' },
 }
 
-function hasValue(value: unknown) {
-  return value != null && value !== '' && !(typeof value === 'number' && Number.isNaN(value))
+// ── Analytics data types ───────────────────────────────────────────────────────
+
+type TradeRecord = {
+  date: string | null; datetime: string | null; side: string
+  quantity: number; price: number; commission: number | null; realized_pnl: number | null
 }
 
-function numberValue(value: unknown): number | null {
-  if (!hasValue(value)) return null
-  const parsed = Number(String(value).replace(/[^0-9.-]/g, ''))
-  return Number.isFinite(parsed) ? parsed : null
+type SnapshotRecord = {
+  date: string; market_value: number; quantity: number; avg_cost: number; unrealized_pnl: number
+}
+
+type AnalyticsSummary = {
+  first_buy_date: string | null
+  best_day: { date: string; change: number } | null
+  worst_day: { date: string; change: number } | null
+  total_return: number | null; total_return_pct: number | null
+  trade_count: number; total_quantity_bought: number | null; avg_buy_price: number | null
+}
+
+type AnalyticsData = {
+  data_quality: 'complete' | 'partial' | 'no_data'
+  position_value_series: SnapshotRecord[]
+  trades: TradeRecord[]
+  summary: AnalyticsSummary
+} | null
+
+type HealthFactor = { label: string; rating: string; tone: Tone }
+type HealthData = { score: number; status: string; statusTone: Tone; subtext: string; factors: HealthFactor[] }
+type StripItem = { label: string; value: string; sub?: string; tone: Tone; subTone?: Tone }
+type ChartMarker = { pct: number; label: 'B' | 'A' | 'T' | 'S'; tone: Tone }
+
+// ── Utility functions ──────────────────────────────────────────────────────────
+
+function hasValue(v: unknown) {
+  return v != null && v !== '' && !(typeof v === 'number' && Number.isNaN(v))
+}
+
+function numberValue(v: unknown): number | null {
+  if (!hasValue(v)) return null
+  const n = Number(String(v).replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(n) ? n : null
 }
 
 function firstNumber(...values: unknown[]) {
-  for (const value of values) {
-    const parsed = numberValue(value)
-    if (parsed != null) return parsed
-  }
+  for (const v of values) { const n = numberValue(v); if (n != null) return n }
   return null
 }
 
 function hasPositionSummaryData(source: any) {
   const shares = firstNumber(source.quantity, source.qty, source.shares)
   if (shares != null && Math.abs(shares) > 0) return true
-  const marketValue = firstNumber(source.market_value, source.mktvalue)
-  const costBasis = firstNumber(source.cost_basis)
-  return Boolean(source.manual) || Boolean((marketValue != null && Math.abs(marketValue) > 0) || (costBasis != null && Math.abs(costBasis) > 0))
+  const mv = firstNumber(source.market_value, source.mktvalue)
+  const cb = firstNumber(source.cost_basis)
+  return Boolean(source.manual) || Boolean((mv != null && Math.abs(mv) > 0) || (cb != null && Math.abs(cb) > 0))
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value))
+function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)) }
+function toneFrom(v: number | null | undefined): Tone { return v == null || v === 0 ? 'neutral' : v > 0 ? 'positive' : 'negative' }
+function sign(v: number) { return v > 0 ? '+' : v < 0 ? '-' : '' }
+
+function compactSuffix(v: number) {
+  const a = Math.abs(v)
+  if (a >= 1e9) return `${(a / 1e9).toFixed(2)}B`
+  if (a >= 1e6) return `${(a / 1e6).toFixed(2)}M`
+  if (a >= 1000) return `${(a / 1000).toFixed(2)}K`
+  return a.toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
 
-function toneFrom(value: number | null | undefined): Tone {
-  if (value == null || value === 0) return 'neutral'
-  return value > 0 ? 'positive' : 'negative'
-}
-
-function sign(value: number) {
-  return value > 0 ? '+' : value < 0 ? '-' : ''
-}
-
-function compactSuffix(value: number) {
-  const abs = Math.abs(value)
-  if (abs >= 1000000000) return `${(abs / 1000000000).toFixed(2)}B`
-  if (abs >= 1000000) return `${(abs / 1000000).toFixed(2)}M`
-  if (abs >= 1000) return `${(abs / 1000).toFixed(2)}K`
-  return abs.toLocaleString('en-US', { maximumFractionDigits: 2 })
-}
-
-function formatMoney(value: number | null, hidden: boolean, signed = false, compact = false) {
+function formatMoney(v: number | null, hidden: boolean, signed = false, compact = false) {
   if (hidden) return mask
-  if (value == null) return EMPTY
-  const prefix = signed ? sign(value) : value < 0 ? '-' : ''
-  const abs = Math.abs(value)
+  if (v == null) return EMPTY
+  const prefix = signed ? sign(v) : v < 0 ? '-' : ''
+  const abs = Math.abs(v)
   return `${prefix}${compact && abs >= 1000 ? `$${compactSuffix(abs)}` : money(abs)}`
 }
 
-function formatNumber(value: number | null, hidden: boolean) {
+function formatNumber(v: number | null, hidden: boolean) {
   if (hidden) return mask
-  if (value == null) return EMPTY
-  return value.toLocaleString('en-US', { maximumFractionDigits: 4 })
+  if (v == null) return EMPTY
+  return v.toLocaleString('en-US', { maximumFractionDigits: 4 })
 }
 
-function formatPct(value: number | null, hidden: boolean, signed = false) {
+function formatPct(v: number | null, hidden: boolean, signed = false) {
   if (hidden) return mask
-  if (value == null) return EMPTY
-  const prefix = signed ? sign(value) : value < 0 ? '-' : ''
-  return `${prefix}${Math.abs(value).toFixed(2)}%`
+  if (v == null) return EMPTY
+  const prefix = signed ? sign(v) : v < 0 ? '-' : ''
+  return `${prefix}${Math.abs(v).toFixed(2)}%`
 }
 
-function formatMove(value: number | null, hidden: boolean) {
+// Global fix: no directional arrows — sign + color carries direction.
+function formatMove(v: number | null, hidden: boolean) {
   if (hidden) return mask
-  if (value == null) return ''
-  if (value === 0) return '0.00%'
-  return `${value > 0 ? '↑' : '↓'} ${Math.abs(value).toFixed(2)}%`
+  if (v == null) return ''
+  if (v === 0) return '0.00%'
+  return `${v > 0 ? '+' : '-'}${Math.abs(v).toFixed(2)}%`
 }
 
-function normalizePrefs(value: Partial<Prefs> | null | undefined): Prefs {
-  const sourceOrder = Array.isArray(value?.order) ? value!.order : []
-  const sourceHidden = Array.isArray(value?.hidden) ? value!.hidden : []
-  const order = [...sourceOrder.filter((key): key is MetricKey => DEFAULT_ORDER.includes(key as MetricKey))]
-  for (const key of DEFAULT_ORDER) {
-    if (!order.includes(key)) order.push(key)
-  }
-  const hidden = sourceHidden.filter((key): key is MetricKey => DEFAULT_ORDER.includes(key as MetricKey))
+function fmtShortDate(d: string | null): string {
+  if (!d) return '—'
+  try {
+    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+  } catch { return d }
+}
+
+// ── Prefs helpers ──────────────────────────────────────────────────────────────
+
+function normalizePrefs(v: Partial<Prefs> | null | undefined): Prefs {
+  const so = Array.isArray(v?.order) ? v!.order : []
+  const sh = Array.isArray(v?.hidden) ? v!.hidden : []
+  const order = [...so.filter((k): k is MetricKey => DEFAULT_ORDER.includes(k as MetricKey))]
+  for (const k of DEFAULT_ORDER) { if (!order.includes(k)) order.push(k) }
+  const hidden = sh.filter((k): k is MetricKey => DEFAULT_ORDER.includes(k as MetricKey))
   return { order, hidden: [...new Set(hidden)] }
 }
 
 function readPrefs(): Prefs {
   if (typeof window === 'undefined') return DEFAULT_PREFS
-  try {
-    return normalizePrefs(JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null'))
-  } catch {
-    return DEFAULT_PREFS
-  }
+  try { return normalizePrefs(JSON.parse(window.localStorage.getItem(COMPACT_STORAGE_KEY) || 'null')) }
+  catch { return DEFAULT_PREFS }
 }
+
+function normalizeSectionPrefs(v: Partial<SectionPrefs> | null | undefined): SectionPrefs {
+  const so = Array.isArray(v?.order) ? v!.order : []
+  const sh = Array.isArray(v?.hidden) ? v!.hidden : []
+  const sc = Array.isArray(v?.collapsed) ? v!.collapsed : []
+  const order = [...so.filter((k): k is SectionKey => DEFAULT_SECTION_ORDER.includes(k as SectionKey))]
+  for (const k of DEFAULT_SECTION_ORDER) { if (!order.includes(k)) order.push(k) }
+  const hidden = sh.filter((k): k is SectionKey => DEFAULT_SECTION_ORDER.includes(k as SectionKey))
+  const collapsed = sc.filter((k): k is SectionKey => DEFAULT_SECTION_ORDER.includes(k as SectionKey))
+  return { order, hidden: [...new Set(hidden)], collapsed: [...new Set(collapsed)] }
+}
+
+function readSectionPrefs(): SectionPrefs {
+  if (typeof window === 'undefined') return DEFAULT_SECTION_PREFS
+  try { return normalizeSectionPrefs(JSON.parse(window.localStorage.getItem(EXPANDED_STORAGE_KEY) || 'null')) }
+  catch { return DEFAULT_SECTION_PREFS }
+}
+
+// ── Data builders ──────────────────────────────────────────────────────────────
 
 function buildJourney(marketValue: number, weekPct: number) {
   const base = marketValue || 1
   const start = base / (1 + weekPct / 100)
-  const points: number[] = []
-  for (let i = 0; i < 42; i += 1) {
+  const pts: number[] = []
+  for (let i = 0; i < 42; i++) {
     const t = i / 41
-    const wobble = Math.sin(t * Math.PI * 5.5) * base * 0.006 + Math.sin(t * Math.PI * 13) * base * 0.003
+    const w = Math.sin(t * Math.PI * 5.5) * base * 0.006 + Math.sin(t * Math.PI * 13) * base * 0.003
     const dip = -Math.exp(-Math.pow((t - 0.28) / 0.13, 2)) * base * 0.018
     const lift = Math.exp(-Math.pow((t - 0.76) / 0.18, 2)) * base * 0.011
-    points.push(start + (base - start) * t + wobble + dip + lift)
+    pts.push(start + (base - start) * t + w + dip + lift)
   }
-  points[points.length - 1] = base
-  return points
+  pts[pts.length - 1] = base
+  return pts
 }
 
-function buildInsights(weekPct: number, pnl: number | null, healthScore: number): Insight[] {
-  const ins1 = weekPct > 1.5
-    ? 'Strong upward momentum with increasing volume.'
-    : weekPct > 0
-    ? 'Moderate upward momentum this week.'
-    : weekPct < -1.5
-    ? 'Downward momentum - position under pressure.'
-    : 'Price action is consolidating this week.'
-  const ins2 = pnl != null && pnl > 0
-    ? 'Positive sentiment and news catalysts.'
-    : pnl != null && pnl < 0
-    ? 'Negative sentiment may be weighing on position.'
-    : 'Sentiment remains neutral on this position.'
-  const ins3 = healthScore >= 75
-    ? 'Risk level is low - position in good health.'
-    : healthScore >= 55
-    ? 'Risk level is moderate - monitor volatility.'
-    : 'Risk level is elevated - consider position sizing.'
-  return [
-    { icon: 'trend', text: ins1 },
-    { icon: 'sentiment', text: ins2 },
-    { icon: 'risk', text: ins3 },
-  ]
-}
-
-function buildSummaryData(source: any, hidden: boolean): PositionSummaryData {
+function buildSummaryData(source: any, hidden: boolean) {
   const shares = firstNumber(source.quantity, source.qty, source.shares)
   const avgCost = firstNumber(source.avg_price, source.avg_cost, source.avgCost)
   const current = firstNumber(source.last, source.price, source.market_price, source.regularMarketPrice) || avgCost || 0
@@ -217,39 +241,637 @@ function buildSummaryData(source: any, hidden: boolean): PositionSummaryData {
   const pnlPct = firstNumber(source.pnl_pct, unrealizedPct)
   const portfolioPct = firstNumber(source.portfolio_pct, source.weight, source.allocation_pct)
   const weekPct = firstNumber(source.week_change_pct, source.week_pct, dayPct != null ? clamp(dayPct * 1.9, -9.5, 9.5) : pnlPct != null ? clamp(pnlPct / 10, -9.5, 9.5) : 0) || 0
-  const weekPnl = marketValue ? (marketValue * weekPct) / 100 : 0
-  const risk = firstNumber(source.risk, source.risk_score)
-  const momentum = firstNumber(source.momentum_score, source.momentum)
-  const healthScore = Math.round(clamp(72 + Math.max(0, pnlPct || 0) * 0.25 + Math.max(0, (momentum || 0) - 50) * 0.18 - Math.max(0, (risk || 0) - 75) * 0.25, 0, 100))
-
-  const rawNews = source.news_catalysts || source.news_items || source.news || []
-  const news: NewsItem[] = Array.isArray(rawNews)
-    ? rawNews.slice(0, 3).map((n: any) => ({
-        headline: String(n.headline || n.title || n.summary || n),
-        time: String(n.time || n.published_at || n.published || ''),
-      }))
-    : []
 
   return {
     weekPct,
-    weekPnl,
     journey: buildJourney(marketValue, weekPct),
-    insights: buildInsights(weekPct, pnl, healthScore),
-    news,
     metrics: {
-      marketValue: { label: METRIC_LABELS.marketValue.compact, value: formatMoney(marketValue, hidden, false, true), sub: formatMove(dayPct, hidden), tone: 'neutral', subTone: toneFrom(dayPct) },
-      pnl: { label: METRIC_LABELS.pnl.compact, value: formatMoney(pnl, hidden, true, true), sub: formatMove(pnlPct, hidden), tone: toneFrom(pnl), subTone: toneFrom(pnlPct) },
-      pnlPct: { label: METRIC_LABELS.pnlPct.compact, value: formatPct(pnlPct, hidden, true), sub: formatMove(dayPct, hidden), tone: toneFrom(pnlPct), subTone: toneFrom(dayPct) },
-      portfolioPct: { label: METRIC_LABELS.portfolioPct.compact, value: formatPct(portfolioPct, hidden), tone: 'accent' },
-      shares: { label: METRIC_LABELS.shares.compact, value: formatNumber(shares, hidden), tone: 'neutral' },
-      avgCost: { label: METRIC_LABELS.avgCost.compact, value: formatMoney(avgCost, hidden), tone: 'neutral' },
-      costBasis: { label: METRIC_LABELS.costBasis.compact, value: formatMoney(costBasis, hidden, false, true), tone: 'neutral' },
-      todayPnl: { label: METRIC_LABELS.todayPnl.compact, value: formatMoney(dayPnl, hidden, true), sub: formatMove(dayPct, hidden), tone: toneFrom(dayPnl), subTone: toneFrom(dayPct) },
-      realizedPnl: { label: METRIC_LABELS.realizedPnl.compact, value: formatMoney(realized, hidden, true, true), sub: formatMove(realizedPct, hidden), tone: toneFrom(realized), subTone: toneFrom(realizedPct) },
-      unrealizedPnl: { label: METRIC_LABELS.unrealizedPnl.compact, value: formatMoney(unrealized, hidden, true, true), sub: formatMove(unrealizedPct, hidden), tone: toneFrom(unrealized), subTone: toneFrom(unrealizedPct) },
-    },
+      marketValue:  { label: METRIC_LABELS.marketValue.compact,  value: formatMoney(marketValue, hidden, false, true), sub: formatMove(dayPct, hidden), tone: 'neutral' as Tone, subTone: toneFrom(dayPct) },
+      pnl:          { label: METRIC_LABELS.pnl.compact,          value: formatMoney(pnl, hidden, true, true),          sub: formatMove(pnlPct, hidden),  tone: toneFrom(pnl), subTone: toneFrom(pnlPct) },
+      pnlPct:       { label: METRIC_LABELS.pnlPct.compact,       value: formatPct(pnlPct, hidden, true),                sub: formatMove(dayPct, hidden),  tone: toneFrom(pnlPct), subTone: toneFrom(dayPct) },
+      portfolioPct: { label: METRIC_LABELS.portfolioPct.compact, value: formatPct(portfolioPct, hidden),                tone: 'accent' as Tone },
+      shares:       { label: METRIC_LABELS.shares.compact,       value: formatNumber(shares, hidden),                   tone: 'neutral' as Tone },
+      avgCost:      { label: METRIC_LABELS.avgCost.compact,      value: formatMoney(avgCost, hidden),                   tone: 'neutral' as Tone },
+      costBasis:    { label: METRIC_LABELS.costBasis.compact,    value: formatMoney(costBasis, hidden, false, true),    tone: 'neutral' as Tone },
+      todayPnl:     { label: METRIC_LABELS.todayPnl.compact,     value: formatMoney(dayPnl, hidden, true),              sub: formatMove(dayPct, hidden),  tone: toneFrom(dayPnl), subTone: toneFrom(dayPct) },
+      realizedPnl:  { label: METRIC_LABELS.realizedPnl.compact,  value: formatMoney(realized, hidden, true, true),      sub: formatMove(realizedPct, hidden), tone: toneFrom(realized), subTone: toneFrom(realizedPct) },
+      unrealizedPnl:{ label: METRIC_LABELS.unrealizedPnl.compact,value: formatMoney(unrealized, hidden, true, true),    sub: formatMove(unrealizedPct, hidden), tone: toneFrom(unrealized), subTone: toneFrom(unrealizedPct) },
+    } as Record<MetricKey, MetricValue>,
   }
 }
+
+function buildStripItems(source: any, hidden: boolean): StripItem[] {
+  const shares = firstNumber(source.quantity, source.qty, source.shares)
+  const avgCost = firstNumber(source.avg_price, source.avg_cost, source.avgCost)
+  const current = firstNumber(source.last, source.price, source.market_price) || avgCost || 0
+  const multiplier = String(source.sec_type || '').toUpperCase() === 'OPT' ? 100 : 1
+  const computedCost = avgCost != null && shares != null ? avgCost * shares * multiplier : null
+  const costBasis = firstNumber(source.cost_basis, computedCost) || 0
+  const computedMarket = shares != null && current ? shares * current * multiplier : null
+  const marketValue = firstNumber(source.market_value, source.mktvalue, computedMarket) || 0
+  const pnl = firstNumber(source.pnl, source.unrealized_pnl, source.unrealized, marketValue && costBasis ? marketValue - costBasis : null)
+  const pnlPct = firstNumber(source.pnl_pct, source.unrealized_pct, costBasis ? ((pnl || 0) / costBasis) * 100 : null)
+  const dayPct = firstNumber(source.day_change_pct, source.change_pct)
+  const portfolioPct = firstNumber(source.portfolio_pct, source.weight)
+
+  return [
+    { label: 'Market Value',    value: formatMoney(marketValue, hidden, false, true), sub: dayPct != null ? formatMove(dayPct, hidden) : undefined, tone: 'neutral', subTone: toneFrom(dayPct) },
+    { label: 'P&L',             value: formatMoney(pnl, hidden, true, true), sub: pnlPct != null ? formatMove(pnlPct, hidden) : undefined, tone: toneFrom(pnl), subTone: toneFrom(pnlPct) },
+    { label: 'Return',          value: formatPct(pnlPct, hidden, true), sub: dayPct != null ? formatMove(dayPct, hidden) : undefined, tone: toneFrom(pnlPct), subTone: toneFrom(dayPct) },
+    { label: 'Portfolio Weight',value: formatPct(portfolioPct, hidden), tone: 'accent' },
+    { label: 'Shares',          value: formatNumber(shares, hidden), tone: 'neutral' },
+    { label: 'Avg Cost',        value: formatMoney(avgCost, hidden), tone: 'neutral' },
+    { label: 'Current Price',   value: formatMoney(current, hidden), tone: 'neutral' },
+    { label: 'Cost Basis',      value: formatMoney(costBasis, hidden, false, true), tone: 'neutral' },
+  ]
+}
+
+function computePositionHealth(source: any): HealthData {
+  const pnlPct  = firstNumber(source.pnl_pct, source.unrealized_pct) ?? 0
+  const portPct = firstNumber(source.portfolio_pct, source.weight) ?? 15
+  const dayPct  = firstNumber(source.day_change_pct, source.change_pct) ?? 0
+  const weekPct = firstNumber(source.week_change_pct, source.week_pct, dayPct * 1.9) ?? 0
+
+  const profScore = pnlPct > 30 ? 95 : pnlPct > 20 ? 88 : pnlPct > 10 ? 78 : pnlPct > 0 ? 65 : pnlPct > -10 ? 45 : 25
+  const sizeScore = portPct > 40 ? 55 : portPct > 30 ? 68 : portPct > 15 ? 85 : portPct > 5 ? 82 : 70
+  const trendScore = weekPct > 3 ? 92 : weekPct > 1 ? 82 : weekPct > -1 ? 72 : weekPct > -3 ? 58 : 40
+  const cbScore = pnlPct > 30 ? 92 : pnlPct > 20 ? 84 : pnlPct > 10 ? 74 : pnlPct > 0 ? 62 : 40
+  const ddScore = weekPct > -3 ? 86 : weekPct > -7 ? 70 : 50
+
+  const ratingOf = (s: number) => s >= 88 ? 'Excellent' : s >= 80 ? 'Strong' : s >= 70 ? 'Healthy' : s >= 58 ? 'Moderate' : s >= 45 ? 'Weak' : 'Critical'
+  const toneOf = (s: number): Tone => s >= 72 ? 'positive' : s >= 55 ? 'neutral' : 'negative'
+  const ddRating = (s: number) => s >= 82 ? 'Low Risk' : s >= 65 ? 'Moderate' : 'Elevated'
+
+  const score = Math.round(profScore * 0.30 + sizeScore * 0.20 + trendScore * 0.18 + cbScore * 0.17 + ddScore * 0.15)
+  const status = score >= 88 ? 'Excellent' : score >= 74 ? 'Healthy' : score >= 58 ? 'Watch' : 'Risky'
+  const statusTone: Tone = score >= 74 ? 'positive' : score >= 58 ? 'neutral' : 'negative'
+  const subtext = score >= 88 ? 'Your position is healthy' : score >= 74 ? 'Position performing well' : score >= 58 ? 'Monitor your position' : 'Position needs attention'
+
+  return {
+    score, status, statusTone, subtext,
+    factors: [
+      { label: 'Profitability',       rating: ratingOf(profScore),  tone: toneOf(profScore) },
+      { label: 'Size',                rating: ratingOf(sizeScore),  tone: toneOf(sizeScore) },
+      { label: 'Trend',               rating: ratingOf(trendScore), tone: toneOf(trendScore) },
+      { label: 'Cost Basis Advantage',rating: ratingOf(cbScore),    tone: toneOf(cbScore) },
+      { label: 'Drawdown',            rating: ddRating(ddScore),    tone: toneOf(ddScore) },
+    ],
+  }
+}
+
+// ── useAnalyticsData ───────────────────────────────────────────────────────────
+
+function useAnalyticsData(symbol: string | null): AnalyticsData {
+  const [data, setData] = useState<AnalyticsData>(null)
+  useEffect(() => {
+    if (!symbol) return
+    fetch(`${getApiBase()}/positions/${encodeURIComponent(symbol)}/history?range=ALL`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setData(d) })
+      .catch(() => null)
+  }, [symbol])
+  return data
+}
+
+// ── Chart helpers ──────────────────────────────────────────────────────────────
+
+function filterSeriesByRange(series: SnapshotRecord[], range: string): SnapshotRecord[] {
+  if (range === 'ALL') return series
+  const now = new Date()
+  const cutoffs: Record<string, Date> = {
+    '1W':  new Date(now.getTime() - 7 * 86400000),
+    '1M':  new Date(now.getTime() - 30 * 86400000),
+    '3M':  new Date(now.getTime() - 90 * 86400000),
+    'YTD': new Date(now.getFullYear(), 0, 1),
+    '1Y':  new Date(now.getTime() - 365 * 86400000),
+  }
+  const cutoff = cutoffs[range]
+  if (!cutoff) return series
+  const filtered = series.filter(s => new Date(s.date) >= cutoff)
+  return filtered.length > 1 ? filtered : series
+}
+
+function buildTradeMarkers(series: SnapshotRecord[], trades: TradeRecord[]): ChartMarker[] {
+  if (!series.length || !trades.length) return []
+  const dates = series.map(s => s.date)
+  const markers: ChartMarker[] = []
+  let buyCount = 0
+  for (const t of trades) {
+    if (!t.date) continue
+    let idx = dates.findIndex(d => d >= t.date!)
+    if (idx < 0) idx = dates.length - 1
+    const pct = idx / Math.max(1, dates.length - 1)
+    if (t.side === 'BUY') {
+      buyCount++
+      markers.push({ pct, label: buyCount === 1 ? 'B' : 'A', tone: 'positive' })
+    } else if (t.side === 'SELL') {
+      markers.push({ pct, label: 'S', tone: 'negative' })
+    }
+  }
+  return markers
+}
+
+function EvolutionChart({ points, markers, currentLabel }: { points: number[]; markers: ChartMarker[]; currentLabel: string }) {
+  if (points.length < 2) {
+    return <p className="spse-evo-no-data">No position history yet. Capture a snapshot to start building your chart.</p>
+  }
+  const W = 340, H = 160, pad = 14
+  const min = Math.min(...points), max = Math.max(...points)
+  const range = Math.max(1, max - min)
+  const chartH = H - pad * 2
+
+  const coords = points.map((v, i) => ({
+    x: (i / (points.length - 1)) * W,
+    y: H - pad - ((v - min) / range) * chartH,
+  }))
+
+  const linePath = `M ${coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' L ')}`
+  const areaPath = `M 0,${H} L ${coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' L ')} L ${W},${H} Z`
+  const markerColor = (t: Tone) => t === 'positive' ? '#24d18c' : t === 'negative' ? '#f87171' : '#fbbf24'
+  const last = coords[coords.length - 1]
+
+  return (
+    <>
+      <svg viewBox={`0 0 ${W} ${H}`} className="spse-evo-chart" aria-label="Position value evolution chart">
+        <defs>
+          <linearGradient id="spseGradFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="rgba(36,209,140,.22)" />
+            <stop offset="100%" stopColor="rgba(36,209,140,0)" />
+          </linearGradient>
+        </defs>
+        <path d={areaPath} fill="url(#spseGradFill)" />
+        <path d={linePath} fill="none" stroke="#24d18c" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        {markers.map((m, i) => {
+          const xIdx = Math.min(Math.round(m.pct * (coords.length - 1)), coords.length - 1)
+          const c = coords[xIdx]
+          const col = markerColor(m.tone)
+          return (
+            <g key={i}>
+              <circle cx={c.x} cy={c.y} r={5} fill={col} stroke="#07111d" strokeWidth="1.5" />
+              <text x={c.x} y={c.y - 8} fill={col} fontSize="9" fontWeight="800" textAnchor="middle">{m.label}</text>
+            </g>
+          )
+        })}
+        <text x={last.x - 2} y={last.y - 10} fill="#f8fbff" fontSize="9" fontWeight="800" textAnchor="end">
+          {currentLabel}
+        </text>
+      </svg>
+      <div className="spse-evo-legend">
+        <span className="spse-evo-legend-item"><span className="spse-evo-legend-dot buy" />Buy</span>
+        <span className="spse-evo-legend-item"><span className="spse-evo-legend-dot add" />Add</span>
+        <span className="spse-evo-legend-item"><span className="spse-evo-legend-dot trim" />Trim</span>
+        <span className="spse-evo-legend-item"><span className="spse-evo-legend-dot sell" />Sell</span>
+      </div>
+    </>
+  )
+}
+
+// ── Section block ──────────────────────────────────────────────────────────────
+
+function SectionBlock({ title, collapsed, onToggle, children }: {
+  title: string; collapsed: boolean; onToggle: () => void; children: React.ReactNode
+}) {
+  return (
+    <section className="spse-section">
+      <button type="button" className="spse-section-head" onClick={onToggle}>
+        <h4>{title}</h4>
+        {collapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+      </button>
+      {!collapsed && <div className="spse-section-body">{children}</div>}
+    </section>
+  )
+}
+
+// ── Section content components ─────────────────────────────────────────────────
+
+function PositionHealthSection({ health }: { health: HealthData }) {
+  return (
+    <div className="spse-health">
+      <div className="spse-health-score">
+        <div className="spse-health-ring" style={{ '--score': `${health.score}%` } as CSSProperties}>
+          <div className="spse-health-ring-inner">
+            <span className="spse-health-num">{health.score}</span>
+            <small className="spse-health-denom">/100</small>
+          </div>
+        </div>
+        <div className="spse-health-label">
+          <strong className={health.statusTone}>{health.status}</strong>
+          <p>{health.subtext}</p>
+        </div>
+      </div>
+      <div className="spse-health-factors">
+        {health.factors.map(f => (
+          <div key={f.label} className="spse-health-factor">
+            <span>{f.label}</span>
+            <b className={f.tone}>{f.rating}</b>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PositionAnalyticsSection({ summary, trades, hidden }: {
+  summary: AnalyticsSummary | null; trades: TradeRecord[] | null; hidden: boolean
+}) {
+  const bestChange  = summary?.best_day?.change ?? null
+  const worstChange = summary?.worst_day?.change ?? null
+
+  const holdingDays = summary?.first_buy_date
+    ? Math.floor((Date.now() - new Date(summary.first_buy_date).getTime()) / 86400000)
+    : null
+
+  const winRate = (() => {
+    if (!trades || !trades.length) return null
+    const closing = trades.filter(t => t.realized_pnl != null)
+    if (!closing.length) return null
+    const wins = closing.filter(t => (t.realized_pnl ?? 0) > 0)
+    return Math.round((wins.length / closing.length) * 100)
+  })()
+
+  return (
+    <div className="spse-analytics-cards">
+      <div className="spse-analytics-card">
+        <span>Best Day</span>
+        <b className={toneFrom(bestChange)}>{bestChange != null ? formatMoney(bestChange, hidden, true) : EMPTY}</b>
+        <small>{fmtShortDate(summary?.best_day?.date ?? null)}</small>
+      </div>
+      <div className="spse-analytics-card">
+        <span>Worst Day</span>
+        <b className={toneFrom(worstChange)}>{worstChange != null ? formatMoney(worstChange, hidden, true) : EMPTY}</b>
+        <small>{fmtShortDate(summary?.worst_day?.date ?? null)}</small>
+      </div>
+      <div className="spse-analytics-card">
+        <span>Holding Period</span>
+        <b className="neutral">{holdingDays != null ? `${holdingDays} Days` : EMPTY}</b>
+      </div>
+      <div className="spse-analytics-card">
+        <span>Win Rate</span>
+        <b className="neutral">{winRate != null ? `${winRate}%` : EMPTY}</b>
+      </div>
+    </div>
+  )
+}
+
+function PositionValueEvolutionSection({ analytics, journey, hidden, source }: {
+  analytics: AnalyticsData; journey: number[]; hidden: boolean; source: any
+}) {
+  const [range, setRange] = useState('ALL')
+  const RANGES = ['1W', '1M', '3M', 'YTD', '1Y', 'ALL']
+  const hasReal = !!(analytics && analytics.data_quality !== 'no_data' && analytics.position_value_series.length > 1)
+
+  const chartPoints = useMemo(() => {
+    if (!hasReal || !analytics) return journey
+    const filtered = filterSeriesByRange(analytics.position_value_series, range)
+    return filtered.map(s => s.market_value)
+  }, [analytics, range, journey, hasReal])
+
+  const markers = useMemo((): ChartMarker[] => {
+    if (!hasReal || !analytics) return []
+    const filtered = filterSeriesByRange(analytics.position_value_series, range)
+    if (filtered.length < 2) return []
+    const cutoffDate = filtered[0].date
+    const filteredTrades = analytics.trades.filter(t => t.date && t.date >= cutoffDate)
+    return buildTradeMarkers(filtered, filteredTrades)
+  }, [analytics, range, hasReal])
+
+  const marketValue = firstNumber(source.market_value, source.mktvalue) || 0
+  const currentLabel = hidden ? '••' : `$${compactSuffix(marketValue)}`
+
+  return (
+    <>
+      <div className="spse-range-tabs">
+        {RANGES.map(r => (
+          <button key={r} type="button" className={`spse-range-tab${range === r ? ' active' : ''}`} onClick={() => setRange(r)}>
+            {r}
+          </button>
+        ))}
+      </div>
+      <EvolutionChart points={chartPoints} markers={markers} currentLabel={currentLabel} />
+    </>
+  )
+}
+
+function CostBasisAnalysisSection({ source, hidden }: { source: any; hidden: boolean }) {
+  const avgCost = firstNumber(source.avg_price, source.avg_cost, source.avgCost) ?? 0
+  const current = firstNumber(source.last, source.price, source.market_price) || avgCost || 0
+  const gainPct  = avgCost > 0 ? ((current - avgCost) / avgCost) * 100 : null
+  const isGain   = (gainPct ?? 0) >= 0
+  const barMax   = Math.max(current, avgCost * 1.5, avgCost + 1)
+  const fillPct  = avgCost > 0 ? clamp(((current - avgCost) / (barMax - avgCost)) * 100, 0, 100) : 0
+
+  return (
+    <>
+      <div className="spse-cost-items">
+        <div className="spse-cost-item">
+          <span>Current Price</span><b>{formatMoney(current, hidden)}</b>
+        </div>
+        <div className="spse-cost-item">
+          <span>Avg Cost</span><b>{formatMoney(avgCost, hidden)}</b>
+        </div>
+        <div className="spse-cost-item">
+          <span>Gain vs Cost</span><b className={isGain ? 'positive' : 'negative'}>{formatPct(gainPct, hidden, true)}</b>
+        </div>
+      </div>
+      <div className="spse-cost-bar-wrap">
+        <div className="spse-cost-bar-track">
+          <div className={`spse-cost-bar-fill${isGain ? '' : ' negative'}`} style={{ width: `${fillPct}%` }} />
+        </div>
+        <div className="spse-cost-bar-labels">
+          <span>Avg {formatMoney(avgCost, hidden)}</span>
+          <span>{formatMoney(current, hidden)}</span>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function PositionContributionSection({ source, hidden, totalPositions }: { source: any; hidden: boolean; totalPositions: number }) {
+  const portfolioPct = firstNumber(source.portfolio_pct, source.weight) ?? null
+  const rank = firstNumber(source.portfolio_rank, source.rank) ?? null
+  const contribution = portfolioPct != null ? portfolioPct * 0.55 : null
+  const barFill = portfolioPct != null ? clamp(portfolioPct, 0, 100) : 0
+
+  return (
+    <>
+      <div className="spse-contrib-items">
+        <div className="spse-contrib-item">
+          <span>Portfolio Weight</span><b className="accent">{formatPct(portfolioPct, hidden)}</b>
+        </div>
+        <div className="spse-contrib-item">
+          <span>Portfolio Rank</span>
+          <b>{rank != null ? `#${rank} of ${totalPositions || '—'}` : EMPTY}</b>
+        </div>
+        <div className="spse-contrib-item">
+          <span>Contribution to Portfolio</span><b>{formatPct(contribution, hidden)}</b>
+        </div>
+      </div>
+      <div className="spse-contrib-bar-track">
+        <div className="spse-contrib-bar-fill" style={{ width: `${barFill}%` }} />
+      </div>
+    </>
+  )
+}
+
+function TradeTimelineSection({ trades, summary, hidden }: {
+  trades: TradeRecord[] | null; summary: AnalyticsSummary | null; hidden: boolean
+}) {
+  if (!trades || !trades.length) {
+    return <p className="spse-timeline-empty">No trade history yet. Connect IBKR to see executions.</p>
+  }
+
+  function classifyTrade(index: number): { label: string; cls: string } {
+    const t = trades![index]
+    if (t.side === 'SELL') {
+      return trades!.slice(index + 1).some(x => x.side === 'BUY')
+        ? { label: 'Trim', cls: 'trim' }
+        : { label: 'Sell', cls: 'sell' }
+    }
+    return trades!.slice(0, index).filter(x => x.side === 'BUY').length === 0
+      ? { label: 'Buy', cls: 'buy' }
+      : { label: 'Add', cls: 'add' }
+  }
+
+  return (
+    <>
+      <div className="spse-timeline">
+        {trades.map((t, i) => {
+          const { label, cls } = classifyTrade(i)
+          const amount = t.quantity * t.price
+          return (
+            <div key={i} className="spse-timeline-row">
+              <span className="spse-timeline-date">{fmtShortDate(t.date)}</span>
+              <span className={`spse-timeline-type ${cls}`}>{label}</span>
+              <span className="spse-timeline-shares">{t.quantity}</span>
+              <span className="spse-timeline-price">{formatMoney(t.price, hidden)}</span>
+              <span className="spse-timeline-amount">{formatMoney(amount, hidden, false, true)}</span>
+            </div>
+          )
+        })}
+      </div>
+      {(summary?.total_quantity_bought != null || summary?.avg_buy_price != null) && (
+        <div className="spse-timeline-footer">
+          {summary?.total_quantity_bought != null && (
+            <span>Total: <b>{summary.total_quantity_bought} shares</b></span>
+          )}
+          {summary?.avg_buy_price != null && (
+            <span>Avg: <b>{formatMoney(summary.avg_buy_price, hidden)}</b></span>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Section Customize Sheet ────────────────────────────────────────────────────
+
+function SectionCustomizeSheet({ prefs, onChange, onReset, onClose }: {
+  prefs: SectionPrefs; onChange: (next: SectionPrefs) => void; onReset: () => void; onClose: () => void
+}) {
+  const hiddenSet = new Set(prefs.hidden)
+  const [dragKey, setDragKey] = useState<SectionKey | null>(null)
+  const dragRef = useRef<SectionKey | null>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const onDoubleTap = useDoubleTapToClose(onClose)
+
+  function toggleSection(key: SectionKey) {
+    const next = new Set(prefs.hidden)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    onChange({ ...prefs, hidden: [...next] })
+  }
+
+  function reorderTo(key: SectionKey, targetKey: SectionKey) {
+    if (key === targetKey) return
+    const next = [...prefs.order]
+    const from = next.indexOf(key), to = next.indexOf(targetKey)
+    if (from < 0 || to < 0) return
+    next.splice(from, 1); next.splice(to, 0, key)
+    onChange({ ...prefs, order: next })
+  }
+
+  function onDown(event: PointerEvent<HTMLUListElement>) {
+    const target = event.target as HTMLElement
+    if (!target.closest('[data-grip]')) return
+    event.preventDefault()
+    const row = target.closest('[data-key]') as HTMLElement | null
+    const key = row?.dataset.key as SectionKey | undefined
+    if (!key || !DEFAULT_SECTION_ORDER.includes(key)) return
+    dragRef.current = key; setDragKey(key)
+    listRef.current?.setPointerCapture?.(event.pointerId)
+  }
+
+  function onMove(event: PointerEvent<HTMLUListElement>) {
+    if (!dragRef.current || !listRef.current) return
+    event.preventDefault()
+    for (const row of Array.from(listRef.current.querySelectorAll('[data-key]')) as HTMLElement[]) {
+      const rect = row.getBoundingClientRect()
+      if (event.clientY >= rect.top && event.clientY < rect.bottom) {
+        const tKey = row.dataset.key as SectionKey | undefined
+        if (tKey && tKey !== dragRef.current) reorderTo(dragRef.current, tKey)
+        break
+      }
+    }
+  }
+
+  function onUp(event: PointerEvent<HTMLUListElement>) {
+    if (!dragRef.current) return
+    dragRef.current = null; setDragKey(null)
+    try { listRef.current?.releasePointerCapture?.(event.pointerId) } catch {}
+  }
+
+  return (
+    <div className="spse-cust-root" role="presentation">
+      <button type="button" className="sps-sheet-overlay" aria-label="Close section customization" onClick={onClose} />
+      <section className="spse-cust-sheet" role="dialog" aria-modal="true" aria-label="Customize sections" onClick={onDoubleTap}>
+        <header className="spse-cust-head">
+          <h3>Customize View</h3>
+          <button type="button" className="spse-cust-reset" onClick={onReset}>Reset</button>
+          <button type="button" className="spse-cust-close" aria-label="Close" onClick={onClose}>
+            <X size={24} />
+          </button>
+        </header>
+        <div className="spse-cust-subhead">
+          <strong>Sections</strong>
+          <span>Drag to reorder</span>
+        </div>
+        <ul
+          className={`spse-cust-list${dragKey ? ' is-dragging' : ''}`}
+          ref={listRef}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+        >
+          {prefs.order.map(key => {
+            const on = !hiddenSet.has(key)
+            return (
+              <li className={`spse-cust-row${dragKey === key ? ' dragging' : ''}`} key={key} data-key={key}>
+                <span>{SECTION_LABELS[key]}</span>
+                <button type="button" className={`skm-edit-toggle${on ? ' on' : ''}`} aria-label={`${on ? 'Hide' : 'Show'} ${SECTION_LABELS[key]}`} aria-pressed={on} onClick={() => toggleSection(key)}>
+                  <span />
+                </button>
+                <button type="button" className="spse-cust-grip stock-reorder-grip" data-grip aria-label={`Drag to reorder ${SECTION_LABELS[key]}`}>
+                  <GripVertical size={22} />
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+        <p className="spse-cust-tip">
+          <Info size={14} className="sps-tip-icon" />
+          Changes are saved automatically
+        </p>
+      </section>
+    </div>
+  )
+}
+
+// ── Expanded Sheet V3 ──────────────────────────────────────────────────────────
+
+function ExpandedSheetV3({ source, hidden, onClose, totalPositions }: {
+  source: any; hidden: boolean; onClose: () => void; totalPositions: number
+}) {
+  const [sectionPrefs, setSectionPrefs] = useState<SectionPrefs>(DEFAULT_SECTION_PREFS)
+  const [customizeOpen, setCustomizeOpen] = useState(false)
+  const onDoubleTap = useDoubleTapToClose(onClose)
+
+  useEffect(() => { setSectionPrefs(readSectionPrefs()) }, [])
+
+  const symbol: string = source?.ticker || source?.symbol || source?.underlying || ''
+  const analytics = useAnalyticsData(symbol || null)
+  const summaryData = useMemo(() => buildSummaryData(source, hidden), [source, hidden])
+  const stripItems  = useMemo(() => buildStripItems(source, hidden), [source, hidden])
+  const health      = useMemo(() => computePositionHealth(source), [source])
+
+  function commitSectionPrefs(next: SectionPrefs) {
+    const n = normalizeSectionPrefs(next)
+    setSectionPrefs(n)
+    try { window.localStorage.setItem(EXPANDED_STORAGE_KEY, JSON.stringify(n)) } catch {}
+  }
+
+  function toggleCollapsed(key: SectionKey) {
+    const next = new Set(sectionPrefs.collapsed)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    commitSectionPrefs({ ...sectionPrefs, collapsed: [...next] })
+  }
+
+  const hiddenSet    = new Set(sectionPrefs.hidden)
+  const collapsedSet = new Set(sectionPrefs.collapsed)
+
+  function renderSection(key: SectionKey) {
+    if (hiddenSet.has(key)) return null
+    const collapsed = collapsedSet.has(key)
+    const toggle = () => toggleCollapsed(key)
+    switch (key) {
+      case 'positionHealth':
+        return <SectionBlock key={key} title="Position Health" collapsed={collapsed} onToggle={toggle}><PositionHealthSection health={health} /></SectionBlock>
+      case 'positionAnalytics':
+        return <SectionBlock key={key} title="Position Analytics" collapsed={collapsed} onToggle={toggle}><PositionAnalyticsSection summary={analytics?.summary ?? null} trades={analytics?.trades ?? null} hidden={hidden} /></SectionBlock>
+      case 'positionValueEvolution':
+        return <SectionBlock key={key} title="Position Value Evolution" collapsed={collapsed} onToggle={toggle}><PositionValueEvolutionSection analytics={analytics} journey={summaryData.journey} hidden={hidden} source={source} /></SectionBlock>
+      case 'costBasisAnalysis':
+        return <SectionBlock key={key} title="Cost Basis Analysis" collapsed={collapsed} onToggle={toggle}><CostBasisAnalysisSection source={source} hidden={hidden} /></SectionBlock>
+      case 'positionContribution':
+        return <SectionBlock key={key} title="Position Contribution" collapsed={collapsed} onToggle={toggle}><PositionContributionSection source={source} hidden={hidden} totalPositions={totalPositions} /></SectionBlock>
+      case 'tradeTimeline':
+        return <SectionBlock key={key} title="Trade Timeline" collapsed={collapsed} onToggle={toggle}><TradeTimelineSection trades={analytics?.trades ?? null} summary={analytics?.summary ?? null} hidden={hidden} /></SectionBlock>
+      default:
+        return null
+    }
+  }
+
+  return (
+    <>
+      <div className="sps-detail-root" role="presentation">
+        <button type="button" className="sps-sheet-overlay" aria-label="Close position summary" onClick={onClose} />
+        <section className="spse-sheet" role="dialog" aria-modal="true" aria-label="Position Summary" onClick={onDoubleTap}>
+          <header className="spse-head">
+            <h3>Position Summary</h3>
+            <div className="spse-head-actions">
+              <button type="button" className="spse-customize-btn" onClick={e => { e.stopPropagation(); setCustomizeOpen(true) }}>
+                <Settings2 size={14} />
+                Customize View
+              </button>
+              <button type="button" className="sps-sheet-close" aria-label="Close" onClick={onClose}>
+                <X size={24} />
+              </button>
+            </div>
+          </header>
+
+          <div className="spse-strip" role="list" aria-label="Position metrics">
+            {stripItems.map((item, i) => (
+              <div key={i} className="spse-strip-item" role="listitem">
+                <span className="spse-strip-label">{item.label}</span>
+                <b className={`spse-strip-value ${item.tone}`}>{item.value}</b>
+                {item.sub ? <small className={`spse-strip-sub ${item.subTone || 'neutral'}`}>{item.sub}</small> : null}
+              </div>
+            ))}
+          </div>
+
+          <div className="spse-sections">
+            {sectionPrefs.order.map(key => renderSection(key))}
+          </div>
+
+          <p className="spse-footer">
+            <Info size={12} className="spse-footer-icon" />
+            Your position history and analytics
+          </p>
+        </section>
+      </div>
+
+      {customizeOpen && (
+        <SectionCustomizeSheet
+          prefs={sectionPrefs}
+          onChange={commitSectionPrefs}
+          onReset={() => commitSectionPrefs(DEFAULT_SECTION_PREFS)}
+          onClose={() => setCustomizeOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
+// ── MetricCell & MetricRows (compact view — unchanged) ─────────────────────────
 
 function MetricCell({ metric }: { metric: MetricValue }) {
   return (
@@ -261,150 +883,31 @@ function MetricCell({ metric }: { metric: MetricValue }) {
   )
 }
 
-function MetricRows({ keys, metrics, className = '', compact = false }: { keys: MetricKey[]; metrics: Record<MetricKey, MetricValue>; className?: string; compact?: boolean }) {
+function MetricRows({ keys, metrics, className = '', compact = false }: {
+  keys: MetricKey[]; metrics: Record<MetricKey, MetricValue>; className?: string; compact?: boolean
+}) {
   const displayKeys = compact ? keys.slice(0, 9) : keys
   const rows = compact
-    ? [displayKeys.slice(0, 3), displayKeys.slice(3, 6), displayKeys.slice(6, 9)].filter((row) => row.length > 0)
-    : [displayKeys.slice(0, 4), displayKeys.slice(4, 7), displayKeys.slice(7, 10)].filter((row) => row.length > 0)
+    ? [displayKeys.slice(0, 3), displayKeys.slice(3, 6), displayKeys.slice(6, 9)].filter(r => r.length > 0)
+    : [displayKeys.slice(0, 4), displayKeys.slice(4, 7), displayKeys.slice(7, 10)].filter(r => r.length > 0)
   const base = `sps-metric-rows${compact ? ' sps-compact-grid' : ''}${className ? ` ${className}` : ''}`
   return (
     <div className={base.trim()}>
-      {rows.map((row, index) => (
-        <div className={`sps-metric-row sps-metric-row-${row.length}`} key={`${index}-${row.join('-')}`}>
-          {row.map((key) => <MetricCell key={key} metric={metrics[key]} />)}
+      {rows.map((row, i) => (
+        <div className={`sps-metric-row sps-metric-row-${row.length}`} key={`${i}-${row.join('-')}`}>
+          {row.map(key => <MetricCell key={key} metric={metrics[key]} />)}
         </div>
       ))}
     </div>
   )
 }
 
-function PositionJourneyChart({ points }: { points: number[] }) {
-  const min = Math.min(...points)
-  const max = Math.max(...points)
-  const range = Math.max(1, max - min)
-  const coords = points.map((value, index) => {
-    const x = (index / Math.max(1, points.length - 1)) * 320
-    const y = 132 - ((value - min) / range) * 104
-    return { x, y, value }
-  })
-  const zero = points[0]
-  const zeroY = 132 - ((zero - min) / range) * 104
-
-  return (
-    <div className="sps-chart">
-      <svg viewBox="0 0 320 160" role="img" aria-label="One week position value evolution">
-        <defs>
-          <linearGradient id="spsGreenFill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(36,209,140,.3)" />
-            <stop offset="100%" stopColor="rgba(36,209,140,0)" />
-          </linearGradient>
-        </defs>
-        <line x1="0" x2="320" y1={zeroY} y2={zeroY} className="sps-chart-zero" />
-        <polygon points={`0,142 ${coords.map((point) => `${point.x},${point.y}`).join(' ')} 320,142`} className="sps-chart-fill" />
-        {coords.slice(1).map((point, index) => {
-          const prev = coords[index]
-          const rising = point.value >= prev.value
-          return (
-            <line
-              key={`${index}-${point.x}`}
-              x1={prev.x}
-              y1={prev.y}
-              x2={point.x}
-              y2={point.y}
-              className={rising ? 'sps-chart-up' : 'sps-chart-down'}
-            />
-          )
-        })}
-      </svg>
-      <div className="sps-chart-days" aria-hidden="true">
-        {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'TODAY'].map((day) => <span key={day}>{day}</span>)}
-      </div>
-    </div>
-  )
-}
-
-function InsightIcon({ icon }: { icon: Insight['icon'] }) {
-  if (icon === 'trend') return <TrendingUp size={15} />
-  if (icon === 'sentiment') return <MessageSquare size={15} />
-  return <ShieldAlert size={15} />
-}
-
-function DetailSheet({ data, hidden, keys, onClose }: { data: PositionSummaryData; hidden: boolean; keys: MetricKey[]; onClose: () => void }) {
-  const weekTone = toneFrom(data.weekPnl)
-  const onDoubleTap = useDoubleTapToClose(onClose)
-  return (
-    <div className="sps-detail-root" role="presentation">
-      <button type="button" className="sps-sheet-overlay" aria-label="Close position summary details" onClick={onClose} />
-      <section className="sps-detail-sheet" role="dialog" aria-modal="true" aria-label="Position Summary Details" onClick={onDoubleTap}>
-        <header className="sps-sheet-head">
-          <h3>Position Summary</h3>
-          <button type="button" className="sps-sheet-close" aria-label="Close position summary details" onClick={onClose}>
-            <X size={24} />
-          </button>
-        </header>
-
-        <MetricRows keys={keys} metrics={data.metrics} className="sps-detail-metrics" />
-
-        <div className="sps-range-tabs" aria-label="Position value timeframe">
-          {['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'].map((item) => (
-            <button key={item} type="button" className={item === '1W' ? 'active' : ''} aria-pressed={item === '1W'}>
-              {item}
-            </button>
-          ))}
-          <button type="button" aria-label="Calendar">
-            <CalendarDays size={17} />
-          </button>
-        </div>
-
-        <section className="sps-evolution">
-          <header>
-            <h4>Performance (1W) <Info size={13} className="sps-info-icon" /></h4>
-            <strong className={weekTone}>{formatPct(data.weekPct, hidden, true)}</strong>
-          </header>
-          <PositionJourneyChart points={data.journey} />
-        </section>
-
-        <div className="sps-bottom-grid">
-          <section className="sps-key-insights">
-            <h4>Key Insights</h4>
-            {data.insights.map((ins, i) => (
-              <div key={i} className={`sps-insight-item${i === 0 ? ' first' : ''}`}>
-                <span className={`sps-insight-icon${ins.icon === 'risk' ? ' risk' : ''}`}>
-                  <InsightIcon icon={ins.icon} />
-                </span>
-                <p>{ins.text}</p>
-              </div>
-            ))}
-          </section>
-          <section className="sps-news-catalysts">
-            <h4>Top News / Catalysts</h4>
-            {data.news.length > 0
-              ? data.news.map((n, i) => (
-                  <div key={i} className={`sps-news-item${i === 0 ? ' first' : ''}`}>
-                    <p>{n.headline}</p>
-                    {n.time ? <span>{n.time}</span> : null}
-                  </div>
-                ))
-              : <p className="sps-news-empty">No recent news</p>}
-          </section>
-        </div>
-      </section>
-    </div>
-  )
-}
+// ── Compact Customize Sheet (unchanged logic) ──────────────────────────────────
 
 const MAX_COMPACT_METRICS = 9
 
-function CustomizeSheet({
-  prefs,
-  onChange,
-  onReset,
-  onClose,
-}: {
-  prefs: Prefs
-  onChange: (next: Prefs) => void
-  onReset: () => void
-  onClose: () => void
+function CustomizeSheet({ prefs, onChange, onReset, onClose }: {
+  prefs: Prefs; onChange: (next: Prefs) => void; onReset: () => void; onClose: () => void
 }) {
   const hiddenSet = new Set(prefs.hidden)
   const [dragKey, setDragKey] = useState<MetricKey | null>(null)
@@ -435,11 +938,9 @@ function CustomizeSheet({
   function reorderTo(key: MetricKey, targetKey: MetricKey) {
     if (key === targetKey) return
     const next = [...prefs.order]
-    const from = next.indexOf(key)
-    const to = next.indexOf(targetKey)
+    const from = next.indexOf(key), to = next.indexOf(targetKey)
     if (from < 0 || to < 0) return
-    next.splice(from, 1)
-    next.splice(to, 0, key)
+    next.splice(from, 1); next.splice(to, 0, key)
     onChange({ order: next, hidden: prefs.hidden })
   }
 
@@ -450,20 +951,18 @@ function CustomizeSheet({
     const row = target.closest('[data-key]') as HTMLElement | null
     const key = row?.dataset.key as MetricKey | undefined
     if (!key || !DEFAULT_ORDER.includes(key)) return
-    dragRef.current = key
-    setDragKey(key)
+    dragRef.current = key; setDragKey(key)
     listRef.current?.setPointerCapture?.(event.pointerId)
   }
 
   function onMove(event: PointerEvent<HTMLUListElement>) {
     if (!dragRef.current || !listRef.current) return
     event.preventDefault()
-    const rows = Array.from(listRef.current.querySelectorAll('[data-key]')) as HTMLElement[]
-    for (const row of rows) {
+    for (const row of Array.from(listRef.current.querySelectorAll('[data-key]')) as HTMLElement[]) {
       const rect = row.getBoundingClientRect()
       if (event.clientY >= rect.top && event.clientY < rect.bottom) {
-        const targetKey = row.dataset.key as MetricKey | undefined
-        if (targetKey && targetKey !== dragRef.current) reorderTo(dragRef.current, targetKey)
+        const tKey = row.dataset.key as MetricKey | undefined
+        if (tKey && tKey !== dragRef.current) reorderTo(dragRef.current, tKey)
         break
       }
     }
@@ -471,11 +970,8 @@ function CustomizeSheet({
 
   function onUp(event: PointerEvent<HTMLUListElement>) {
     if (!dragRef.current) return
-    dragRef.current = null
-    setDragKey(null)
-    try {
-      listRef.current?.releasePointerCapture?.(event.pointerId)
-    } catch {}
+    dragRef.current = null; setDragKey(null)
+    try { listRef.current?.releasePointerCapture?.(event.pointerId) } catch {}
   }
 
   return (
@@ -501,7 +997,7 @@ function CustomizeSheet({
           onPointerUp={onUp}
           onPointerCancel={onUp}
         >
-          {prefs.order.map((key) => {
+          {prefs.order.map(key => {
             const on = !hiddenSet.has(key)
             return (
               <li className={`sps-custom-row${dragKey === key ? ' dragging' : ''}`} key={key} data-key={key}>
@@ -531,30 +1027,32 @@ function CustomizeSheet({
   )
 }
 
-export default function StockPositionSummary({ source, hidden }: { source: any; hidden: boolean }) {
+// ── Main export ────────────────────────────────────────────────────────────────
+
+export default function StockPositionSummary({
+  source,
+  hidden,
+  totalPositions = 0,
+}: {
+  source: any
+  hidden: boolean
+  totalPositions?: number
+}) {
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [customizeOpen, setCustomizeOpen] = useState(false)
 
-  useEffect(() => {
-    setPrefs(readPrefs())
-  }, [])
+  useEffect(() => { setPrefs(readPrefs()) }, [])
 
   const data = useMemo(() => buildSummaryData(source, hidden), [source, hidden])
-  const visibleKeys = prefs.order.filter((key) => !prefs.hidden.includes(key))
+  const visibleKeys = prefs.order.filter(k => !prefs.hidden.includes(k))
 
   if (!hasPositionSummaryData(source)) return null
 
   function commitPrefs(nextPrefs: Prefs) {
     const normalized = normalizePrefs(nextPrefs)
     setPrefs(normalized)
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
-    } catch {}
-  }
-
-  function resetPrefs() {
-    commitPrefs(DEFAULT_PREFS)
+    try { window.localStorage.setItem(COMPACT_STORAGE_KEY, JSON.stringify(normalized)) } catch {}
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
@@ -572,10 +1070,7 @@ export default function StockPositionSummary({ source, hidden }: { source: any; 
             type="button"
             className="sps-menu"
             aria-label="Customize Position Summary"
-            onClick={(event) => {
-              event.stopPropagation()
-              setCustomizeOpen(true)
-            }}
+            onClick={e => { e.stopPropagation(); setCustomizeOpen(true) }}
           >
             <MoreHorizontal size={23} />
           </button>
@@ -583,8 +1078,12 @@ export default function StockPositionSummary({ source, hidden }: { source: any; 
         <MetricRows keys={visibleKeys} metrics={data.metrics} compact />
       </section>
 
-      {detailsOpen ? <DetailSheet data={data} hidden={hidden} keys={visibleKeys} onClose={() => setDetailsOpen(false)} /> : null}
-      {customizeOpen ? <CustomizeSheet prefs={prefs} onChange={commitPrefs} onReset={resetPrefs} onClose={() => setCustomizeOpen(false)} /> : null}
+      {detailsOpen ? (
+        <ExpandedSheetV3 source={source} hidden={hidden} onClose={() => setDetailsOpen(false)} totalPositions={totalPositions} />
+      ) : null}
+      {customizeOpen ? (
+        <CustomizeSheet prefs={prefs} onChange={commitPrefs} onReset={() => commitPrefs(DEFAULT_PREFS)} onClose={() => setCustomizeOpen(false)} />
+      ) : null}
     </>
   )
 }
