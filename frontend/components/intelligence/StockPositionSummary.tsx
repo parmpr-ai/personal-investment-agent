@@ -6,7 +6,7 @@ import { CalendarDays, GripVertical, Info, MessageSquare, MoreHorizontal, Shield
 import { mask, money } from '../../lib/pia-api'
 
 const EMPTY = '-'
-const STORAGE_KEY = 'pia.positionSummary.mobile.v1'
+const STORAGE_KEY = 'pia.positionSummary.mobile.v2'
 
 type MetricKey =
   | 'marketValue'
@@ -35,16 +35,16 @@ type PositionSummaryData = {
 }
 
 const DEFAULT_ORDER: MetricKey[] = [
-  'marketValue',
-  'pnl',
-  'pnlPct',
-  'portfolioPct',
-  'shares',
-  'avgCost',
-  'costBasis',
-  'todayPnl',
-  'realizedPnl',
-  'unrealizedPnl',
+  'shares',        // Row 1 col 1
+  'avgCost',       // Row 1 col 2
+  'todayPnl',      // Row 1 col 3
+  'pnl',           // Row 2 col 1
+  'pnlPct',        // Row 2 col 2
+  'marketValue',   // Row 2 col 3
+  'costBasis',     // Row 3 col 1
+  'unrealizedPnl', // Row 3 col 2
+  'portfolioPct',  // Row 3 col 3
+  'realizedPnl',   // 10th — customize only, not shown in compact 3×3
 ]
 
 const DEFAULT_PREFS: Prefs = { order: DEFAULT_ORDER, hidden: [] }
@@ -260,10 +260,14 @@ function MetricCell({ metric }: { metric: MetricValue }) {
   )
 }
 
-function MetricRows({ keys, metrics, className = '' }: { keys: MetricKey[]; metrics: Record<MetricKey, MetricValue>; className?: string }) {
-  const rows = [keys.slice(0, 4), keys.slice(4, 7), keys.slice(7, 10)].filter((row) => row.length > 0)
+function MetricRows({ keys, metrics, className = '', compact = false }: { keys: MetricKey[]; metrics: Record<MetricKey, MetricValue>; className?: string; compact?: boolean }) {
+  const displayKeys = compact ? keys.slice(0, 9) : keys
+  const rows = compact
+    ? [displayKeys.slice(0, 3), displayKeys.slice(3, 6), displayKeys.slice(6, 9)].filter((row) => row.length > 0)
+    : [displayKeys.slice(0, 4), displayKeys.slice(4, 7), displayKeys.slice(7, 10)].filter((row) => row.length > 0)
+  const base = `sps-metric-rows${compact ? ' sps-compact-grid' : ''}${className ? ` ${className}` : ''}`
   return (
-    <div className={`sps-metric-rows${className ? ` ${className}` : ''}`.trim()}>
+    <div className={base.trim()}>
       {rows.map((row, index) => (
         <div className={`sps-metric-row sps-metric-row-${row.length}`} key={`${index}-${row.join('-')}`}>
           {row.map((key) => <MetricCell key={key} metric={metrics[key]} />)}
@@ -552,7 +556,7 @@ export default function StockPositionSummary({ source, hidden }: { source: any; 
             <MoreHorizontal size={23} />
           </button>
         </header>
-        <MetricRows keys={visibleKeys} metrics={data.metrics} />
+        <MetricRows keys={visibleKeys} metrics={data.metrics} compact />
       </section>
 
       {detailsOpen ? <DetailSheet data={data} hidden={hidden} keys={visibleKeys} onClose={() => setDetailsOpen(false)} /> : null}
