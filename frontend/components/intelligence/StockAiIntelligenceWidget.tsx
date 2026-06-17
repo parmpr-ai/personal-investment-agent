@@ -26,6 +26,8 @@ type Tone = 'blue' | 'green' | 'red' | 'amber' | 'gray'
 type DataSourceLabel = 'Yahoo' | 'IBKR' | 'Seeking Alpha' | 'Internal Calculation' | 'Derived Signal'
 type ActiveView = { type: 'metric'; key: MetricKey } | { type: 'insight'; key: InsightKey } | null
 type VerdictState = 'bull' | 'bear' | 'balanced' | 'trim'
+type DriverStatus = 'good' | 'bad' | 'neutral'
+type KeyDriver = { label: string; status: DriverStatus }
 
 type DetailRow = {
   label: string
@@ -423,6 +425,50 @@ function extractTopReason(summary: string, metricsMap: Record<MetricKey, Metric>
   return 'Insufficient data for AI analysis.'
 }
 
+function riskDisplayLabel(score: number | null): string {
+  if (score == null) return EMPTY
+  if (score <= 25) return 'Low Risk'
+  if (score <= 50) return 'Medium Risk'
+  if (score <= 75) return 'Elevated Risk'
+  return 'High Risk'
+}
+
+function riskColorClass(score: number | null): 'green' | 'amber' | 'orange' | 'red' | 'gray' {
+  if (score == null) return 'gray'
+  if (score <= 25) return 'green'
+  if (score <= 50) return 'amber'
+  if (score <= 75) return 'orange'
+  return 'red'
+}
+
+function buildKeyDrivers(source: any, overview: any, metricsArray: Metric[], verdictState: VerdictState): KeyDriver[] {
+  const explicit = source?.key_drivers ?? overview?.key_drivers ?? source?.drivers
+  if (Array.isArray(explicit) && explicit.length >= 1) {
+    return explicit.slice(0, 3).map((d: any): KeyDriver => {
+      const label = typeof d === 'string' ? d : String(d.label ?? d.name ?? d)
+      const rawStatus = typeof d === 'object' ? (d.status ?? d.signal) : undefined
+      let status: DriverStatus = verdictState === 'bull' ? 'good' : verdictState === 'bear' ? 'bad' : 'neutral'
+      if (rawStatus === 'good' || rawStatus === 'positive' || rawStatus === 'bullish') status = 'good'
+      else if (rawStatus === 'bad' || rawStatus === 'negative' || rawStatus === 'bearish') status = 'bad'
+      return { label, status }
+    })
+  }
+  const order: Array<[MetricKey, string]> = [
+    ['momentum', 'Earnings Momentum'],
+    ['sentiment', 'Analyst Revisions'],
+    ['trend', 'Market Structure'],
+    ['institutional', 'Institutional Flow'],
+  ]
+  const derived: KeyDriver[] = []
+  for (const [k, label] of order) {
+    const m = metricsArray.find((x) => x.key === k)
+    const status: DriverStatus = !m || m.score == null ? 'neutral' : m.score >= 60 ? 'good' : m.score < 40 ? 'bad' : 'neutral'
+    derived.push({ label, status })
+    if (derived.length >= 3) break
+  }
+  return derived
+}
+
 function MiniSparkline({ values, tone }: { values: number[]; tone: Tone }) {
   const width = 112
   const height = 38
@@ -521,6 +567,146 @@ function AiCompactView({
     </div>
   )
 }
+
+/* ── AI Intelligence Compact V2 (ARTEMIS-AI-011) ─────────────────── */
+
+function BullSvg() {
+  return (
+    <svg className="sai-cv2-animal" viewBox="0 0 100 80" aria-hidden="true" fill="currentColor">
+      <ellipse cx="50" cy="54" rx="30" ry="18"/>
+      <ellipse cx="78" cy="36" rx="16" ry="14"/>
+      <path d="M70 24 C68 14 58 12 56 18 C60 18 66 22 70 26Z"/>
+      <path d="M84 22 C88 12 96 14 94 22 C90 22 86 22 84 26Z"/>
+      <ellipse cx="91" cy="43" rx="5" ry="4"/>
+      <rect x="60" y="68" width="9" height="12" rx="4"/>
+      <rect x="73" y="68" width="9" height="12" rx="4"/>
+      <rect x="30" y="68" width="9" height="12" rx="4"/>
+      <rect x="18" y="66" width="9" height="14" rx="4"/>
+      <path d="M20 50 C10 44 12 34 18 32" stroke="currentColor" strokeWidth="3.5" fill="none" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function BearSvg() {
+  return (
+    <svg className="sai-cv2-animal" viewBox="0 0 100 80" aria-hidden="true" fill="currentColor">
+      <ellipse cx="50" cy="54" rx="34" ry="22"/>
+      <circle cx="50" cy="26" r="22"/>
+      <circle cx="30" cy="8" r="11"/>
+      <circle cx="70" cy="8" r="11"/>
+      <ellipse cx="50" cy="35" rx="13" ry="9" opacity="0.55"/>
+      <rect x="22" y="70" width="13" height="10" rx="5"/>
+      <rect x="40" y="72" width="13" height="8" rx="4"/>
+      <rect x="52" y="72" width="13" height="8" rx="4"/>
+      <rect x="70" y="70" width="13" height="10" rx="5"/>
+    </svg>
+  )
+}
+
+function BalanceSvg() {
+  return (
+    <svg className="sai-cv2-animal" viewBox="0 0 100 80" aria-hidden="true">
+      <rect x="46" y="20" width="8" height="52" rx="4" fill="currentColor"/>
+      <rect x="30" y="68" width="40" height="8" rx="4" fill="currentColor"/>
+      <rect x="6" y="22" width="88" height="7" rx="3.5" fill="currentColor"/>
+      <circle cx="50" cy="18" r="8" fill="currentColor"/>
+      <line x1="20" y1="29" x2="20" y2="52" stroke="currentColor" strokeWidth="3"/>
+      <line x1="80" y1="29" x2="80" y2="52" stroke="currentColor" strokeWidth="3"/>
+      <path d="M6 52 Q20 62 34 52" stroke="currentColor" strokeWidth="4.5" fill="none" strokeLinecap="round"/>
+      <path d="M66 52 Q80 62 94 52" stroke="currentColor" strokeWidth="4.5" fill="none" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function Cv2VerdictIcon({ state }: { state: VerdictState }) {
+  return (
+    <div className={`sai-cv2-icon sai-cv2-icon-${state}`}>
+      {state === 'bull' ? <BullSvg /> : state === 'bear' ? <BearSvg /> : <BalanceSvg />}
+    </div>
+  )
+}
+
+function Cv2DriverIcon({ status }: { status: DriverStatus }) {
+  return (
+    <span className={`sai-cv2-driver-icon sai-cv2-di-${status}`} aria-hidden="true">
+      {status === 'good' ? '✓' : status === 'bad' ? '✗' : '–'}
+    </span>
+  )
+}
+
+function AiCompactV2({
+  verdictState,
+  composite,
+  risk,
+  upside,
+  topReason,
+  keyDrivers,
+  hidden,
+}: {
+  verdictState: VerdictState
+  composite: number | null
+  risk: number | null
+  upside: number | null
+  topReason: string
+  keyDrivers: KeyDriver[]
+  hidden: boolean
+}) {
+  const vt = verdictState === 'bull' ? 'BUY' : verdictState === 'bear' ? 'SELL' : verdictState === 'trim' ? 'TRIM' : 'HOLD'
+  const sv = verdictState === 'bull' ? 'Strong Opportunity' : verdictState === 'bear' ? 'High Risk' : verdictState === 'trim' ? 'Reduce Position' : 'Mixed Signals'
+  const riskLabel = riskDisplayLabel(risk)
+  const riskColor = riskColorClass(risk)
+  const expectedReturn = upside == null ? EMPTY : signed(upside, '%', 1)
+  const returnColor = upside == null ? 'gray' : upside < 0 ? 'red' : 'green'
+
+  return (
+    <div className={`sai-cv2 sai-cv2-${verdictState}`}>
+      <Cv2VerdictIcon state={verdictState} />
+      <div className="sai-cv2-hero-text">
+        <strong className="sai-cv2-verdict">{hidden ? mask : vt}</strong>
+        <span className="sai-cv2-sub">{hidden ? mask : sv}</span>
+      </div>
+
+      <div className="sai-cv2-reason">
+        <em>Top Reason</em>
+        <p>{hidden ? mask : topReason}</p>
+      </div>
+
+      <div className="sai-cv2-stats">
+        <div>
+          <em>Expected Return</em>
+          <strong className={`sai-cv2-stat-val sai-cv2-${returnColor}`}>{hidden ? mask : expectedReturn}</strong>
+        </div>
+        <div>
+          <em>Conviction</em>
+          <strong className="sai-cv2-stat-val">
+            {hidden ? mask : composite == null ? EMPTY : composite}
+            {!hidden && composite != null && <small>/100</small>}
+          </strong>
+        </div>
+        <div>
+          <em>Risk</em>
+          <span className={`sai-cv2-risk-badge sai-cv2-risk-${riskColor}`}>{hidden ? mask : riskLabel}</span>
+        </div>
+      </div>
+
+      {keyDrivers.length > 0 && (
+        <div className="sai-cv2-drivers">
+          <em>Key Drivers</em>
+          <ul>
+            {keyDrivers.map((d) => (
+              <li key={d.label} className={`sai-cv2-driver sai-cv2-driver-${d.status}`}>
+                <Cv2DriverIcon status={d.status} />
+                <span>{hidden ? mask : d.label}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────────── */
 
 function MetricCard({ metric, hidden, onOpen }: { metric: Metric; hidden: boolean; onOpen: (key: MetricKey) => void }) {
   const Icon = metric.icon
@@ -1069,6 +1255,7 @@ export default function StockAiIntelligenceWidget({
 
   const verdictState = deriveVerdictState(composite, risk)
   const topReason = extractTopReason(summary, metrics)
+  const keyDrivers = buildKeyDrivers(source, overview, metricsArray, verdictState)
   const bullCaseText = cleanText(
     source?.bull_case ?? source?.bullCase ?? source?.bull_thesis ?? overview?.bull_case,
     200,
@@ -1147,14 +1334,14 @@ export default function StockAiIntelligenceWidget({
       </header>
 
       {!isExpanded ? (
-        <AiCompactView
+        <AiCompactV2
           verdictState={verdictState}
-          riskScore={risk}
-          confidenceValue={confidence.value}
+          composite={composite}
+          risk={risk}
           upside={upside}
           topReason={topReason}
+          keyDrivers={keyDrivers}
           hidden={hidden}
-          onExpand={() => setIsExpanded(true)}
         />
       ) : (
         <>

@@ -41,6 +41,38 @@ Notes:
 
 ---
 
+### ARTEMIS-AI-011 — AI Intelligence Compact V2 Implementation
+
+Status: PASS
+Owner: ARTEMIS
+Date: 2026-06-17
+Approved Mock: `docs/mocks/ai-intelligence/APPROVED/ai-intelligence-all-cases-compact-approved.png`
+Design Lock Commit: N/A (approved mock committed separately)
+Implementation Commit: see commit below
+
+Build: PASS (`npx tsc --noEmit`, `npm run build`)
+Screenshots: `frontend/uat-screenshots/artemis-ai-011/`
+
+Deliverables verified:
+- [x] BUY state: Green bull SVG, "BUY" / "STRONG OPPORTUNITY", +24.0% return, Conviction 78/100, Medium Risk, 3 green checkmarks
+- [x] HOLD state: Amber scale SVG, "HOLD" / "MIXED SIGNALS", +6.0% return, Conviction 52/100, Medium Risk, 3 neutral dashes
+- [x] SELL state: Red bear SVG, "SELL" / "HIGH RISK", -18.0% return, Conviction 22/100, High Risk, 3 red X marks
+- [x] REMOVED: High Risk badge from header, top-right menu (...), trend arrow, AI Intelligence Beta label, score progress bar, View Full Analysis button
+- [x] KEPT: Bull/Hold/Bear/Trim icon, Verdict, Top Reason, Expected Return, Conviction, Risk, Key Drivers (3 items)
+- [x] Layout: [Icon + Verdict + Subtitle] / Top Reason / [Expected Return | Conviction | Risk] / Key Drivers
+- [x] All info visible at once — no expandable content, no secondary actions
+- [x] 390px mobile validated at iPhone 14 viewport
+
+Notes:
+- `AiCompactV2` component replaces `AiCompactView` in the compact branch
+- `buildKeyDrivers()` derives 3 key drivers from explicit source.key_drivers or falls back to metric scores
+- `riskDisplayLabel()` and `riskColorClass()` drive the colored risk badge (Low/Medium/Elevated/High Risk)
+- Conviction = `composite` = `ai_intelligence.score` from `/api/ai-intelligence/{ticker}`
+- Expected Return reads `targets.upside_downside` or `source.price_vs_fair_value`
+- Screenshot script: `frontend/uat-cv2-compact.mjs` (mocks both `/api/stock/` and `/api/ai-intelligence/`)
+
+---
+
 ### ARTEMIS-AI-001 — AI Intelligence UI Foundation
 
 Status: PASS
