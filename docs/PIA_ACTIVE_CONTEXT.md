@@ -375,3 +375,65 @@ Backlog parity: these items are mirrored identically in PIA_MASTER_BACKLOG_SOURC
 
 
 
+
+
+---
+
+## GOVERNANCE STATE — REBUILT 2026-06-17 (ATHENA-GOV-006)
+
+Snapshot rebuilt from actual repository state (branch feat/pia-v3-foundation-integration). Additive; no prior content deleted. Ownership detail also lives in docs/PIA_AGENT_GOVERNANCE.md (Product Ownership / CTO Ownership / Work Assignment Rule).
+
+### Current Sprint
+AI Intelligence Foundation + Explainable Engine; Position Summary V3 (mobile + expanded, analytics-first); Portfolio Analytics backend (EPIC-PORTFOLIO-ANALYTICS-001); Stock Intelligence header / IA; mobile popup UX hardening (X + double-tap close). Branch: feat/pia-v3-foundation-integration.
+
+### Open P0
+- AI Intelligence V2 Approved Mock MISSING — Design Lock Package INVALID (DEC-GOV-004/005); blocks further AI V2 work until an approved mock is committed under docs/mocks/ai-intelligence/APPROVED/. Owner: ATHENA + Product Owner.
+- PIA-P0-001 Settings Integrations Configuration — IN VALIDATION (IBKR Client Portal correction shipped, v0.3.23). Owner: HERMES / Backend.
+- PIA-BUG-027 Custom Workspaces Lose Widgets — RESOLVED (custom-safe layout storage); pending UAT closure. Owner: ATHENA.
+
+### Open P1
+- Analyst Targets V3 follow-ups (CR-AT-024 / CR-AT-025 refinements) — HERMES.
+- News Intelligence overflow (PIA-BUG-028); Stock Intelligence News Compact (PIA-UX-029).
+- Workspace System refactor (PIA-ARCH-001-FINAL) and PIA-BUG-027 follow-through — ATHENA.
+- AI roadmap ATHENA-AI-002..010 (engine, persistence, Portfolio Fit, Position Intelligence, Opportunity Radar, Analyst Verdict, News V2, Investor Bot, Auto Investor) — ROADMAP.
+- GOV-004-REMEDIATION and Mock Consolidation Phase 2 (ATHENA-GOV-005) — ATHENA.
+
+### Ownership Model / Assigned Ownership Area
+- ATHENA — Architecture, layout/UX, design governance, mock lifecycle, documentation and backlog, workspace system.
+- HERMES — Stock Intelligence, Analyst Targets, AI data/engine, Company/Financials, integrations data.
+- ARTEMIS — Watchlists, mobile shell and modals (double-tap close), Notification Center, Position Summary mobile.
+- APOLLO — UAT validation and QA.
+- HERCULES — Governance validation/reader (HERCULES-GOV-001).
+- HEPHAESTUS / Backend — data layer, portfolio analytics infrastructure.
+
+### Approved Mocks
+Structure scaffolded under docs/mocks/<feature>/{APPROVED,WORKING,UAT} for ai-intelligence, analyst-targets, stock-intelligence, watchlists, portfolio, position-summary, settings (ATHENA-GOV-005, commit 12e11cf). Plan: docs/mocks/MIGRATION_PLAN.md.
+- APPROVED present: analyst-targets, stock-intelligence, position-summary, watchlists (spec).
+- APPROVED MISSING: ai-intelligence (V2), portfolio, settings.
+
+### AI Intelligence Status
+- V2 DESIGN LOCKED (commit 3bb14df; DEC-AI-001/002/003). CR-AI-010 implemented (b7d591e). Foundation UI shipped (ARTEMIS-AI-001, 3433330). Explainable Intelligence Engine v1 (120bf92). Source registry + connector matrix (c936de4). Architecture: docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md (ATHENA-AI-001).
+- Approved Mock MISSING — Design Lock Package invalid (governance P0).
+- Roadmap: ATHENA-AI-002..010 (ROADMAP).
+
+### Analyst Targets Status
+- V3 IMPLEMENTED and design-locked (CR-AT-V3). Approved mock archived under docs/mocks/analyst-targets/. Active refinements: CR-AT-024, CR-AT-025.
+
+### UAT Status
+- Latest build PASS (9/9 pages, TypeScript valid). Route smoke historically 200 for /, /mobile, /setup. Multiple items pending Product Owner real-device UAT; PIA-P0-001 in validation. Tracking: docs/UAT_TRACKING.md.
+
+### Active Epics
+- EPIC-PORTFOLIO-ANALYTICS-001 — portfolio analytics backend data infrastructure.
+- AI Intelligence — V2 + Explainable Engine + roadmap AI-002..010.
+- Position Summary V3 — mobile + expanded analytics-first.
+- Stock Intelligence — header and IA.
+- Mock Lifecycle Governance — PIA-GOV-004 / PIA-GOV-005 / ATHENA-GOV-006.
+- Workspace System — PIA-ARCH-001-FINAL.
+
+### Agent Responsibilities
+- ATHENA: design/layout/UX, governance, mocks, docs/backlog, architecture.
+- HERMES: stock intelligence, analyst targets, AI data/engine.
+- ARTEMIS: mobile UX, watchlists, notifications, position summary mobile.
+- APOLLO: UAT/QA validation.
+- HERCULES: governance reads/validation.
+- Backend / HEPHAESTUS: data layer, analytics.
