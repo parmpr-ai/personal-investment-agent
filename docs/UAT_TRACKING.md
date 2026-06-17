@@ -16,6 +16,35 @@ Format per entry:
 
 ## UAT Log
 
+### ARTEMIS-AI-001 — AI Intelligence UI Foundation
+
+Status: PASS
+Owner: ARTEMIS
+Date: 2026-06-17
+Approved Mock: N/A (UI foundation — no separate approved mock committed)
+Design Lock Commit: N/A (foundations task)
+Implementation Commit: 3433330
+
+Build: PASS (9/9 pages, types valid)
+
+Deliverables verified:
+- [x] Compact mode: Verdict chip + Expected Return + Conviction + Risk + Top Reason
+- [x] NO Live badge, NO Updated timestamp, NO Source Labels in compact mode
+- [x] Expanded mode: 8 labeled sections (AI Verdict, Why AI Thinks This, Bull Case, Bear Case, Scenario Outlook, Score Breakdown, Factors Evaluated, Confidence Notes)
+- [x] 4 visual states: bull (green), bear (red), balanced (orange + TrendingDown/Scale/TrendingUp), trim (amber)
+- [x] deriveVerdictState: trim if composite≥55 AND risk≥80; bull≥65; bear<40; else balanced
+- [x] Settings: Discord Signals (not_connected) and X Sentiment (planned) integration cards added
+- [x] integrationNavTone: planned→warn, not_connected→bad
+- [x] CSS: compact/expanded section styles, verdict chip variants
+
+Notes:
+- Compact view is the default (isExpanded=false). Clicking "Full Analysis ›" opens expanded.
+- Expanded view collapses back via "Compact ‹" in header.
+- Drill-down fullscreen views (MetricFullScreenView, InsightFullScreenView) preserved unchanged.
+- SourceGrid (Source + Last Updated) retained only in drill-down detail views per spec.
+
+---
+
 ### ATHENA-AI-001 — AI Intelligence Architecture & Documentation Consolidation
 
 Status: DOCUMENTATION ONLY

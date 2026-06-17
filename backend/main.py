@@ -13,6 +13,7 @@ from services.manual_holdings import create_manual_holding, delete_manual_holdin
 from services.news_intelligence import get_news_intelligence
 from services.stock_intelligence import build_stock_panel_intelligence, get_ticker_news_intelligence
 from services.ai_intelligence import build_ai_intelligence, build_ai_intelligence_test
+from services.source_registry import build_source_coverage, build_source_status, build_symbol_inputs
 load_dotenv()
 try:
  from services.ibkr_service import get_ibkr_portfolio
@@ -184,6 +185,28 @@ def scanner():
  p=get_portfolio_payload(); return scanner_items(p.get('positions',[]),macro_snapshot(),WATCHLIST)
 @app.post('/scanner/rescan')
 def rescan(): return {'ok':True,'message':'Rescan complete','dashboard':payload()}
+def _intelligence_provider_status():
+ try:
+  from services.portfolio_providers import get_provider_status as provider_status
+  return provider_status()
+ except Exception as e:
+  return {'status':'missing','message':f'Portfolio provider status unavailable: {e}'}
+@app.get('/api/intelligence/sources/status')
+def intelligence_sources_status():
+ settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot()
+ return build_source_status(settings, portfolio=p, macro=macro, calendar=catalyst_calendar(), provider_status=_intelligence_provider_status())
+@app.get('/api/intelligence/sources/coverage')
+def intelligence_sources_coverage():
+ settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot()
+ return build_source_coverage(settings, portfolio=p, macro=macro, calendar=catalyst_calendar(), provider_status=_intelligence_provider_status())
+@app.get('/api/intelligence/{symbol}/inputs')
+def intelligence_symbol_inputs(symbol:str):
+ t=symbol.upper().split()[0]; settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot(); calendar=catalyst_calendar()
+ pos=next((x for x in p.get('positions',[]) if x.get('symbol','').split()[0].upper()==t or x.get('underlying','').upper()==t),None)
+ wl=next((x for x in WATCHLIST if x['symbol']==t),None)
+ watch=opportunity_for(wl,macro) if wl else None
+ news_bundle=get_ticker_news_intelligence(t)
+ return build_symbol_inputs(t, settings, portfolio=p, position=pos, watch=watch, macro=macro, calendar=calendar, fundamentals=yahoo_fundamentals(t), news=(yahoo_news(t) or [n for n in news_items() if n.get('ticker')==t]), news_intelligence=news_bundle, provider_status=_intelligence_provider_status())
 @app.get('/watchlist')
 def watchlist(): return [opportunity_for(w,macro_snapshot()) for w in WATCHLIST]
 @app.get('/stock/{ticker}')

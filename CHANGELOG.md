@@ -1,5 +1,34 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.25 - AI Intelligence UI Foundation
+
+Date: 2026-06-17
+Status: Implemented.
+Task: ARTEMIS-AI-001
+Owner: ARTEMIS
+Commit: 3433330
+
+### Added
+
+* **Compact mode (default):** verdict chip (Bullish/Bearish/Balanced/Trim) + Expected Return + Conviction + Risk stats + Top Reason sentence + "Full Analysis ›" expand button. No Live badge, no Updated timestamp, no source labels.
+* **Expanded mode (8 sections):** AI Verdict, Why AI Thinks This, Bull Case, Bear Case, Scenario Outlook, Score Breakdown, Factors Evaluated, Confidence Notes.
+* **Four visual states:** Bull (green), Bear (red), Balanced (orange, TrendingDown + Scale + TrendingUp icons), Trim (amber, composite ≥ 55 AND risk ≥ 80).
+* **`deriveVerdictState()`** — trim if composite ≥ 55 AND risk ≥ 80; bull if composite ≥ 65; bear if composite < 40; else balanced.
+* **`extractTopReason()`** — first sentence of AI summary, or top metric badge as fallback.
+* **`BalancedArrows`**, **`VerdictChip`**, **`AiCompactView`** components added.
+* **Settings integration cards** — Discord Signals (status: not_connected) and X Sentiment (status: planned) added to INTEGRATION_DEFS.
+* **`integrationNavTone()`** — handles `planned` → `warn`, `not_connected` → `bad`.
+* **CSS** — compact/expanded section styles, verdict chip color variants, balanced-icons layout.
+
+### Removed
+
+* `sai-live` "Live Analysis" badge from AI Intelligence widget header.
+* `Clock` "Updated" span from hero meta (compact and expanded).
+
+### Build
+
+* `npm run build` PASS — 9/9 pages, TypeScript types valid.
+
 ## v0.3.24 - AI Intelligence Architecture & Documentation Consolidation
 
 Date: 2026-06-17

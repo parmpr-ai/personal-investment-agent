@@ -7,6 +7,9 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = BASE_DIR / "pia_settings.sqlite3"
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
+    "enableDiscordSignals": False,
+    "enableSeekingAlpha": False,
+    "enableXSentiment": False,
     "app": {
         "name": "Personal Investment Agent",
         "version": "v5.6",
