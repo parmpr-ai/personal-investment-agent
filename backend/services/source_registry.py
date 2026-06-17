@@ -12,10 +12,12 @@ from services.ai_data_sources import (
     source_status,
     status_from_fields,
     summarize_sources,
+    SOURCE_IDS,
     STATUS_AVAILABLE,
     STATUS_DISABLED,
     STATUS_MISSING,
     STATUS_PARTIAL,
+    STATUS_TYPES,
 )
 
 
@@ -446,6 +448,8 @@ class SourceRegistry:
             "as_of": _now_iso(),
             "scope": "symbol" if symbol else "global",
             "symbol": symbol,
+            "source_ids": list(SOURCE_IDS),
+            "status_types": list(STATUS_TYPES),
             "source_availability": {row.definition.id: row.status for row in statuses},
             "coverage": summarize_sources(statuses),
             "sources": [row.to_dict() for row in statuses],
@@ -462,6 +466,8 @@ class SourceRegistry:
             "as_of": status["as_of"],
             "scope": status["scope"],
             "symbol": status["symbol"],
+            "source_ids": status["source_ids"],
+            "status_types": status["status_types"],
             "coverage": status["coverage"],
             "source_availability": status["source_availability"],
             "confidence_impact": status["coverage"]["confidence_impact"],
@@ -488,6 +494,8 @@ class SourceRegistry:
         return {
             "as_of": _now_iso(),
             "symbol": symbol,
+            "source_ids": list(SOURCE_IDS),
+            "status_types": list(STATUS_TYPES),
             "coverage": summarize_sources(statuses),
             "source_availability": {row.definition.id: row.status for row in statuses},
             "inputs": inputs,
