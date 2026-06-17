@@ -1,5 +1,62 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.24 - AI Intelligence Architecture & Documentation Consolidation
+
+Date: 2026-06-17
+Status: Documentation only — no code/implementation in this entry.
+Task: ATHENA-AI-001
+Owner: ATHENA
+
+### Added
+
+* `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md` — canonical architecture document covering all 9 AI Intelligence subsystems: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, and Auto Investor.
+
+### Captured decisions
+
+* Verdict-first architecture: composite dial → bars → KPI cards → Bottom Sheet.
+* Bull / Balanced / Bearish composite state machine (≥65 / 40–64 / <40).
+* No Live/Updated badges on metric values — source label only.
+* Confidence engine: coverage-based (metric, source, freshness, history); no static fallback.
+* Thesis Strength: composite consistency delta model.
+* Portfolio Fit Engine: concentration + correlation + diversification + opportunity score.
+* Position Intelligence: thesis memory, what changed, thesis health state machine, exit conditions, position verdict.
+* Opportunity Radar: ranked opportunities, risk alerts, diversification ideas, portfolio action queue.
+* Analyst Verdict Engine roadmap: consensus verdict, conviction score, analyst alignment with AI Engine.
+* News Intelligence roadmap: PIA Digest, Bias, Confidence, Possible Move, Demo badge policy.
+* Investor Bot roadmap: intent router, portfolio context injection, privacy-mode masking.
+* Auto Investor roadmap: rules engine, limit-order-only gateway, dry-run default, guardrails.
+
+### Updated
+
+* `CHANGELOG.md` — this entry.
+* `docs/PIA_MASTER_BACKLOG_SOURCE_OF_TRUTH.md` — ATHENA-AI-001 task and AI roadmap items added.
+* `docs/UAT_TRACKING.md` — ATHENA-AI-001 documentation-only entry added.
+
+### Roadmap tasks registered
+
+| Task ID | Title | Status |
+|---|---|---|
+| ATHENA-AI-002 | AI Engine — full scoring pipeline | ROADMAP |
+| ATHENA-AI-003 | Metric score persistence layer | ROADMAP |
+| ATHENA-AI-004 | Portfolio Fit Engine | ROADMAP |
+| ATHENA-AI-005 | Position Intelligence | ROADMAP |
+| ATHENA-AI-006 | Opportunity Radar | ROADMAP |
+| ATHENA-AI-007 | Analyst Verdict Engine | ROADMAP |
+| ATHENA-AI-008 | News Intelligence V2 | ROADMAP |
+| ATHENA-AI-009 | Investor Bot | ROADMAP |
+| ATHENA-AI-010 | Auto Investor | ROADMAP |
+
+## v0.3.23 - IBKR Client Portal Settings Correction
+
+Date: 2026-06-16
+Status: Implemented.
+
+### Changed
+
+* Replaced legacy TWS/IB Gateway socket settings with Client Portal Gateway integration UI.
+* Added Portfolio Data Source selector for Mock, Demo Samples, and Live IBKR.
+* Added provider status display, fallback visibility, Test Connection action, and portfolio source badge.
+
 ## v0.3.22 - Governance: Approved Mock Preservation & Design Lock Traceability (PIA-GOV-004)
 
 Date: 2026-06-11

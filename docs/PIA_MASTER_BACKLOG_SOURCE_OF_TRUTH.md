@@ -87,6 +87,17 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 
 ## Active Backlog
 
+- ATHENA-AI-001 AI Intelligence Architecture & Documentation Consolidation. IMPLEMENTED 2026-06-17 (ATHENA): Architecture document created at `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md`. All 9 AI Intelligence subsystems captured: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, Auto Investor. Changelog and UAT Tracking synchronized.
+- ATHENA-AI-002 AI Engine — Full Scoring Pipeline. ROADMAP: Rules-based scoring for Momentum, Trend, Sentiment, Institutional, Fair Value, Risk metrics with sub-factor breakdowns. Requires metric score persistence layer (ATHENA-AI-003). Owner: ATHENA.
+- ATHENA-AI-003 Metric Score Persistence Layer. ROADMAP: SQLite table for per-ticker metric score snapshots; enables Historical Evolution in Bottom Sheet and "What Changed" in Position Intelligence. Owner: ATHENA.
+- ATHENA-AI-004 Portfolio Fit Engine. ROADMAP: Concentration + correlation + diversification benefit + opportunity score per candidate symbol vs live portfolio. Owner: ATHENA.
+- ATHENA-AI-005 Position Intelligence. ROADMAP: Thesis memory (extend THESIS_STORE to SQLite with entry price/date), What Changed (metric delta vs entry), Thesis Health state machine, exit conditions, per-position verdict. Owner: ATHENA.
+- ATHENA-AI-006 Opportunity Radar. ROADMAP: Ranked best opportunities, highest risks, diversification ideas, portfolio action queue. Foundation: scanner_items() and risk_doctor() exist. Owner: ATHENA.
+- ATHENA-AI-007 Analyst Verdict Engine. ROADMAP: Consensus verdict, conviction score, target spread, analyst alignment with AI Engine signals. Foundation: Analyst Targets V3 implemented. Owner: ATHENA.
+- ATHENA-AI-008 News Intelligence V2. ROADMAP: PIA Digest, Bias (not Sentiment), Confidence (not Impact), Possible Move, human-readable actions, Demo badge policy. Foundation: Yahoo RSS + news_intelligence endpoint implemented. Owner: ATHENA.
+- ATHENA-AI-009 Investor Bot. ROADMAP: Conversational assistant for portfolio and market queries; intent router; context-injected (live portfolio + macro); privacy-mode masking; rule-based first, optional LLM layer. Owner: ATHENA.
+- ATHENA-AI-010 Auto Investor. ROADMAP: Rules-based automated trade execution gateway via IBKR Client Portal Gateway; limit-order-only; dry-run default; guardrails (max order 5% portfolio, daily loss limit, auth required). Requires Investor Bot + Portfolio Fit Engine complete. Owner: ATHENA.
+- IBKR-CR-002 - Replace legacy TWS Settings UI with Client Portal Gateway data source selector. IMPLEMENTED 2026-06-16 (HERMES): Settings -> Integrations -> IBKR now uses Client Portal Gateway copy, provider status from `/api/portfolio/provider/status`, Portfolio Data Source selector for Mock / Demo Samples / Live IBKR, fallback visibility, Test Client Portal Gateway action, and portfolio source badges.
 - P0 News UX V2:
   - Real article titles.
   - Exact article links.
