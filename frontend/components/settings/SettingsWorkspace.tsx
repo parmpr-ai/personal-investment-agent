@@ -8,6 +8,8 @@ import {
   Brain,
   Database,
   Globe2,
+  Hash,
+  MessageSquare,
   Trash2,
   Wallet,
 } from 'lucide-react'
@@ -23,10 +25,9 @@ type WorkspaceConfig = ReturnType<typeof useWorkspaceConfig>
 const defaultIntegrationSettings: any = {
   ibkr: {
     enabled: true,
-    host: '127.0.0.1',
-    port: 4001,
-    client_id: 21,
-    documentation: 'Open IB Gateway/TWS, enable API socket clients, set read-only API, set trusted IP 127.0.0.1, then test connection.',
+    gateway_url: 'https://localhost:5000',
+    mode: 'client_portal_gateway',
+    documentation: 'Connect through IBKR Client Portal Gateway running locally on your computer.',
   },
   yahoo: {
     news_enabled: true,
@@ -145,14 +146,7 @@ const INTEGRATION_DEFS: IntegrationDef[] = [
     icon: <Wallet />,
     statusSource: 'IBKR',
     testSrc: 'ibkr',
-    fields: (s, update) => (
-      <>
-        <Field label="Host" value={s.ibkr.host} onChange={(v: any) => update('ibkr', 'host', v)} />
-        <Field label="Port" value={s.ibkr.port} onChange={(v: any) => update('ibkr', 'port', Number(v))} />
-        <Field label="Client ID" value={s.ibkr.client_id} onChange={(v: any) => update('ibkr', 'client_id', Number(v))} />
-        <Toggle label="Enabled" checked={s.ibkr.enabled} onChange={(v: any) => update('ibkr', 'enabled', v)} />
-      </>
-    ),
+    fields: () => null,
   },
   {
     id: 'yahoo',
@@ -237,9 +231,28 @@ const INTEGRATION_DEFS: IntegrationDef[] = [
       </>
     ),
   },
+  {
+    id: 'discord_signals',
+    title: 'Discord Signals',
+    icon: <MessageSquare />,
+    staticStatus: { status: 'not_connected', data_received: false, message: 'Not connected. Future: map Discord trading signals to holdings and watchlist tickers.' },
+    fields: () => null,
+  },
+  {
+    id: 'x_sentiment',
+    title: 'X Sentiment',
+    icon: <Hash />,
+    staticStatus: { status: 'planned', data_received: false, message: 'Planned. Future: X/Twitter sentiment analysis for portfolio tickers.' },
+    fields: () => null,
+  },
 ]
 
 function integrationNavTone(status: any): 'good' | 'warn' | 'bad' {
+  if (status?.status === 'connected') return 'good'
+  if (status?.status === 'planned') return 'warn'
+  if (status?.status === 'not_connected') return 'bad'
+  if (status?.status === 'unauthenticated' || status?.status === 'fallback') return 'warn'
+  if (status?.status === 'gateway_down' || status?.status === 'error') return 'bad'
   if (status?.status === 'failed') return 'bad'
   if (status?.data_received) return 'good'
   return 'warn'
@@ -271,7 +284,7 @@ function sampleItems(sample: any): any[] {
 
 function enabledState(sourceId: string, settings: any) {
   const cfg = settings?.[sourceId] || {}
-  if (sourceId === 'ibkr') return { enabled: cfg.enabled !== false, detail: `${cfg.host || '127.0.0.1'}:${cfg.port || 4001}` }
+  if (sourceId === 'ibkr') return { enabled: cfg.enabled !== false, detail: cfg.gateway_url || 'https://localhost:5000' }
   if (sourceId === 'yahoo') return { enabled: Boolean(cfg.news_enabled || cfg.fundamentals_enabled), detail: `Test ticker ${cfg.test_ticker || 'AMD'}` }
   if (sourceId === 'seeking_alpha') return { enabled: Boolean(cfg.rss_enabled || cfg.authenticated_enabled), detail: cfg.authenticated_enabled ? 'RSS + authenticated' : 'RSS preferred' }
   if (sourceId === 'rss') return { enabled: Array.isArray(cfg.feeds) && cfg.feeds.length > 0, detail: `${Array.isArray(cfg.feeds) ? cfg.feeds.length : 0} feeds` }
@@ -280,6 +293,155 @@ function enabledState(sourceId: string, settings: any) {
   if (sourceId === 'discord_advisor') return { enabled: cfg.mode !== 'off', detail: cfg.mode || 'manual_first' }
   if (sourceId === 'openai') return { enabled: cfg.mode !== 'off', detail: cfg.mode || 'off' }
   return { enabled: true, detail: 'Configured' }
+}
+
+const PROVIDER_MODE_OPTIONS = [
+  { value: 'mock', label: 'Mock' },
+  { value: 'demo', label: 'Demo Samples' },
+  { value: 'ibkr-live', label: 'Live IBKR' },
+]
+
+function providerModeLabel(value: unknown) {
+  return PROVIDER_MODE_OPTIONS.find((option) => option.value === value)?.label || 'Mock'
+}
+
+function providerSourceLabel(value: unknown) {
+  const raw = String(value || '').toUpperCase()
+  if (raw === 'IBKR_LIVE') return 'Live IBKR'
+  if (raw === 'DEMO_SAMPLE') return 'Demo Samples'
+  if (raw === 'MOCK' || raw === 'MOCK_FALLBACK') return 'Mock'
+  return providerModeLabel(value)
+}
+
+function ibkrStatusMeta(status: any) {
+  const key = status?.status || 'gateway_down'
+  if (key === 'connected') return { label: 'Connected', tone: 'good', detail: status?.message || 'Connected to Client Portal Gateway' }
+  if (key === 'unauthenticated') return { label: 'Login Required', tone: 'warn', detail: 'Open the gateway and complete IBKR login' }
+  if (key === 'gateway_down') return { label: 'Gateway Down', tone: 'bad', detail: 'Start Client Portal Gateway locally' }
+  if (key === 'fallback') return { label: 'Using Fallback', tone: 'warn', detail: status?.message || 'Fallback portfolio data is active' }
+  if (key === 'error') return { label: 'Error', tone: 'bad', detail: status?.message || 'Client Portal Gateway status failed' }
+  return { label: 'Degraded', tone: 'warn', detail: status?.message || 'Provider status is degraded' }
+}
+
+function boolText(value: unknown) {
+  return value ? 'Yes' : 'No'
+}
+
+function IbkrFact({ label, value, detail, hidden }: { label: string; value: string; detail?: string; hidden?: boolean }) {
+  return (
+    <div className="empty-state status-card">
+      <div>
+        <span className="muted" style={{ display: 'block' }}>{label}</span>
+        <b style={{ display: 'block', marginTop: 4 }}>{hidden ? mask : value}</b>
+      </div>
+      {detail ? <small className="muted">{hidden ? mask : detail}</small> : null}
+    </div>
+  )
+}
+
+function IbkrProviderCard({
+  hidden,
+  icon,
+  providerMode,
+  providerStatus,
+  onProviderModeChange,
+  onProviderTest,
+  providerTesting,
+  providerTestResult,
+}: any) {
+  const status = providerTestResult || providerStatus || {}
+  const meta = ibkrStatusMeta(status)
+  const configuredMode = status.configured_mode || providerMode || 'mock'
+  const activeSource = status.active_source || ''
+  const gatewayStatus = status.gateway_status ? ibkrStatusMeta({ status: status.gateway_status }) : null
+  const gatewayLabel = status.gateway_status === 'not_applicable' ? 'Not Required' : gatewayStatus?.label || meta.label
+
+  return (
+    <div className="integration-card ibkr-provider-card">
+      <header>
+        <div className="iconbox">{icon}</div>
+        <div>
+          <b>{hidden ? 'Workspace source' : 'IBKR Client Portal Gateway'}</b>
+          <p className="muted">{hidden ? mask : 'Connect through IBKR Client Portal Gateway running locally on your computer.'}</p>
+        </div>
+        <span className={`source-pill ${meta.tone}`}>{hidden ? 'Status' : meta.label}</span>
+      </header>
+
+      <div className="ibkr-gateway-line">
+        <span>Gateway URL</span>
+        <a href="https://localhost:5000" target="_blank" rel="noreferrer">https://localhost:5000</a>
+      </div>
+
+      <section className="ibkr-provider-section">
+        <h3>{hidden ? 'Data Source' : 'Portfolio Data Source'}</h3>
+        <div className="ibkr-mode-selector" role="radiogroup" aria-label="Portfolio Data Source">
+          {PROVIDER_MODE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={providerMode === option.value}
+              className={`tab${providerMode === option.value ? ' active' : ''}`}
+              onClick={() => onProviderModeChange(option.value)}
+            >
+              {hidden ? 'Source' : option.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="status-grid ibkr-provider-grid">
+        <IbkrFact label="Configured Mode" value={providerModeLabel(configuredMode)} hidden={hidden} />
+        <IbkrFact label="Active Source" value={providerSourceLabel(activeSource || configuredMode)} hidden={hidden} />
+        <IbkrFact label="Fallback Used" value={boolText(status.fallback_active)} hidden={hidden} />
+        <IbkrFact label="Status" value={meta.label} detail={meta.detail} hidden={hidden} />
+        <IbkrFact label="Authenticated" value={boolText(status.ibkr_authenticated)} hidden={hidden} />
+        <IbkrFact label="Gateway" value={gatewayLabel} hidden={hidden} />
+      </div>
+
+      {status.fallback_active ? (
+        <div className="empty-state ibkr-fallback-message">
+          <p>{hidden ? mask : status.message || 'Live IBKR unavailable. Using Demo Samples.'}</p>
+        </div>
+      ) : null}
+
+      <div className="ibkr-test-row">
+        <button className="tab active" type="button" onClick={onProviderTest} disabled={providerTesting}>
+          {providerTesting ? 'Testing...' : 'Test Client Portal Gateway'}
+        </button>
+        <a className="tab" href="https://localhost:5000" target="_blank" rel="noreferrer">Open Gateway</a>
+      </div>
+
+      {providerTestResult ? (
+        <div className="empty-state ibkr-test-result">
+          <b>{hidden ? 'Result' : providerTestResult.status === 'connected' ? 'Connected to Client Portal Gateway' : ibkrStatusMeta(providerTestResult).label}</b>
+          <p className="muted">{hidden ? mask : providerTestResult.message}</p>
+          <div className="ibkr-result-grid">
+            <span>Authenticated: <b>{hidden ? mask : String(Boolean(providerTestResult.ibkr_authenticated))}</b></span>
+            <span>Accounts: <b>{hidden ? mask : providerTestResult.accounts_available ? 'available' : 'unavailable'}</b></span>
+            <span>Positions: <b>{hidden ? mask : providerTestResult.positions_available ? 'available' : 'unavailable'}</b></span>
+            <span>Trades: <b>{hidden ? mask : providerTestResult.trades_available ? 'available' : 'unavailable'}</b></span>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="ibkr-help-grid">
+        <div className="empty-state">
+          <b>{hidden ? 'Gateway Help' : 'Client Portal Gateway setup'}</b>
+          <ol>
+            <li>Start Client Portal Gateway locally.</li>
+            <li>Open https://localhost:5000</li>
+            <li>Login with IBKR.</li>
+            <li>Return to PIA and press Test Connection.</li>
+          </ol>
+        </div>
+        <div className="empty-state">
+          <b>{hidden ? 'Security' : 'Security note'}</b>
+          <p className="muted">{hidden ? mask : 'PIA never stores your IBKR username or password. Live IBKR mode reads data from your local Client Portal Gateway session.'}</p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function PreviewFacts({ sourceId, status, settings, hidden }: any) {
@@ -424,13 +586,19 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
   const [saveStatus, setSaveStatus] = useState('')
   const [testing, setTesting] = useState('')
   const [selected, setSelected] = useState<string>(INTEGRATION_DEFS[0].id)
+  const [providerMode, setProviderMode] = useState('mock')
+  const [providerStatus, setProviderStatus] = useState<any>(null)
+  const [providerTesting, setProviderTesting] = useState(false)
+  const [providerTestResult, setProviderTestResult] = useState<any>(null)
 
   const refreshIntegrations = useCallback(async () => {
     setLoading(true)
     setLoadError('')
-    const [settingsResult, healthResult] = await Promise.allSettled([
+    const [settingsResult, healthResult, providerModeResult, providerStatusResult] = await Promise.allSettled([
       fetchJson('/settings/integrations'),
       fetchJson('/source-health'),
+      fetchJson('/api/portfolio/provider/mode'),
+      fetchJson('/api/portfolio/provider/status'),
     ])
     if (settingsResult.status === 'fulfilled') {
       setSettings(mergeIntegrationSettings(settingsResult.value))
@@ -438,6 +606,8 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
       setLoadError('Unable to load saved integrations. Editable defaults are shown until the API responds.')
     }
     if (healthResult.status === 'fulfilled') setHealth(healthResult.value)
+    if (providerModeResult.status === 'fulfilled' && providerModeResult.value?.mode) setProviderMode(providerModeResult.value.mode)
+    if (providerStatusResult.status === 'fulfilled') setProviderStatus(providerStatusResult.value)
     setLoading(false)
   }, [])
 
@@ -472,8 +642,35 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
     setTesting('')
   }
 
+  async function changeProviderMode(next: string) {
+    setProviderMode(next)
+    setProviderTestResult(null)
+    const result = await fetchJson('/api/portfolio/provider/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: next }),
+    }).catch((error) => {
+      setLoadError(safeMessage(error?.detail, 'Unable to update portfolio data source.'))
+      return null
+    })
+    if (result?.mode) setProviderMode(result.mode)
+    if (result?.status) setProviderStatus(result.status)
+    setSettings((s: any) => ({ ...s, data_source: { ...(s?.data_source || {}), mode: result?.mode || next } }))
+  }
+
+  async function testProviderStatus() {
+    setProviderTesting(true)
+    const result = await fetchJson('/api/portfolio/provider/status').catch((error) => ({
+      status: 'error',
+      message: safeMessage(error?.detail, 'Unable to test Client Portal Gateway.'),
+    }))
+    setProviderStatus(result)
+    setProviderTestResult(result)
+    setProviderTesting(false)
+  }
+
   const statusFor = (def: IntegrationDef) =>
-    def.staticStatus || (def.statusSource ? health.find((h: any) => h.source === def.statusSource) : undefined)
+    def.id === 'ibkr' ? providerStatus : def.staticStatus || (def.statusSource ? health.find((h: any) => h.source === def.statusSource) : undefined)
 
   const active = INTEGRATION_DEFS.find((def) => def.id === selected) || INTEGRATION_DEFS[0]
 
@@ -518,6 +715,12 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
             doc={settings[active.id]?.documentation}
             onTest={active.testSrc ? () => test(active.testSrc as string) : undefined}
             testing={testing === active.testSrc}
+            providerMode={providerMode}
+            providerStatus={providerStatus}
+            onProviderModeChange={changeProviderMode}
+            onProviderTest={testProviderStatus}
+            providerTesting={providerTesting}
+            providerTestResult={providerTestResult}
           >
             {active.fields(settings, update)}
           </IntegrationCard>
@@ -545,7 +748,38 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
   )
 }
 
-function IntegrationCard({ sourceId, title, hidden, icon, settings, status, doc, onTest, testing, children }: any) {
+function IntegrationCard({
+  sourceId,
+  title,
+  hidden,
+  icon,
+  settings,
+  status,
+  doc,
+  onTest,
+  testing,
+  children,
+  providerMode,
+  providerStatus,
+  onProviderModeChange,
+  onProviderTest,
+  providerTesting,
+  providerTestResult,
+}: any) {
+  if (sourceId === 'ibkr') {
+    return (
+      <IbkrProviderCard
+        hidden={hidden}
+        icon={icon}
+        providerMode={providerMode}
+        providerStatus={providerStatus || status}
+        onProviderModeChange={onProviderModeChange}
+        onProviderTest={onProviderTest}
+        providerTesting={providerTesting}
+        providerTestResult={providerTestResult}
+      />
+    )
+  }
   const ok = status?.data_received
   const failed = status?.status === 'failed'
   return (

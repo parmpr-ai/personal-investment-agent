@@ -748,6 +748,8 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .integration-nav-dot.bad{background:#fb7185}
 .integration-detail{min-width:0;display:grid;gap:12px}
 .integration-detail .integration-card{margin:0}
+.ibkr-provider-card{display:grid;gap:14px}.ibkr-gateway-line{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid rgba(148,163,184,.16);background:#050a12;border-radius:14px;padding:11px 12px}.ibkr-gateway-line span,.ibkr-provider-section h3{color:var(--muted);font-size:12px;margin:0}.ibkr-gateway-line a{color:#8ab4ff;text-decoration:none;font-weight:700;word-break:break-all}.ibkr-mode-selector{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.ibkr-provider-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.ibkr-fallback-message{border-color:#713f12;background:#2a1905;color:#fbbf24}.ibkr-test-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.ibkr-test-row .tab{text-decoration:none}.ibkr-test-result{display:grid;gap:8px}.ibkr-result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ibkr-result-grid span{border:1px solid rgba(148,163,184,.14);border-radius:12px;background:#050a12;padding:8px;color:var(--muted);font-size:12px}.ibkr-result-grid b{color:#eef4fb}.ibkr-help-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.ibkr-help-grid ol{margin:8px 0 0 18px;color:#aebed3}.portfolio-source-badge{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;width:max-content;max-width:100%;margin:8px 0 2px;padding:6px 9px;border:1px solid rgba(96,165,250,.32);border-radius:999px;background:rgba(37,99,235,.11);color:#bfdbfe;font-size:11px;font-weight:700}.portfolio-source-badge b{color:#fbbf24;font-size:10px}.portfolio-source-badge.fallback{border-color:rgba(251,191,36,.36);background:rgba(251,191,36,.1);color:#fde68a}.mobile-source-badge{margin:0 0 7px;width:fit-content}.mobile-shell-settings{padding-bottom:18px}.mobile-shell-settings .mobile-bottom-nav{position:sticky;left:auto;bottom:10px;transform:none;width:100%;margin-top:18px}
+@media(max-width:980px){.ibkr-provider-card header{grid-template-columns:42px 1fr}.ibkr-provider-card header .source-pill{grid-column:1/-1;width:max-content}.ibkr-gateway-line{display:grid;justify-items:start}.ibkr-provider-grid,.ibkr-result-grid,.ibkr-help-grid{grid-template-columns:1fr}.ibkr-mode-selector{display:grid;grid-template-columns:1fr}.ibkr-test-row{display:grid;grid-template-columns:1fr}.portfolio-source-badge{border-radius:12px;width:fit-content}}
 .integration-detail-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 @media(max-width:980px){
   .integration-layout{grid-template-columns:1fr;gap:12px}
@@ -1451,6 +1453,37 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sai-fair-no-data p{margin:0;border:1px solid rgba(245,158,11,.22);border-radius:12px;background:rgba(69,45,6,.22);padding:10px;color:#cbd5e1;font-size:12px;line-height:1.44}
 .sai-fair-no-data p strong{color:#fde68a}
 .sai-price-grid-single{grid-template-columns:minmax(0,1fr)}
+/* ARTEMIS-AI-001 compact / expanded AI Intelligence widget */
+.sai-compact{display:grid;gap:10px;padding:10px 0}
+.sai-compact-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sai-verdict-chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 12px;font-size:12px;font-weight:900;border:1px solid;white-space:nowrap;line-height:1}
+.sai-chip-bull{border-color:rgba(36,209,140,.32);background:rgba(5,46,26,.5);color:#bbf7d0}
+.sai-chip-bear{border-color:rgba(248,113,113,.32);background:rgba(127,29,29,.34);color:#fecdd3}
+.sai-chip-balanced{border-color:rgba(251,191,36,.3);background:rgba(69,45,6,.28);color:#fde68a}
+.sai-chip-trim{border-color:rgba(245,158,11,.36);background:rgba(78,37,5,.36);color:#fed7aa}
+.sai-balanced-icons{display:inline-flex;align-items:center;gap:2px;color:inherit}
+.sai-compact-bull{border-left:2px solid rgba(36,209,140,.28)}
+.sai-compact-bear{border-left:2px solid rgba(248,113,113,.28)}
+.sai-compact-balanced{border-left:2px solid rgba(251,191,36,.28)}
+.sai-compact-trim{border-left:2px solid rgba(245,158,11,.28)}
+.sai-compact-expand{border:1px solid rgba(96,165,250,.28);border-radius:8px;background:rgba(15,23,42,.6);color:#93c5fd;font-size:11px;font-weight:900;padding:5px 10px;cursor:pointer;white-space:nowrap;appearance:none;font:inherit}
+.sai-compact-expand:hover{border-color:rgba(96,165,250,.5);background:rgba(30,41,59,.7)}
+.sai-compact-collapse{border:1px solid rgba(148,163,184,.2);border-radius:8px;background:rgba(15,23,42,.6);color:#94a3b8;font-size:11px;font-weight:900;padding:5px 10px;cursor:pointer;white-space:nowrap;appearance:none;font:inherit}
+.sai-compact-collapse:hover{border-color:rgba(148,163,184,.36);color:#cbd5e1}
+.sai-compact-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:0;padding:0}
+.sai-compact-stats>div{border:1px solid rgba(148,163,184,.14);border-radius:10px;background:rgba(5,10,20,.5);padding:9px 10px}
+.sai-compact-stats dt{color:#8ea2b6;font-size:9px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;margin:0}
+.sai-compact-stats dd{color:#f8fbff;font-size:16px;font-weight:900;font-variant-numeric:tabular-nums;margin:3px 0 0}
+.sai-compact-reason{margin:0;color:#94a3b8;font-size:12px;line-height:1.45;padding:8px 10px;border-left:2px solid rgba(96,165,250,.32);background:rgba(5,10,20,.4);border-radius:0 8px 8px 0}
+.sai-exp-section{display:grid;gap:8px;padding:10px 0;border-top:1px solid rgba(148,163,184,.1)}
+.sai-exp-title{margin:0;color:#8ab4ff;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.sai-exp-verdict-row{display:flex;align-items:center;gap:16px}
+.sai-exp-verdict-meta{display:grid;gap:5px}
+.sai-exp-verdict-meta>b{color:#f8fbff;font-size:14px;font-weight:900}
+.sai-exp-verdict-meta>span{color:#94a3b8;font-size:11px;display:flex;align-items:center;gap:5px}
+.sai-exp-why p,.sai-exp-cases p,.sai-exp-bear p{margin:0;color:#cbd5e1;font-size:13px;line-height:1.5}
+.sai-exp-cases .sai-exp-title{color:#86efac}
+.sai-exp-bear .sai-exp-title{color:#fca5a5}
 /* POS-SUM-MOB-002 locked mobile Position Summary */
 .sps{min-width:0;margin:0 0 12px;border:0;border-radius:0;background:transparent;box-shadow:none;overflow:visible;padding:4px 2px 12px;color:#f8fbff;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .sps:focus-visible{outline:2px solid rgba(96,165,250,.72);outline-offset:3px;border-radius:12px}
@@ -1720,3 +1753,4 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .spse-footer-icon{flex:0 0 auto;color:#586879}
 @media(max-width:420px){.spse-strip-item{padding:8px 6px 10px}.spse-strip-label{font-size:8px}.spse-strip-value{font-size:12px}.spse-strip-sub{font-size:9px}.spse-sections{padding:10px 12px 0}.spse-section-head{padding:12px 12px 9px}.spse-section-body{padding:0 12px 12px}.spse-cust-sheet{padding-left:14px;padding-right:14px}.spse-head{padding-right:12px;padding-left:12px}}
 @media(min-width:480px){.spse-strip-item{padding:10px 12px 12px}.spse-strip-label{font-size:10px}.spse-strip-value{font-size:14px}.spse-strip-sub{font-size:11px}}
+.mobile-shell.mobile-shell-settings .mobile-bottom-nav{position:static!important;left:auto!important;bottom:auto!important;transform:none!important;width:100%!important;margin-top:18px!important}

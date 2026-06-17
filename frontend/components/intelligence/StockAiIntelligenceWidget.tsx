@@ -5,12 +5,12 @@ import {
   ArrowLeft,
   Building2,
   ChevronRight,
-  Clock,
   Gauge,
   Info,
   MessageCircle,
   Scale,
   ShieldAlert,
+  TrendingDown,
   TrendingUp,
   type LucideIcon,
 } from 'lucide-react'
@@ -25,6 +25,7 @@ type InsightKey = 'earningsRevisions' | 'institutionalFlow' | 'narrativeRisk'
 type Tone = 'blue' | 'green' | 'red' | 'amber' | 'gray'
 type DataSourceLabel = 'Yahoo' | 'IBKR' | 'Seeking Alpha' | 'Internal Calculation' | 'Derived Signal'
 type ActiveView = { type: 'metric'; key: MetricKey } | { type: 'insight'; key: InsightKey } | null
+type VerdictState = 'bull' | 'bear' | 'balanced' | 'trim'
 
 type DetailRow = {
   label: string
@@ -397,6 +398,31 @@ function deriveConfidence(metrics: Metric[]) {
   }
 }
 
+function deriveVerdictState(composite: number | null, riskScore: number | null): VerdictState {
+  if (composite != null && riskScore != null && composite >= 55 && riskScore >= 80) return 'trim'
+  if (composite == null) return 'balanced'
+  if (composite >= 65) return 'bull'
+  if (composite < 40) return 'bear'
+  return 'balanced'
+}
+
+function verdictLabel(state: VerdictState): string {
+  if (state === 'bull') return 'Bullish'
+  if (state === 'bear') return 'Bearish'
+  if (state === 'trim') return 'Trim'
+  return 'Balanced'
+}
+
+function extractTopReason(summary: string, metricsMap: Record<MetricKey, Metric>): string {
+  const first = summary.split(/[.!?]/)[0].trim()
+  if (first && first.length > 10) return first
+  const top = (['momentum', 'trend', 'sentiment', 'risk'] as MetricKey[])
+    .map((k) => metricsMap[k])
+    .find((m) => m.score != null)
+  if (top) return `${top.label}: ${top.badge}`
+  return 'Insufficient data for AI analysis.'
+}
+
 function MiniSparkline({ values, tone }: { values: number[]; tone: Tone }) {
   const width = 112
   const height = 38
@@ -427,6 +453,71 @@ function FactorRow({ metric, hidden }: { metric: Metric; hidden: boolean }) {
         <em className={`sai-tone-${metric.tone}`} style={{ width: `${width}%` }} />
       </i>
       <b>{hidden ? mask : metric.score == null ? EMPTY : metric.score}</b>
+    </div>
+  )
+}
+
+function BalancedArrows() {
+  return (
+    <span className="sai-balanced-icons" aria-hidden="true">
+      <TrendingDown size={14} />
+      <Scale size={14} />
+      <TrendingUp size={14} />
+    </span>
+  )
+}
+
+function VerdictChip({ state, hidden }: { state: VerdictState; hidden: boolean }) {
+  const label = verdictLabel(state)
+  return (
+    <span className={`sai-verdict-chip sai-chip-${state}`} aria-label={`AI verdict: ${label}`}>
+      {state === 'balanced' ? <BalancedArrows /> : state === 'bull' ? <TrendingUp size={13} /> : state === 'bear' ? <TrendingDown size={13} /> : <ShieldAlert size={13} />}
+      {hidden ? mask : label}
+    </span>
+  )
+}
+
+function AiCompactView({
+  verdictState,
+  riskScore,
+  confidenceValue,
+  upside,
+  topReason,
+  hidden,
+  onExpand,
+}: {
+  verdictState: VerdictState
+  riskScore: number | null
+  confidenceValue: number | null
+  upside: number | null
+  topReason: string
+  hidden: boolean
+  onExpand: () => void
+}) {
+  const expectedReturn = upside == null ? EMPTY : signed(upside, '%', 1)
+  return (
+    <div className={`sai-compact sai-compact-${verdictState}`}>
+      <div className="sai-compact-header">
+        <VerdictChip state={verdictState} hidden={hidden} />
+        <button type="button" className="sai-compact-expand" onClick={onExpand} aria-label="Open full AI analysis">
+          Full Analysis ›
+        </button>
+      </div>
+      <dl className="sai-compact-stats">
+        <div>
+          <dt>Expected Return</dt>
+          <dd>{hidden ? mask : expectedReturn}</dd>
+        </div>
+        <div>
+          <dt>Conviction</dt>
+          <dd>{hidden ? mask : confidenceValue == null ? EMPTY : `${confidenceValue}%`}</dd>
+        </div>
+        <div>
+          <dt>Risk</dt>
+          <dd>{hidden ? mask : riskScore == null ? EMPTY : `${riskScore}/100`}</dd>
+        </div>
+      </dl>
+      <p className="sai-compact-reason">{hidden ? mask : topReason}</p>
     </div>
   )
 }
@@ -732,6 +823,7 @@ export default function StockAiIntelligenceWidget({
   hidden: boolean
 }) {
   const [activeView, setActiveView] = useState<ActiveView>(null)
+  const [isExpanded, setIsExpanded] = useState(false)
 
   useEffect(() => {
     if (!activeView) return
@@ -975,6 +1067,17 @@ export default function StockAiIntelligenceWidget({
       ? 'PIA needs more sourced metric inputs before it can summarize this AI Intelligence view.'
       : `${source?.symbol || 'This stock'} has enough scored inputs for a sourced AI Intelligence summary.`)
 
+  const verdictState = deriveVerdictState(composite, risk)
+  const topReason = extractTopReason(summary, metrics)
+  const bullCaseText = cleanText(
+    source?.bull_case ?? source?.bullCase ?? source?.bull_thesis ?? overview?.bull_case,
+    200,
+  ) || 'Explicit bull case narrative is not yet available from connected sources.'
+  const bearCaseText = cleanText(
+    source?.bear_case ?? source?.bearCase ?? source?.bear_thesis ?? overview?.bear_case,
+    200,
+  ) || 'Explicit bear case narrative is not yet available from connected sources.'
+
   const insights: Insight[] = [
     {
       key: 'earningsRevisions',
@@ -1036,60 +1139,96 @@ export default function StockAiIntelligenceWidget({
           <span>AI Intelligence</span>
           <Info size={14} aria-hidden="true" />
         </div>
-        <div className="sai-live">
-          <i aria-hidden="true" />
-          <span>Live Analysis</span>
-        </div>
+        {isExpanded && (
+          <button type="button" className="sai-compact-collapse" onClick={() => setIsExpanded(false)}>
+            Compact ‹
+          </button>
+        )}
       </header>
 
-      <div className="sai-hero-v2">
-        <div className="sai-hero-score">
-          <div className="sai-gauge" style={{ '--sai-score': `${hidden || composite == null ? 0 : composite}%` } as CSSProperties}>
-            <strong>{hidden ? mask : composite ?? EMPTY}</strong>
-            {composite != null ? <span>/100</span> : null}
-          </div>
-          <b>{hidden ? mask : heroBadge}</b>
-        </div>
-
-        <div className="sai-hero-view">
-          <h3>{hidden ? mask : heroBadge}</h3>
-          <span className={`sai-view-badge sai-view-${view.toLowerCase()}`}>{hidden ? mask : view}</span>
-          <em>Executive Summary</em>
-          <p>{hidden ? mask : summary}</p>
-          <div className="sai-hero-meta">
-            <span><Activity size={13} /> Confidence {hidden ? mask : confidence.value == null ? EMPTY : `${confidence.value}%`}</span>
-            <span><Clock size={13} /> Updated {hidden ? mask : metricsArray.some((metric) => metric.lastUpdated !== 'Not recorded') ? metricsArray.find((metric) => metric.lastUpdated !== 'Not recorded')?.lastUpdated : 'Not recorded'}</span>
-          </div>
-          <p className="sai-confidence-note">{hidden ? mask : confidence.notes.join(' ')}</p>
-        </div>
-
-        <div className="sai-hero-factors" aria-label="AI Intelligence factor scores">
-          {metricsArray.map((metric) => (
-            <FactorRow key={metric.key} metric={metric} hidden={hidden} />
-          ))}
-        </div>
-      </div>
-
-      <div className="sai-metric-carousel" aria-label="AI Intelligence metric cards">
-        {metricsArray.map((metric) => (
-          <MetricCard key={metric.key} metric={metric} hidden={hidden} onOpen={(key) => setActiveView({ type: 'metric', key })} />
-        ))}
-      </div>
-
-      <section className="sai-insights" aria-label="AI Insights">
-        <h3>AI Insights</h3>
-        <div className="sai-insight-list">
-          {insights.map((insight) => (
-            <button key={insight.key} type="button" className="sai-insight-item sai-insight-button" onClick={() => setActiveView({ type: 'insight', key: insight.key })} aria-label={`${insight.headline} detail`}>
-              <div>
-                <strong>{hidden ? mask : insight.headline}</strong>
-                <p>{hidden ? mask : insight.summary}</p>
+      {!isExpanded ? (
+        <AiCompactView
+          verdictState={verdictState}
+          riskScore={risk}
+          confidenceValue={confidence.value}
+          upside={upside}
+          topReason={topReason}
+          hidden={hidden}
+          onExpand={() => setIsExpanded(true)}
+        />
+      ) : (
+        <>
+          <div className="sai-exp-section sai-exp-verdict">
+            <h4 className="sai-exp-title">AI Verdict</h4>
+            <div className="sai-exp-verdict-row">
+              <div
+                className="sai-gauge"
+                style={{ '--sai-score': `${hidden || composite == null ? 0 : composite}%` } as CSSProperties}
+              >
+                <strong>{hidden ? mask : composite ?? EMPTY}</strong>
+                {composite != null ? <span>/100</span> : null}
               </div>
-              <ChevronRight size={16} aria-hidden="true" />
-            </button>
-          ))}
-        </div>
-      </section>
+              <div className="sai-exp-verdict-meta">
+                <b>{hidden ? mask : heroBadge}</b>
+                <span className={`sai-view-badge sai-view-${view.toLowerCase()}`}>{hidden ? mask : view}</span>
+                <span className="sai-hero-meta"><Activity size={12} /> Confidence {hidden ? mask : confidence.value == null ? EMPTY : `${confidence.value}%`}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="sai-exp-section sai-exp-why">
+            <h4 className="sai-exp-title">Why AI Thinks This</h4>
+            <p>{hidden ? mask : summary}</p>
+          </div>
+
+          <div className="sai-exp-section sai-exp-cases">
+            <h4 className="sai-exp-title">Bull Case</h4>
+            <p>{hidden ? mask : bullCaseText}</p>
+          </div>
+
+          <div className="sai-exp-section sai-exp-bear">
+            <h4 className="sai-exp-title">Bear Case</h4>
+            <p>{hidden ? mask : bearCaseText}</p>
+          </div>
+
+          <div className="sai-exp-section sai-exp-scenario">
+            <h4 className="sai-exp-title">Scenario Outlook</h4>
+            {fairValue.available ? (
+              <FairValueVisual fairValue={fairValue} hidden={hidden} />
+            ) : (
+              <FairValueUnavailable fairValue={fairValue} hidden={hidden} />
+            )}
+          </div>
+
+          <div className="sai-exp-section sai-exp-breakdown">
+            <h4 className="sai-exp-title">Score Breakdown</h4>
+            <div className="sai-hero-factors" aria-label="AI Intelligence factor scores">
+              {metricsArray.map((metric) => (
+                <FactorRow key={metric.key} metric={metric} hidden={hidden} />
+              ))}
+            </div>
+          </div>
+
+          <div className="sai-exp-section sai-exp-factors">
+            <h4 className="sai-exp-title">Factors Evaluated</h4>
+            <div className="sai-metric-carousel" aria-label="AI Intelligence metric cards">
+              {metricsArray.map((metric) => (
+                <MetricCard
+                  key={metric.key}
+                  metric={metric}
+                  hidden={hidden}
+                  onOpen={(key) => setActiveView({ type: 'metric', key })}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="sai-exp-section sai-exp-confidence">
+            <h4 className="sai-exp-title">Confidence Notes</h4>
+            <p className="sai-confidence-note">{hidden ? mask : confidence.notes.join(' ')}</p>
+          </div>
+        </>
+      )}
 
       {activeMetric ? (
         <MetricFullScreenView
