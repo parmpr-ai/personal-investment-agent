@@ -88,6 +88,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 ## Active Backlog
 
 - ATHENA-AI-001 AI Intelligence Architecture & Documentation Consolidation. IMPLEMENTED 2026-06-17 (ATHENA): Architecture document created at `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md`. All 9 AI Intelligence subsystems captured: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, Auto Investor. Changelog and UAT Tracking synchronized.
+- EPIC-AI-INTELLIGENCE-ENGINE-001 Explainable Multi-Source Investment Intelligence Engine. IMPLEMENTED 2026-06-17 (HERMES): V1 backend scoring engine added for actionable stock verdict, portfolio-aware recommendation, expected return, conviction, thesis strength, risk, visual state, scenario probabilities, drivers/risks, score breakdown, factors evaluated, confidence notes, debug mode, and cache-backed `/api/intelligence/{symbol}/score`.
 - ATHENA-AI-002 AI Engine — Full Scoring Pipeline. ROADMAP: Rules-based scoring for Momentum, Trend, Sentiment, Institutional, Fair Value, Risk metrics with sub-factor breakdowns. Requires metric score persistence layer (ATHENA-AI-003). Owner: ATHENA.
 - ATHENA-AI-003 Metric Score Persistence Layer. ROADMAP: SQLite table for per-ticker metric score snapshots; enables Historical Evolution in Bottom Sheet and "What Changed" in Position Intelligence. Owner: ATHENA.
 - ATHENA-AI-004 Portfolio Fit Engine. ROADMAP: Concentration + correlation + diversification benefit + opportunity score per candidate symbol vs live portfolio. Owner: ATHENA.
@@ -460,6 +461,14 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.26 - Explainable AI Intelligence Engine V1
+Date: 2026-06-17
+Status: Implemented and locally validated.
+- HERMES-AI-002 implemented the V1 backend explainable intelligence engine and `/api/intelligence/{symbol}/score`.
+- Added stock verdict vs portfolio recommendation distinction, final verdict, visual state, expected return, conviction, thesis strength, risk, scenario probabilities, drivers/risks, bull/bear cases, score breakdown, factors evaluated, confidence notes, debug scoring details, cache support, and deterministic fixtures.
+- Missing Seeking Alpha, Discord Advisor, and X Sentiment reduce confidence only and do not block the verdict.
+- Validation: backend `py_compile`, contract smoke, deterministic fixtures, `npx tsc --noEmit --pretty false`, and `npm run build` PASS.
 
 ### v0.3.22 - Governance: Approved Mock Preservation & Design Lock Traceability (PIA-GOV-004)
 Date: 2026-06-11

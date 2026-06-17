@@ -13,6 +13,7 @@ from services.manual_holdings import create_manual_holding, delete_manual_holdin
 from services.news_intelligence import get_news_intelligence
 from services.stock_intelligence import build_stock_panel_intelligence, get_ticker_news_intelligence
 from services.ai_intelligence import build_ai_intelligence, build_ai_intelligence_test
+from services.ai_intelligence_engine import build_ai_intelligence_score
 from services.source_registry import build_source_coverage, build_source_status, build_symbol_inputs
 load_dotenv()
 try:
@@ -207,6 +208,17 @@ def intelligence_symbol_inputs(symbol:str):
  watch=opportunity_for(wl,macro) if wl else None
  news_bundle=get_ticker_news_intelligence(t)
  return build_symbol_inputs(t, settings, portfolio=p, position=pos, watch=watch, macro=macro, calendar=calendar, fundamentals=yahoo_fundamentals(t), news=(yahoo_news(t) or [n for n in news_items() if n.get('ticker')==t]), news_intelligence=news_bundle, provider_status=_intelligence_provider_status())
+def _score_provider_status(portfolio_payload:dict):
+ return {'configured_mode':portfolio_payload.get('configured_mode'),'active_source':portfolio_payload.get('active_source') or portfolio_payload.get('source'),'fallback_active':portfolio_payload.get('fallback_active'),'status':'connected' if portfolio_payload.get('active_source')=='IBKR_LIVE' else ('fallback' if portfolio_payload.get('fallback_active') else 'connected')}
+@app.get('/api/intelligence/{symbol}/score')
+def intelligence_symbol_score(symbol:str, strategy:str='long_term', debug:bool=False):
+ t=symbol.upper().split()[0]; settings=get_settings(); p=portfolio_snapshot(); macro=macro_snapshot(); calendar=catalyst_calendar()
+ p['configured_mode']=settings.get('data_source',{}).get('mode','mock'); p['active_source']=p.get('source','DEMO'); p['fallback_active']=False
+ pos=next((x for x in p.get('positions',[]) if x.get('symbol','').split()[0].upper()==t or x.get('underlying','').upper()==t),None)
+ wl=next((x for x in WATCHLIST if x['symbol']==t),None)
+ watch=opportunity_for(wl,macro) if wl else None
+ local_news=[n for n in news_items() if n.get('ticker')==t]
+ return build_ai_intelligence_score(t, settings=settings, portfolio=p, position=pos, watch=watch, macro=macro, calendar=calendar, news=local_news, news_intelligence={'is_demo':False,'items':local_news}, provider_status=_score_provider_status(p), strategy=strategy, debug=debug)
 @app.get('/watchlist')
 def watchlist(): return [opportunity_for(w,macro_snapshot()) for w in WATCHLIST]
 @app.get('/stock/{ticker}')

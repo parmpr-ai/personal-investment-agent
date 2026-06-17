@@ -1,5 +1,28 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.26 - Explainable AI Intelligence Engine V1
+
+Date: 2026-06-17
+Status: Implemented and locally validated.
+Task: HERMES-AI-002
+Owner: HERMES
+
+### Added
+
+* **Explainable scoring engine:** `backend/services/ai_intelligence_engine.py` builds an actionable verdict from source coverage, normalized inputs, macro/news context, and portfolio exposure.
+* **Score endpoint:** `GET /api/intelligence/{symbol}/score` with optional `strategy` and `debug=true`.
+* **Verdict contract:** stock verdict, portfolio recommendation, final verdict, expected return, conviction, thesis strength, risk, confidence, visual state, top reason, scenarios, drivers, risks, bull/bear cases, score breakdown, evaluated factors, and confidence notes.
+* **Portfolio-aware logic:** concentration penalties can downgrade a strong stock thesis to HOLD/TRIM without changing the stock-level verdict.
+* **Debug mode:** raw factor scores, weights, normalization details, missing sources, coverage calculation, and cache status.
+* **In-memory score cache:** key includes symbol, strategy, and portfolio mode; cached responses return immediately.
+* **Deterministic fixtures:** bull, balanced, bear, and portfolio-aware STRONG BUY -> HOLD cases.
+
+### Notes
+
+* Missing Seeking Alpha, Discord Advisor, and X Sentiment sources reduce confidence only; they do not block a verdict.
+* Normal score responses do not expose source timestamps or "Live"/"Updated" labels.
+* `npm run build` PASS - 9/9 pages, TypeScript types valid.
+
 ## v0.3.25 - AI Intelligence UI Foundation
 
 Date: 2026-06-17

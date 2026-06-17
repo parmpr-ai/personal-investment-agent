@@ -16,6 +16,31 @@ Format per entry:
 
 ## UAT Log
 
+### HERMES-AI-002 - Explainable AI Intelligence Engine V1
+
+Status: PASS
+Owner: HERMES
+Date: 2026-06-17
+Approved Mock: N/A (backend intelligence engine)
+Design Lock Commit: N/A
+Implementation Commit: pending commit in this PR
+
+Build: PASS (`py_compile`, contract smoke, fixtures, `npx tsc --noEmit --pretty false`, `npm run build`)
+
+Deliverables verified:
+- [x] `/api/intelligence/{symbol}/score` returns a full verdict contract
+- [x] `debug=true` returns raw factors, weights, missing sources, coverage calculation, normalization, and cache status
+- [x] Missing Seeking Alpha / Discord / X sentiment does not block verdict
+- [x] Deterministic bull, balanced, bear, and portfolio-aware fixtures created
+- [x] Portfolio-aware fixture returns `stockVerdict=STRONG BUY`, `portfolioRecommendation=HOLD`, `finalVerdict=HOLD`, `visualState=BALANCED`
+- [x] Cached response path returns immediately in backend smoke test
+
+Notes:
+- Normal score responses avoid "Live", "Updated", and source timestamps.
+- Official frontend build passed after stopping the running Next dev server per repo governance.
+
+---
+
 ### ARTEMIS-AI-001 — AI Intelligence UI Foundation
 
 Status: PASS
