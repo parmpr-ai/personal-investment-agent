@@ -1453,47 +1453,136 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sai-fair-no-data p{margin:0;border:1px solid rgba(245,158,11,.22);border-radius:12px;background:rgba(69,45,6,.22);padding:10px;color:#cbd5e1;font-size:12px;line-height:1.44}
 .sai-fair-no-data p strong{color:#fde68a}
 .sai-price-grid-single{grid-template-columns:minmax(0,1fr)}
-/* ARTEMIS-AI-011-CR04 Compact V2 Premium */
-@keyframes sai-p2-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
-.sai-p2{border-radius:20px;padding:20px;background:linear-gradient(145deg,#0b1121 0%,#0e1828 55%,#090d18 100%);border:1px solid rgba(var(--p2-rgb),.20);box-shadow:0 0 48px var(--p2-glow),0 6px 28px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.04);display:grid;gap:0;overflow:hidden}
-.sai-p2-bull{--p2-color:#22c55e;--p2-rgb:34,197,94;--p2-glow:rgba(34,197,94,.15)}
-.sai-p2-bear{--p2-color:#ef4444;--p2-rgb:239,68,68;--p2-glow:rgba(239,68,68,.15)}
-.sai-p2-balanced{--p2-color:#f97316;--p2-rgb:249,115,22;--p2-glow:rgba(249,115,22,.15)}
-.sai-p2-trim{--p2-color:#f59e0b;--p2-rgb:245,158,11;--p2-glow:rgba(245,158,11,.15)}
-.sai-p2-top{display:grid;grid-template-columns:1fr 130px;gap:12px;align-items:center;padding-bottom:18px}
-.sai-p2-lft{display:flex;flex-direction:column;gap:0}
-.sai-p2-badge{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:6px;border:1px solid var(--p2-color);color:var(--p2-color);font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;width:fit-content;margin-bottom:10px}
-.sai-p2-ttl{font-size:13px;font-weight:600;color:rgba(255,255,255,.52);margin-bottom:2px}
-.sai-p2-verdict{font-size:44px;font-weight:800;color:var(--p2-color);line-height:1;letter-spacing:-.025em;display:block}
-.sai-p2-sub{font-size:15px;color:rgba(255,255,255,.7);font-weight:500;margin-top:5px;display:block}
-.sai-p2-rgt{display:flex;align-items:center;justify-content:center;width:130px;height:122px;flex-shrink:0}
-.sai-p2-animal{width:100%;height:100%;animation:sai-p2-breathe 3.5s ease-in-out infinite;transform-origin:center;overflow:visible}
-.sai-p2-reason{border-top:1px solid rgba(148,163,184,.1);padding:16px 0 14px}
-.sai-p2-rlbl{display:block;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--p2-color);margin-bottom:7px}
-.sai-p2-reason p{margin:0;font-size:16px;font-weight:500;color:#f1f5f9;line-height:1.42}
-.sai-p2-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;border-top:1px solid rgba(148,163,184,.1);padding:14px 0}
-.sai-p2-mc{display:flex;flex-direction:column;gap:4px}
-.sai-p2-mlbl{font-size:11px;color:rgba(255,255,255,.42);font-weight:600;letter-spacing:.025em}
-.sai-p2-mval{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;color:#f8faff;line-height:1;letter-spacing:-.02em;display:block}
-.sai-p2-mval small{font-size:12px;font-weight:600;color:#475569;margin-left:1px;letter-spacing:0}
-.sai-p2-pos{color:#22c55e!important}
-.sai-p2-neg{color:#ef4444!important}
-.sai-p2-rsk{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;line-height:1.2;margin-top:3px;white-space:nowrap}
-.sai-p2-rdot{width:9px;height:9px;border-radius:50%;flex-shrink:0;display:block}
-.sai-p2-rsk-green .sai-p2-rdot{background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,.7)}.sai-p2-rsk-green{color:#22c55e}
-.sai-p2-rsk-amber .sai-p2-rdot{background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,.7)}.sai-p2-rsk-amber{color:#f59e0b}
-.sai-p2-rsk-orange .sai-p2-rdot{background:#f97316;box-shadow:0 0 6px rgba(249,115,22,.7)}.sai-p2-rsk-orange{color:#f97316}
-.sai-p2-rsk-red .sai-p2-rdot{background:#ef4444;box-shadow:0 0 6px rgba(239,68,68,.7)}.sai-p2-rsk-red{color:#ef4444}
-.sai-p2-rsk-gray .sai-p2-rdot{background:#64748b}.sai-p2-rsk-gray{color:#94a3b8}
-.sai-p2-drv{border-top:1px solid rgba(148,163,184,.1);padding-top:14px}
-.sai-p2-dlbl{display:block;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.38);margin-bottom:10px}
-.sai-p2-drv ul{list-style:none;margin:0;padding:0;display:grid;gap:9px}
-.sai-p2-di{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:#cbd5e1}
-.sai-p2-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;display:block}
-.sai-p2-dot-good{background:#22c55e;box-shadow:0 0 5px rgba(34,197,94,.55)}
-.sai-p2-dot-bad{background:#ef4444;box-shadow:0 0 5px rgba(239,68,68,.55)}
-.sai-p2-dot-neutral{background:#f97316;box-shadow:0 0 5px rgba(249,115,22,.45)}
-@media(max-width:375px){.sai-p2-top{grid-template-columns:1fr 108px}.sai-p2-rgt{width:108px;height:102px}.sai-p2-verdict{font-size:38px}.sai-p2-mval{font-size:22px}}
+/* ARTEMIS-AI-011 V2 — AIHero animation engine */
+@keyframes ai-hero-orbit-up{0%{transform:translate(0px,0px)}25%{transform:translate(-3.5px,-3.5px)}50%{transform:translate(0px,-6px)}75%{transform:translate(3.5px,-3.5px)}100%{transform:translate(0px,0px)}}
+@keyframes ai-hero-orbit-down{0%{transform:translate(0px,0px)}25%{transform:translate(-3.5px,3.5px)}50%{transform:translate(0px,6px)}75%{transform:translate(3.5px,3.5px)}100%{transform:translate(0px,0px)}}
+@keyframes ai-hero-oscillate{0%,100%{transform:rotate(-1deg)}50%{transform:rotate(1deg)}}
+@keyframes ai-hero-particle{0%,100%{transform:translate(0,0);opacity:.25}50%{transform:translate(var(--ptx),var(--pty));opacity:.12}}
+.ai-hero{position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.ai-hero-svg{overflow:visible;display:block}
+.ai-hero-orbit-up{animation:ai-hero-orbit-up 4500ms ease-in-out infinite;will-change:transform}
+.ai-hero-orbit-down{animation:ai-hero-orbit-down 4500ms ease-in-out infinite;will-change:transform}
+.ai-hero-oscillate{animation:ai-hero-oscillate 5000ms ease-in-out infinite;transform-origin:center;will-change:transform}
+.ai-hero-reduced{animation:none!important}
+.ai-hero-particle{animation:ai-hero-particle var(--pd,6s) ease-in-out infinite;will-change:transform,opacity}
+@media(prefers-reduced-motion:reduce){.ai-hero-orbit-up,.ai-hero-orbit-down,.ai-hero-oscillate,.ai-hero-particle{animation:none!important}}
+/* ARTEMIS-AI-011 Compact V2 — design lock aligned */
+.sai-p2{border-radius:20px;padding:22px;background:linear-gradient(145deg,#0b1121 0%,#0e1828 55%,#090d18 100%);border:1px solid rgba(var(--p2-rgb),.20);box-shadow:0 0 52px var(--p2-glow),0 6px 28px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.04);display:grid;gap:0;overflow:visible;cursor:pointer;-webkit-tap-highlight-color:transparent;min-height:620px}
+.sai-p2-bull{--p2-color:#31E95D;--p2-rgb:49,233,93;--p2-glow:rgba(49,233,93,.15)}
+.sai-p2-bear{--p2-color:#FF3D3D;--p2-rgb:255,61,61;--p2-glow:rgba(255,61,61,.15)}
+.sai-p2-balanced{--p2-color:#FFBD28;--p2-rgb:255,189,40;--p2-glow:rgba(255,189,40,.15)}
+.sai-p2-trim{--p2-color:#FFBD28;--p2-rgb:255,189,40;--p2-glow:rgba(255,189,40,.15)}
+.sai-p2-top{display:grid;grid-template-columns:1fr 240px;gap:8px;align-items:flex-start;padding-bottom:20px;min-height:240px}
+.sai-p2-lft{display:flex;flex-direction:column;gap:0;padding-top:2px}
+.sai-p2-badge{display:inline-flex;align-items:center;height:32px;padding:6px 12px;border-radius:999px;border:1px solid var(--p2-color);color:var(--p2-color);font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;width:fit-content;margin-bottom:14px}
+.sai-p2-ttl{font-size:22px;font-weight:600;line-height:28px;color:rgba(255,255,255,.72);margin-bottom:8px}
+.sai-p2-verdict{font-size:52px;font-weight:800;color:var(--p2-color);line-height:58px;letter-spacing:-1px;display:block}
+.sai-p2-sub{font-size:18px;color:rgba(255,255,255,.7);font-weight:500;line-height:24px;margin-top:6px;display:block}
+.sai-p2-rgt{display:flex;align-items:center;justify-content:center;width:240px;height:240px;flex-shrink:0}
+.sai-p2-reason{border-top:1px solid rgba(255,255,255,.10);padding:20px 0}
+.sai-p2-rlbl{display:block;font-size:14px;font-weight:700;line-height:18px;color:rgba(255,255,255,.72);margin-bottom:8px}
+.sai-p2-reason p{margin:0;font-size:18px;font-weight:400;color:#f1f5f9;line-height:26px}
+.sai-p2-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-top:1px solid rgba(255,255,255,.10);padding:20px 0}
+.sai-p2-mc{display:flex;flex-direction:column;gap:6px}
+.sai-p2-mlbl{font-size:14px;color:rgba(255,255,255,.52);font-weight:500;line-height:18px}
+.sai-p2-mval{font-size:32px;font-weight:800;font-variant-numeric:tabular-nums;color:#f8faff;line-height:38px;letter-spacing:-.02em;display:block}
+.sai-p2-mval small{font-size:14px;font-weight:600;color:rgba(255,255,255,.42);margin-left:2px;letter-spacing:0}
+.sai-p2-pos{color:#31E95D!important}
+.sai-p2-neg{color:#FF3D3D!important}
+/* Risk pill — spec: Pill display, colored */
+.sai-p2-rsk{display:inline-flex;align-items:center;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:700;line-height:1;white-space:nowrap;margin-top:4px;border:1px solid}
+.sai-p2-rsk-green{background:rgba(49,233,93,.12);border-color:rgba(49,233,93,.35);color:#31E95D}
+.sai-p2-rsk-amber{background:rgba(255,189,40,.12);border-color:rgba(255,189,40,.35);color:#FFBD28}
+.sai-p2-rsk-orange{background:rgba(249,115,22,.12);border-color:rgba(249,115,22,.35);color:#fb923c}
+.sai-p2-rsk-red{background:rgba(255,61,61,.12);border-color:rgba(255,61,61,.35);color:#FF3D3D}
+.sai-p2-rsk-gray{background:rgba(100,116,139,.12);border-color:rgba(100,116,139,.35);color:#94a3b8}
+.sai-p2-drv{border-top:1px solid rgba(255,255,255,.10);padding-top:20px}
+.sai-p2-dlbl{display:block;font-size:18px;font-weight:600;line-height:24px;color:#ffffff;margin-bottom:12px}
+.sai-p2-drv ul{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.sai-p2-di{display:flex;align-items:center;gap:12px;height:48px;font-size:17px;font-weight:500;color:rgba(255,255,255,.85);border-bottom:1px solid rgba(255,255,255,.08)}
+.sai-p2-di:last-child{border-bottom:none}
+.sai-p2-dot{width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.sai-p2-dot::after{content:'';width:10px;height:10px;border-radius:50%;display:block}
+.sai-p2-dot-good{background:rgba(49,233,93,.15)}.sai-p2-dot-good::after{background:#31E95D;box-shadow:0 0 6px rgba(49,233,93,.7)}
+.sai-p2-dot-bad{background:rgba(255,61,61,.15)}.sai-p2-dot-bad::after{background:#FF3D3D;box-shadow:0 0 6px rgba(255,61,61,.7)}
+.sai-p2-dot-neutral{background:rgba(255,189,40,.15)}.sai-p2-dot-neutral::after{background:#FFBD28;box-shadow:0 0 6px rgba(255,189,40,.5)}
+@media(max-width:430px){.sai-p2-top{grid-template-columns:1fr 240px;min-height:240px}}
+@media(max-width:390px){.sai-p2-top{grid-template-columns:1fr 220px;min-height:220px}.sai-p2-rgt{width:220px;height:220px}.sai-p2-verdict{font-size:48px;line-height:52px}}
+@media(max-width:375px){.sai-p2-top{grid-template-columns:1fr 200px;min-height:200px}.sai-p2-rgt{width:200px;height:200px}.sai-p2-verdict{font-size:44px;line-height:48px}.sai-p2-mval{font-size:28px;line-height:34px}}
+@media(max-width:360px){.sai-p2-top{grid-template-columns:1fr 180px;min-height:180px}.sai-p2-rgt{width:180px;height:180px}.sai-p2-verdict{font-size:40px}}
+/* Expanded V2 bottom sheet */
+.sai-exp2-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:900;animation:sai-exp2-fade 220ms ease forwards}
+@keyframes sai-exp2-fade{from{opacity:0}to{opacity:1}}
+.sai-exp2-panel{position:fixed;bottom:0;left:0;right:0;height:90vh;background:linear-gradient(180deg,#0d1526 0%,#090d18 100%);border-radius:20px 20px 0 0;z-index:901;display:flex;flex-direction:column;animation:sai-exp2-slide 240ms ease forwards;overflow:hidden}
+@keyframes sai-exp2-slide{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.sai-exp2-header{height:56px;display:flex;align-items:center;padding:0 16px;gap:12px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;background:rgba(9,13,24,.9);backdrop-filter:blur(12px);position:sticky;top:0;z-index:1}
+.sai-exp2-header-title{flex:1;font-size:17px;font-weight:600;color:#fff;text-align:center}
+.sai-exp2-back{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:500;color:rgba(255,255,255,.72);background:none;border:none;cursor:pointer;padding:8px 4px;min-width:44px;min-height:44px;-webkit-tap-highlight-color:transparent}
+.sai-exp2-close{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.10);border:none;cursor:pointer;color:rgba(255,255,255,.72);font-size:16px;-webkit-tap-highlight-color:transparent}
+.sai-exp2-dots{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.08);border:none;cursor:pointer;color:rgba(255,255,255,.72);-webkit-tap-highlight-color:transparent}
+.sai-exp2-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:24px 16px 48px}
+.sai-exp2-hero{display:flex;align-items:center;justify-content:center;padding:16px 0 24px}
+.sai-exp2-section{border-top:1px solid rgba(255,255,255,.08);padding:20px 0}
+.sai-exp2-section:first-child{border-top:none}
+.sai-exp2-section-title{font-size:18px;font-weight:600;color:#fff;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+.sai-exp2-info-btn{width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.3);background:none;color:rgba(255,255,255,.5);font-size:11px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-left:4px}
+.sai-exp2-summary{font-size:16px;font-weight:400;color:rgba(255,255,255,.82);line-height:1.6;margin:0}
+.sai-exp2-scorecard{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.sai-exp2-sc-item{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.sai-exp2-sc-label{font-size:12px;font-weight:500;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.04em}
+.sai-exp2-sc-val{font-size:22px;font-weight:800;color:#fff;line-height:1;font-variant-numeric:tabular-nums}
+.sai-exp2-sc-bar{height:3px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden}
+.sai-exp2-sc-fill{height:100%;border-radius:2px;transition:width .4s ease}
+.sai-exp2-evidence{display:grid;gap:10px}
+.sai-exp2-ev-block{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px}
+.sai-exp2-ev-block-title{font-size:13px;font-weight:700;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.05em;margin:0 0 6px}
+.sai-exp2-ev-block-body{font-size:15px;font-weight:400;color:rgba(255,255,255,.82);line-height:1.5;margin:0}
+.sai-exp2-scenarios{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sai-exp2-scenario{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px;text-align:center}
+.sai-exp2-scenario-label{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.6;display:block;margin-bottom:6px}
+.sai-exp2-scenario-pct{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.sai-exp2-scenario-prob{font-size:12px;color:rgba(255,255,255,.5);margin-top:4px;display:block}
+.sai-exp2-case-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.sai-exp2-case-list li{display:flex;align-items:flex-start;gap:10px;font-size:15px;color:rgba(255,255,255,.82);line-height:1.5}
+.sai-exp2-case-list li::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:7px}
+.sai-exp2-bull-list li::before{background:#31E95D}
+.sai-exp2-bear-list li::before{background:#FF3D3D}
+.sai-exp2-change-triggers{display:grid;gap:8px}
+.sai-exp2-trigger{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:10px;font-size:14px;color:rgba(255,255,255,.82);line-height:1.45}
+.sai-exp2-trigger-pos{background:rgba(49,233,93,.07);border:1px solid rgba(49,233,93,.2)}
+.sai-exp2-trigger-neg{background:rgba(255,61,61,.07);border:1px solid rgba(255,61,61,.2)}
+.sai-exp2-consensus-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px;color:rgba(255,255,255,.72)}
+.sai-exp2-consensus-row:last-child{border-bottom:none}
+.sai-exp2-consensus-val{font-weight:700;color:#fff;font-size:15px}
+.sai-exp2-history-item{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.sai-exp2-history-item:last-child{border-bottom:none}
+.sai-exp2-hist-verdict{width:48px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0}
+.sai-exp2-hist-verdict-buy{background:rgba(49,233,93,.15);color:#31E95D}
+.sai-exp2-hist-verdict-hold{background:rgba(255,189,40,.15);color:#FFBD28}
+.sai-exp2-hist-verdict-sell{background:rgba(255,61,61,.15);color:#FF3D3D}
+.sai-exp2-hist-meta{flex:1;min-width:0}
+.sai-exp2-hist-date{font-size:12px;color:rgba(255,255,255,.42)}
+.sai-exp2-hist-reason{font-size:14px;color:rgba(255,255,255,.72);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sai-exp2-method-blocks{display:grid;gap:10px}
+.sai-exp2-method-item{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px}
+.sai-exp2-method-title{font-size:13px;font-weight:700;color:rgba(255,255,255,.6);letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px}
+.sai-exp2-method-body{font-size:14px;color:rgba(255,255,255,.72);line-height:1.5;margin:0}
+/* portfolio sections */
+.sai-exp2-port-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:14px;color:rgba(255,255,255,.72)}
+.sai-exp2-port-row:last-child{border-bottom:none}
+.sai-exp2-port-val{font-weight:700;color:#fff}
+.sai-exp2-rec-verdict{display:inline-flex;align-items:center;height:38px;padding:0 20px;border-radius:999px;font-size:18px;font-weight:800;border:1px solid;margin-bottom:12px}
+.sai-exp2-rec-buy{background:rgba(49,233,93,.12);border-color:rgba(49,233,93,.4);color:#31E95D}
+.sai-exp2-rec-hold{background:rgba(255,189,40,.12);border-color:rgba(255,189,40,.4);color:#FFBD28}
+.sai-exp2-rec-sell{background:rgba(255,61,61,.12);border-color:rgba(255,61,61,.4);color:#FF3D3D}
+.sai-exp2-rec-add{background:rgba(49,233,93,.12);border-color:rgba(49,233,93,.4);color:#31E95D}
+.sai-exp2-rec-trim{background:rgba(255,189,40,.12);border-color:rgba(255,189,40,.4);color:#FFBD28}
+.sai-exp2-rec-reduce{background:rgba(255,61,61,.12);border-color:rgba(255,61,61,.4);color:#FF3D3D}
+.sai-exp2-rec-note{font-size:14px;color:rgba(255,255,255,.6);line-height:1.5;margin:0}
+/* text size variants */
+.sai-exp2-panel.sai-exp2-sz-small  .sai-exp2-summary,.sai-exp2-panel.sai-exp2-sz-small  .sai-exp2-ev-block-body,.sai-exp2-panel.sai-exp2-sz-small  .sai-exp2-case-list li{font-size:13px}
+.sai-exp2-panel.sai-exp2-sz-large  .sai-exp2-summary,.sai-exp2-panel.sai-exp2-sz-large  .sai-exp2-ev-block-body,.sai-exp2-panel.sai-exp2-sz-large  .sai-exp2-case-list li{font-size:18px}
+.sai-exp2-panel.sai-exp2-sz-xl     .sai-exp2-summary,.sai-exp2-panel.sai-exp2-sz-xl     .sai-exp2-ev-block-body,.sai-exp2-panel.sai-exp2-sz-xl     .sai-exp2-case-list li{font-size:21px}
 /* ARTEMIS-AI-001 compact / expanded AI Intelligence widget */
 .sai-compact{display:grid;gap:10px;padding:10px 0}
 .sai-compact-header{display:flex;align-items:center;justify-content:space-between;gap:8px}

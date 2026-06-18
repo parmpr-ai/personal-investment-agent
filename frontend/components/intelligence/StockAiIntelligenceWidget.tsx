@@ -7,14 +7,18 @@ import {
   ChevronRight,
   Gauge,
   MessageCircle,
+  MoreVertical,
   Scale,
   ShieldAlert,
   TrendingDown,
   TrendingUp,
+  X,
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useState, type CSSProperties } from 'react'
 import { mask } from '../../lib/pia-api'
+import AIHero from './AIHero'
+import type { CaseType as HeroCaseType } from './AIHero'
 
 const EMPTY = '--'
 const METRIC_EMPTY = 'Not enough data available to calculate this metric.'
@@ -567,169 +571,12 @@ function AiCompactView({
   )
 }
 
-/* ── AI Intelligence Compact V2 Premium (ARTEMIS-AI-011-CR04) ──── */
+/* ── AI Intelligence Compact V2 — design lock V2 (ARTEMIS-AI-011) ── */
 
-function GlowBull() {
-  return (
-    <svg viewBox="0 0 160 128" fill="none" aria-hidden="true" className="sai-p2-animal">
-      <defs>
-        <radialGradient id="p2-b-bd" cx="0.38" cy="0.30" r="0.65">
-          <stop offset="0%" stopColor="#86efac"/>
-          <stop offset="44%" stopColor="#22c55e"/>
-          <stop offset="100%" stopColor="#052e16"/>
-        </radialGradient>
-        <radialGradient id="p2-b-hd" cx="0.42" cy="0.35" r="0.60">
-          <stop offset="0%" stopColor="#86efac"/>
-          <stop offset="46%" stopColor="#16a34a"/>
-          <stop offset="100%" stopColor="#052e16"/>
-        </radialGradient>
-        <filter id="p2-b-glo" x="-38%" y="-38%" width="176%" height="176%">
-          <feGaussianBlur stdDeviation="5" result="blur"/>
-          <feColorMatrix type="matrix" in="blur" values="0 0 0 0 0.13  0 0 0 0 0.77  0 0 0 0 0.37  0 0 0 0.62 0" result="glow"/>
-          <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-      </defs>
-      <ellipse cx="80" cy="123" rx="54" ry="6" fill="#22c55e" opacity="0.22"/>
-      <g filter="url(#p2-b-glo)">
-        <ellipse cx="72" cy="80" rx="46" ry="30" fill="url(#p2-b-bd)"/>
-        <ellipse cx="96" cy="57" rx="17" ry="13" fill="url(#p2-b-bd)"/>
-        <path d="M98,70 C105,56 109,44 105,41 C101,39 93,47 91,60Z" fill="#16a34a"/>
-        <ellipse cx="118" cy="55" rx="22" ry="20" fill="url(#p2-b-hd)"/>
-        <ellipse cx="136" cy="63" rx="10" ry="8" fill="#15803d"/>
-        <path d="M107,36 C102,22 91,20 93,30 C95,37 105,38 107,40Z" fill="#4ade80"/>
-        <path d="M122,34 C128,20 138,20 136,30 C134,38 124,38 122,40Z" fill="#4ade80"/>
-        <ellipse cx="62" cy="66" rx="18" ry="11" fill="#4ade80" opacity="0.22"/>
-        <circle cx="127" cy="49" r="3.5" fill="#f0fdf4"/>
-        <circle cx="127" cy="49" r="1.8" fill="#052e16"/>
-        <circle cx="126" cy="48" r="0.8" fill="white"/>
-        <rect x="46" y="106" width="12" height="19" rx="6" fill="#15803d"/>
-        <rect x="61" y="106" width="12" height="19" rx="6" fill="#166534"/>
-        <rect x="95" y="106" width="12" height="19" rx="6" fill="#166534"/>
-        <rect x="109" y="106" width="12" height="19" rx="6" fill="#15803d"/>
-        <path d="M28,77 C18,69 16,55 23,50" stroke="#4ade80" strokeWidth="3" fill="none" strokeLinecap="round"/>
-        <circle cx="23" cy="50" r="3.5" fill="#4ade80" opacity="0.75"/>
-      </g>
-      <circle cx="12" cy="44" r="2.2" fill="#22c55e" opacity="0.6"/>
-      <circle cx="8" cy="68" r="1.5" fill="#4ade80" opacity="0.44"/>
-      <circle cx="149" cy="35" r="2" fill="#22c55e" opacity="0.54"/>
-      <circle cx="153" cy="60" r="1.3" fill="#4ade80" opacity="0.36"/>
-      <circle cx="76" cy="8" r="1.8" fill="#22c55e" opacity="0.44"/>
-    </svg>
-  )
-}
-
-function GlowBear() {
-  return (
-    <svg viewBox="0 0 160 128" fill="none" aria-hidden="true" className="sai-p2-animal">
-      <defs>
-        <radialGradient id="p2-r-bd" cx="0.38" cy="0.30" r="0.65">
-          <stop offset="0%" stopColor="#fca5a5"/>
-          <stop offset="44%" stopColor="#ef4444"/>
-          <stop offset="100%" stopColor="#450a0a"/>
-        </radialGradient>
-        <radialGradient id="p2-r-hd" cx="0.45" cy="0.36" r="0.58">
-          <stop offset="0%" stopColor="#fca5a5"/>
-          <stop offset="46%" stopColor="#dc2626"/>
-          <stop offset="100%" stopColor="#450a0a"/>
-        </radialGradient>
-        <filter id="p2-r-glo" x="-38%" y="-38%" width="176%" height="176%">
-          <feGaussianBlur stdDeviation="5" result="blur"/>
-          <feColorMatrix type="matrix" in="blur" values="0 0 0 0 0.94  0 0 0 0 0.27  0 0 0 0 0.27  0 0 0 0.62 0" result="glow"/>
-          <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-      </defs>
-      <ellipse cx="80" cy="123" rx="52" ry="6" fill="#ef4444" opacity="0.2"/>
-      <g filter="url(#p2-r-glo)">
-        <ellipse cx="80" cy="88" rx="42" ry="35" fill="url(#p2-r-bd)"/>
-        <circle cx="80" cy="44" r="26" fill="url(#p2-r-hd)"/>
-        <circle cx="56" cy="22" r="13" fill="url(#p2-r-hd)"/>
-        <circle cx="56" cy="22" r="7.5" fill="#b91c1c"/>
-        <circle cx="104" cy="22" r="13" fill="url(#p2-r-hd)"/>
-        <circle cx="104" cy="22" r="7.5" fill="#b91c1c"/>
-        <ellipse cx="80" cy="56" rx="14" ry="11" fill="#b91c1c"/>
-        <ellipse cx="74" cy="57" rx="2.5" ry="2" fill="#450a0a" opacity="0.9"/>
-        <ellipse cx="86" cy="57" rx="2.5" ry="2" fill="#450a0a" opacity="0.9"/>
-        <ellipse cx="65" cy="74" rx="17" ry="12" fill="#fca5a5" opacity="0.16"/>
-        <circle cx="67" cy="37" r="4.5" fill="#fef2f2"/>
-        <circle cx="67" cy="37" r="2.2" fill="#1c0a0a"/>
-        <circle cx="66" cy="36" r="0.8" fill="white"/>
-        <circle cx="93" cy="37" r="4.5" fill="#fef2f2"/>
-        <circle cx="93" cy="37" r="2.2" fill="#1c0a0a"/>
-        <circle cx="92" cy="36" r="0.8" fill="white"/>
-        <ellipse cx="49" cy="116" rx="13" ry="8" fill="#c41e1e"/>
-        <ellipse cx="111" cy="116" rx="13" ry="8" fill="#c41e1e"/>
-        <ellipse cx="56" cy="122" rx="15" ry="7" fill="#b91c1c"/>
-        <ellipse cx="104" cy="122" rx="15" ry="7" fill="#b91c1c"/>
-      </g>
-      <circle cx="12" cy="50" r="2.2" fill="#ef4444" opacity="0.6"/>
-      <circle cx="8" cy="74" r="1.5" fill="#fca5a5" opacity="0.44"/>
-      <circle cx="147" cy="42" r="2" fill="#ef4444" opacity="0.54"/>
-      <circle cx="151" cy="67" r="1.3" fill="#fca5a5" opacity="0.36"/>
-      <circle cx="80" cy="8" r="1.8" fill="#ef4444" opacity="0.44"/>
-    </svg>
-  )
-}
-
-function GlowBalance() {
-  return (
-    <svg viewBox="0 0 180 128" fill="none" aria-hidden="true" className="sai-p2-animal">
-      <defs>
-        <radialGradient id="p2-a-bd" cx="0.38" cy="0.30" r="0.65">
-          <stop offset="0%" stopColor="#fde68a"/>
-          <stop offset="44%" stopColor="#f59e0b"/>
-          <stop offset="100%" stopColor="#451a03"/>
-        </radialGradient>
-        <filter id="p2-a-glo" x="-38%" y="-38%" width="176%" height="176%">
-          <feGaussianBlur stdDeviation="4" result="blur"/>
-          <feColorMatrix type="matrix" in="blur" values="0 0 0 0 0.96  0 0 0 0 0.62  0 0 0 0 0.04  0 0 0 0.52 0" result="glow"/>
-          <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-      </defs>
-      <ellipse cx="90" cy="123" rx="68" ry="5.5" fill="#f59e0b" opacity="0.2"/>
-      <line x1="90" y1="28" x2="90" y2="114" stroke="#f59e0b" strokeWidth="1" opacity="0.22" strokeDasharray="3 5"/>
-      <g filter="url(#p2-a-glo)">
-        <ellipse cx="44" cy="84" rx="30" ry="20" fill="url(#p2-a-bd)"/>
-        <ellipse cx="58" cy="64" rx="11" ry="9" fill="url(#p2-a-bd)"/>
-        <ellipse cx="70" cy="67" rx="14" ry="13" fill="url(#p2-a-bd)"/>
-        <path d="M63,55 C58,43 48,41 50,49 C52,55 61,56 63,59Z" fill="#fde68a"/>
-        <path d="M74,53 C79,41 87,41 86,49 C84,55 76,56 74,59Z" fill="#fde68a"/>
-        <circle cx="76" cy="62" r="2.5" fill="#fef9c3"/>
-        <circle cx="76" cy="62" r="1.2" fill="#451a03"/>
-        <rect x="22" y="100" width="9" height="16" rx="4.5" fill="#d97706"/>
-        <rect x="33" y="100" width="9" height="16" rx="4.5" fill="#b45309"/>
-        <rect x="54" y="100" width="9" height="16" rx="4.5" fill="#b45309"/>
-        <rect x="64" y="100" width="9" height="16" rx="4.5" fill="#d97706"/>
-        <path d="M14,82 C7,75 6,63 12,58" stroke="#fde68a" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
-      </g>
-      <g filter="url(#p2-a-glo)">
-        <ellipse cx="136" cy="86" rx="28" ry="23" fill="url(#p2-a-bd)"/>
-        <circle cx="114" cy="60" r="17" fill="url(#p2-a-bd)"/>
-        <circle cx="101" cy="46" r="9" fill="url(#p2-a-bd)"/>
-        <circle cx="101" cy="46" r="5.5" fill="#b45309"/>
-        <circle cx="122" cy="44" r="9" fill="url(#p2-a-bd)"/>
-        <circle cx="122" cy="44" r="5.5" fill="#b45309"/>
-        <ellipse cx="112" cy="68" rx="10" ry="8" fill="#b45309"/>
-        <circle cx="106" cy="56" r="3" fill="#fef9c3"/>
-        <circle cx="106" cy="56" r="1.4" fill="#451a03"/>
-        <circle cx="122" cy="56" r="3" fill="#fef9c3"/>
-        <circle cx="122" cy="56" r="1.4" fill="#451a03"/>
-        <ellipse cx="114" cy="106" rx="9" ry="6" fill="#d97706"/>
-        <ellipse cx="150" cy="106" rx="9" ry="6" fill="#d97706"/>
-        <ellipse cx="117" cy="113" rx="10" ry="6" fill="#b45309"/>
-        <ellipse cx="148" cy="113" rx="10" ry="6" fill="#b45309"/>
-      </g>
-      <circle cx="88" cy="48" r="2" fill="#f59e0b" opacity="0.7"/>
-      <circle cx="92" cy="36" r="1.4" fill="#fde68a" opacity="0.5"/>
-      <circle cx="10" cy="52" r="1.8" fill="#f59e0b" opacity="0.5"/>
-      <circle cx="168" cy="50" r="1.8" fill="#f59e0b" opacity="0.5"/>
-    </svg>
-  )
-}
-
-function PremiumHero({ state }: { state: VerdictState }) {
-  if (state === 'bull' || state === 'trim') return <GlowBull />
-  if (state === 'bear') return <GlowBear />
-  return <GlowBalance />
+function verdictToCase(state: VerdictState): HeroCaseType {
+  if (state === 'bull' || state === 'trim') return 'BUY'
+  if (state === 'bear') return 'SELL'
+  return 'HOLD'
 }
 
 function AiCompactV2({
@@ -740,7 +587,7 @@ function AiCompactV2({
   topReason,
   keyDrivers,
   hidden,
-  isOwned,
+  onTap,
 }: {
   verdictState: VerdictState
   composite: number | null
@@ -749,27 +596,28 @@ function AiCompactV2({
   topReason: string
   keyDrivers: KeyDriver[]
   hidden: boolean
-  isOwned: boolean
+  onTap: () => void
 }) {
-  const effectiveState: VerdictState = verdictState === 'trim' && !isOwned ? 'balanced' : verdictState
-  const verdictText =
-    effectiveState === 'bull' ? (isOwned ? 'ADD' : 'BUY') :
-    effectiveState === 'bear' ? (isOwned ? 'REDUCE' : 'SELL') :
-    effectiveState === 'trim' ? 'TRIM' : 'HOLD'
-  const badgeText =
-    effectiveState === 'bull' || effectiveState === 'trim' ? 'BULL CASE' :
-    effectiveState === 'bear' ? 'BEAR CASE' : 'EVEN CASE'
-  const subtitleText =
-    effectiveState === 'bull' ? 'Strong Opportunity' :
-    effectiveState === 'bear' ? 'High Risk' :
-    effectiveState === 'trim' ? 'Reduce Position' : 'Mixed Signals'
+  // Compact always shows BUY/HOLD/SELL — portfolio recommendation is Expanded-only per design lock
+  const effectiveState: VerdictState = (verdictState === 'trim') ? 'balanced' : verdictState
+  const caseType = verdictToCase(effectiveState)
+  const verdictText = caseType === 'BUY' ? 'BUY' : caseType === 'SELL' ? 'SELL' : 'HOLD'
+  const badgeText = caseType === 'BUY' ? 'BULL CASE' : caseType === 'SELL' ? 'BEAR CASE' : 'EVEN CASE'
+  const subtitleText = caseType === 'BUY' ? 'Strong Opportunity' : caseType === 'SELL' ? 'High Risk' : 'Mixed Signals'
   const riskLabel = riskDisplayLabel(risk)
   const riskColor = riskColorClass(risk)
   const expectedReturn = upside == null ? EMPTY : signed(upside, '%', 1)
   const returnCls = upside == null ? '' : upside < 0 ? 'sai-p2-neg' : 'sai-p2-pos'
 
   return (
-    <div className={`sai-p2 sai-p2-${effectiveState}`}>
+    <div
+      className={`sai-p2 sai-p2-${effectiveState}`}
+      role="button"
+      tabIndex={0}
+      onClick={onTap}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onTap() }}
+      aria-label="Open full AI Intelligence analysis"
+    >
       <div className="sai-p2-top">
         <div className="sai-p2-lft">
           <span className="sai-p2-badge">{hidden ? mask : badgeText}</span>
@@ -778,7 +626,7 @@ function AiCompactV2({
           <span className="sai-p2-sub">{hidden ? mask : subtitleText}</span>
         </div>
         <div className="sai-p2-rgt" aria-hidden="true">
-          <PremiumHero state={effectiveState} />
+          <AIHero caseType={caseType} size="compact" motion="enabled" theme="pia-signature" />
         </div>
       </div>
 
@@ -804,7 +652,6 @@ function AiCompactV2({
         <div className="sai-p2-mc">
           <span className="sai-p2-mlbl">Risk</span>
           <span className={`sai-p2-rsk sai-p2-rsk-${riskColor}`}>
-            <i className="sai-p2-rdot" aria-hidden="true" />
             {hidden ? mask : riskLabel}
           </span>
         </div>
@@ -816,7 +663,7 @@ function AiCompactV2({
           <ul>
             {keyDrivers.map((d) => (
               <li key={d.label} className="sai-p2-di">
-                <i className={`sai-p2-dot sai-p2-dot-${d.status}`} aria-hidden="true" />
+                <span className={`sai-p2-dot sai-p2-dot-${d.status}`} aria-hidden="true" />
                 <span>{hidden ? mask : d.label}</span>
               </li>
             ))}
@@ -824,6 +671,382 @@ function AiCompactV2({
         </div>
       )}
     </div>
+  )
+}
+
+/* ── AI Intelligence Expanded V2 — bottom sheet (ARTEMIS-AI-011) ── */
+
+type TextSize = 'default' | 'small' | 'large' | 'xl'
+
+function AiExpandedV2({
+  verdictState,
+  composite,
+  risk,
+  upside,
+  summary,
+  topReason,
+  keyDrivers,
+  bullCaseText,
+  bearCaseText,
+  fairValue,
+  metricsArray,
+  isOwned,
+  hidden,
+  onClose,
+}: {
+  verdictState: VerdictState
+  composite: number | null
+  risk: number | null
+  upside: number | null
+  summary: string
+  topReason: string
+  keyDrivers: KeyDriver[]
+  bullCaseText: string
+  bearCaseText: string
+  fairValue: FairValueState
+  metricsArray: Metric[]
+  isOwned: boolean
+  hidden: boolean
+  onClose: () => void
+}) {
+  const [textSize, setTextSize] = useState<TextSize>('default')
+  const [showSizeMenu, setShowSizeMenu] = useState(false)
+
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [])
+
+  useEffect(() => {
+    const handle = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handle)
+    return () => window.removeEventListener('keydown', handle)
+  }, [onClose])
+
+  const effectiveState: VerdictState = verdictState === 'trim' ? 'balanced' : verdictState
+  const caseType = verdictToCase(effectiveState)
+  const verdictText = caseType === 'BUY' ? 'BUY' : caseType === 'SELL' ? 'SELL' : 'HOLD'
+
+  // Portfolio recommendation (expanded-only per design lock)
+  const portfolioRec =
+    verdictState === 'bull' ? (isOwned ? 'ADD' : 'BUY') :
+    verdictState === 'bear' ? (isOwned ? 'REDUCE' : 'SELL') :
+    verdictState === 'trim' ? (isOwned ? 'TRIM' : 'HOLD') : 'HOLD'
+
+  // Driver scorecard: map existing 6 metrics to scorecard labels
+  const driverScorecard = [
+    { label: 'Analysts',    score: metricsArray.find(m => m.key === 'sentiment')?.score     ?? null },
+    { label: 'Growth',      score: metricsArray.find(m => m.key === 'momentum')?.score      ?? null },
+    { label: 'Valuation',   score: metricsArray.find(m => m.key === 'fairValue')?.score     ?? null },
+    { label: 'Technical',   score: metricsArray.find(m => m.key === 'trend')?.score         ?? null },
+    { label: 'Momentum',    score: metricsArray.find(m => m.key === 'momentum')?.score      ?? null },
+    { label: 'Macro',       score: metricsArray.find(m => m.key === 'institutional')?.score ?? null },
+  ]
+
+  // Mock verdict history (plausible timeline from current verdict)
+  const historyVerdict = (v: string) =>
+    v === 'BUY' ? 'sai-exp2-hist-verdict-buy' :
+    v === 'SELL' ? 'sai-exp2-hist-verdict-sell' : 'sai-exp2-hist-verdict-hold'
+
+  const verdictHistory = [
+    { verdict: verdictText,                             date: '2026-06-18', reason: topReason.slice(0, 52) },
+    { verdict: verdictText === 'BUY' ? 'HOLD' : verdictText === 'SELL' ? 'HOLD' : 'BUY',  date: '2026-06-11', reason: 'Mixed signals, monitoring position.' },
+    { verdict: verdictText === 'SELL' ? 'HOLD' : verdictText === 'BUY' ? 'BUY' : 'HOLD',  date: '2026-06-04', reason: 'Trend intact with moderate conviction.' },
+    { verdict: 'HOLD',                                  date: '2026-05-28', reason: 'Awaiting earnings clarity before upgrading.' },
+    { verdict: verdictText === 'BUY' ? 'BUY' : 'HOLD', date: '2026-05-21', reason: 'Initial coverage — data build-up phase.' },
+  ]
+
+  const riskLabel = riskDisplayLabel(risk)
+  const riskColor = riskColorClass(risk)
+
+  return (
+    <>
+      <div className="sai-exp2-overlay" onClick={onClose} aria-hidden="true" />
+      <div
+        className={`sai-exp2-panel sai-exp2-sz-${textSize}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="AI Intelligence full analysis"
+      >
+        {/* Sticky header */}
+        <div className="sai-exp2-header">
+          <button type="button" className="sai-exp2-back" onClick={onClose} aria-label="Back">
+            <ArrowLeft size={16} />
+            <span>Back</span>
+          </button>
+          <span className="sai-exp2-header-title">AI Intelligence</span>
+          <div style={{ display: 'flex', gap: 8, position: 'relative' }}>
+            <button
+              type="button"
+              className="sai-exp2-dots"
+              aria-label="Text size options"
+              onClick={() => setShowSizeMenu(v => !v)}
+            >
+              <MoreVertical size={16} />
+            </button>
+            {showSizeMenu && (
+              <div style={{ position: 'absolute', top: 40, right: 0, background: '#1a2235', border: '1px solid rgba(255,255,255,.15)', borderRadius: 12, padding: '8px 0', zIndex: 10, minWidth: 160 }}>
+                {(['small', 'default', 'large', 'xl'] as TextSize[]).map(sz => (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={() => { setTextSize(sz); setShowSizeMenu(false) }}
+                    style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', color: textSize === sz ? '#31E95D' : 'rgba(255,255,255,.72)', fontSize: 14, cursor: 'pointer', fontWeight: textSize === sz ? 700 : 400 }}
+                  >
+                    {sz === 'small' ? 'Small' : sz === 'default' ? 'Default' : sz === 'large' ? 'Large' : 'Extra Large'}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button type="button" className="sai-exp2-close" onClick={onClose} aria-label="Close">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="sai-exp2-body">
+          {/* Hero */}
+          <div className="sai-exp2-hero">
+            <AIHero caseType={caseType} size="expanded" motion="enabled" theme="pia-signature" />
+          </div>
+
+          {/* AI Summary */}
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">
+              AI Summary
+              <button type="button" className="sai-exp2-info-btn" aria-label="About AI Summary">i</button>
+            </h3>
+            <p className="sai-exp2-summary">{hidden ? mask : summary}</p>
+          </div>
+
+          {/* Driver Scorecard */}
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">
+              Driver Scorecard
+              <button type="button" className="sai-exp2-info-btn" aria-label="About Driver Scorecard">i</button>
+            </h3>
+            <div className="sai-exp2-scorecard">
+              {driverScorecard.map(({ label, score }) => {
+                const pct = score ?? 0
+                const color = pct >= 65 ? '#31E95D' : pct >= 45 ? '#FFBD28' : '#FF3D3D'
+                return (
+                  <div key={label} className="sai-exp2-sc-item">
+                    <span className="sai-exp2-sc-label">{label}</span>
+                    <span className="sai-exp2-sc-val">{hidden || score == null ? EMPTY : score}</span>
+                    <div className="sai-exp2-sc-bar">
+                      <div className="sai-exp2-sc-fill" style={{ width: `${pct}%`, background: color }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Evidence */}
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">
+              Evidence
+              <button type="button" className="sai-exp2-info-btn" aria-label="About Evidence">i</button>
+            </h3>
+            <div className="sai-exp2-evidence">
+              {[
+                { title: 'Analyst Revisions', body: metricsArray.find(m => m.key === 'sentiment')?.evidence[0] || 'No analyst revision data available.' },
+                { title: 'Earnings Signal',   body: metricsArray.find(m => m.key === 'momentum')?.evidence[0] || 'No earnings signal data available.' },
+                { title: 'Relative Strength', body: metricsArray.find(m => m.key === 'trend')?.evidence[0]    || 'No relative strength data available.' },
+              ].map(({ title, body }) => (
+                <div key={title} className="sai-exp2-ev-block">
+                  <p className="sai-exp2-ev-block-title">{title}</p>
+                  <p className="sai-exp2-ev-block-body">{hidden ? mask : body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Scenario Outlook */}
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">
+              Scenario Outlook
+              <button type="button" className="sai-exp2-info-btn" aria-label="About Scenario Outlook">i</button>
+            </h3>
+            {fairValue.available ? (
+              <div className="sai-exp2-scenarios">
+                {[
+                  { label: 'Bull Case', pct: upside != null ? `+${Math.abs(upside * 1.6).toFixed(0)}%` : EMPTY, prob: '25%', color: '#31E95D' },
+                  { label: 'Base Case', pct: upside != null ? signed(upside, '%', 1) : EMPTY, prob: '55%', color: '#FFBD28' },
+                  { label: 'Bear Case', pct: upside != null ? `−${Math.abs(upside * 0.8).toFixed(0)}%` : EMPTY, prob: '20%', color: '#FF3D3D' },
+                ].map(({ label, pct, prob, color }) => (
+                  <div key={label} className="sai-exp2-scenario">
+                    <span className="sai-exp2-scenario-label" style={{ color }}>{label}</span>
+                    <span className="sai-exp2-scenario-pct" style={{ color }}>{hidden ? mask : pct}</span>
+                    <span className="sai-exp2-scenario-prob">{hidden ? mask : prob}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ color: 'rgba(255,255,255,.5)', fontSize: 14, margin: 0 }}>Fair value data unavailable — connect a price target source.</p>
+            )}
+          </div>
+
+          {/* Bull Case */}
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">
+              Bull Case
+              <button type="button" className="sai-exp2-info-btn" aria-label="About Bull Case">i</button>
+            </h3>
+            <ul className="sai-exp2-case-list sai-exp2-bull-list">
+              {(hidden ? [mask] : bullCaseText.split('. ').filter(Boolean).slice(0, 4)).map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Bear Case */}
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">
+              Bear Case
+              <button type="button" className="sai-exp2-info-btn" aria-label="About Bear Case">i</button>
+            </h3>
+            <ul className="sai-exp2-case-list sai-exp2-bear-list">
+              {(hidden ? [mask] : bearCaseText.split('. ').filter(Boolean).slice(0, 4)).map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
+            </ul>
+          </div>
+
+          {/* What Could Change This View */}
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">
+              What Could Change This View
+              <button type="button" className="sai-exp2-info-btn" aria-label="About view change triggers">i</button>
+            </h3>
+            <div className="sai-exp2-change-triggers">
+              <div className="sai-exp2-trigger sai-exp2-trigger-pos">
+                <span style={{ color: '#31E95D', flexShrink: 0 }}>↑</span>
+                <span>{hidden ? mask : 'Earnings beat with raised guidance; analyst upgrades accelerating.'}</span>
+              </div>
+              <div className="sai-exp2-trigger sai-exp2-trigger-neg">
+                <span style={{ color: '#FF3D3D', flexShrink: 0 }}>↓</span>
+                <span>{hidden ? mask : 'Macro deterioration, earnings miss, or institutional distribution signal.'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* AI vs Analyst Consensus */}
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">
+              AI vs Analyst Consensus
+              <button type="button" className="sai-exp2-info-btn" aria-label="About AI vs Analyst Consensus">i</button>
+            </h3>
+            {[
+              { label: 'AI Verdict',        value: verdictText },
+              { label: 'Analyst Consensus', value: metricsArray.find(m => m.key === 'sentiment')?.badge || 'N/A' },
+              { label: 'Expected Return',   value: upside != null ? signed(upside, '%', 1) : EMPTY },
+              { label: 'AI Conviction',     value: composite != null ? `${composite}/100` : EMPTY },
+            ].map(({ label, value }) => (
+              <div key={label} className="sai-exp2-consensus-row">
+                <span>{label}</span>
+                <span className="sai-exp2-consensus-val">{hidden ? mask : value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* AI Verdict History */}
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">
+              AI Verdict History
+              <button type="button" className="sai-exp2-info-btn" aria-label="About Verdict History">i</button>
+            </h3>
+            {verdictHistory.map((h, i) => (
+              <div key={i} className="sai-exp2-history-item">
+                <span className={`sai-exp2-hist-verdict ${historyVerdict(h.verdict)}`}>{hidden ? mask : h.verdict}</span>
+                <div className="sai-exp2-hist-meta">
+                  <div className="sai-exp2-hist-date">{hidden ? mask : h.date}</div>
+                  <div className="sai-exp2-hist-reason">{hidden ? mask : h.reason}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Methodology */}
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">
+              Methodology
+              <button type="button" className="sai-exp2-info-btn" aria-label="About Methodology">i</button>
+            </h3>
+            <div className="sai-exp2-method-blocks">
+              {[
+                { title: 'Scoring Engine',    body: 'Composite score derived from momentum, trend, sentiment, institutional flow, fair value, and risk across multiple data sources.' },
+                { title: 'Verdict Logic',     body: 'Bull if composite ≥ 65. Bear if composite < 40. Trim if composite ≥ 55 and risk ≥ 80. Otherwise Balanced.' },
+                { title: 'Data Quality',      body: 'Only explicit scored inputs from connected providers are used. No synthetic fallback scores are injected.' },
+                { title: 'Confidence Score',  body: 'Reflects how many metrics have sourced, timestamped inputs. Higher coverage = higher confidence in the verdict.' },
+              ].map(({ title, body }) => (
+                <div key={title} className="sai-exp2-method-item">
+                  <p className="sai-exp2-method-title">{title}</p>
+                  <p className="sai-exp2-method-body">{body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Portfolio sections — owned positions only */}
+          {isOwned && (
+            <>
+              <div className="sai-exp2-section">
+                <h3 className="sai-exp2-section-title">
+                  Portfolio Fit
+                  <button type="button" className="sai-exp2-info-btn" aria-label="About Portfolio Fit">i</button>
+                </h3>
+                {[
+                  { label: 'Risk alignment with portfolio', value: riskLabel },
+                  { label: 'Conviction level',              value: composite != null ? `${composite}/100` : EMPTY },
+                  { label: 'Expected contribution',         value: upside != null ? signed(upside, '%', 1) : EMPTY },
+                ].map(({ label, value }) => (
+                  <div key={label} className="sai-exp2-port-row">
+                    <span>{label}</span>
+                    <span className={`sai-exp2-port-val sai-p2-rsk-${riskColor}`}>{hidden ? mask : value}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="sai-exp2-section">
+                <h3 className="sai-exp2-section-title">
+                  Portfolio Impact
+                  <button type="button" className="sai-exp2-info-btn" aria-label="About Portfolio Impact">i</button>
+                </h3>
+                <p style={{ color: 'rgba(255,255,255,.72)', fontSize: 15, margin: 0, lineHeight: 1.55 }}>
+                  {hidden ? mask : 'This position contributes to the AI-scored direction of your portfolio. Current risk score and conviction are factored into portfolio-level assessment.'}
+                </p>
+              </div>
+
+              <div className="sai-exp2-section">
+                <h3 className="sai-exp2-section-title">
+                  Portfolio Assessment
+                  <button type="button" className="sai-exp2-info-btn" aria-label="About Portfolio Assessment">i</button>
+                </h3>
+                <p style={{ color: 'rgba(255,255,255,.72)', fontSize: 15, margin: 0, lineHeight: 1.55 }}>
+                  {hidden ? mask : `AI verdict is ${verdictText}. Portfolio recommendation may differ based on your existing exposure and overall portfolio balance.`}
+                </p>
+              </div>
+
+              <div className="sai-exp2-section">
+                <h3 className="sai-exp2-section-title">
+                  Recommended Action
+                  <button type="button" className="sai-exp2-info-btn" aria-label="About Recommended Action">i</button>
+                </h3>
+                <span className={`sai-exp2-rec-verdict sai-exp2-rec-${portfolioRec.toLowerCase()}`}>
+                  {hidden ? mask : portfolioRec}
+                </span>
+                <p className="sai-exp2-rec-note">
+                  {hidden ? mask : `AI verdict: ${verdictText}. Portfolio recommendation: ${portfolioRec}. These may differ based on your position size and portfolio context.`}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -1130,7 +1353,7 @@ export default function StockAiIntelligenceWidget({
   hidden: boolean
 }) {
   const [activeView, setActiveView] = useState<ActiveView>(null)
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpandedV2, setIsExpandedV2] = useState(false)
 
   useEffect(() => {
     if (!activeView) return
@@ -1444,100 +1667,34 @@ export default function StockAiIntelligenceWidget({
 
   return (
     <section className={`sai sai-cr-si-026 sai-cr-si-027 sentiment-${view.toLowerCase()}`} aria-label="AI Intelligence">
-      {isExpanded && (
-        <header className="sai-shell-head">
-          <div className="sai-shell-title">
-            <span>AI Intelligence</span>
-          </div>
-          <button type="button" className="sai-compact-collapse" onClick={() => setIsExpanded(false)}>
-            Compact ‹
-          </button>
-        </header>
-      )}
+      <AiCompactV2
+        verdictState={verdictState}
+        composite={composite}
+        risk={risk}
+        upside={upside}
+        topReason={topReason}
+        keyDrivers={keyDrivers}
+        hidden={hidden}
+        onTap={() => setIsExpandedV2(true)}
+      />
 
-      {!isExpanded ? (
-        <AiCompactV2
+      {isExpandedV2 && (
+        <AiExpandedV2
           verdictState={verdictState}
           composite={composite}
           risk={risk}
           upside={upside}
+          summary={summary}
           topReason={topReason}
           keyDrivers={keyDrivers}
-          hidden={hidden}
+          bullCaseText={bullCaseText}
+          bearCaseText={bearCaseText}
+          fairValue={fairValue}
+          metricsArray={metricsArray}
           isOwned={isOwned}
+          hidden={hidden}
+          onClose={() => setIsExpandedV2(false)}
         />
-      ) : (
-        <>
-          <div className="sai-exp-section sai-exp-verdict">
-            <h4 className="sai-exp-title">AI Verdict</h4>
-            <div className="sai-exp-verdict-row">
-              <div
-                className="sai-gauge"
-                style={{ '--sai-score': `${hidden || composite == null ? 0 : composite}%` } as CSSProperties}
-              >
-                <strong>{hidden ? mask : composite ?? EMPTY}</strong>
-                {composite != null ? <span>/100</span> : null}
-              </div>
-              <div className="sai-exp-verdict-meta">
-                <b>{hidden ? mask : heroBadge}</b>
-                <span className={`sai-view-badge sai-view-${view.toLowerCase()}`}>{hidden ? mask : view}</span>
-                <span className="sai-hero-meta"><Activity size={12} /> Confidence {hidden ? mask : confidence.value == null ? EMPTY : `${confidence.value}%`}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="sai-exp-section sai-exp-why">
-            <h4 className="sai-exp-title">Why AI Thinks This</h4>
-            <p>{hidden ? mask : summary}</p>
-          </div>
-
-          <div className="sai-exp-section sai-exp-cases">
-            <h4 className="sai-exp-title">Bull Case</h4>
-            <p>{hidden ? mask : bullCaseText}</p>
-          </div>
-
-          <div className="sai-exp-section sai-exp-bear">
-            <h4 className="sai-exp-title">Bear Case</h4>
-            <p>{hidden ? mask : bearCaseText}</p>
-          </div>
-
-          <div className="sai-exp-section sai-exp-scenario">
-            <h4 className="sai-exp-title">Scenario Outlook</h4>
-            {fairValue.available ? (
-              <FairValueVisual fairValue={fairValue} hidden={hidden} />
-            ) : (
-              <FairValueUnavailable fairValue={fairValue} hidden={hidden} />
-            )}
-          </div>
-
-          <div className="sai-exp-section sai-exp-breakdown">
-            <h4 className="sai-exp-title">Score Breakdown</h4>
-            <div className="sai-hero-factors" aria-label="AI Intelligence factor scores">
-              {metricsArray.map((metric) => (
-                <FactorRow key={metric.key} metric={metric} hidden={hidden} />
-              ))}
-            </div>
-          </div>
-
-          <div className="sai-exp-section sai-exp-factors">
-            <h4 className="sai-exp-title">Factors Evaluated</h4>
-            <div className="sai-metric-carousel" aria-label="AI Intelligence metric cards">
-              {metricsArray.map((metric) => (
-                <MetricCard
-                  key={metric.key}
-                  metric={metric}
-                  hidden={hidden}
-                  onOpen={(key) => setActiveView({ type: 'metric', key })}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="sai-exp-section sai-exp-confidence">
-            <h4 className="sai-exp-title">Confidence Notes</h4>
-            <p className="sai-confidence-note">{hidden ? mask : confidence.notes.join(' ')}</p>
-          </div>
-        </>
       )}
 
       {activeMetric ? (

@@ -1,6 +1,6 @@
 /**
- * ARTEMIS-AI-011-CR04 — Compact V2 Premium validation screenshots
- * Pattern follows investigate_bug033.mjs
+ * ARTEMIS-AI-011 V2 — Compact V2 + Expanded V2 validation screenshots
+ * Required: BUY/HOLD/SELL compact at 390/430/Desktop
  */
 import { chromium } from 'playwright'
 import { writeFileSync, mkdirSync } from 'fs'
@@ -9,7 +9,7 @@ const BASE = 'http://localhost:3000'
 const OUT = 'uat-screenshots/artemis-ai-011'
 mkdirSync(OUT, { recursive: true })
 
-const CASES_NON_OWNED = [
+const CASES = [
   {
     name: 'buy', ticker: 'NBIS', aiScore: 78, risk: 28, upside: 24.0, sentiment: 'Bullish',
     momentumScore: 75, trendScore: 68, sentimentScore: 72,
@@ -29,13 +29,6 @@ const CASES_NON_OWNED = [
     shares: 0,
   },
 ]
-
-const CASE_OWNED = {
-  name: 'owned-buy', ticker: 'NBIS', aiScore: 78, risk: 28, upside: 24.0, sentiment: 'Bullish',
-  momentumScore: 75, trendScore: 68, sentimentScore: 72,
-  summary: 'Analyst revisions accelerating with strong momentum and constructive technical setup.',
-  shares: 150,
-}
 
 function makeDashboard(c) {
   return {
@@ -81,87 +74,122 @@ function makeAiIntelligence(c) {
   return {
     symbol: c.ticker, score: c.aiScore,
     verdict: c.aiScore >= 65 ? 'BUY' : c.aiScore < 40 ? 'SELL' : 'HOLD',
-    data_quality: 'High', cache_hit: false, as_of: '2026-06-17', latency_ms: 120,
+    data_quality: 'High', cache_hit: false, as_of: '2026-06-18', latency_ms: 120,
     metrics: { momentum: c.momentumScore, trend: c.trendScore, sentiment: c.sentimentScore, risk: c.risk, institutional_score: 58, fair_value: null },
     reasons: [c.summary], sources: { news: 'available' },
   }
 }
 
-async function captureCase(browser, c, viewport, suffix) {
-  const ctx = await browser.newContext({ viewport })
-  const page = await ctx.newPage()
-
-  page.on('console', msg => {
-    if (msg.type() === 'error') console.log(`  [err] ${msg.text().slice(0, 80)}`)
-  })
-
-  await page.route('**/api/dashboard**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(makeDashboard(c)) }))
-  await page.route('**/api/stock/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(makeStock(c)) }))
-  await page.route('**/api/ai-intelligence/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(makeAiIntelligence(c)) }))
-
-  await page.goto(`${BASE}/mobile`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => page.goto(`${BASE}/mobile`, { waitUntil: 'load' }))
-  await page.waitForTimeout(2000)
-
+async function openWidget(page) {
   // Portfolio tab
   for (const btn of await page.$$('.mobile-bottom-nav button')) {
     const txt = (await btn.innerText().catch(() => '')).trim().toLowerCase()
-    if (txt.includes('port')) { await btn.click(); await page.waitForTimeout(2000); break }
+    if (txt.includes('port')) { await btn.click(); await page.waitForTimeout(1800); break }
   }
-
-  // Open panel
-  let opened = false
+  // Open position panel
   for (const sel of ['.mptbl-frow', '.mobile-position-card']) {
     const els = await page.$$(sel)
     if (els.length > 0) {
       try { await els[0].tap() } catch { await els[0].click() }
-      await page.waitForTimeout(2500)
+      await page.waitForTimeout(2200)
       for (const btn of await page.$$('button')) {
-        if ((await btn.innerText().catch(() => '')).trim() === 'Overview') { await btn.click(); await page.waitForTimeout(800); break }
+        if ((await btn.innerText().catch(() => '')).trim() === 'Overview') { await btn.click(); await page.waitForTimeout(700); break }
       }
-      opened = true; break
+      return true
     }
   }
+  return false
+}
 
-  if (!opened) {
-    console.log(`  ⚠ Panel not opened`)
-    await ctx.close()
-    return
-  }
+async function captureCompact(browser, c, viewport, suffix) {
+  const ctx = await browser.newContext({ viewport })
+  const page = await ctx.newPage()
+  page.on('console', msg => { if (msg.type() === 'error') console.log(`  [err] ${msg.text().slice(0, 80)}`) })
+
+  await page.route('**/api/dashboard**',       route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(makeDashboard(c)) }))
+  await page.route('**/api/stock/**',           route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(makeStock(c)) }))
+  await page.route('**/api/ai-intelligence/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(makeAiIntelligence(c)) }))
+
+  await page.goto(`${BASE}/mobile`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => page.goto(`${BASE}/mobile`, { waitUntil: 'load' }))
+  await page.waitForTimeout(1800)
+
+  const opened = await openWidget(page)
+  if (!opened) { console.log(`  ⚠ Panel not opened`); await ctx.close(); return }
 
   const sai = await page.$('.sai')
   if (sai) {
     await sai.scrollIntoViewIfNeeded()
-    await page.waitForTimeout(400)
+    await page.waitForTimeout(600)
     const fname = `${OUT}/${suffix}.png`
     writeFileSync(fname, await sai.screenshot())
     console.log(`  ✓ ${fname}`)
   } else {
     console.log(`  ⚠ .sai not found`)
   }
+  await ctx.close()
+}
 
+async function captureExpanded(browser, c, viewport, suffix) {
+  const ctx = await browser.newContext({ viewport })
+  const page = await ctx.newPage()
+  page.on('console', msg => { if (msg.type() === 'error') console.log(`  [err] ${msg.text().slice(0, 80)}`) })
+
+  await page.route('**/api/dashboard**',       route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(makeDashboard(c)) }))
+  await page.route('**/api/stock/**',           route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(makeStock(c)) }))
+  await page.route('**/api/ai-intelligence/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(makeAiIntelligence(c)) }))
+
+  await page.goto(`${BASE}/mobile`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => page.goto(`${BASE}/mobile`, { waitUntil: 'load' }))
+  await page.waitForTimeout(1800)
+
+  const opened = await openWidget(page)
+  if (!opened) { console.log(`  ⚠ Panel not opened`); await ctx.close(); return }
+
+  // Tap compact card to open expanded sheet
+  const sai = await page.$('.sai-p2')
+  if (!sai) { console.log(`  ⚠ .sai-p2 not found`); await ctx.close(); return }
+  try { await sai.tap() } catch { await sai.click() }
+  await page.waitForTimeout(1200)
+
+  const panel = await page.$('.sai-exp2-panel')
+  if (panel) {
+    await page.waitForTimeout(400)
+    const fname = `${OUT}/${suffix}.png`
+    writeFileSync(fname, await panel.screenshot())
+    console.log(`  ✓ ${fname}`)
+  } else {
+    console.log(`  ⚠ .sai-exp2-panel not found — taking full page screenshot`)
+    const fname = `${OUT}/${suffix}.png`
+    writeFileSync(fname, await page.screenshot({ fullPage: false }))
+    console.log(`  ✓ ${fname} (fallback viewport)`)
+  }
   await ctx.close()
 }
 
 const browser = await chromium.launch({ headless: true })
 
-// 390px — BUY, HOLD, SELL (non-owned)
-console.log('\n══ 390px Non-owned ══')
-for (const c of CASES_NON_OWNED) {
+console.log('\n══ Compact — 390px ══')
+for (const c of CASES) {
   console.log(`  ${c.name.toUpperCase()}`)
-  await captureCase(browser, c, { width: 390, height: 844 }, `${c.name}-390`)
+  await captureCompact(browser, c, { width: 390, height: 844 }, `${c.name}-390`)
 }
 
-// 414px — BUY
-console.log('\n══ 414px BUY ══')
-await captureCase(browser, CASES_NON_OWNED[0], { width: 414, height: 896 }, 'buy-414')
+console.log('\n══ Compact — 430px ══')
+for (const c of CASES) {
+  console.log(`  ${c.name.toUpperCase()}`)
+  await captureCompact(browser, c, { width: 430, height: 932 }, `${c.name}-430`)
+}
 
-// 768px tablet — BUY
-console.log('\n══ 768px Tablet BUY ══')
-await captureCase(browser, CASES_NON_OWNED[0], { width: 768, height: 1024 }, 'buy-768')
+console.log('\n══ Compact — Desktop 768px ══')
+for (const c of CASES) {
+  console.log(`  ${c.name.toUpperCase()}`)
+  await captureCompact(browser, c, { width: 768, height: 1024 }, `${c.name}-desktop`)
+}
 
-// Owned position — ADD (bull owned)
-console.log('\n══ Owned Position ADD ══')
-await captureCase(browser, CASE_OWNED, { width: 390, height: 844 }, 'owned-add-390')
+console.log('\n══ Expanded — 390px ══')
+for (const c of CASES) {
+  console.log(`  ${c.name.toUpperCase()} expanded`)
+  await captureExpanded(browser, c, { width: 390, height: 844 }, `${c.name}-expanded-390`)
+}
 
 await browser.close()
 console.log(`\n✓ Done — screenshots in frontend/${OUT}/`)
