@@ -1453,41 +1453,47 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sai-fair-no-data p{margin:0;border:1px solid rgba(245,158,11,.22);border-radius:12px;background:rgba(69,45,6,.22);padding:10px;color:#cbd5e1;font-size:12px;line-height:1.44}
 .sai-fair-no-data p strong{color:#fde68a}
 .sai-price-grid-single{grid-template-columns:minmax(0,1fr)}
-/* ARTEMIS-AI-011 Compact V2 */
-.sai-cv2{display:grid;gap:0}
-.sai-cv2-bull{--cv2-color:#22c55e;--cv2-sub:#86efac}
-.sai-cv2-bear{--cv2-color:#ef4444;--cv2-sub:#fca5a5}
-.sai-cv2-balanced{--cv2-color:#f97316;--cv2-sub:#fdba74}
-.sai-cv2-trim{--cv2-color:#f59e0b;--cv2-sub:#fde68a}
-.sai-cv2-icon{display:flex;justify-content:center;align-items:center;padding:8px 0 4px;color:var(--cv2-color,#60a5fa)}
-.sai-cv2-animal{width:auto;height:68px;max-width:110px}
-.sai-cv2-hero-text{text-align:center;padding-bottom:14px}
-.sai-cv2-verdict{display:block;font-size:40px;font-weight:900;line-height:1.05;letter-spacing:-.02em;color:var(--cv2-color,#f8fbff)}
-.sai-cv2-sub{display:block;margin-top:3px;color:#94a3b8;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
-.sai-cv2-reason{border-top:1px solid rgba(148,163,184,.1);padding:12px 0 10px}
-.sai-cv2-reason em,.sai-cv2-drivers>em{display:block;color:#8ab4ff;font-size:9px;font-style:normal;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px}
-.sai-cv2-reason p{margin:0;color:#cbd5e1;font-size:13px;line-height:1.48}
-.sai-cv2-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-top:1px solid rgba(148,163,184,.1);padding:12px 0 10px}
-.sai-cv2-stats>div{display:grid;gap:3px}
-.sai-cv2-stats em{display:block;color:#8ea2b6;font-size:9px;font-style:normal;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
-.sai-cv2-stat-val{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;color:#f8fbff;line-height:1.1}
-.sai-cv2-stat-val small{font-size:11px;color:#64748b;margin-left:1px}
-.sai-cv2-green{color:#22c55e!important}
-.sai-cv2-red{color:#ef4444!important}
-.sai-cv2-gray{color:#94a3b8!important}
-.sai-cv2-risk-badge{display:inline-block;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;border:1px solid transparent;white-space:nowrap}
-.sai-cv2-risk-green{border-color:rgba(34,197,94,.3);background:rgba(5,46,22,.4);color:#86efac}
-.sai-cv2-risk-amber{border-color:rgba(251,191,36,.3);background:rgba(69,45,6,.32);color:#fde68a}
-.sai-cv2-risk-orange{border-color:rgba(249,115,22,.3);background:rgba(78,37,5,.32);color:#fed7aa}
-.sai-cv2-risk-red{border-color:rgba(239,68,68,.3);background:rgba(127,29,29,.3);color:#fca5a5}
-.sai-cv2-risk-gray{border-color:rgba(148,163,184,.2);background:rgba(2,6,23,.46);color:#94a3b8}
-.sai-cv2-drivers{border-top:1px solid rgba(148,163,184,.1);padding-top:12px}
-.sai-cv2-drivers ul{margin:0;padding:0;list-style:none;display:grid;gap:8px}
-.sai-cv2-driver{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700;color:#cbd5e1}
-.sai-cv2-driver-icon{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:900;flex-shrink:0;line-height:1}
-.sai-cv2-di-good{background:rgba(34,197,94,.16);border:1px solid rgba(34,197,94,.36);color:#22c55e}
-.sai-cv2-di-bad{background:rgba(239,68,68,.16);border:1px solid rgba(239,68,68,.36);color:#ef4444}
-.sai-cv2-di-neutral{background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.22);color:#64748b}
+/* ARTEMIS-AI-011-CR04 Compact V2 Premium */
+@keyframes sai-p2-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+.sai-p2{border-radius:20px;padding:20px;background:linear-gradient(145deg,#0b1121 0%,#0e1828 55%,#090d18 100%);border:1px solid rgba(var(--p2-rgb),.20);box-shadow:0 0 48px var(--p2-glow),0 6px 28px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.04);display:grid;gap:0;overflow:hidden}
+.sai-p2-bull{--p2-color:#22c55e;--p2-rgb:34,197,94;--p2-glow:rgba(34,197,94,.15)}
+.sai-p2-bear{--p2-color:#ef4444;--p2-rgb:239,68,68;--p2-glow:rgba(239,68,68,.15)}
+.sai-p2-balanced{--p2-color:#f97316;--p2-rgb:249,115,22;--p2-glow:rgba(249,115,22,.15)}
+.sai-p2-trim{--p2-color:#f59e0b;--p2-rgb:245,158,11;--p2-glow:rgba(245,158,11,.15)}
+.sai-p2-top{display:grid;grid-template-columns:1fr 130px;gap:12px;align-items:center;padding-bottom:18px}
+.sai-p2-lft{display:flex;flex-direction:column;gap:0}
+.sai-p2-badge{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:6px;border:1px solid var(--p2-color);color:var(--p2-color);font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;width:fit-content;margin-bottom:10px}
+.sai-p2-ttl{font-size:13px;font-weight:600;color:rgba(255,255,255,.52);margin-bottom:2px}
+.sai-p2-verdict{font-size:44px;font-weight:800;color:var(--p2-color);line-height:1;letter-spacing:-.025em;display:block}
+.sai-p2-sub{font-size:15px;color:rgba(255,255,255,.7);font-weight:500;margin-top:5px;display:block}
+.sai-p2-rgt{display:flex;align-items:center;justify-content:center;width:130px;height:122px;flex-shrink:0}
+.sai-p2-animal{width:100%;height:100%;animation:sai-p2-breathe 3.5s ease-in-out infinite;transform-origin:center;overflow:visible}
+.sai-p2-reason{border-top:1px solid rgba(148,163,184,.1);padding:16px 0 14px}
+.sai-p2-rlbl{display:block;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--p2-color);margin-bottom:7px}
+.sai-p2-reason p{margin:0;font-size:16px;font-weight:500;color:#f1f5f9;line-height:1.42}
+.sai-p2-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;border-top:1px solid rgba(148,163,184,.1);padding:14px 0}
+.sai-p2-mc{display:flex;flex-direction:column;gap:4px}
+.sai-p2-mlbl{font-size:11px;color:rgba(255,255,255,.42);font-weight:600;letter-spacing:.025em}
+.sai-p2-mval{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;color:#f8faff;line-height:1;letter-spacing:-.02em;display:block}
+.sai-p2-mval small{font-size:12px;font-weight:600;color:#475569;margin-left:1px;letter-spacing:0}
+.sai-p2-pos{color:#22c55e!important}
+.sai-p2-neg{color:#ef4444!important}
+.sai-p2-rsk{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;line-height:1.2;margin-top:3px;white-space:nowrap}
+.sai-p2-rdot{width:9px;height:9px;border-radius:50%;flex-shrink:0;display:block}
+.sai-p2-rsk-green .sai-p2-rdot{background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,.7)}.sai-p2-rsk-green{color:#22c55e}
+.sai-p2-rsk-amber .sai-p2-rdot{background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,.7)}.sai-p2-rsk-amber{color:#f59e0b}
+.sai-p2-rsk-orange .sai-p2-rdot{background:#f97316;box-shadow:0 0 6px rgba(249,115,22,.7)}.sai-p2-rsk-orange{color:#f97316}
+.sai-p2-rsk-red .sai-p2-rdot{background:#ef4444;box-shadow:0 0 6px rgba(239,68,68,.7)}.sai-p2-rsk-red{color:#ef4444}
+.sai-p2-rsk-gray .sai-p2-rdot{background:#64748b}.sai-p2-rsk-gray{color:#94a3b8}
+.sai-p2-drv{border-top:1px solid rgba(148,163,184,.1);padding-top:14px}
+.sai-p2-dlbl{display:block;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.38);margin-bottom:10px}
+.sai-p2-drv ul{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+.sai-p2-di{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:#cbd5e1}
+.sai-p2-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;display:block}
+.sai-p2-dot-good{background:#22c55e;box-shadow:0 0 5px rgba(34,197,94,.55)}
+.sai-p2-dot-bad{background:#ef4444;box-shadow:0 0 5px rgba(239,68,68,.55)}
+.sai-p2-dot-neutral{background:#f97316;box-shadow:0 0 5px rgba(249,115,22,.45)}
+@media(max-width:375px){.sai-p2-top{grid-template-columns:1fr 108px}.sai-p2-rgt{width:108px;height:102px}.sai-p2-verdict{font-size:38px}.sai-p2-mval{font-size:22px}}
 /* ARTEMIS-AI-001 compact / expanded AI Intelligence widget */
 .sai-compact{display:grid;gap:10px;padding:10px 0}
 .sai-compact-header{display:flex;align-items:center;justify-content:space-between;gap:8px}

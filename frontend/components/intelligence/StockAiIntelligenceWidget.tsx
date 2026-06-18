@@ -6,7 +6,6 @@ import {
   Building2,
   ChevronRight,
   Gauge,
-  Info,
   MessageCircle,
   Scale,
   ShieldAlert,
@@ -568,70 +567,169 @@ function AiCompactView({
   )
 }
 
-/* ── AI Intelligence Compact V2 (ARTEMIS-AI-011) ─────────────────── */
+/* ── AI Intelligence Compact V2 Premium (ARTEMIS-AI-011-CR04) ──── */
 
-function BullSvg() {
+function GlowBull() {
   return (
-    <svg className="sai-cv2-animal" viewBox="0 0 100 80" aria-hidden="true" fill="currentColor">
-      <ellipse cx="50" cy="54" rx="30" ry="18"/>
-      <ellipse cx="78" cy="36" rx="16" ry="14"/>
-      <path d="M70 24 C68 14 58 12 56 18 C60 18 66 22 70 26Z"/>
-      <path d="M84 22 C88 12 96 14 94 22 C90 22 86 22 84 26Z"/>
-      <ellipse cx="91" cy="43" rx="5" ry="4"/>
-      <rect x="60" y="68" width="9" height="12" rx="4"/>
-      <rect x="73" y="68" width="9" height="12" rx="4"/>
-      <rect x="30" y="68" width="9" height="12" rx="4"/>
-      <rect x="18" y="66" width="9" height="14" rx="4"/>
-      <path d="M20 50 C10 44 12 34 18 32" stroke="currentColor" strokeWidth="3.5" fill="none" strokeLinecap="round"/>
+    <svg viewBox="0 0 160 128" fill="none" aria-hidden="true" className="sai-p2-animal">
+      <defs>
+        <radialGradient id="p2-b-bd" cx="0.38" cy="0.30" r="0.65">
+          <stop offset="0%" stopColor="#86efac"/>
+          <stop offset="44%" stopColor="#22c55e"/>
+          <stop offset="100%" stopColor="#052e16"/>
+        </radialGradient>
+        <radialGradient id="p2-b-hd" cx="0.42" cy="0.35" r="0.60">
+          <stop offset="0%" stopColor="#86efac"/>
+          <stop offset="46%" stopColor="#16a34a"/>
+          <stop offset="100%" stopColor="#052e16"/>
+        </radialGradient>
+        <filter id="p2-b-glo" x="-38%" y="-38%" width="176%" height="176%">
+          <feGaussianBlur stdDeviation="5" result="blur"/>
+          <feColorMatrix type="matrix" in="blur" values="0 0 0 0 0.13  0 0 0 0 0.77  0 0 0 0 0.37  0 0 0 0.62 0" result="glow"/>
+          <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <ellipse cx="80" cy="123" rx="54" ry="6" fill="#22c55e" opacity="0.22"/>
+      <g filter="url(#p2-b-glo)">
+        <ellipse cx="72" cy="80" rx="46" ry="30" fill="url(#p2-b-bd)"/>
+        <ellipse cx="96" cy="57" rx="17" ry="13" fill="url(#p2-b-bd)"/>
+        <path d="M98,70 C105,56 109,44 105,41 C101,39 93,47 91,60Z" fill="#16a34a"/>
+        <ellipse cx="118" cy="55" rx="22" ry="20" fill="url(#p2-b-hd)"/>
+        <ellipse cx="136" cy="63" rx="10" ry="8" fill="#15803d"/>
+        <path d="M107,36 C102,22 91,20 93,30 C95,37 105,38 107,40Z" fill="#4ade80"/>
+        <path d="M122,34 C128,20 138,20 136,30 C134,38 124,38 122,40Z" fill="#4ade80"/>
+        <ellipse cx="62" cy="66" rx="18" ry="11" fill="#4ade80" opacity="0.22"/>
+        <circle cx="127" cy="49" r="3.5" fill="#f0fdf4"/>
+        <circle cx="127" cy="49" r="1.8" fill="#052e16"/>
+        <circle cx="126" cy="48" r="0.8" fill="white"/>
+        <rect x="46" y="106" width="12" height="19" rx="6" fill="#15803d"/>
+        <rect x="61" y="106" width="12" height="19" rx="6" fill="#166534"/>
+        <rect x="95" y="106" width="12" height="19" rx="6" fill="#166534"/>
+        <rect x="109" y="106" width="12" height="19" rx="6" fill="#15803d"/>
+        <path d="M28,77 C18,69 16,55 23,50" stroke="#4ade80" strokeWidth="3" fill="none" strokeLinecap="round"/>
+        <circle cx="23" cy="50" r="3.5" fill="#4ade80" opacity="0.75"/>
+      </g>
+      <circle cx="12" cy="44" r="2.2" fill="#22c55e" opacity="0.6"/>
+      <circle cx="8" cy="68" r="1.5" fill="#4ade80" opacity="0.44"/>
+      <circle cx="149" cy="35" r="2" fill="#22c55e" opacity="0.54"/>
+      <circle cx="153" cy="60" r="1.3" fill="#4ade80" opacity="0.36"/>
+      <circle cx="76" cy="8" r="1.8" fill="#22c55e" opacity="0.44"/>
     </svg>
   )
 }
 
-function BearSvg() {
+function GlowBear() {
   return (
-    <svg className="sai-cv2-animal" viewBox="0 0 100 80" aria-hidden="true" fill="currentColor">
-      <ellipse cx="50" cy="54" rx="34" ry="22"/>
-      <circle cx="50" cy="26" r="22"/>
-      <circle cx="30" cy="8" r="11"/>
-      <circle cx="70" cy="8" r="11"/>
-      <ellipse cx="50" cy="35" rx="13" ry="9" opacity="0.55"/>
-      <rect x="22" y="70" width="13" height="10" rx="5"/>
-      <rect x="40" y="72" width="13" height="8" rx="4"/>
-      <rect x="52" y="72" width="13" height="8" rx="4"/>
-      <rect x="70" y="70" width="13" height="10" rx="5"/>
+    <svg viewBox="0 0 160 128" fill="none" aria-hidden="true" className="sai-p2-animal">
+      <defs>
+        <radialGradient id="p2-r-bd" cx="0.38" cy="0.30" r="0.65">
+          <stop offset="0%" stopColor="#fca5a5"/>
+          <stop offset="44%" stopColor="#ef4444"/>
+          <stop offset="100%" stopColor="#450a0a"/>
+        </radialGradient>
+        <radialGradient id="p2-r-hd" cx="0.45" cy="0.36" r="0.58">
+          <stop offset="0%" stopColor="#fca5a5"/>
+          <stop offset="46%" stopColor="#dc2626"/>
+          <stop offset="100%" stopColor="#450a0a"/>
+        </radialGradient>
+        <filter id="p2-r-glo" x="-38%" y="-38%" width="176%" height="176%">
+          <feGaussianBlur stdDeviation="5" result="blur"/>
+          <feColorMatrix type="matrix" in="blur" values="0 0 0 0 0.94  0 0 0 0 0.27  0 0 0 0 0.27  0 0 0 0.62 0" result="glow"/>
+          <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <ellipse cx="80" cy="123" rx="52" ry="6" fill="#ef4444" opacity="0.2"/>
+      <g filter="url(#p2-r-glo)">
+        <ellipse cx="80" cy="88" rx="42" ry="35" fill="url(#p2-r-bd)"/>
+        <circle cx="80" cy="44" r="26" fill="url(#p2-r-hd)"/>
+        <circle cx="56" cy="22" r="13" fill="url(#p2-r-hd)"/>
+        <circle cx="56" cy="22" r="7.5" fill="#b91c1c"/>
+        <circle cx="104" cy="22" r="13" fill="url(#p2-r-hd)"/>
+        <circle cx="104" cy="22" r="7.5" fill="#b91c1c"/>
+        <ellipse cx="80" cy="56" rx="14" ry="11" fill="#b91c1c"/>
+        <ellipse cx="74" cy="57" rx="2.5" ry="2" fill="#450a0a" opacity="0.9"/>
+        <ellipse cx="86" cy="57" rx="2.5" ry="2" fill="#450a0a" opacity="0.9"/>
+        <ellipse cx="65" cy="74" rx="17" ry="12" fill="#fca5a5" opacity="0.16"/>
+        <circle cx="67" cy="37" r="4.5" fill="#fef2f2"/>
+        <circle cx="67" cy="37" r="2.2" fill="#1c0a0a"/>
+        <circle cx="66" cy="36" r="0.8" fill="white"/>
+        <circle cx="93" cy="37" r="4.5" fill="#fef2f2"/>
+        <circle cx="93" cy="37" r="2.2" fill="#1c0a0a"/>
+        <circle cx="92" cy="36" r="0.8" fill="white"/>
+        <ellipse cx="49" cy="116" rx="13" ry="8" fill="#c41e1e"/>
+        <ellipse cx="111" cy="116" rx="13" ry="8" fill="#c41e1e"/>
+        <ellipse cx="56" cy="122" rx="15" ry="7" fill="#b91c1c"/>
+        <ellipse cx="104" cy="122" rx="15" ry="7" fill="#b91c1c"/>
+      </g>
+      <circle cx="12" cy="50" r="2.2" fill="#ef4444" opacity="0.6"/>
+      <circle cx="8" cy="74" r="1.5" fill="#fca5a5" opacity="0.44"/>
+      <circle cx="147" cy="42" r="2" fill="#ef4444" opacity="0.54"/>
+      <circle cx="151" cy="67" r="1.3" fill="#fca5a5" opacity="0.36"/>
+      <circle cx="80" cy="8" r="1.8" fill="#ef4444" opacity="0.44"/>
     </svg>
   )
 }
 
-function BalanceSvg() {
+function GlowBalance() {
   return (
-    <svg className="sai-cv2-animal" viewBox="0 0 100 80" aria-hidden="true">
-      <rect x="46" y="20" width="8" height="52" rx="4" fill="currentColor"/>
-      <rect x="30" y="68" width="40" height="8" rx="4" fill="currentColor"/>
-      <rect x="6" y="22" width="88" height="7" rx="3.5" fill="currentColor"/>
-      <circle cx="50" cy="18" r="8" fill="currentColor"/>
-      <line x1="20" y1="29" x2="20" y2="52" stroke="currentColor" strokeWidth="3"/>
-      <line x1="80" y1="29" x2="80" y2="52" stroke="currentColor" strokeWidth="3"/>
-      <path d="M6 52 Q20 62 34 52" stroke="currentColor" strokeWidth="4.5" fill="none" strokeLinecap="round"/>
-      <path d="M66 52 Q80 62 94 52" stroke="currentColor" strokeWidth="4.5" fill="none" strokeLinecap="round"/>
+    <svg viewBox="0 0 180 128" fill="none" aria-hidden="true" className="sai-p2-animal">
+      <defs>
+        <radialGradient id="p2-a-bd" cx="0.38" cy="0.30" r="0.65">
+          <stop offset="0%" stopColor="#fde68a"/>
+          <stop offset="44%" stopColor="#f59e0b"/>
+          <stop offset="100%" stopColor="#451a03"/>
+        </radialGradient>
+        <filter id="p2-a-glo" x="-38%" y="-38%" width="176%" height="176%">
+          <feGaussianBlur stdDeviation="4" result="blur"/>
+          <feColorMatrix type="matrix" in="blur" values="0 0 0 0 0.96  0 0 0 0 0.62  0 0 0 0 0.04  0 0 0 0.52 0" result="glow"/>
+          <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <ellipse cx="90" cy="123" rx="68" ry="5.5" fill="#f59e0b" opacity="0.2"/>
+      <line x1="90" y1="28" x2="90" y2="114" stroke="#f59e0b" strokeWidth="1" opacity="0.22" strokeDasharray="3 5"/>
+      <g filter="url(#p2-a-glo)">
+        <ellipse cx="44" cy="84" rx="30" ry="20" fill="url(#p2-a-bd)"/>
+        <ellipse cx="58" cy="64" rx="11" ry="9" fill="url(#p2-a-bd)"/>
+        <ellipse cx="70" cy="67" rx="14" ry="13" fill="url(#p2-a-bd)"/>
+        <path d="M63,55 C58,43 48,41 50,49 C52,55 61,56 63,59Z" fill="#fde68a"/>
+        <path d="M74,53 C79,41 87,41 86,49 C84,55 76,56 74,59Z" fill="#fde68a"/>
+        <circle cx="76" cy="62" r="2.5" fill="#fef9c3"/>
+        <circle cx="76" cy="62" r="1.2" fill="#451a03"/>
+        <rect x="22" y="100" width="9" height="16" rx="4.5" fill="#d97706"/>
+        <rect x="33" y="100" width="9" height="16" rx="4.5" fill="#b45309"/>
+        <rect x="54" y="100" width="9" height="16" rx="4.5" fill="#b45309"/>
+        <rect x="64" y="100" width="9" height="16" rx="4.5" fill="#d97706"/>
+        <path d="M14,82 C7,75 6,63 12,58" stroke="#fde68a" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+      </g>
+      <g filter="url(#p2-a-glo)">
+        <ellipse cx="136" cy="86" rx="28" ry="23" fill="url(#p2-a-bd)"/>
+        <circle cx="114" cy="60" r="17" fill="url(#p2-a-bd)"/>
+        <circle cx="101" cy="46" r="9" fill="url(#p2-a-bd)"/>
+        <circle cx="101" cy="46" r="5.5" fill="#b45309"/>
+        <circle cx="122" cy="44" r="9" fill="url(#p2-a-bd)"/>
+        <circle cx="122" cy="44" r="5.5" fill="#b45309"/>
+        <ellipse cx="112" cy="68" rx="10" ry="8" fill="#b45309"/>
+        <circle cx="106" cy="56" r="3" fill="#fef9c3"/>
+        <circle cx="106" cy="56" r="1.4" fill="#451a03"/>
+        <circle cx="122" cy="56" r="3" fill="#fef9c3"/>
+        <circle cx="122" cy="56" r="1.4" fill="#451a03"/>
+        <ellipse cx="114" cy="106" rx="9" ry="6" fill="#d97706"/>
+        <ellipse cx="150" cy="106" rx="9" ry="6" fill="#d97706"/>
+        <ellipse cx="117" cy="113" rx="10" ry="6" fill="#b45309"/>
+        <ellipse cx="148" cy="113" rx="10" ry="6" fill="#b45309"/>
+      </g>
+      <circle cx="88" cy="48" r="2" fill="#f59e0b" opacity="0.7"/>
+      <circle cx="92" cy="36" r="1.4" fill="#fde68a" opacity="0.5"/>
+      <circle cx="10" cy="52" r="1.8" fill="#f59e0b" opacity="0.5"/>
+      <circle cx="168" cy="50" r="1.8" fill="#f59e0b" opacity="0.5"/>
     </svg>
   )
 }
 
-function Cv2VerdictIcon({ state }: { state: VerdictState }) {
-  return (
-    <div className={`sai-cv2-icon sai-cv2-icon-${state}`}>
-      {state === 'bull' ? <BullSvg /> : state === 'bear' ? <BearSvg /> : <BalanceSvg />}
-    </div>
-  )
-}
-
-function Cv2DriverIcon({ status }: { status: DriverStatus }) {
-  return (
-    <span className={`sai-cv2-driver-icon sai-cv2-di-${status}`} aria-hidden="true">
-      {status === 'good' ? '✓' : status === 'bad' ? '✗' : '–'}
-    </span>
-  )
+function PremiumHero({ state }: { state: VerdictState }) {
+  if (state === 'bull' || state === 'trim') return <GlowBull />
+  if (state === 'bear') return <GlowBear />
+  return <GlowBalance />
 }
 
 function AiCompactV2({
@@ -642,6 +740,7 @@ function AiCompactV2({
   topReason,
   keyDrivers,
   hidden,
+  isOwned,
 }: {
   verdictState: VerdictState
   composite: number | null
@@ -650,52 +749,74 @@ function AiCompactV2({
   topReason: string
   keyDrivers: KeyDriver[]
   hidden: boolean
+  isOwned: boolean
 }) {
-  const vt = verdictState === 'bull' ? 'BUY' : verdictState === 'bear' ? 'SELL' : verdictState === 'trim' ? 'TRIM' : 'HOLD'
-  const sv = verdictState === 'bull' ? 'Strong Opportunity' : verdictState === 'bear' ? 'High Risk' : verdictState === 'trim' ? 'Reduce Position' : 'Mixed Signals'
+  const effectiveState: VerdictState = verdictState === 'trim' && !isOwned ? 'balanced' : verdictState
+  const verdictText =
+    effectiveState === 'bull' ? (isOwned ? 'ADD' : 'BUY') :
+    effectiveState === 'bear' ? (isOwned ? 'REDUCE' : 'SELL') :
+    effectiveState === 'trim' ? 'TRIM' : 'HOLD'
+  const badgeText =
+    effectiveState === 'bull' || effectiveState === 'trim' ? 'BULL CASE' :
+    effectiveState === 'bear' ? 'BEAR CASE' : 'EVEN CASE'
+  const subtitleText =
+    effectiveState === 'bull' ? 'Strong Opportunity' :
+    effectiveState === 'bear' ? 'High Risk' :
+    effectiveState === 'trim' ? 'Reduce Position' : 'Mixed Signals'
   const riskLabel = riskDisplayLabel(risk)
   const riskColor = riskColorClass(risk)
   const expectedReturn = upside == null ? EMPTY : signed(upside, '%', 1)
-  const returnColor = upside == null ? 'gray' : upside < 0 ? 'red' : 'green'
+  const returnCls = upside == null ? '' : upside < 0 ? 'sai-p2-neg' : 'sai-p2-pos'
 
   return (
-    <div className={`sai-cv2 sai-cv2-${verdictState}`}>
-      <Cv2VerdictIcon state={verdictState} />
-      <div className="sai-cv2-hero-text">
-        <strong className="sai-cv2-verdict">{hidden ? mask : vt}</strong>
-        <span className="sai-cv2-sub">{hidden ? mask : sv}</span>
+    <div className={`sai-p2 sai-p2-${effectiveState}`}>
+      <div className="sai-p2-top">
+        <div className="sai-p2-lft">
+          <span className="sai-p2-badge">{hidden ? mask : badgeText}</span>
+          <span className="sai-p2-ttl">AI Intelligence</span>
+          <strong className="sai-p2-verdict">{hidden ? mask : verdictText}</strong>
+          <span className="sai-p2-sub">{hidden ? mask : subtitleText}</span>
+        </div>
+        <div className="sai-p2-rgt" aria-hidden="true">
+          <PremiumHero state={effectiveState} />
+        </div>
       </div>
 
-      <div className="sai-cv2-reason">
-        <em>Top Reason</em>
+      <div className="sai-p2-reason">
+        <span className="sai-p2-rlbl">Top Reason</span>
         <p>{hidden ? mask : topReason}</p>
       </div>
 
-      <div className="sai-cv2-stats">
-        <div>
-          <em>Expected Return</em>
-          <strong className={`sai-cv2-stat-val sai-cv2-${returnColor}`}>{hidden ? mask : expectedReturn}</strong>
+      <div className="sai-p2-metrics">
+        <div className="sai-p2-mc">
+          <span className="sai-p2-mlbl">Expected Return</span>
+          <strong className={`sai-p2-mval${returnCls ? ` ${returnCls}` : ''}`}>
+            {hidden ? mask : expectedReturn}
+          </strong>
         </div>
-        <div>
-          <em>Conviction</em>
-          <strong className="sai-cv2-stat-val">
+        <div className="sai-p2-mc">
+          <span className="sai-p2-mlbl">Conviction</span>
+          <strong className="sai-p2-mval">
             {hidden ? mask : composite == null ? EMPTY : composite}
             {!hidden && composite != null && <small>/100</small>}
           </strong>
         </div>
-        <div>
-          <em>Risk</em>
-          <span className={`sai-cv2-risk-badge sai-cv2-risk-${riskColor}`}>{hidden ? mask : riskLabel}</span>
+        <div className="sai-p2-mc">
+          <span className="sai-p2-mlbl">Risk</span>
+          <span className={`sai-p2-rsk sai-p2-rsk-${riskColor}`}>
+            <i className="sai-p2-rdot" aria-hidden="true" />
+            {hidden ? mask : riskLabel}
+          </span>
         </div>
       </div>
 
       {keyDrivers.length > 0 && (
-        <div className="sai-cv2-drivers">
-          <em>Key Drivers</em>
+        <div className="sai-p2-drv">
+          <span className="sai-p2-dlbl">Key Drivers</span>
           <ul>
             {keyDrivers.map((d) => (
-              <li key={d.label} className={`sai-cv2-driver sai-cv2-driver-${d.status}`}>
-                <Cv2DriverIcon status={d.status} />
+              <li key={d.label} className="sai-p2-di">
+                <i className={`sai-p2-dot sai-p2-dot-${d.status}`} aria-hidden="true" />
                 <span>{hidden ? mask : d.label}</span>
               </li>
             ))}
@@ -1256,6 +1377,8 @@ export default function StockAiIntelligenceWidget({
   const verdictState = deriveVerdictState(composite, risk)
   const topReason = extractTopReason(summary, metrics)
   const keyDrivers = buildKeyDrivers(source, overview, metricsArray, verdictState)
+  const isOwned = Boolean((source?.shares ?? source?.qty ?? source?.quantity ?? 0) > 0 ||
+    (source?.position?.shares ?? source?.position?.qty ?? 0) > 0)
   const bullCaseText = cleanText(
     source?.bull_case ?? source?.bullCase ?? source?.bull_thesis ?? overview?.bull_case,
     200,
@@ -1321,17 +1444,16 @@ export default function StockAiIntelligenceWidget({
 
   return (
     <section className={`sai sai-cr-si-026 sai-cr-si-027 sentiment-${view.toLowerCase()}`} aria-label="AI Intelligence">
-      <header className="sai-shell-head">
-        <div className="sai-shell-title">
-          <span>AI Intelligence</span>
-          <Info size={14} aria-hidden="true" />
-        </div>
-        {isExpanded && (
+      {isExpanded && (
+        <header className="sai-shell-head">
+          <div className="sai-shell-title">
+            <span>AI Intelligence</span>
+          </div>
           <button type="button" className="sai-compact-collapse" onClick={() => setIsExpanded(false)}>
             Compact ‹
           </button>
-        )}
-      </header>
+        </header>
+      )}
 
       {!isExpanded ? (
         <AiCompactV2
@@ -1342,6 +1464,7 @@ export default function StockAiIntelligenceWidget({
           topReason={topReason}
           keyDrivers={keyDrivers}
           hidden={hidden}
+          isOwned={isOwned}
         />
       ) : (
         <>

@@ -41,35 +41,55 @@ Notes:
 
 ---
 
-### ARTEMIS-AI-011 — AI Intelligence Compact V2 Implementation
+### ARTEMIS-AI-011-CR04 — AI Intelligence Compact V2 Premium Redesign
 
 Status: PASS
 Owner: ARTEMIS
-Date: 2026-06-17
+Date: 2026-06-18
 Approved Mock: `docs/mocks/ai-intelligence/APPROVED/ai-intelligence-all-cases-compact-approved.png`
-Design Lock Commit: N/A (approved mock committed separately)
-Implementation Commit: see commit below
+Design Lock Commit: N/A (approved mock committed in ARTEMIS-AI-011)
+Implementation Commit: pending (this commit)
+Prior Commit (first pass, rejected): 4982058
 
-Build: PASS (`npx tsc --noEmit`, `npm run build`)
+Build: PASS (9/9 pages, `npx tsc --noEmit` clean, `npm run build` clean)
 Screenshots: `frontend/uat-screenshots/artemis-ai-011/`
 
 Deliverables verified:
-- [x] BUY state: Green bull SVG, "BUY" / "STRONG OPPORTUNITY", +24.0% return, Conviction 78/100, Medium Risk, 3 green checkmarks
-- [x] HOLD state: Amber scale SVG, "HOLD" / "MIXED SIGNALS", +6.0% return, Conviction 52/100, Medium Risk, 3 neutral dashes
-- [x] SELL state: Red bear SVG, "SELL" / "HIGH RISK", -18.0% return, Conviction 22/100, High Risk, 3 red X marks
-- [x] REMOVED: High Risk badge from header, top-right menu (...), trend arrow, AI Intelligence Beta label, score progress bar, View Full Analysis button
-- [x] KEPT: Bull/Hold/Bear/Trim icon, Verdict, Top Reason, Expected Return, Conviction, Risk, Key Drivers (3 items)
-- [x] Layout: [Icon + Verdict + Subtitle] / Top Reason / [Expected Return | Conviction | Risk] / Key Drivers
-- [x] All info visible at once — no expandable content, no secondary actions
-- [x] 390px mobile validated at iPhone 14 viewport
+- [x] State badge top-left: BULL CASE / EVEN CASE / BEAR CASE
+- [x] Title "AI Intelligence" (13px/600, inside card, NOT all-caps, NO info icon, NO Beta)
+- [x] Verdict 44px 800 weight left-aligned — BUY / HOLD / SELL (non-owned); ADD / REDUCE / TRIM (owned)
+- [x] Portfolio logic: non-owned bull→BUY, bear→SELL, balanced→HOLD; owned bull→ADD, bear→REDUCE, trim→TRIM; non-owned trim→HOLD
+- [x] Hero visual: 3D-look SVG animals with radialGradient + feGaussianBlur glow (not flat SVG)
+- [x] CSS breathing animation: scale 1→1.04 at 3.5s ease-in-out infinite
+- [x] Risk: colored dot + label text (not a badge or pill)
+- [x] Key Drivers: colored circle dots (good=green, bad=red, neutral=orange)
+- [x] REMOVED: High Risk badge, top-right menu, trend arrow, Beta label, score bar, View Full Analysis
+- [x] Shell header hidden in compact mode
+- [x] 390px BUY (non-owned): "BUY", green bull, Conviction 78/100, Medium Risk ✓
+- [x] 390px HOLD (non-owned): "HOLD", amber balance pair, Conviction 52/100, Medium Risk ✓
+- [x] 390px SELL (non-owned): "SELL", red bear, Conviction 22/100, High Risk ✓
+- [x] 390px ADD (owned 150 shares): "ADD", green bull, Conviction 78/100, Medium Risk ✓
+- [x] 414px BUY: layout intact ✓
+- [x] 768px Tablet BUY: wide layout ✓
+
+Animation: SVG radialGradient (3D lighting) + feGaussianBlur/feColorMatrix/feMerge (neon glow) + CSS sai-p2-breathe keyframes. No Lottie/Rive dependency.
 
 Notes:
-- `AiCompactV2` component replaces `AiCompactView` in the compact branch
-- `buildKeyDrivers()` derives 3 key drivers from explicit source.key_drivers or falls back to metric scores
-- `riskDisplayLabel()` and `riskColorClass()` drive the colored risk badge (Low/Medium/Elevated/High Risk)
-- Conviction = `composite` = `ai_intelligence.score` from `/api/ai-intelligence/{ticker}`
-- Expected Return reads `targets.upside_downside` or `source.price_vs_fair_value`
-- Screenshot script: `frontend/uat-cv2-compact.mjs` (mocks both `/api/stock/` and `/api/ai-intelligence/`)
+- `GlowBull`, `GlowBear`, `GlowBalance` replace all flat SVG animal components
+- `PremiumHero` selects animal by VerdictState
+- `AiCompactV2` receives `isOwned`; `effectiveState` overrides trim→balanced for non-owned positions
+- CSS vars `--p2-color`, `--p2-rgb`, `--p2-glow` per state variant
+- UAT script fix: `positions` must be nested inside `portfolio` in `makeDashboard` mock
+
+---
+
+### ARTEMIS-AI-011 — AI Intelligence Compact V2 (first pass — superseded by CR04)
+
+Status: PASS WITH CR
+Owner: ARTEMIS
+Date: 2026-06-17
+Implementation Commit: 4982058
+Note: Flat SVG animals rejected per CR04 spec. See CR04 entry above.
 
 ---
 
