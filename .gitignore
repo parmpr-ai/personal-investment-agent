@@ -39,3 +39,6 @@ backend/Lib/
 backend/Scripts/
 backend/Include/
 backend/pyvenv.cfg
+
+# IBKR raw response files — must never be committed (contain account IDs)
+data/ibkr-live/*.raw.json

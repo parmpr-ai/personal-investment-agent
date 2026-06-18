@@ -1923,3 +1923,111 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 @media(max-width:420px){.spse-strip-item{padding:8px 6px 10px}.spse-strip-label{font-size:8px}.spse-strip-value{font-size:12px}.spse-strip-sub{font-size:9px}.spse-sections{padding:10px 12px 0}.spse-section-head{padding:12px 12px 9px}.spse-section-body{padding:0 12px 12px}.spse-cust-sheet{padding-left:14px;padding-right:14px}.spse-head{padding-right:12px;padding-left:12px}}
 @media(min-width:480px){.spse-strip-item{padding:10px 12px 12px}.spse-strip-label{font-size:10px}.spse-strip-value{font-size:14px}.spse-strip-sub{font-size:11px}}
 .mobile-shell.mobile-shell-settings .mobile-bottom-nav{position:static!important;left:auto!important;bottom:auto!important;transform:none!important;width:100%!important;margin-top:18px!important}
+
+/* ── AIHero approved webp assets + animations (ARTEMIS-AI-012) ── */
+.aih-root{display:flex;align-items:center;justify-content:center;flex-shrink:0;will-change:transform}
+.aih-img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
+@keyframes aih-orbit-up{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-8px) rotate(2deg)}50%{transform:translateY(-12px) rotate(0deg)}75%{transform:translateY(-6px) rotate(-2deg)}100%{transform:translateY(0) rotate(0deg)}}
+@keyframes aih-orbit-down{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(6px) rotate(-2deg)}50%{transform:translateY(10px) rotate(0deg)}75%{transform:translateY(4px) rotate(2deg)}100%{transform:translateY(0) rotate(0deg)}}
+@keyframes aih-oscillate{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
+.aih-orbit-up{animation:aih-orbit-up 4.5s ease-in-out infinite}
+.aih-orbit-down{animation:aih-orbit-down 4.5s ease-in-out infinite}
+.aih-oscillate{animation:aih-oscillate 5s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.aih-orbit-up,.aih-orbit-down,.aih-oscillate{animation:none}}
+
+/* ── Expanded V2 header — company identity (ARTEMIS-AI-012) ── */
+.sai-exp2-header-identity{display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden}
+.sai-exp2-header-ticker{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.01em;white-space:nowrap}
+.sai-exp2-header-company{font-size:13px;color:rgba(255,255,255,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.sai-exp2-header-verdict{font-size:13px;font-weight:800;white-space:nowrap;border:1px solid currentColor;border-radius:6px;padding:1px 7px;margin-left:4px}
+
+/* ── Three-dot dropdown menu ── */
+.sai-exp2-menu{position:absolute;top:40px;right:0;background:#1a2235;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:8px 0;z-index:10;min-width:200px;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.sai-exp2-menu-label{font-size:11px;font-weight:700;color:rgba(255,255,255,.4);padding:6px 16px 2px;text-transform:uppercase;letter-spacing:.06em}
+.sai-exp2-menu-item{display:block;width:100%;padding:10px 16px;text-align:left;background:none;border:none;color:rgba(255,255,255,.72);font-size:14px;cursor:pointer;transition:background .12s}
+.sai-exp2-menu-item:hover{background:rgba(255,255,255,.06)}
+.sai-exp2-menu-divider{height:1px;background:rgba(255,255,255,.08);margin:4px 0}
+
+/* ── Hero metrics row below hero in expanded ── */
+.sai-exp2-hero-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:0 20px 4px;margin-bottom:8px}
+.sai-exp2-hm-item{display:flex;flex-direction:column;align-items:center;gap:4px}
+.sai-exp2-hm-lbl{font-size:11px;font-weight:600;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.05em}
+.sai-exp2-hm-val{font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+
+/* ── Driver Scorecard 2×3 grid (ARTEMIS-AI-012) ── */
+.sai-exp2-scorecard-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.sai-exp2-sc-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px 10px;display:flex;flex-direction:column;gap:6px}
+.sai-exp2-sc-label{font-size:12px;font-weight:600;color:rgba(255,255,255,.6)}
+.sai-exp2-sc-val{font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.sai-exp2-sc-bar{height:3px;border-radius:2px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:2px}
+.sai-exp2-sc-fill{height:100%;border-radius:2px;transition:width .4s ease}
+
+/* ── Evidence cards (ARTEMIS-AI-012) ── */
+.sai-exp2-evidence{display:grid;gap:12px}
+.sai-exp2-ev-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px 16px}
+.sai-exp2-ev-title{font-size:13px;font-weight:700;color:rgba(255,255,255,.9);margin:0 0 6px}
+.sai-exp2-ev-body{font-size:14px;color:rgba(255,255,255,.65);line-height:1.5;margin:0}
+.sai-exp2-ev-window{font-size:12px;color:rgba(255,255,255,.35);font-style:italic;margin:6px 0 0}
+
+/* ── Scenario Outlook vertical with icon (ARTEMIS-AI-012) ── */
+.sai-exp2-scenario-icon{font-size:16px;margin-right:6px}
+.sai-exp2-scenario-prob{font-size:13px;font-weight:700;margin-left:auto}
+
+/* ── AI vs Analyst Consensus gauge (ARTEMIS-AI-012) ── */
+.sai-exp2-consensus-gauge-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0}
+.sai-exp2-cg-side{display:flex;flex-direction:column;gap:6px;flex:1}
+.sai-exp2-cg-right{align-items:flex-end}
+.sai-exp2-cg-lbl{font-size:12px;color:rgba(255,255,255,.5);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.sai-exp2-cg-verdict{font-size:24px;font-weight:800}
+.sai-exp2-cg-ac{font-size:14px;font-weight:700;color:#fff;text-align:right}
+.sai-exp2-cg-center{display:flex;flex-direction:column;align-items:center;gap:4px;flex:0 0 auto}
+.sai-exp2-cg-align-lbl{font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.06em;margin:0}
+.sai-exp2-cg-count{font-size:13px;color:rgba(255,255,255,.4);text-align:center;margin:8px 0 0}
+
+/* ── AI Verdict History timeline (ARTEMIS-AI-012) ── */
+.sai-exp2-timeline{display:grid;gap:0;padding:4px 0}
+.sai-exp2-tl-item{display:flex;gap:12px;align-items:flex-start;min-height:60px}
+.sai-exp2-tl-spine{display:flex;flex-direction:column;align-items:center;flex:0 0 16px;margin-top:4px}
+.sai-exp2-tl-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.sai-exp2-tl-line{flex:1;width:1.5px;background:rgba(255,255,255,.15);min-height:40px;margin-top:4px}
+.sai-exp2-tl-content{flex:1;padding-bottom:16px}
+.sai-exp2-tl-top{display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap}
+.sai-exp2-tl-verdict{font-size:14px;font-weight:800;letter-spacing:.03em}
+.sai-exp2-tl-score{font-size:12px;color:rgba(255,255,255,.45);font-variant-numeric:tabular-nums}
+.sai-exp2-tl-date{font-size:12px;color:rgba(255,255,255,.4);margin-left:auto}
+.sai-exp2-tl-reason{font-size:13px;color:rgba(255,255,255,.6);line-height:1.45;margin:0}
+
+/* ── Anchored info popover (ARTEMIS-AI-012) ── */
+.sai-info-popover{background:#1e2b45;border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:14px 16px;box-shadow:0 8px 32px rgba(0,0,0,.6);max-width:280px}
+.sai-info-popover-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
+.sai-info-popover-title{font-size:14px;font-weight:700;color:#fff;line-height:1.3}
+.sai-info-popover-close{background:none;border:none;color:rgba(255,255,255,.5);cursor:pointer;padding:0;flex-shrink:0;line-height:1}
+.sai-info-popover-body{font-size:13px;color:rgba(255,255,255,.65);line-height:1.5;margin:0;white-space:pre-line}
+
+/* ── Layout customization panel (ARTEMIS-AI-012) ── */
+.sai-exp2-customize{position:fixed;bottom:0;left:0;right:0;max-height:80vh;overflow-y:auto;background:#131f35;border-radius:20px 20px 0 0;z-index:930;padding:20px 20px calc(20px + env(safe-area-inset-bottom))}
+.sai-exp2-customize-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.sai-exp2-customize-header>span{font-size:18px;font-weight:800;color:#fff}
+.sai-exp2-customize-header>button{background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;padding:4px}
+.sai-exp2-customize-sub{font-size:13px;color:rgba(255,255,255,.45);margin:0 0 16px}
+.sai-exp2-customize-list{display:grid;gap:0}
+.sai-exp2-customize-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid rgba(255,255,255,.07)}
+.sai-exp2-customize-row:first-child{border-top:none}
+.sai-exp2-customize-drag{font-size:18px;color:rgba(255,255,255,.25);cursor:grab;user-select:none}
+.sai-exp2-customize-label{flex:1;font-size:15px;color:rgba(255,255,255,.85);font-weight:500}
+.sai-exp2-customize-toggle{width:44px;height:26px;border-radius:13px;border:1px solid rgba(255,255,255,.2);background:#1a2235;cursor:pointer;position:relative;transition:background .2s,border-color .2s;flex-shrink:0}
+.sai-exp2-customize-toggle span{display:block;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.5);position:absolute;top:2px;left:2px;transition:transform .2s,background .2s}
+.sai-exp2-customize-toggle.on{background:#18c84b;border-color:#18c84b66}
+.sai-exp2-customize-toggle.on span{transform:translateX(18px);background:#fff}
+.sai-exp2-customize-reset{display:block;width:100%;margin-top:16px;padding:12px;background:none;border:1px solid rgba(255,255,255,.15);border-radius:10px;color:rgba(255,255,255,.55);font-size:14px;cursor:pointer;transition:border-color .15s}
+.sai-exp2-customize-reset:hover{border-color:rgba(255,255,255,.3)}
+
+/* ── Portfolio impact row dot (ARTEMIS-AI-012) ── */
+.sai-exp2-impact-dot{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;font-size:14px}
+
+/* ── Compact hero size update per design spec (220px per lock) ── */
+.sai-p2-top{grid-template-columns:1fr 200px!important}
+.sai-p2-rgt{width:200px!important;height:200px!important;display:flex;align-items:center;justify-content:center;overflow:visible;flex-shrink:0}
+@media(max-width:390px){.sai-p2-top{grid-template-columns:1fr 180px!important}.sai-p2-rgt{width:180px!important;height:180px!important}}
+@media(max-width:375px){.sai-p2-top{grid-template-columns:1fr 160px!important}.sai-p2-rgt{width:160px!important;height:160px!important}}
+@media(max-width:360px){.sai-p2-top{grid-template-columns:1fr 140px!important}.sai-p2-rgt{width:140px!important;height:140px!important}}

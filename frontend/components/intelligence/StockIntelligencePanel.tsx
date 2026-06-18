@@ -1193,7 +1193,7 @@ export default function StockIntelligencePanel({
           <div className="stock-intel-section stock-overview-v2">
             {position ? <StockPositionSummary source={{ ...source, ...position }} hidden={hidden} /> : null}
 
-            <StockAiIntelligenceWidget source={source} overview={overview} technical={technical} targets={targets} hidden={hidden} />
+            <StockAiIntelligenceWidget source={source} overview={overview} technical={technical} targets={targets} hidden={hidden} ticker={ticker} />
 
             <AnalystTargetsWidget source={{ ...source, ...fundamentals, fundamentals, intelligence }} hidden={hidden} onOpen={openAnalystTargetsDetail} />
 

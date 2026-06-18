@@ -800,6 +800,9 @@ function AiExpandedV2({
   isOwned,
   hidden,
   onClose,
+  frontendContract,
+  companyName,
+  companySymbol,
 }: {
   verdictState: VerdictState
   composite: number | null
@@ -808,17 +811,28 @@ function AiExpandedV2({
   summary: string
   topReason: string
   keyDrivers: KeyDriver[]
-  bullCaseText: string
-  bearCaseText: string
+  bullCaseText: string | string[]
+  bearCaseText: string | string[]
   fairValue: FairValueState
   metricsArray: Metric[]
   isOwned: boolean
   hidden: boolean
   onClose: () => void
+  frontendContract?: any
+  companyName?: string
+  companySymbol?: string
 }) {
   const [textSize, setTextSize] = useState<TextSize>('default')
-  const [showSizeMenu, setShowSizeMenu] = useState(false)
-  const [infoSection, setInfoSection] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState<false | 'size' | 'customize'>(false)
+  const [infoPopover, setInfoPopover] = useState<{ section: string; top: number; left: number } | null>(null)
+  const [showCustomize, setShowCustomize] = useState(false)
+  const [customOrder, setCustomOrder] = useState<string[]>([
+    'Hero + AI Summary', 'Driver Scorecard', 'Evidence', 'Scenario Outlook',
+    'What Could Change This View', 'AI vs Analyst Consensus',
+    'Portfolio Fit', 'Portfolio Impact', 'Portfolio Assessment', 'Recommended Action',
+    'AI Verdict History',
+  ])
+  const [customVisible, setCustomVisible] = useState<Record<string, boolean>>({})
   const lastTapRef = useRef<number>(0)
 
   useEffect(() => {
@@ -833,22 +847,31 @@ function AiExpandedV2({
     return () => window.removeEventListener('keydown', handle)
   }, [onClose])
 
-  function handleHeaderDoubleTap() {
+  function handlePanelClick(e: React.MouseEvent) {
+    if ((e.target as Element).closest('button, a, input, select, [role="button"], [role="checkbox"]')) return
     const now = Date.now()
     if (now - lastTapRef.current < 300) onClose()
     lastTapRef.current = now
   }
 
+  function isVisible(section: string) {
+    return customVisible[section] !== false
+  }
+
   const effectiveState: VerdictState = verdictState === 'trim' ? 'balanced' : verdictState
   const caseType = verdictToCase(effectiveState)
   const verdictText = caseType === 'BUY' ? 'BUY' : caseType === 'SELL' ? 'SELL' : 'HOLD'
+  const verdictColor = caseType === 'BUY' ? '#31E95D' : caseType === 'SELL' ? '#FF3D3D' : '#FFBD28'
 
   const portfolioRec =
     verdictState === 'bull'     ? (isOwned ? 'ADD'    : 'BUY')  :
     verdictState === 'bear'     ? (isOwned ? 'REDUCE' : 'SELL') :
     verdictState === 'trim'     ? (isOwned ? 'TRIM'   : 'HOLD') : 'HOLD'
 
-  const driverScorecard = [
+  const fc = frontendContract
+
+  // Driver scorecard — prefer HERMES, fallback to V1
+  const driverScorecard: Array<{ label: string; score: number | null }> = fc?.driverScorecard ?? [
     { label: 'Analysts',   score: metricsArray.find(m => m.key === 'sentiment')?.score     ?? null },
     { label: 'Growth',     score: metricsArray.find(m => m.key === 'momentum')?.score      ?? null },
     { label: 'Valuation',  score: metricsArray.find(m => m.key === 'fairValue')?.score     ?? null },
@@ -857,16 +880,17 @@ function AiExpandedV2({
     { label: 'Macro',      score: metricsArray.find(m => m.key === 'institutional')?.score ?? null },
   ]
 
-  const historyVerdict = (v: string) =>
-    v === 'BUY' ? 'sai-exp2-hist-verdict-buy' :
-    v === 'SELL' ? 'sai-exp2-hist-verdict-sell' : 'sai-exp2-hist-verdict-hold'
-
-  const verdictHistory = [
-    { verdict: verdictText,                                                                      date: '2026-06-18', reason: topReason.slice(0, 52) },
-    { verdict: verdictText === 'BUY' ? 'HOLD' : verdictText === 'SELL' ? 'HOLD' : 'BUY',       date: '2026-06-11', reason: 'Mixed signals, monitoring position.' },
-    { verdict: verdictText === 'SELL' ? 'HOLD' : verdictText === 'BUY' ? 'BUY' : 'HOLD',       date: '2026-06-04', reason: 'Trend intact with moderate conviction.' },
-    { verdict: 'HOLD',                                                                           date: '2026-05-28', reason: 'Awaiting earnings clarity before upgrading.' },
-    { verdict: verdictText === 'BUY' ? 'BUY' : 'HOLD',                                          date: '2026-05-21', reason: 'Initial coverage — data build-up phase.' },
+  // Verdict history — prefer HERMES backend data
+  const rawHistory: Array<{ caseType?: string; score?: number; date?: string; reason?: string; period?: string }> = fc?.verdictHistory ?? []
+  const verdictHistory = rawHistory.length > 0 ? rawHistory.map((h, i) => ({
+    verdict: h.caseType ?? verdictText,
+    score: h.score,
+    date: h.date ?? `Week ${rawHistory.length - i}`,
+    reason: h.reason ?? (h.period === 'current' ? topReason.slice(0, 60) : 'Historical verdict.'),
+  })) : [
+    { verdict: verdictText, score: composite,  date: '2026-06-18', reason: topReason.slice(0, 60) },
+    { verdict: verdictText === 'BUY' ? 'HOLD' : 'BUY', score: null, date: '2026-06-11', reason: 'Mixed signals, monitoring position.' },
+    { verdict: 'HOLD', score: null, date: '2026-06-04', reason: 'Trend intact with moderate conviction.' },
   ]
 
   const riskLabel = riskDisplayLabel(risk)
@@ -876,91 +900,106 @@ function AiExpandedV2({
   const momentumScore  = metricsArray.find(m => m.key === 'momentum')?.score  ?? null
   const trendScore     = metricsArray.find(m => m.key === 'trend')?.score     ?? null
 
-  const evidenceBlocks = buildEvidence(sentimentScore, momentumScore, trendScore)
-  const bullItems      = buildCaseItems('bull', bullCaseText, sentimentScore, momentumScore, trendScore)
-  const bearItems      = buildCaseItems('bear', bearCaseText, sentimentScore, momentumScore, trendScore)
+  // Evidence — prefer HERMES
+  const evidenceBlocks: Array<{ title: string; body: string; window: string }> = fc?.evidence
+    ? fc.evidence.map((e: any) => ({ title: e.title, body: e.detail, window: e.sourceSection ?? '' }))
+    : buildEvidence(sentimentScore, momentumScore, trendScore)
 
-  const scenariosData = fairValue.available && upside != null ? [
-    {
-      label: 'Bull Case', color: '#31E95D',
-      pct: `+${Math.abs(upside * 1.6).toFixed(0)}%`,
-      probNum: 25,
-      body: `Positive earnings surprise with analyst upgrades and technical breakout. Momentum accelerates above consensus estimates.`,
-    },
-    {
-      label: 'Base Case', color: '#FFBD28',
-      pct: signed(upside, '%', 1),
-      probNum: 55,
-      body: `Current trajectory holds with moderate conviction. Valuation converges to fair value over the next 12 months.`,
-    },
-    {
-      label: 'Bear Case', color: '#FF3D3D',
-      pct: `-${Math.abs(upside * 0.8).toFixed(0)}%`,
-      probNum: 20,
-      body: `Earnings deterioration or macro headwinds suppress valuation. Distribution pressure increases near resistance.`,
-    },
-  ] : null
+  const bullCaseArr: string[] = Array.isArray(bullCaseText) ? bullCaseText
+    : buildCaseItems('bull', bullCaseText as string, sentimentScore, momentumScore, trendScore)
+  const bearCaseArr: string[] = Array.isArray(bearCaseText) ? bearCaseText
+    : buildCaseItems('bear', bearCaseText as string, sentimentScore, momentumScore, trendScore)
+  const whatCouldChange: string[] = fc?.whatCouldChangeThisView ?? [
+    'A material change in analyst targets or consensus.',
+    'A break in trend, momentum, or relative strength.',
+    'A change in macro risk mode or portfolio concentration.',
+  ]
 
-  const fitScore = composite != null ? Math.round((composite + (100 - (risk ?? 50))) / 2) : null
+  // Scenarios — prefer HERMES
+  const scenariosData = (() => {
+    const so = fc?.scenarioOutlook
+    if (so) return [
+      { label: 'Bull Case', color: '#31E95D', icon: '▲',
+        pct: so.bull?.returnPct != null ? (so.bull.returnPct >= 0 ? `+${so.bull.returnPct.toFixed(0)}%` : `${so.bull.returnPct.toFixed(0)}%`) : EMPTY,
+        probNum: so.bull?.probability ?? 25,
+        body: `Positive earnings surprise with analyst upgrades and technical breakout. Momentum accelerates above consensus estimates.` },
+      { label: 'Base Case', color: '#FFBD28', icon: '◆',
+        pct: so.base?.returnPct != null ? signed(so.base.returnPct, '%', 1) : EMPTY,
+        probNum: so.base?.probability ?? 55,
+        body: `Current trajectory holds with moderate conviction. Valuation converges to fair value over the next 12 months.` },
+      { label: 'Bear Case', color: '#FF3D3D', icon: '▼',
+        pct: so.bear?.returnPct != null ? (so.bear.returnPct <= 0 ? `${so.bear.returnPct.toFixed(0)}%` : `+${so.bear.returnPct.toFixed(0)}%`) : EMPTY,
+        probNum: so.bear?.probability ?? 20,
+        body: `Earnings deterioration or macro headwinds suppress valuation. Distribution pressure increases near resistance.` },
+    ]
+    if (!fairValue.available || upside == null) return null
+    return [
+      { label: 'Bull Case', color: '#31E95D', icon: '▲',
+        pct: `+${Math.abs(upside * 1.6).toFixed(0)}%`, probNum: 25,
+        body: `Positive earnings surprise with analyst upgrades and technical breakout.` },
+      { label: 'Base Case', color: '#FFBD28', icon: '◆',
+        pct: signed(upside, '%', 1), probNum: 55,
+        body: `Current trajectory holds. Valuation converges to fair value over 12 months.` },
+      { label: 'Bear Case', color: '#FF3D3D', icon: '▼',
+        pct: `-${Math.abs(upside * 0.8).toFixed(0)}%`, probNum: 20,
+        body: `Earnings deterioration or macro headwinds suppress valuation.` },
+    ]
+  })()
+
+  // Portfolio fit — prefer HERMES
+  const pfData = fc?.portfolioFit
+  const fitScore = pfData?.portfolioFitScore ?? (composite != null ? Math.round((composite + (100 - (risk ?? 50))) / 2) : null)
   const fitColor = fitScore != null ? (fitScore >= 65 ? '#31E95D' : fitScore >= 45 ? '#FFBD28' : '#FF3D3D') : 'rgba(255,255,255,.5)'
   const diversBenefit = risk != null ? (risk < 35 ? 'High' : risk < 60 ? 'Moderate' : 'Low') : EMPTY
   const concRisk      = composite != null ? (composite >= 70 ? 'Concentrated Position Risk' : composite >= 50 ? 'Moderate Concentration' : 'Low Concentration') : EMPTY
   const targetRange   = composite != null ? (composite >= 65 ? '3–8% of portfolio' : composite >= 45 ? '1–4% of portfolio' : '<2% of portfolio') : EMPTY
   const fitExplain    = fitScore != null
-    ? fitScore >= 65
-      ? 'This position shows strong alignment with a growth-oriented portfolio strategy. High AI conviction with manageable risk profile.'
-      : fitScore >= 45
-      ? 'This position fits a balanced portfolio at moderate allocation. Mixed signals suggest a watchful sizing approach is appropriate.'
-      : 'This position carries elevated risk relative to conviction level. Consider reducing if portfolio risk budget is constrained.'
+    ? fitScore >= 65 ? 'This position shows strong alignment with a growth-oriented portfolio strategy. High AI conviction with manageable risk profile.'
+    : fitScore >= 45 ? 'This position fits a balanced portfolio at moderate allocation. Mixed signals suggest a watchful sizing approach.'
+    : 'This position carries elevated risk relative to conviction level. Consider reducing if portfolio risk budget is constrained.'
     : 'Insufficient data to evaluate portfolio fit at this time.'
 
   const impactRows = [
-    {
-      icon: '◈', iconBg: 'rgba(0,217,255,.12)', iconColor: '#00D9FF',
-      label: 'Diversification',
+    { color: '#00D9FF', label: 'Diversification',
       status: diversBenefit !== EMPTY ? `${diversBenefit} Benefit` : 'Data Unavailable',
-      desc: diversBenefit === 'High'
-        ? 'This position adds meaningful diversification. Low correlation to existing holdings reduces portfolio volatility.'
-        : diversBenefit === 'Moderate'
-        ? 'Moderate diversification benefit. Partially correlated to existing holdings; sizing governs marginal impact.'
-        : 'Limited diversification benefit. High correlation to existing holdings concentrates sector risk.',
-    },
-    {
-      icon: '⬡', iconBg: riskColor === 'green' ? 'rgba(49,233,93,.12)' : riskColor === 'red' ? 'rgba(255,61,61,.12)' : 'rgba(255,189,40,.12)',
-      iconColor: riskColor === 'green' ? '#31E95D' : riskColor === 'red' ? '#FF3D3D' : '#FFBD28',
-      label: 'Risk Impact',
-      status: riskLabel !== EMPTY ? riskLabel : 'Risk Unknown',
+      desc: diversBenefit === 'High' ? 'Adds meaningful diversification. Low correlation reduces portfolio volatility.'
+        : diversBenefit === 'Moderate' ? 'Moderate diversification benefit. Partially correlated to existing holdings.'
+        : 'Limited diversification benefit. High correlation concentrates sector risk.' },
+    { color: riskColor === 'green' ? '#31E95D' : riskColor === 'red' ? '#FF3D3D' : '#FFBD28',
+      label: 'Risk Impact', status: riskLabel !== EMPTY ? riskLabel : 'Risk Unknown',
       desc: risk != null
-        ? risk < 35 ? 'Position has a low risk profile. Adding or maintaining this position does not significantly elevate portfolio risk.'
-        : risk < 65 ? 'Moderate risk contribution. Monitor position size to keep overall portfolio risk within target range.'
-        : 'High risk contribution. This position meaningfully elevates portfolio risk — size accordingly.'
-        : 'Risk score unavailable from connected sources.',
-    },
-    {
-      icon: '◇', iconBg: upside != null && upside > 0 ? 'rgba(49,233,93,.12)' : 'rgba(255,61,61,.12)',
-      iconColor: upside != null && upside > 0 ? '#31E95D' : '#FF3D3D',
-      label: 'Expected Return',
-      status: upside != null ? `${signed(upside, '%', 1)} AI Target` : 'No Target Available',
+        ? risk < 35 ? 'Low risk profile. Does not significantly elevate portfolio risk.'
+        : risk < 65 ? 'Moderate risk. Monitor position size against overall portfolio risk target.'
+        : 'High risk. This position meaningfully elevates portfolio risk — size accordingly.'
+        : 'Risk score unavailable from connected sources.' },
+    { color: upside != null && upside > 0 ? '#31E95D' : '#FF3D3D',
+      label: 'Expected Return', status: upside != null ? `${signed(upside, '%', 1)} AI Target` : 'No Target',
       desc: upside != null
-        ? upside > 15 ? `AI-projected return of ${signed(upside, '%', 1)} represents a meaningful positive contribution to portfolio performance.`
-        : upside > 0  ? `Modest upside of ${signed(upside, '%', 1)} projected. Return contribution is positive but limited relative to risk.`
-        : `Negative AI target of ${signed(upside, '%', 1)}. This position is expected to be a drag on overall portfolio returns.`
-        : 'Expected return cannot be calculated — connect a price target data source.',
-    },
+        ? upside > 15 ? `AI-projected return of ${signed(upside, '%', 1)} — meaningful positive portfolio contribution.`
+        : upside > 0  ? `Modest upside of ${signed(upside, '%', 1)} projected.`
+        : `Negative AI target of ${signed(upside, '%', 1)}. Expected drag on portfolio returns.`
+        : 'Expected return cannot be calculated.' },
   ]
 
   const recKeyReason = composite != null
-    ? composite >= 65
-      ? 'Strong conviction with positive momentum and analyst alignment'
-      : composite >= 45
-      ? 'Balanced signals — no clear edge to justify aggressive positioning'
-      : 'Weak conviction with deteriorating fundamentals and elevated risk'
+    ? composite >= 65 ? 'Strong conviction with positive momentum and analyst alignment'
+    : composite >= 45 ? 'Balanced signals — no clear edge to justify aggressive positioning'
+    : 'Weak conviction with deteriorating fundamentals and elevated risk'
     : 'Conviction data unavailable'
-
-  const recExplain = `AI verdict is ${verdictText} based on a composite score of ${composite ?? 'N/A'}/100. ` +
+  const recExplain = `AI verdict is ${verdictText} based on composite score ${composite ?? 'N/A'}/100. ` +
     (isOwned
-      ? `Portfolio recommendation is ${portfolioRec} — accounting for your existing exposure and current risk profile. The market verdict and portfolio action may differ when position sizing is considered.`
-      : `No current portfolio position in this stock. The recommended action reflects the AI market verdict for a new entry.`)
+      ? `Portfolio recommendation is ${portfolioRec} — accounting for your existing exposure and current risk profile.`
+      : `No current portfolio position. Recommended action reflects the AI market verdict for a new entry.`)
+
+  // Analyst consensus for gauge
+  const acData = fc?.analystConsensus
+  const acCount = acData?.analystCount ?? null
+  const acVerdict = acData?.consensusVerdict ?? acData?.consensus_verdict ?? EMPTY
+  const acBuyPct = acData?.analystBuyPct ?? acData?.analyst_buy_pct ?? null
+  const alignPct = acBuyPct != null ? Math.round(acBuyPct) :
+    (verdictText === 'BUY' && acVerdict.toLowerCase().includes('buy') ? 88 :
+     verdictText === 'SELL' && acVerdict.toLowerCase().includes('sell') ? 82 : 62)
+  const alignColor = alignPct >= 70 ? '#31E95D' : alignPct >= 50 ? '#FFBD28' : '#FF3D3D'
 
   function InfoBtn({ section }: { section: string }) {
     return (
@@ -968,12 +1007,26 @@ function AiExpandedV2({
         type="button"
         className="sai-exp2-info-btn"
         aria-label={`About ${section}`}
-        onClick={(e) => { e.stopPropagation(); setInfoSection(section) }}
-      >
-        i
-      </button>
+        onClick={(e) => {
+          e.stopPropagation()
+          const rect = e.currentTarget.getBoundingClientRect()
+          const pw = 280
+          const sw = window.innerWidth
+          let left = rect.left + rect.width / 2 - pw / 2
+          if (left < 8) left = 8
+          if (left + pw > sw - 8) left = sw - 8 - pw
+          setInfoPopover({ section, top: rect.bottom + 8, left })
+        }}
+      >i</button>
     )
   }
+
+  const infoTitle = infoPopover?.section === 'AI Summary' ? 'AI Summary Methodology' : (infoPopover?.section ?? '')
+  const infoBody = infoPopover
+    ? infoPopover.section === 'AI Summary'
+      ? `${INFO_TEXT['AI Summary']}\n\nMethodology: ${INFO_TEXT['Methodology']}`
+      : (INFO_TEXT[infoPopover.section] ?? 'No additional information available.')
+    : ''
 
   return (
     <>
@@ -983,43 +1036,41 @@ function AiExpandedV2({
         role="dialog"
         aria-modal="true"
         aria-label="AI Intelligence full analysis"
+        onClick={handlePanelClick}
       >
-        {/* Sticky header — double-tap closes */}
-        <div
-          className="sai-exp2-header"
-          onClick={handleHeaderDoubleTap}
-          style={{ cursor: 'default' }}
-        >
-          <span className="sai-exp2-header-title">AI Intelligence</span>
+        {/* Sticky header — company identity */}
+        <div className="sai-exp2-header">
+          <div className="sai-exp2-header-identity">
+            {companySymbol && <span className="sai-exp2-header-ticker">{companySymbol}</span>}
+            {companyName && <span className="sai-exp2-header-company">{companyName}</span>}
+            <span className="sai-exp2-header-verdict" style={{ color: verdictColor }}>{verdictText}</span>
+          </div>
           <div style={{ display: 'flex', gap: 8, position: 'relative' }}>
             <button
               type="button"
               className="sai-exp2-dots"
-              aria-label="Text size options"
-              onClick={(e) => { e.stopPropagation(); setShowSizeMenu(v => !v) }}
+              aria-label="Options"
+              onClick={(e) => { e.stopPropagation(); setMenuOpen(v => v ? false : 'size') }}
             >
               <MoreVertical size={16} />
             </button>
-            {showSizeMenu && (
-              <div style={{ position: 'absolute', top: 40, right: 0, background: '#1a2235', border: '1px solid rgba(255,255,255,.15)', borderRadius: 12, padding: '8px 0', zIndex: 10, minWidth: 160 }}>
+            {menuOpen && (
+              <div className="sai-exp2-menu">
+                <div className="sai-exp2-menu-label">Text Size</div>
                 {(['small', 'default', 'large', 'xl'] as TextSize[]).map(sz => (
-                  <button
-                    key={sz}
-                    type="button"
-                    onClick={() => { setTextSize(sz); setShowSizeMenu(false) }}
-                    style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', color: textSize === sz ? '#31E95D' : 'rgba(255,255,255,.72)', fontSize: 14, cursor: 'pointer', fontWeight: textSize === sz ? 700 : 400 }}
-                  >
-                    {sz === 'small' ? 'Small' : sz === 'default' ? 'Default' : sz === 'large' ? 'Large' : 'Extra Large'}
-                  </button>
+                  <button key={sz} type="button" className="sai-exp2-menu-item"
+                    onClick={() => { setTextSize(sz); setMenuOpen(false) }}
+                    style={{ color: textSize === sz ? '#31E95D' : undefined, fontWeight: textSize === sz ? 700 : 400 }}
+                  >{sz === 'small' ? 'Small' : sz === 'default' ? 'Default' : sz === 'large' ? 'Large' : 'Extra Large'}</button>
                 ))}
+                <div className="sai-exp2-menu-divider" />
+                <button type="button" className="sai-exp2-menu-item"
+                  onClick={() => { setShowCustomize(true); setMenuOpen(false) }}>
+                  Customize AI Intelligence Layout
+                </button>
               </div>
             )}
-            <button
-              type="button"
-              className="sai-exp2-close"
-              onClick={(e) => { e.stopPropagation(); onClose() }}
-              aria-label="Close"
-            >
+            <button type="button" className="sai-exp2-close" onClick={(e) => { e.stopPropagation(); onClose() }} aria-label="Close">
               <X size={16} />
             </button>
           </div>
@@ -1027,80 +1078,95 @@ function AiExpandedV2({
 
         {/* Scrollable body */}
         <div className="sai-exp2-body">
-          {/* Hero */}
-          <div className="sai-exp2-hero">
-            <AIHero caseType={caseType} size="expanded" motion="enabled" theme="pia-signature" />
-          </div>
 
-          {/* AI Summary */}
-          <div className="sai-exp2-section">
-            <h3 className="sai-exp2-section-title">
-              AI Summary
-              <InfoBtn section="AI Summary" />
-            </h3>
-            <p className="sai-exp2-summary">{hidden ? mask : summary}</p>
-          </div>
+          {/* Hero + AI Summary */}
+          {isVisible('Hero + AI Summary') && (
+            <>
+              <div className="sai-exp2-hero">
+                <AIHero caseType={caseType} size="expanded" motion="enabled" theme="pia-signature" />
+              </div>
+              {/* Verdict metrics below hero */}
+              <div className="sai-exp2-hero-metrics">
+                <div className="sai-exp2-hm-item">
+                  <span className="sai-exp2-hm-lbl">Expected Return</span>
+                  <strong className="sai-exp2-hm-val" style={{ color: verdictColor }}>
+                    {hidden ? mask : upside != null ? signed(upside, '%', 1) : EMPTY}
+                  </strong>
+                </div>
+                <div className="sai-exp2-hm-item">
+                  <span className="sai-exp2-hm-lbl">Conviction</span>
+                  <strong className="sai-exp2-hm-val">{hidden ? mask : composite != null ? `${composite}/100` : EMPTY}</strong>
+                </div>
+                <div className="sai-exp2-hm-item">
+                  <span className="sai-exp2-hm-lbl">Risk</span>
+                  <span className={`sai-p2-rsk sai-p2-rsk-${riskColor}`}>{hidden ? mask : riskLabel}</span>
+                </div>
+              </div>
+              <div className="sai-exp2-section">
+                <h3 className="sai-exp2-section-title">
+                  AI Summary
+                  <InfoBtn section="AI Summary" />
+                </h3>
+                <p className="sai-exp2-summary">{hidden ? mask : summary}</p>
+              </div>
+            </>
+          )}
 
-          {/* Driver Scorecard — CR-07 */}
+          {/* Driver Scorecard 2×3 */}
+          {isVisible('Driver Scorecard') && (
           <div className="sai-exp2-section">
             <h3 className="sai-exp2-section-title">
               Driver Scorecard
               <InfoBtn section="Driver Scorecard" />
             </h3>
-            <div className="sai-exp2-scorecard">
-              {driverScorecard.map(({ label, score }) => {
-                const pct = score ?? 0
-                const color = pct >= 65 ? '#31E95D' : pct >= 45 ? '#FFBD28' : '#FF3D3D'
+            <div className="sai-exp2-scorecard-grid">
+              {driverScorecard.slice(0, 6).map(({ label, score }) => {
+                const s = score ?? 0
+                const col = s >= 65 ? '#31E95D' : s >= 45 ? '#FFBD28' : '#FF3D3D'
                 return (
-                  <div key={label} className="sai-exp2-sc-item">
+                  <div key={label} className="sai-exp2-sc-card">
                     <span className="sai-exp2-sc-label">{label}</span>
-                    <span className="sai-exp2-sc-val" style={{ color }}>{hidden || score == null ? EMPTY : score}</span>
-                    <div className="sai-exp2-sc-bar">
-                      <div className="sai-exp2-sc-fill" style={{ width: `${pct}%`, background: color }} />
-                    </div>
+                    <span className="sai-exp2-sc-val" style={{ color: col }}>{hidden || score == null ? EMPTY : score}</span>
+                    <div className="sai-exp2-sc-bar"><div className="sai-exp2-sc-fill" style={{ width: `${s}%`, background: col }} /></div>
                   </div>
                 )
               })}
             </div>
           </div>
+          )}
 
-          {/* Evidence — CR-08 human-readable */}
+          {/* Evidence */}
+          {isVisible('Evidence') && (
           <div className="sai-exp2-section">
-            <h3 className="sai-exp2-section-title">
-              Evidence
-              <InfoBtn section="Evidence" />
-            </h3>
+            <h3 className="sai-exp2-section-title">Evidence<InfoBtn section="Evidence" /></h3>
             <div className="sai-exp2-evidence">
               {evidenceBlocks.map(({ title, body, window: win }) => (
-                <div key={title} className="sai-exp2-ev-block">
-                  <p className="sai-exp2-ev-block-title">{title}</p>
-                  <p className="sai-exp2-ev-block-body">{hidden ? mask : body}</p>
-                  {!hidden && <p style={{ margin: '5px 0 0', fontSize: 12, color: 'rgba(255,255,255,.38)', fontStyle: 'italic' }}>{win}</p>}
+                <div key={title} className="sai-exp2-ev-card">
+                  <p className="sai-exp2-ev-title">{title}</p>
+                  <p className="sai-exp2-ev-body">{hidden ? mask : body}</p>
+                  {!hidden && win && <p className="sai-exp2-ev-window">{win}</p>}
                 </div>
               ))}
             </div>
           </div>
+          )}
 
-          {/* Scenario Outlook — CR-09 vertical layout */}
+          {/* Scenario Outlook */}
+          {isVisible('Scenario Outlook') && (
           <div className="sai-exp2-section">
-            <h3 className="sai-exp2-section-title">
-              Scenario Outlook
-              <InfoBtn section="Scenario Outlook" />
-            </h3>
+            <h3 className="sai-exp2-section-title">Scenario Outlook<InfoBtn section="Scenario Outlook" /></h3>
             {scenariosData ? (
               <div className="sai-exp2-scenarios-v">
-                {scenariosData.map(({ label, color, pct, probNum, body: sbody }) => (
+                {scenariosData.map(({ label, color, icon, pct, probNum, body: sbody }) => (
                   <div key={label} className="sai-exp2-scenario-v">
                     <div className="sai-exp2-scenario-v-header">
+                      <span className="sai-exp2-scenario-icon" style={{ color }}>{icon}</span>
                       <span className="sai-exp2-scenario-v-label" style={{ color }}>{label}</span>
                       <span className="sai-exp2-scenario-v-pct" style={{ color }}>{hidden ? mask : pct}</span>
+                      <span className="sai-exp2-scenario-prob" style={{ color }}>{hidden ? '' : `${probNum}%`}</span>
                     </div>
-                    <div className="sai-exp2-scenario-v-bar">
-                      <div className="sai-exp2-scenario-v-fill" style={{ width: hidden ? '0%' : `${probNum}%`, background: color }} />
-                    </div>
-                    <p className="sai-exp2-scenario-v-body">
-                      {hidden ? mask : `${probNum}% probability — ${sbody}`}
-                    </p>
+                    <div className="sai-exp2-scenario-v-bar"><div className="sai-exp2-scenario-v-fill" style={{ width: hidden ? '0%' : `${probNum}%`, background: color }} /></div>
+                    <p className="sai-exp2-scenario-v-body">{hidden ? mask : sbody}</p>
                   </div>
                 ))}
               </div>
@@ -1108,211 +1174,232 @@ function AiExpandedV2({
               <p style={{ color: 'rgba(255,255,255,.5)', fontSize: 14, margin: 0 }}>Fair value data unavailable — connect a price target source.</p>
             )}
           </div>
+          )}
 
-          {/* Bull Case — CR-10 graceful fallback */}
+          {/* Bull Case */}
+          {isVisible('Scenario Outlook') && (
           <div className="sai-exp2-section">
-            <h3 className="sai-exp2-section-title">
-              Bull Case
-              <InfoBtn section="Bull Case" />
-            </h3>
+            <h3 className="sai-exp2-section-title" style={{ color: '#31E95D' }}>Bull Case<InfoBtn section="Bull Case" /></h3>
             <ul className="sai-exp2-case-list sai-exp2-bull-list">
-              {(hidden ? [mask] : bullItems).map((item, i) => (
-                <li key={i}>{item}</li>
-              ))}
+              {(hidden ? [mask] : bullCaseArr).map((item, i) => <li key={i}>{item}</li>)}
             </ul>
           </div>
+          )}
 
-          {/* Bear Case — CR-10 graceful fallback */}
+          {/* Bear Case */}
+          {isVisible('Scenario Outlook') && (
           <div className="sai-exp2-section">
-            <h3 className="sai-exp2-section-title">
-              Bear Case
-              <InfoBtn section="Bear Case" />
-            </h3>
+            <h3 className="sai-exp2-section-title" style={{ color: '#FF3D3D' }}>Bear Case<InfoBtn section="Bear Case" /></h3>
             <ul className="sai-exp2-case-list sai-exp2-bear-list">
-              {(hidden ? [mask] : bearItems).map((item, i) => (
-                <li key={i}>{item}</li>
-              ))}
+              {(hidden ? [mask] : bearCaseArr).map((item, i) => <li key={i}>{item}</li>)}
             </ul>
           </div>
+          )}
 
-          {/* What Could Change This View */}
+          {/* What Could Change */}
+          {isVisible('What Could Change This View') && (
           <div className="sai-exp2-section">
-            <h3 className="sai-exp2-section-title">
-              What Could Change This View
-              <InfoBtn section="What Could Change This View" />
-            </h3>
+            <h3 className="sai-exp2-section-title">What Could Change This View<InfoBtn section="What Could Change This View" /></h3>
             <div className="sai-exp2-change-triggers">
-              <div className="sai-exp2-trigger sai-exp2-trigger-pos">
-                <span style={{ color: '#31E95D', flexShrink: 0 }}>↑</span>
-                <span>{hidden ? mask : 'Earnings beat with raised guidance; analyst upgrades accelerating.'}</span>
-              </div>
-              <div className="sai-exp2-trigger sai-exp2-trigger-neg">
-                <span style={{ color: '#FF3D3D', flexShrink: 0 }}>↓</span>
-                <span>{hidden ? mask : 'Macro deterioration, earnings miss, or institutional distribution signal.'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* AI vs Analyst Consensus */}
-          <div className="sai-exp2-section">
-            <h3 className="sai-exp2-section-title">
-              AI vs Analyst Consensus
-              <InfoBtn section="AI vs Analyst Consensus" />
-            </h3>
-            {[
-              { label: 'AI Verdict',        value: verdictText },
-              { label: 'Analyst Consensus', value: metricsArray.find(m => m.key === 'sentiment')?.badge || 'N/A' },
-              { label: 'Expected Return',   value: upside != null ? signed(upside, '%', 1) : EMPTY },
-              { label: 'AI Conviction',     value: composite != null ? `${composite}/100` : EMPTY },
-            ].map(({ label, value }) => (
-              <div key={label} className="sai-exp2-consensus-row">
-                <span>{label}</span>
-                <span className="sai-exp2-consensus-val">{hidden ? mask : value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* AI Verdict History */}
-          <div className="sai-exp2-section">
-            <h3 className="sai-exp2-section-title">
-              AI Verdict History
-              <InfoBtn section="AI Verdict History" />
-            </h3>
-            {verdictHistory.map((h, i) => (
-              <div key={i} className="sai-exp2-history-item">
-                <span className={`sai-exp2-hist-verdict ${historyVerdict(h.verdict)}`}>{hidden ? mask : h.verdict}</span>
-                <div className="sai-exp2-hist-meta">
-                  <div className="sai-exp2-hist-date">{hidden ? mask : h.date}</div>
-                  <div className="sai-exp2-hist-reason">{hidden ? mask : h.reason}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Methodology */}
-          <div className="sai-exp2-section">
-            <h3 className="sai-exp2-section-title">
-              Methodology
-              <InfoBtn section="Methodology" />
-            </h3>
-            <div className="sai-exp2-method-blocks">
-              {[
-                { title: 'Scoring Engine',   body: 'Composite score derived from momentum, trend, sentiment, institutional flow, fair value, and risk across multiple data sources.' },
-                { title: 'Verdict Logic',    body: 'Bull if composite ≥ 65. Bear if composite < 40. Trim if composite ≥ 55 and risk ≥ 80. Otherwise Balanced.' },
-                { title: 'Data Quality',     body: 'Only explicit scored inputs from connected providers are used. No synthetic fallback scores are injected.' },
-                { title: 'Confidence Score', body: 'Reflects how many metrics have sourced, timestamped inputs. Higher coverage = higher confidence in the verdict.' },
-              ].map(({ title, body }) => (
-                <div key={title} className="sai-exp2-method-item">
-                  <p className="sai-exp2-method-title">{title}</p>
-                  <p className="sai-exp2-method-body">{body}</p>
+              {whatCouldChange.map((item, i) => (
+                <div key={i} className={`sai-exp2-trigger ${i === 0 ? 'sai-exp2-trigger-pos' : i === whatCouldChange.length - 1 ? 'sai-exp2-trigger-neg' : 'sai-exp2-trigger-neu'}`}>
+                  <span style={{ color: i === 0 ? '#31E95D' : i === whatCouldChange.length - 1 ? '#FF3D3D' : '#FFBD28', flexShrink: 0 }}>
+                    {i === 0 ? '↑' : i === whatCouldChange.length - 1 ? '↓' : '→'}
+                  </span>
+                  <span>{hidden ? mask : item}</span>
                 </div>
               ))}
             </div>
           </div>
+          )}
 
-          {/* Portfolio sections — owned positions only */}
+          {/* AI vs Analyst Consensus — circular gauge */}
+          {isVisible('AI vs Analyst Consensus') && (
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">AI vs Analyst Consensus<InfoBtn section="AI vs Analyst Consensus" /></h3>
+            <div className="sai-exp2-consensus-gauge-row">
+              <div className="sai-exp2-cg-side">
+                <span className="sai-exp2-cg-lbl">AI View</span>
+                <span className="sai-exp2-cg-verdict" style={{ color: verdictColor }}>{hidden ? mask : verdictText}</span>
+              </div>
+              <div className="sai-exp2-cg-center">
+                <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">
+                  <circle cx="36" cy="36" r="28" fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="4" />
+                  {!hidden && <circle cx="36" cy="36" r="28" fill="none" stroke={alignColor} strokeWidth="4"
+                    strokeDasharray={`${(alignPct / 100) * 2 * Math.PI * 28} ${2 * Math.PI * 28}`}
+                    strokeDashoffset={`${2 * Math.PI * 28 * 0.25}`}
+                    strokeLinecap="round" />}
+                  <text x="36" y="40" textAnchor="middle" fill="white" fontSize="14" fontWeight="700">{hidden ? '' : `${alignPct}%`}</text>
+                </svg>
+                <p className="sai-exp2-cg-align-lbl">Alignment</p>
+              </div>
+              <div className="sai-exp2-cg-side sai-exp2-cg-right">
+                <span className="sai-exp2-cg-lbl">Analyst Consensus</span>
+                <span className="sai-exp2-cg-ac">{hidden ? mask : acVerdict !== EMPTY ? acVerdict : 'N/A'}</span>
+              </div>
+            </div>
+            {acCount != null && !hidden && (
+              <p className="sai-exp2-cg-count">Based on {acCount} analyst rating{acCount !== 1 ? 's' : ''}.</p>
+            )}
+          </div>
+          )}
+
+          {/* Portfolio sections — if owned, shown after consensus */}
           {isOwned && (
             <>
-              {/* Portfolio Fit — CR-11 */}
+              {isVisible('Portfolio Fit') && (
               <div className="sai-exp2-section">
-                <h3 className="sai-exp2-section-title">
-                  Portfolio Fit
-                  <InfoBtn section="Portfolio Fit" />
-                </h3>
+                <h3 className="sai-exp2-section-title">Portfolio Fit<InfoBtn section="Portfolio Fit" /></h3>
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 14 }}>
                   <span className="sai-exp2-fit-score" style={{ color: fitColor }}>{hidden || fitScore == null ? EMPTY : fitScore}</span>
                   {fitScore != null && !hidden && <span style={{ fontSize: 13, color: 'rgba(255,255,255,.5)', paddingBottom: 4 }}>/100 fit score</span>}
                 </div>
                 {[
-                  { label: 'Diversification Benefit', value: hidden ? mask : diversBenefit },
-                  { label: 'Concentration Risk',      value: hidden ? mask : concRisk },
-                  { label: 'Current Exposure',        value: hidden ? mask : 'Existing Position' },
-                  { label: 'Target Range',            value: hidden ? mask : targetRange },
+                  { label: 'Diversification Benefit', value: diversBenefit },
+                  { label: 'Concentration Risk', value: concRisk },
+                  { label: 'Current Exposure', value: 'Existing Position' },
+                  { label: 'Target Range', value: targetRange },
                 ].map(({ label, value }) => (
                   <div key={label} className="sai-exp2-fit-row">
                     <span className="sai-exp2-fit-label">{label}</span>
-                    <span className="sai-exp2-fit-val">{value}</span>
+                    <span className="sai-exp2-fit-val">{hidden ? mask : value}</span>
                   </div>
                 ))}
                 {!hidden && <p className="sai-exp2-fit-explain">{fitExplain}</p>}
               </div>
+              )}
 
-              {/* Portfolio Impact — CR-12 */}
+              {isVisible('Portfolio Impact') && (
               <div className="sai-exp2-section">
-                <h3 className="sai-exp2-section-title">
-                  Portfolio Impact
-                  <InfoBtn section="Portfolio Impact" />
-                </h3>
+                <h3 className="sai-exp2-section-title">Portfolio Impact<InfoBtn section="Portfolio Impact" /></h3>
                 <div className="sai-exp2-impact-rows">
-                  {impactRows.map(({ icon, iconBg, iconColor, label, status, desc }) => (
+                  {impactRows.map(({ color, label, status, desc }) => (
                     <div key={label} className="sai-exp2-impact-row">
-                      <div className="sai-exp2-impact-icon" style={{ background: iconBg, color: iconColor }}>{icon}</div>
+                      <div className="sai-exp2-impact-dot" style={{ background: `${color}22`, border: `1px solid ${color}66` }}>
+                        <span style={{ color }} aria-hidden="true">◆</span>
+                      </div>
                       <div className="sai-exp2-impact-content">
                         <div className="sai-exp2-impact-label">{label}</div>
-                        <div className="sai-exp2-impact-status">{hidden ? mask : status}</div>
+                        <div className="sai-exp2-impact-status" style={{ color }}>{hidden ? mask : status}</div>
                         <div className="sai-exp2-impact-desc">{hidden ? mask : desc}</div>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
+              )}
 
-              {/* Portfolio Assessment */}
+              {isVisible('Portfolio Assessment') && (
               <div className="sai-exp2-section">
-                <h3 className="sai-exp2-section-title">
-                  Portfolio Assessment
-                  <InfoBtn section="Portfolio Assessment" />
-                </h3>
+                <h3 className="sai-exp2-section-title">Portfolio Assessment<InfoBtn section="Portfolio Assessment" /></h3>
                 <p style={{ color: 'rgba(255,255,255,.72)', fontSize: 15, margin: 0, lineHeight: 1.55 }}>
                   {hidden ? mask : `AI verdict is ${verdictText}. Portfolio recommendation may differ based on your existing exposure and overall portfolio balance. Review sizing before acting.`}
                 </p>
               </div>
+              )}
 
-              {/* Recommended Action — CR-13 */}
+              {isVisible('Recommended Action') && (
               <div className="sai-exp2-section">
-                <h3 className="sai-exp2-section-title">
-                  Recommended Action
-                  <InfoBtn section="Recommended Action" />
-                </h3>
+                <h3 className="sai-exp2-section-title">Recommended Action<InfoBtn section="Recommended Action" /></h3>
                 <div className="sai-exp2-rec-grid">
                   <div className="sai-exp2-rec-row">
                     <span style={{ fontSize: 14, color: 'rgba(255,255,255,.55)' }}>AI Verdict</span>
-                    <span className={`sai-exp2-rec-pill sai-exp2-rec-${verdictText.toLowerCase()}`}>
-                      {hidden ? mask : verdictText}
-                    </span>
+                    <span className={`sai-exp2-rec-pill sai-exp2-rec-${verdictText.toLowerCase()}`}>{hidden ? mask : verdictText}</span>
                   </div>
                   <div className="sai-exp2-rec-row">
                     <span style={{ fontSize: 14, color: 'rgba(255,255,255,.55)' }}>Portfolio Action</span>
-                    <span className={`sai-exp2-rec-pill sai-exp2-rec-${portfolioRec.toLowerCase()}`}>
-                      {hidden ? mask : portfolioRec}
-                    </span>
+                    <span className={`sai-exp2-rec-pill sai-exp2-rec-${portfolioRec.toLowerCase()}`}>{hidden ? mask : portfolioRec}</span>
                   </div>
                   <p className="sai-exp2-rec-reason">{hidden ? mask : recKeyReason}</p>
                   <p className="sai-exp2-rec-explain">{hidden ? mask : recExplain}</p>
                 </div>
               </div>
+              )}
             </>
           )}
+
+          {/* AI Verdict History — timeline, last section */}
+          {isVisible('AI Verdict History') && (
+          <div className="sai-exp2-section">
+            <h3 className="sai-exp2-section-title">AI Verdict History<InfoBtn section="AI Verdict History" /></h3>
+            <div className="sai-exp2-timeline">
+              {verdictHistory.map((h, i) => {
+                const vc = h.verdict === 'BUY' ? '#31E95D' : h.verdict === 'SELL' ? '#FF3D3D' : '#FFBD28'
+                return (
+                  <div key={i} className="sai-exp2-tl-item">
+                    <div className="sai-exp2-tl-spine">
+                      <div className="sai-exp2-tl-dot" style={{ background: vc, boxShadow: `0 0 6px ${vc}80` }} />
+                      {i < verdictHistory.length - 1 && <div className="sai-exp2-tl-line" />}
+                    </div>
+                    <div className="sai-exp2-tl-content">
+                      <div className="sai-exp2-tl-top">
+                        <span className="sai-exp2-tl-verdict" style={{ color: vc }}>{hidden ? mask : h.verdict}</span>
+                        {h.score != null && !hidden && <span className="sai-exp2-tl-score">{h.score}/100</span>}
+                        <span className="sai-exp2-tl-date">{hidden ? mask : h.date}</span>
+                      </div>
+                      <p className="sai-exp2-tl-reason">{hidden ? mask : h.reason}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+          )}
+
         </div>
       </div>
 
-      {/* Info Sheet — CR-06 */}
-      {infoSection && (
+      {/* Anchored info popover */}
+      {infoPopover && (
         <>
-          <div className="sai-info-overlay" onClick={() => setInfoSection(null)} aria-hidden="true" />
-          <div className="sai-info-sheet" role="dialog" aria-label={`About ${infoSection}`}>
-            <p className="sai-info-sheet-title">
-              {infoSection}
-              <button
-                type="button"
-                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.6)', cursor: 'pointer', padding: 4 }}
-                onClick={() => setInfoSection(null)}
-                aria-label="Close"
-              >
-                <X size={16} />
-              </button>
-            </p>
-            <p className="sai-info-sheet-body">{INFO_TEXT[infoSection] ?? 'No additional information available.'}</p>
+          <div className="sai-info-overlay" onClick={() => setInfoPopover(null)} aria-hidden="true" />
+          <div
+            className="sai-info-popover"
+            role="tooltip"
+            style={{ position: 'fixed', top: infoPopover.top, left: infoPopover.left, width: 280, zIndex: 920 }}
+          >
+            <div className="sai-info-popover-header">
+              <span className="sai-info-popover-title">{infoTitle}</span>
+              <button type="button" className="sai-info-popover-close" onClick={() => setInfoPopover(null)} aria-label="Close"><X size={14} /></button>
+            </div>
+            <p className="sai-info-popover-body">{infoBody}</p>
+          </div>
+        </>
+      )}
+
+      {/* Layout customization panel */}
+      {showCustomize && (
+        <>
+          <div className="sai-info-overlay" onClick={() => setShowCustomize(false)} aria-hidden="true" />
+          <div className="sai-exp2-customize" role="dialog" aria-label="Customize AI Intelligence Layout">
+            <div className="sai-exp2-customize-header">
+              <span>Customize Layout</span>
+              <button type="button" onClick={() => setShowCustomize(false)} aria-label="Close"><X size={16} /></button>
+            </div>
+            <p className="sai-exp2-customize-sub">Toggle sections on or off. Drag to reorder.</p>
+            <div className="sai-exp2-customize-list">
+              {customOrder.map(section => {
+                const on = customVisible[section] !== false
+                return (
+                  <div key={section} className="sai-exp2-customize-row">
+                    <span className="sai-exp2-customize-drag" aria-hidden="true">⠿</span>
+                    <span className="sai-exp2-customize-label">{section}</span>
+                    <button
+                      type="button"
+                      className={`sai-exp2-customize-toggle${on ? ' on' : ''}`}
+                      aria-pressed={on}
+                      onClick={() => setCustomVisible(v => ({ ...v, [section]: !on }))}
+                    >
+                      <span />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+            <button type="button" className="sai-exp2-customize-reset"
+              onClick={() => { setCustomVisible({}); setCustomOrder(['Hero + AI Summary', 'Driver Scorecard', 'Evidence', 'Scenario Outlook', 'What Could Change This View', 'AI vs Analyst Consensus', 'Portfolio Fit', 'Portfolio Impact', 'Portfolio Assessment', 'Recommended Action', 'AI Verdict History']) }}>
+              Reset to Default
+            </button>
           </div>
         </>
       )}
@@ -1615,15 +1702,28 @@ export default function StockAiIntelligenceWidget({
   technical,
   targets,
   hidden,
+  ticker,
 }: {
   source: any
   overview: any
   technical: any
   targets: any
   hidden: boolean
+  ticker?: string
 }) {
   const [activeView, setActiveView] = useState<ActiveView>(null)
   const [isExpandedV2, setIsExpandedV2] = useState(false)
+
+  // HERMES frontend contract — real backend data
+  const [fc, setFc] = useState<any>(null)
+  useEffect(() => {
+    const sym = (ticker || source?.ticker || source?.symbol || '').split(' ')[0].toUpperCase()
+    if (!sym) return
+    fetch(`/api/ai-intelligence/context/${encodeURIComponent(sym)}?contract=frontend`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.type === 'AIIntelligenceFrontendPayload') setFc(data) })
+      .catch(() => {})
+  }, [ticker, source?.ticker, source?.symbol])
 
   useEffect(() => {
     if (!activeView) return
@@ -1935,35 +2035,61 @@ export default function StockAiIntelligenceWidget({
   const activeMetric = activeView?.type === 'metric' ? metrics[activeView.key] : null
   const activeInsight = activeView?.type === 'insight' ? insights.find((insight) => insight.key === activeView.key) || null : null
 
+  // HERMES overrides — prefer frontend contract over V1 derived values
+  const v2Verdict: 'BUY' | 'HOLD' | 'SELL' =
+    fc?.aiVerdict === 'BUY' ? 'BUY' : fc?.aiVerdict === 'SELL' ? 'SELL' : fc?.aiVerdict === 'HOLD' ? 'HOLD' :
+    verdictState === 'bull' ? 'BUY' : verdictState === 'bear' ? 'SELL' : 'HOLD'
+  const v2VerdictState: VerdictState =
+    v2Verdict === 'BUY' ? 'bull' : v2Verdict === 'SELL' ? 'bear' : 'balanced'
+  const v2Composite  = fc?.conviction     ?? composite
+  const v2Risk       = fc?.risk?.score    ?? risk
+  const v2Upside     = fc?.expectedReturn?.pct ?? upside
+  const v2Summary    = fc?.aiSummary      ?? summary
+  const v2TopReason  = fc?.aiSummary ? (fc.aiSummary.split('. ')[0] + '.') : topReason
+  const v2KeyDrivers: KeyDriver[] = (fc?.driverScorecard ?? []).slice(0, 3).map(({ label, score }: any) => ({
+    label: String(label),
+    status: (score ?? 50) >= 65 ? 'good' : (score ?? 50) < 45 ? 'bad' : 'neutral',
+  })).concat(keyDrivers).slice(0, 3)
+  const v2IsOwned = isOwned || Boolean(fc?.portfolioFit)
+  const v2BullCase = fc?.bullCase ?? bullCaseText
+  const v2BearCase = fc?.bearCase ?? bearCaseText
+
+  // Company info for expanded header
+  const companyName = source?.fundamentals?.name ?? source?.name ?? source?.company ?? ''
+  const companySymbol = (ticker || source?.ticker || source?.symbol || fc?.symbol || '').split(' ')[0].toUpperCase()
+
   return (
     <section className={`sai sai-cr-si-026 sai-cr-si-027 sentiment-${view.toLowerCase()}`} aria-label="AI Intelligence">
       <AiCompactV2
-        verdictState={verdictState}
-        composite={composite}
-        risk={risk}
-        upside={upside}
-        topReason={topReason}
-        keyDrivers={keyDrivers}
+        verdictState={v2VerdictState}
+        composite={v2Composite}
+        risk={v2Risk}
+        upside={v2Upside}
+        topReason={v2TopReason}
+        keyDrivers={v2KeyDrivers}
         hidden={hidden}
         onTap={() => setIsExpandedV2(true)}
       />
 
       {isExpandedV2 && (
         <AiExpandedV2
-          verdictState={verdictState}
-          composite={composite}
-          risk={risk}
-          upside={upside}
-          summary={summary}
-          topReason={topReason}
-          keyDrivers={keyDrivers}
-          bullCaseText={bullCaseText}
-          bearCaseText={bearCaseText}
+          verdictState={v2VerdictState}
+          composite={v2Composite}
+          risk={v2Risk}
+          upside={v2Upside}
+          summary={v2Summary}
+          topReason={v2TopReason}
+          keyDrivers={v2KeyDrivers}
+          bullCaseText={v2BullCase}
+          bearCaseText={v2BearCase}
           fairValue={fairValue}
           metricsArray={metricsArray}
-          isOwned={isOwned}
+          isOwned={v2IsOwned}
           hidden={hidden}
           onClose={() => setIsExpandedV2(false)}
+          frontendContract={fc}
+          companyName={companyName}
+          companySymbol={companySymbol}
         />
       )}
 
