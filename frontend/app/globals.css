@@ -1467,18 +1467,18 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .ai-hero-particle{animation:ai-hero-particle var(--pd,6s) ease-in-out infinite;will-change:transform,opacity}
 @media(prefers-reduced-motion:reduce){.ai-hero-orbit-up,.ai-hero-orbit-down,.ai-hero-oscillate,.ai-hero-particle{animation:none!important}}
 /* ARTEMIS-AI-011 Compact V2 — design lock aligned */
-.sai-p2{border-radius:20px;padding:22px;background:linear-gradient(145deg,#0b1121 0%,#0e1828 55%,#090d18 100%);border:1px solid rgba(var(--p2-rgb),.20);box-shadow:0 0 52px var(--p2-glow),0 6px 28px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.04);display:grid;gap:0;overflow:visible;cursor:pointer;-webkit-tap-highlight-color:transparent;min-height:620px}
+.sai-p2{border-radius:20px;padding:22px;background:linear-gradient(145deg,#0b1121 0%,#0e1828 55%,#090d18 100%);border:1px solid rgba(var(--p2-rgb),.20);box-shadow:0 0 52px var(--p2-glow),0 6px 28px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.04);display:grid;gap:0;overflow:hidden;cursor:pointer;-webkit-tap-highlight-color:transparent;min-height:580px}
 .sai-p2-bull{--p2-color:#31E95D;--p2-rgb:49,233,93;--p2-glow:rgba(49,233,93,.15)}
 .sai-p2-bear{--p2-color:#FF3D3D;--p2-rgb:255,61,61;--p2-glow:rgba(255,61,61,.15)}
 .sai-p2-balanced{--p2-color:#FFBD28;--p2-rgb:255,189,40;--p2-glow:rgba(255,189,40,.15)}
 .sai-p2-trim{--p2-color:#FFBD28;--p2-rgb:255,189,40;--p2-glow:rgba(255,189,40,.15)}
-.sai-p2-top{display:grid;grid-template-columns:1fr 240px;gap:8px;align-items:flex-start;padding-bottom:20px;min-height:240px}
+.sai-p2-top{display:grid;grid-template-columns:1fr 150px;gap:8px;align-items:flex-start;padding-bottom:20px;min-height:150px}
 .sai-p2-lft{display:flex;flex-direction:column;gap:0;padding-top:2px}
 .sai-p2-badge{display:inline-flex;align-items:center;height:32px;padding:6px 12px;border-radius:999px;border:1px solid var(--p2-color);color:var(--p2-color);font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;width:fit-content;margin-bottom:14px}
 .sai-p2-ttl{font-size:22px;font-weight:600;line-height:28px;color:rgba(255,255,255,.72);margin-bottom:8px}
 .sai-p2-verdict{font-size:52px;font-weight:800;color:var(--p2-color);line-height:58px;letter-spacing:-1px;display:block}
 .sai-p2-sub{font-size:18px;color:rgba(255,255,255,.7);font-weight:500;line-height:24px;margin-top:6px;display:block}
-.sai-p2-rgt{display:flex;align-items:center;justify-content:center;width:240px;height:240px;flex-shrink:0}
+.sai-p2-rgt{display:flex;align-items:center;justify-content:center;width:150px;height:150px;flex-shrink:0}
 .sai-p2-reason{border-top:1px solid rgba(255,255,255,.10);padding:20px 0}
 .sai-p2-rlbl{display:block;font-size:14px;font-weight:700;line-height:18px;color:rgba(255,255,255,.72);margin-bottom:8px}
 .sai-p2-reason p{margin:0;font-size:18px;font-weight:400;color:#f1f5f9;line-height:26px}
@@ -1506,10 +1506,8 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sai-p2-dot-good{background:rgba(49,233,93,.15)}.sai-p2-dot-good::after{background:#31E95D;box-shadow:0 0 6px rgba(49,233,93,.7)}
 .sai-p2-dot-bad{background:rgba(255,61,61,.15)}.sai-p2-dot-bad::after{background:#FF3D3D;box-shadow:0 0 6px rgba(255,61,61,.7)}
 .sai-p2-dot-neutral{background:rgba(255,189,40,.15)}.sai-p2-dot-neutral::after{background:#FFBD28;box-shadow:0 0 6px rgba(255,189,40,.5)}
-@media(max-width:430px){.sai-p2-top{grid-template-columns:1fr 240px;min-height:240px}}
-@media(max-width:390px){.sai-p2-top{grid-template-columns:1fr 220px;min-height:220px}.sai-p2-rgt{width:220px;height:220px}.sai-p2-verdict{font-size:48px;line-height:52px}}
-@media(max-width:375px){.sai-p2-top{grid-template-columns:1fr 200px;min-height:200px}.sai-p2-rgt{width:200px;height:200px}.sai-p2-verdict{font-size:44px;line-height:48px}.sai-p2-mval{font-size:28px;line-height:34px}}
-@media(max-width:360px){.sai-p2-top{grid-template-columns:1fr 180px;min-height:180px}.sai-p2-rgt{width:180px;height:180px}.sai-p2-verdict{font-size:40px}}
+@media(max-width:375px){.sai-p2-verdict{font-size:44px;line-height:48px}.sai-p2-mval{font-size:28px;line-height:34px}}
+@media(max-width:360px){.sai-p2-verdict{font-size:40px;line-height:44px}}
 /* Expanded V2 bottom sheet */
 .sai-exp2-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:900;animation:sai-exp2-fade 220ms ease forwards}
 @keyframes sai-exp2-fade{from{opacity:0}to{opacity:1}}
@@ -1579,6 +1577,47 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sai-exp2-rec-trim{background:rgba(255,189,40,.12);border-color:rgba(255,189,40,.4);color:#FFBD28}
 .sai-exp2-rec-reduce{background:rgba(255,61,61,.12);border-color:rgba(255,61,61,.4);color:#FF3D3D}
 .sai-exp2-rec-note{font-size:14px;color:rgba(255,255,255,.6);line-height:1.5;margin:0}
+/* CR-AI-011 fixes */
+/* CR-07: scorecard improvements */
+.sai-exp2-sc-item{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px 10px;display:flex;flex-direction:column;gap:8px}
+.sai-exp2-sc-label{font-size:11px;font-weight:700;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.05em}
+.sai-exp2-sc-val{font-size:26px;font-weight:800;color:#fff;line-height:1;font-variant-numeric:tabular-nums}
+/* CR-09: scenario vertical layout */
+.sai-exp2-scenarios-v{display:grid;gap:14px}
+.sai-exp2-scenario-v{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:16px}
+.sai-exp2-scenario-v-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.sai-exp2-scenario-v-label{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.sai-exp2-scenario-v-pct{font-size:22px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.sai-exp2-scenario-v-bar{height:4px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;margin-bottom:10px}
+.sai-exp2-scenario-v-fill{height:100%;border-radius:3px}
+.sai-exp2-scenario-v-body{font-size:14px;color:rgba(255,255,255,.65);line-height:1.5;margin:0}
+/* CR-11: portfolio fit rows */
+.sai-exp2-fit-grid{display:grid;gap:12px;margin-bottom:14px}
+.sai-exp2-fit-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.sai-exp2-fit-row:last-child{border-bottom:none}
+.sai-exp2-fit-label{font-size:14px;color:rgba(255,255,255,.62)}
+.sai-exp2-fit-val{font-size:14px;font-weight:700;color:#fff}
+.sai-exp2-fit-score{font-size:32px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums;line-height:1;margin-bottom:4px}
+.sai-exp2-fit-explain{font-size:14px;color:rgba(255,255,255,.6);line-height:1.5;margin:12px 0 0;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)}
+/* CR-12: portfolio impact rows */
+.sai-exp2-impact-rows{display:grid;gap:10px}
+.sai-exp2-impact-row{display:flex;align-items:flex-start;gap:12px;padding:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:12px}
+.sai-exp2-impact-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px}
+.sai-exp2-impact-content{flex:1;min-width:0}
+.sai-exp2-impact-label{font-size:13px;font-weight:700;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.sai-exp2-impact-status{font-size:14px;font-weight:700;color:#fff;margin-bottom:3px}
+.sai-exp2-impact-desc{font-size:13px;color:rgba(255,255,255,.58);line-height:1.45}
+/* CR-13: recommended action */
+.sai-exp2-rec-grid{display:grid;gap:14px}
+.sai-exp2-rec-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sai-exp2-rec-pill{display:inline-flex;align-items:center;height:34px;padding:0 16px;border-radius:999px;font-size:15px;font-weight:800;border:1px solid}
+.sai-exp2-rec-reason{margin:4px 0 0;font-size:15px;font-weight:600;color:#fff;line-height:1.4}
+.sai-exp2-rec-explain{margin:8px 0 0;font-size:14px;color:rgba(255,255,255,.65);line-height:1.5}
+/* CR-06: info sheet */
+.sai-info-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:910}
+.sai-info-sheet{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg,#131e36 0%,#0b1121 100%);border-radius:20px 20px 0 0;z-index:911;padding:20px 20px 36px;animation:sai-exp2-slide 200ms ease forwards}
+.sai-info-sheet-title{font-size:16px;font-weight:700;color:#fff;margin:0 0 12px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.10);display:flex;align-items:center;justify-content:space-between}
+.sai-info-sheet-body{font-size:15px;color:rgba(255,255,255,.78);line-height:1.6;margin:0}
 /* text size variants */
 .sai-exp2-panel.sai-exp2-sz-small  .sai-exp2-summary,.sai-exp2-panel.sai-exp2-sz-small  .sai-exp2-ev-block-body,.sai-exp2-panel.sai-exp2-sz-small  .sai-exp2-case-list li{font-size:13px}
 .sai-exp2-panel.sai-exp2-sz-large  .sai-exp2-summary,.sai-exp2-panel.sai-exp2-sz-large  .sai-exp2-ev-block-body,.sai-exp2-panel.sai-exp2-sz-large  .sai-exp2-case-list li{font-size:18px}
