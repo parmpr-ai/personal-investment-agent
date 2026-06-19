@@ -24,6 +24,7 @@ import {
   Newspaper,
   ExternalLink,
   RefreshCw,
+  MoreHorizontal,
   Scale,
   Search,
   Settings,
@@ -1550,7 +1551,476 @@ function IntegrationStatusCards({ hidden = false }: any) {
   )
 }
 
-function TradingViewChart({ ticker }: { ticker: string }) {
+function MiniSparkline({ value, color }: { value: number; color: string }) {
+  const pts = [0.52, 0.60, 0.55, 0.68, 0.64, 0.74, 0.80, 0.87, 0.93, 1].map((m, i) => ({
+    i, v: Math.max(1, value * m + (i % 3 - 1) * 1.5),
+  }))
+  return (
+    <ResponsiveContainer width="100%" height={40}>
+      <AreaChart data={pts} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+        <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={color} fillOpacity={0.14} dot={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  )
+}
+
+function scoreLabel(s: number) {
+  if (s >= 90) return 'Exceptional'
+  if (s >= 80) return 'Very High'
+  if (s >= 70) return 'High'
+  if (s >= 60) return 'Moderate'
+  if (s >= 50) return 'Low'
+  return 'Very Low'
+}
+function scoreTone(s: number): string {
+  if (s >= 80) return 'var(--green)'
+  if (s >= 65) return 'var(--blue)'
+  if (s >= 50) return 'var(--amber)'
+  return 'var(--red)'
+}
+function scoreIconBg(s: number): string {
+  if (s >= 80) return 'rgba(36,209,140,0.15)'
+  if (s >= 65) return 'rgba(96,165,250,0.15)'
+  if (s >= 50) return 'rgba(251,191,36,0.15)'
+  return 'rgba(255,99,117,0.15)'
+}
+function scoreBadgeClass(s: number): string {
+  if (s >= 80) return 'rs-badge rs-badge-green'
+  if (s >= 65) return 'rs-badge rs-badge-blue'
+  if (s >= 50) return 'rs-badge rs-badge-amber'
+  return 'rs-badge rs-badge-red'
+}
+
+function ResearchScoreCard({ icon, label, score, sublabel, hidden }: any) {
+  const tone = scoreTone(score || 0)
+  return (
+    <div className="r-score-card">
+      <div style={{
+        width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+        background: scoreIconBg(score || 0), color: tone,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+      }}>
+        {icon}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, color: tone }}>
+        <span style={{ fontSize: 42, fontWeight: 800, lineHeight: 1 }}>{hidden ? '—' : score}</span>
+        <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 400 }}>/100</span>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 5 }}>{hidden ? 'Score' : label}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: tone, marginTop: 2, letterSpacing: '.3px' }}>
+        {hidden ? '' : (sublabel || scoreLabel(score || 0))}
+      </div>
+    </div>
+  )
+}
+
+function ResearchSectionCard({ title, score, updated, children, hidden }: any) {
+  const [collapsed, setCollapsed] = useState(false)
+  return (
+    <div className="r-section">
+      <div className="r-section-header" onClick={() => setCollapsed((x) => !x)} style={{ cursor: 'pointer' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: 'var(--muted)', lineHeight: 0, flexShrink: 0 }}>
+            {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          </span>
+          <span className="r-section-title">{hidden ? 'Section' : title}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {updated && !hidden && <span className="muted" style={{ fontSize: 11 }}>Updated {updated}</span>}
+          {score != null && !hidden && <span className={scoreBadgeClass(score)}>{score}/100</span>}
+        </div>
+      </div>
+      {!collapsed && <div className="r-section-body">{children}</div>}
+    </div>
+  )
+}
+
+const COMP_COLORS: Record<string, string> = {
+  IREN: '#7C3AED', MARA: '#F7931A', RIOT: '#E31837', CLSK: '#0A84FF',
+  HUT: '#22C55E', AMD: '#ED1C24', NVDA: '#76B900', NBIS: '#7C3AED',
+  META: '#1877F2', GOOGL: '#4285F4', SOFI: '#00A3E0', MELI: '#FFE600',
+}
+
+function ResearchContent({ data, hidden, sections, textSize }: any) {
+  const tsz = textSize === 'S' ? 12 : textSize === 'L' ? 15 : textSize === 'XL' ? 17 : 13
+  if (!data) {
+    return (
+      <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--muted)' }}>
+        <Brain size={36} style={{ opacity: 0.25, marginBottom: 12 }} />
+        <p style={{ margin: 0 }}>Loading AI research…</p>
+      </div>
+    )
+  }
+  const { scores, investment_thesis: thesis, financial_health: fh, growth, moat, valuation, institutional, competitive, risk, bull_bear } = data
+
+  return (
+    <div style={{ fontSize: tsz, display: 'grid', gap: 10 }}>
+
+      {/* ── Research Summary ── */}
+      <div className="r-section r-summary">
+        <div className="r-section-header" style={{ cursor: 'default', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Activity size={15} style={{ color: 'var(--blue)' }} />
+            <span className="r-section-title">Research Summary</span>
+          </div>
+          {!hidden && <span className="muted" style={{ fontSize: 11 }}>Data as of {data.updated}</span>}
+        </div>
+        <div className="r-score-grid">
+          <ResearchScoreCard icon={<CheckCircle2 size={22} />} label="AI Score" score={scores?.ai_score} hidden={hidden} />
+          <ResearchScoreCard icon={<Target size={22} />} label="Confidence" score={scores?.confidence} hidden={hidden} />
+          <ResearchScoreCard icon={<Zap size={22} />} label="Events" score={scores?.events} hidden={hidden} />
+          <ResearchScoreCard
+            icon={<Shield size={22} />} label="Overall" score={scores?.overall}
+            sublabel={scores?.overall >= 70 ? 'Buy' : scores?.overall >= 55 ? 'Hold' : 'Watchlist'} hidden={hidden}
+          />
+        </div>
+      </div>
+
+      {/* ── Investment Thesis ── */}
+      {sections.investment_thesis && thesis && (
+        <ResearchSectionCard title="Investment Thesis" updated={thesis.updated} hidden={hidden}>
+          <div className="r-tags" style={{ marginBottom: 10 }}>
+            {(thesis.tags || []).map((tag: string) => (
+              <span key={tag} className="r-tag">{hidden ? '••' : tag}</span>
+            ))}
+          </div>
+          <details className="r-detail">
+            <summary>Business Overview</summary>
+            <p style={{ margin: 0, lineHeight: 1.65, color: 'var(--muted)' }}>{hidden ? mask : thesis.business_overview}</p>
+          </details>
+          <div className="r-thesis-cols">
+            <div>
+              <p className="r-col-header r-col-header-green">Key Drivers</p>
+              <ul className="r-list r-list-green">
+                {(thesis.key_drivers || []).map((d: string, i: number) => (
+                  <li key={i}>{hidden ? mask : d}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="r-col-header r-col-header-red">What Could Break the Thesis</p>
+              <ul className="r-list r-list-red">
+                {(thesis.break_thesis || []).map((d: string, i: number) => (
+                  <li key={i}>{hidden ? mask : d}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </ResearchSectionCard>
+      )}
+
+      {/* ── Financial Health ── */}
+      {sections.financial_health && fh && (
+        <ResearchSectionCard title="Financial Health" score={fh.score} updated={fh.updated} hidden={hidden}>
+          <div className="r-fin-grid">
+            {[
+              { label: 'Market Cap', value: fh.market_cap, color: 'var(--green)', seed: 62 },
+              { label: 'Revenue', value: fh.revenue, color: 'var(--blue)', seed: 75 },
+              { label: 'Cash', value: fh.cash, color: 'var(--amber)', seed: 55 },
+              { label: 'Net Margin', value: fh.margin, color: 'var(--violet)', seed: 68 },
+            ].map(({ label, value, color, seed }) => (
+              <div key={label} className="r-fin-cell">
+                <span className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                  {hidden ? 'Metric' : label}
+                </span>
+                <b style={{ fontSize: 20, fontWeight: 700, color, marginTop: 2 }}>{hidden ? mask : value}</b>
+                {!hidden && <MiniSparkline value={seed} color={color} />}
+              </div>
+            ))}
+          </div>
+          {!hidden && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <Globe2 size={12} style={{ color: 'var(--muted)' }} />
+              <span className="muted" style={{ fontSize: 11 }}>Source: {fh.source}</span>
+            </div>
+          )}
+        </ResearchSectionCard>
+      )}
+
+      {/* ── Growth Engine ── */}
+      {sections.growth_engine && growth && (
+        <ResearchSectionCard title="Growth Engine" score={growth.score} updated={growth.updated} hidden={hidden}>
+          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px' }}>
+            Key Growth Drivers
+          </p>
+          {(growth.drivers || []).map((d: any, i: number) => (
+            <div key={i} style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                <span style={{ fontSize: 12, lineHeight: 1.4, paddingRight: 12 }}>{hidden ? mask : d.label}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: scoreTone(d.value), flexShrink: 0 }}>
+                  {hidden ? '—' : `${d.value}%`}
+                </span>
+              </div>
+              <div className="bar" style={{ height: 7, borderRadius: 99 }}>
+                <i style={{ width: `${d.value}%`, background: `linear-gradient(90deg,${scoreTone(d.value)}88,${scoreTone(d.value)})`, borderRadius: 99 }} />
+              </div>
+            </div>
+          ))}
+        </ResearchSectionCard>
+      )}
+
+      {/* ── Moat Analysis ── */}
+      {sections.moat_analysis && moat && (
+        <ResearchSectionCard title="Moat Analysis" score={moat.score} hidden={hidden}>
+          <div className="r-gauge-layout">
+            <div style={{ flex: 1 }}>
+              {(moat.metrics || []).map((m: any, i: number) => (
+                <div key={i} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                    <span style={{ fontSize: 12 }}>{hidden ? mask : m.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: scoreTone(m.value) }}>{hidden ? '—' : m.value}</span>
+                  </div>
+                  <div className="bar" style={{ height: 7, borderRadius: 99 }}>
+                    <i style={{ width: `${m.value}%`, background: `linear-gradient(90deg,${scoreTone(m.value)}88,${scoreTone(m.value)})`, borderRadius: 99 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {!hidden && (
+              <div className="r-ring-wrap">
+                <div
+                  className="r-conic-ring"
+                  style={{ '--ring-deg': `${(moat.score || 0) * 3.6}deg`, color: scoreTone(moat.score) } as any}
+                >
+                  <Shield size={20} />
+                  <span style={{ fontWeight: 800, fontSize: 18 }}>{moat.score}</span>
+                </div>
+                <span className="muted" style={{ fontSize: 10, textAlign: 'center' }}>Moat Score</span>
+              </div>
+            )}
+          </div>
+        </ResearchSectionCard>
+      )}
+
+      {/* ── Valuation ── */}
+      {sections.valuation && valuation && (
+        <ResearchSectionCard title="Valuation" score={valuation.score} hidden={hidden}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            {[
+              { label: 'Fair Value (DCF)', value: valuation.fair_value_dcf, color: 'var(--green)' },
+              { label: 'Fair Value (P/E)', value: valuation.fair_value_pe, color: 'var(--blue)' },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="r-fin-cell">
+                <span className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                  {hidden ? 'Metric' : label}
+                </span>
+                <b style={{ fontSize: 22, fontWeight: 800, color, marginTop: 4 }}>{hidden ? mask : value}</b>
+                {!hidden && (
+                  <span style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>
+                    <TrendingUp size={11} style={{ display: 'inline', marginRight: 3 }} />
+                    {valuation.upside} upside
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gap: 7 }}>
+            {(valuation.metrics || []).map((m: any, i: number) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid var(--line)' }}>
+                <span className="muted" style={{ fontSize: 12 }}>{hidden ? mask : m.label}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontWeight: 700 }}>{hidden ? mask : m.value}</span>
+                  {!hidden && (
+                    <span className={`rs-badge ${m.tone === 'green' ? 'rs-badge-green' : m.tone === 'red' ? 'rs-badge-red' : 'rs-badge-amber'}`}>
+                      {m.vs_sector.startsWith('+') ? '↑' : '↓'} vs sector
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {!hidden && (
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="muted" style={{ fontSize: 11 }}>Overall:</span>
+              <span className={scoreBadgeClass(valuation.score)}>{valuation.summary}</span>
+            </div>
+          )}
+        </ResearchSectionCard>
+      )}
+
+      {/* ── Institutional Thesis ── */}
+      {sections.institutional && institutional && (
+        <ResearchSectionCard title="Institutional Thesis" hidden={hidden}>
+          <div className="r-gauge-layout">
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 600, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                Why Institutions Are Buying
+              </p>
+              <ul className="r-list r-list-green" style={{ marginBottom: 12 }}>
+                {(institutional.bull_points || []).map((p: string, i: number) => (
+                  <li key={i}>{hidden ? mask : p}</li>
+                ))}
+              </ul>
+              {institutional.bear_points?.length > 0 && (
+                <>
+                  <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 600, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                    Risk Factors
+                  </p>
+                  <ul className="r-list r-list-red">
+                    {(institutional.bear_points || []).map((p: string, i: number) => (
+                      <li key={i}>{hidden ? mask : p}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+            {!hidden && (
+              <div className="r-ring-wrap">
+                <div
+                  className="r-conic-ring"
+                  style={{ '--ring-deg': `${(institutional.ownership_pct || 0) * 3.6}deg`, color: 'var(--blue)' } as any}
+                >
+                  <Building2 size={18} />
+                  <span style={{ fontWeight: 800, fontSize: 17 }}>{institutional.ownership_pct}%</span>
+                </div>
+                <span className="muted" style={{ fontSize: 10, textAlign: 'center' }}>Institutional</span>
+              </div>
+            )}
+          </div>
+        </ResearchSectionCard>
+      )}
+
+      {/* ── Competitive Comparison ── */}
+      {sections.competitive && competitive && (
+        <ResearchSectionCard title="Competitive Comparison" hidden={hidden}>
+          <div className="table-wrap" style={{ marginTop: 4 }}>
+            <table style={{ borderSpacing: '0 4px' }}>
+              <thead>
+                <tr>
+                  {(competitive.columns || []).map((c: string) => <th key={c}>{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {(competitive.rows || []).map((row: any) => (
+                  <tr key={row.Company}>
+                    <td style={row.highlight ? { background: '#0f1d2e' } : {}}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{
+                          width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                          background: COMP_COLORS[row.Company] || '#1f2937',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 9, fontWeight: 800, color: '#fff', letterSpacing: '-.3px',
+                        }}>
+                          {hidden ? '•' : (row.Company || '').slice(0, 2)}
+                        </div>
+                        <span style={{ fontWeight: row.highlight ? 700 : 400 }}>
+                          {hidden ? '••••' : row.Company}
+                        </span>
+                      </div>
+                    </td>
+                    {(competitive.columns || []).slice(1).map((c: string) => (
+                      <td key={c} style={{
+                        ...(row.highlight ? { background: '#0f1d2e' } : {}),
+                        color: c === 'AI Score' ? scoreTone(parseInt(row[c]) || 0) : 'inherit',
+                        fontWeight: c === 'AI Score' ? 700 : 400,
+                      }}>
+                        {hidden ? '—' : row[c]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ResearchSectionCard>
+      )}
+
+      {/* ── Risk Analysis ── */}
+      {sections.risk_analysis && risk && (
+        <ResearchSectionCard title="Risk Analysis" score={risk.score} hidden={hidden}>
+          <div className="r-gauge-layout">
+            <div style={{ flex: 1 }}>
+              {(risk.categories || []).map((c: any, i: number) => {
+                const rColor = c.tone === 'red' ? 'var(--red)' : c.tone === 'amber' ? 'var(--amber)' : 'var(--green)'
+                return (
+                  <div key={i} style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                      <span style={{ fontSize: 12 }}>{hidden ? mask : c.label}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: rColor }}>{hidden ? '—' : c.value}</span>
+                    </div>
+                    <div className="bar" style={{ height: 7, borderRadius: 99 }}>
+                      <i style={{ width: `${c.value}%`, background: `linear-gradient(90deg,${rColor}88,${rColor})`, borderRadius: 99 }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {!hidden && (
+              <div className="r-ring-wrap">
+                <div
+                  className="r-conic-ring"
+                  style={{
+                    '--ring-deg': `${(risk.score || 0) * 3.6}deg`,
+                    color: risk.score > 60 ? 'var(--red)' : risk.score > 45 ? 'var(--amber)' : 'var(--green)',
+                  } as any}
+                >
+                  <Shield size={20} />
+                  <span style={{ fontWeight: 800, fontSize: 18 }}>{risk.score}</span>
+                </div>
+                <span className="muted" style={{ fontSize: 10, textAlign: 'center' }}>Risk Score</span>
+              </div>
+            )}
+          </div>
+        </ResearchSectionCard>
+      )}
+
+      {/* ── Bull vs Bear ── */}
+      {sections.bull_bear && bull_bear && (
+        <ResearchSectionCard title="Bull vs Bear Scenarios" hidden={hidden}>
+          <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+            {[
+              { key: 'bull', label: 'Bull Case', icon: <TrendingUp size={14} />, color: 'var(--green)' },
+              { key: 'base', label: 'Base Case', icon: <Activity size={14} />, color: 'var(--blue)' },
+              { key: 'bear', label: 'Bear Case', icon: <TrendingDown size={14} />, color: 'var(--red)' },
+            ].map(({ key, label, icon, color }) => (
+              <div key={key} style={{
+                background: '#080d12', border: '1px solid var(--line)',
+                borderLeft: `3px solid ${color}`, borderRadius: '0 12px 12px 0',
+                padding: '10px 12px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color, marginBottom: 4 }}>
+                  {icon}
+                  <span style={{ fontWeight: 700, fontSize: 12 }}>{label}</span>
+                </div>
+                <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.55 }}>
+                  {hidden ? mask : bull_bear.scenarios?.[key]}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="muted" style={{ fontSize: 11, flexShrink: 0 }}>Bull probability</span>
+            <div className="bar" style={{ flex: 1, height: 8, borderRadius: 99 }}>
+              <i style={{
+                width: `${bull_bear.bull_probability || 0}%`,
+                background: 'linear-gradient(90deg,var(--amber),var(--green))',
+                borderRadius: 99,
+              }} />
+            </div>
+            <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+              {hidden ? '—' : `${bull_bear.bull_probability}%`}
+            </span>
+          </div>
+        </ResearchSectionCard>
+      )}
+
+    </div>
+  )
+}
+
+const CUSTOMIZE_SECTIONS = [
+  ['investment_thesis', 'Investment Thesis'],
+  ['financial_health', 'Financial Health'],
+  ['growth_engine', 'Growth Engine'],
+  ['moat_analysis', 'Moat Analysis'],
+  ['valuation', 'Valuation'],
+  ['institutional', 'Institutional Thesis'],
+  ['competitive', 'Competitive Comparison'],
+  ['risk_analysis', 'Risk Analysis'],
+  ['bull_bear', 'Bull vs Bear'],
+] as const
+
+function TradingViewChart({ ticker }: any) {
   const sym = encodeURIComponent(`NASDAQ:${ticker.split(' ')[0]}`)
   return (
     <iframe
@@ -1564,7 +2034,7 @@ function PositionModal({ ticker, hidden, onClose }: any) {
   const [data, setData] = useState<any>(null)
   const [research, setResearch] = useState<any>(null)
   const [tab, setTab] = useState('Overview')
-  const [showCustomize, setShowCustomize] = useState(false)
+  const [showPanel, setShowPanel] = useState(false)
   const [rSections, setRSections] = useState<Record<string, boolean>>({
     investment_thesis: true, financial_health: true, growth_engine: true,
     moat_analysis: true, valuation: true, institutional: true,
@@ -1601,11 +2071,11 @@ function PositionModal({ ticker, hidden, onClose }: any) {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {isResearch && (
               <button
-                className={`tab${showCustomize ? ' active' : ''}`}
-                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                onClick={() => setShowCustomize((x) => !x)}
+                className={`icon-btn${showPanel ? ' active' : ''}`}
+                title="Customize Research"
+                onClick={() => setShowPanel((x) => !x)}
               >
-                <Settings size={13} /> Customize
+                <MoreHorizontal size={18} />
               </button>
             )}
             <button className="close" style={{ position: 'static', float: 'none' }} onClick={onClose}>
@@ -1622,27 +2092,30 @@ function PositionModal({ ticker, hidden, onClose }: any) {
         </div>
 
         {isResearch ? (
-          <div className={`research-layout${showCustomize ? ' with-sidebar' : ''}`}>
-            <div className="research-content">
-              <ResearchContent
-                data={research}
-                stockData={data}
-                hidden={hidden}
+          <div className="research-layout">
+            <ResearchContent
+              data={research}
+              stockData={data}
+              hidden={hidden}
+              sections={rSections}
+              textSize={textSize}
+            />
+            {/* Slide-in panel overlay — opens when ⋯ is clicked */}
+            <div className={`r-panel-drawer${showPanel ? ' open' : ''}`}>
+              <CustomizeResearch
                 sections={rSections}
+                setSections={setRSections}
                 textSize={textSize}
+                setTextSize={setTextSize}
+                data={research}
+                onClose={() => setShowPanel(false)}
               />
             </div>
-            {showCustomize && (
-              <div className="research-sidebar">
-                <CustomizeResearch
-                  sections={rSections}
-                  setSections={setRSections}
-                  textSize={textSize}
-                  setTextSize={setTextSize}
-                  data={research}
-                  onClose={() => setShowCustomize(false)}
-                />
-              </div>
+            {showPanel && (
+              <div
+                className="r-panel-backdrop"
+                onClick={() => setShowPanel(false)}
+              />
             )}
           </div>
         ) : (
@@ -1689,340 +2162,6 @@ function PositionModal({ ticker, hidden, onClose }: any) {
   )
 }
 
-function scoreLabel(s: number) {
-  if (s >= 90) return 'Exceptional'
-  if (s >= 80) return 'Very High'
-  if (s >= 70) return 'High'
-  if (s >= 60) return 'Moderate'
-  if (s >= 50) return 'Low'
-  return 'Very Low'
-}
-
-function scoreTone(s: number) {
-  if (s >= 80) return 'var(--green)'
-  if (s >= 65) return 'var(--blue)'
-  if (s >= 50) return 'var(--amber)'
-  return 'var(--red)'
-}
-
-function ResearchScoreCard({ icon, label, score, sublabel, hidden }: any) {
-  const tone = scoreTone(score || 0)
-  return (
-    <div className="r-score-card">
-      <div className="r-score-icon" style={{ color: tone }}>{icon}</div>
-      <div className="r-score-value" style={{ color: tone }}>{hidden ? '—' : score}<span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 400 }}>/100</span></div>
-      <div className="r-score-label">{hidden ? 'Score' : label}</div>
-      <div className="r-score-sub" style={{ color: tone }}>{hidden ? '' : sublabel || scoreLabel(score || 0)}</div>
-    </div>
-  )
-}
-
-function ResearchSectionCard({ title, score, updated, children, hidden }: any) {
-  const [collapsed, setCollapsed] = useState(false)
-  return (
-    <div className="r-section">
-      <div className="r-section-header" onClick={() => setCollapsed((x) => !x)} style={{ cursor: 'pointer' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
-          <span className="r-section-title">{hidden ? 'Section' : title}</span>
-          {score != null && !hidden && (
-            <span className="r-section-score" style={{ color: scoreTone(score) }}>{score}/100</span>
-          )}
-        </div>
-        {updated && !hidden && <span className="muted" style={{ fontSize: 11 }}>Updated {updated}</span>}
-      </div>
-      {!collapsed && <div className="r-section-body">{children}</div>}
-    </div>
-  )
-}
-
-function ResearchContent({ data, stockData, hidden, sections, textSize }: any) {
-  const tsz = textSize === 'S' ? 12 : textSize === 'L' ? 15 : textSize === 'XL' ? 17 : 13
-
-  if (!data) {
-    return (
-      <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--muted)' }}>
-        <Brain size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
-        <p>Loading AI research…</p>
-      </div>
-    )
-  }
-
-  const { scores, investment_thesis: thesis, financial_health: fh, growth, moat, valuation, institutional, competitive, risk, bull_bear } = data
-
-  return (
-    <div style={{ fontSize: tsz }}>
-      {/* Research Summary */}
-      <div className="r-section r-summary">
-        <div className="r-section-header" style={{ cursor: 'default' }}>
-          <span className="r-section-title">Research Summary</span>
-          <span className="muted" style={{ fontSize: 11 }}>{hidden ? '' : `Data as of ${data.updated}`}</span>
-        </div>
-        <div className="r-score-grid">
-          <ResearchScoreCard icon={<CheckCircle2 size={20} />} label="AI Score" score={scores?.ai_score} hidden={hidden} />
-          <ResearchScoreCard icon={<Target size={20} />} label="Confidence" score={scores?.confidence} hidden={hidden} />
-          <ResearchScoreCard icon={<Zap size={20} />} label="Events" score={scores?.events} hidden={hidden} />
-          <ResearchScoreCard icon={<Shield size={20} />} label="Overall" score={scores?.overall} sublabel={scores?.overall >= 70 ? 'Buy' : scores?.overall >= 55 ? 'Hold' : 'Watch'} hidden={hidden} />
-        </div>
-      </div>
-
-      {/* Investment Thesis */}
-      {sections.investment_thesis && thesis && (
-        <ResearchSectionCard title="Investment Thesis" updated={thesis.updated} hidden={hidden}>
-          <div className="r-tags">
-            {(thesis.tags || []).map((tag: string) => (
-              <span key={tag} className="r-tag">{hidden ? '••' : tag}</span>
-            ))}
-          </div>
-          <p className="muted" style={{ margin: '0 0 12px', lineHeight: 1.6 }}>{hidden ? mask : thesis.summary}</p>
-          <details className="r-detail">
-            <summary>Business Overview</summary>
-            <p>{hidden ? mask : thesis.business_overview}</p>
-          </details>
-          <details className="r-detail" open>
-            <summary>Key Drivers</summary>
-            <ul className="r-list">
-              {(thesis.key_drivers || []).map((d: string, i: number) => (
-                <li key={i}>{hidden ? mask : d}</li>
-              ))}
-            </ul>
-          </details>
-          <details className="r-detail">
-            <summary>What Could Break the Thesis</summary>
-            <ul className="r-list r-list-red">
-              {(thesis.break_thesis || []).map((d: string, i: number) => (
-                <li key={i}>{hidden ? mask : d}</li>
-              ))}
-            </ul>
-          </details>
-        </ResearchSectionCard>
-      )}
-
-      {/* Financial Health */}
-      {sections.financial_health && fh && (
-        <ResearchSectionCard title="Financial Health" score={fh.score} updated={fh.updated} hidden={hidden}>
-          <div className="r-fin-grid">
-            {[
-              { label: 'Market Cap', value: fh.market_cap },
-              { label: 'Revenue', value: fh.revenue },
-              { label: 'Cash', value: fh.cash },
-              { label: 'Net Margin', value: fh.margin },
-            ].map(({ label, value }) => (
-              <div key={label} className="r-fin-cell">
-                <span className="muted" style={{ fontSize: 11 }}>{hidden ? 'Metric' : label}</span>
-                <b style={{ fontSize: 18 }}>{hidden ? mask : value}</b>
-              </div>
-            ))}
-          </div>
-          <p className="muted" style={{ fontSize: 11, marginTop: 8 }}>
-            {hidden ? '' : `Source: ${fh.source}`}
-          </p>
-        </ResearchSectionCard>
-      )}
-
-      {/* Growth Engine */}
-      {sections.growth_engine && growth && (
-        <ResearchSectionCard title="Growth Engine" score={growth.score} updated={growth.updated} hidden={hidden}>
-          <div style={{ marginTop: 4 }}>
-            {(growth.drivers || []).map((d: any, i: number) => (
-              <div key={i} className="r-driver">
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 12 }}>{hidden ? mask : d.label}</span>
-                  <span style={{ fontSize: 12, color: scoreTone(d.value) }}>{hidden ? '—' : `${d.value}%`}</span>
-                </div>
-                <div className="bar"><i style={{ width: `${d.value}%`, background: scoreTone(d.value) }} /></div>
-              </div>
-            ))}
-          </div>
-        </ResearchSectionCard>
-      )}
-
-      {/* Moat Analysis */}
-      {sections.moat_analysis && moat && (
-        <ResearchSectionCard title="Moat Analysis" score={moat.score} hidden={hidden}>
-          <div className="r-moat-layout">
-            <div style={{ flex: 1 }}>
-              {(moat.metrics || []).map((m: any, i: number) => (
-                <div key={i} className="r-driver" style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 12 }}>{hidden ? mask : m.label}</span>
-                    <span style={{ fontSize: 12, color: scoreTone(m.value) }}>{hidden ? '—' : m.value}</span>
-                  </div>
-                  <div className="bar"><i style={{ width: `${m.value}%`, background: scoreTone(m.value) }} /></div>
-                </div>
-              ))}
-            </div>
-            <div className="r-moat-gauge">
-              <div className="r-gauge-ring" style={{ '--gauge-pct': `${(moat.score || 0) / 100}` } as any}>
-                <Shield size={22} style={{ color: scoreTone(moat.score) }} />
-                <span style={{ color: scoreTone(moat.score), fontWeight: 700 }}>{hidden ? '—' : moat.score}</span>
-              </div>
-            </div>
-          </div>
-        </ResearchSectionCard>
-      )}
-
-      {/* Valuation */}
-      {sections.valuation && valuation && (
-        <ResearchSectionCard title="Valuation" score={valuation.score} hidden={hidden}>
-          <div className="r-fin-grid" style={{ gridTemplateColumns: 'repeat(2,1fr)', marginBottom: 12 }}>
-            <div className="r-fin-cell">
-              <span className="muted" style={{ fontSize: 11 }}>Fair Value (DCF)</span>
-              <b style={{ fontSize: 18, color: 'var(--green)' }}>{hidden ? mask : valuation.fair_value_dcf}</b>
-            </div>
-            <div className="r-fin-cell">
-              <span className="muted" style={{ fontSize: 11 }}>Fair Value (P/E)</span>
-              <b style={{ fontSize: 18, color: 'var(--blue)' }}>{hidden ? mask : valuation.fair_value_pe}</b>
-            </div>
-          </div>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {(valuation.metrics || []).map((m: any, i: number) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="muted" style={{ fontSize: 12 }}>{hidden ? mask : m.label}</span>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <span style={{ fontWeight: 600 }}>{hidden ? mask : m.value}</span>
-                  <span className={`badge ${m.tone === 'green' ? '' : m.tone === 'red' ? 'badge-red' : 'badge-amber'}`} style={{ fontSize: 11 }}>
-                    {hidden ? '' : `vs sector ${m.vs_sector}`}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="muted" style={{ fontSize: 11 }}>Upside potential:</span>
-            <span style={{ color: 'var(--green)', fontWeight: 600 }}>{hidden ? mask : valuation.upside}</span>
-            <span className="badge" style={{ marginLeft: 4 }}>{hidden ? '' : valuation.summary}</span>
-          </div>
-        </ResearchSectionCard>
-      )}
-
-      {/* Institutional Thesis */}
-      {sections.institutional && institutional && (
-        <ResearchSectionCard title="Institutional Thesis" hidden={hidden}>
-          <div className="r-inst-layout">
-            <div style={{ flex: 1 }}>
-              <p className="muted" style={{ fontSize: 11, margin: '0 0 8px' }}>Bull thesis</p>
-              <ul className="r-list">
-                {(institutional.bull_points || []).map((p: string, i: number) => (
-                  <li key={i}>{hidden ? mask : p}</li>
-                ))}
-              </ul>
-              {institutional.bear_points?.length > 0 && (
-                <>
-                  <p className="muted" style={{ fontSize: 11, margin: '12px 0 8px' }}>Risk factors</p>
-                  <ul className="r-list r-list-red">
-                    {(institutional.bear_points || []).map((p: string, i: number) => (
-                      <li key={i}>{hidden ? mask : p}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-            <div className="r-inst-donut">
-              <div className="r-donut-ring" style={{ '--donut-pct': `${institutional.ownership_pct || 0}` } as any}>
-                <span style={{ fontWeight: 700, fontSize: 18 }}>{hidden ? '—' : `${institutional.ownership_pct}%`}</span>
-                <span className="muted" style={{ fontSize: 10 }}>inst.</span>
-              </div>
-            </div>
-          </div>
-        </ResearchSectionCard>
-      )}
-
-      {/* Competitive Comparison */}
-      {sections.competitive && competitive && (
-        <ResearchSectionCard title="Competitive Comparison" hidden={hidden}>
-          <div className="table-wrap" style={{ marginTop: 4 }}>
-            <table style={{ borderSpacing: '0 4px' }}>
-              <thead>
-                <tr>{(competitive.columns || []).map((c: string) => <th key={c}>{c}</th>)}</tr>
-              </thead>
-              <tbody>
-                {(competitive.rows || []).map((row: any) => (
-                  <tr key={row.Company}>
-                    {(competitive.columns || []).map((c: string) => (
-                      <td key={c} style={row.highlight ? { background: '#0f1f30', fontWeight: c === 'Company' ? 700 : 400 } : {}}>
-                        {hidden ? (c === 'Company' ? '••••' : '—') : row[c]}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </ResearchSectionCard>
-      )}
-
-      {/* Risk Analysis */}
-      {sections.risk_analysis && risk && (
-        <ResearchSectionCard title="Risk Analysis" score={risk.score} hidden={hidden}>
-          <div className="r-moat-layout">
-            <div style={{ flex: 1 }}>
-              {(risk.categories || []).map((c: any, i: number) => (
-                <div key={i} className="r-driver" style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 12 }}>{hidden ? mask : c.label}</span>
-                    <span style={{ fontSize: 12, color: c.tone === 'red' ? 'var(--red)' : c.tone === 'amber' ? 'var(--amber)' : 'var(--green)' }}>{hidden ? '—' : c.value}</span>
-                  </div>
-                  <div className="bar">
-                    <i style={{ width: `${c.value}%`, background: c.tone === 'red' ? 'var(--red)' : c.tone === 'amber' ? 'var(--amber)' : 'var(--green)' }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="r-moat-gauge">
-              <div className="r-gauge-ring" style={{ '--gauge-pct': `${(risk.score || 0) / 100}` } as any}>
-                <Shield size={22} style={{ color: risk.score > 60 ? 'var(--red)' : risk.score > 45 ? 'var(--amber)' : 'var(--green)' }} />
-                <span style={{ color: risk.score > 60 ? 'var(--red)' : risk.score > 45 ? 'var(--amber)' : 'var(--green)', fontWeight: 700 }}>{hidden ? '—' : risk.score}</span>
-              </div>
-            </div>
-          </div>
-        </ResearchSectionCard>
-      )}
-
-      {/* Bull vs Bear */}
-      {sections.bull_bear && bull_bear && (
-        <ResearchSectionCard title="Bull vs Bear Scenarios" hidden={hidden}>
-          <div className="r-bull-bear">
-            {[
-              { key: 'bull', label: 'Bull Case', icon: <TrendingUp size={16} />, color: 'var(--green)' },
-              { key: 'base', label: 'Base Case', icon: <Activity size={16} />, color: 'var(--blue)' },
-              { key: 'bear', label: 'Bear Case', icon: <TrendingDown size={16} />, color: 'var(--red)' },
-            ].map(({ key, label, icon, color }) => (
-              <div key={key} className="r-scenario" style={{ borderLeft: `3px solid ${color}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color, marginBottom: 4 }}>
-                  {icon}
-                  <span style={{ fontWeight: 600, fontSize: 12 }}>{label}</span>
-                </div>
-                <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
-                  {hidden ? mask : bull_bear.scenarios?.[key]}
-                </p>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="muted" style={{ fontSize: 11 }}>Bull probability:</span>
-            <div className="bar" style={{ flex: 1, height: 8 }}>
-              <i style={{ width: `${bull_bear.bull_probability || 0}%`, background: 'linear-gradient(90deg,var(--amber),var(--green))' }} />
-            </div>
-            <span style={{ color: 'var(--green)', fontWeight: 600, fontSize: 12 }}>{hidden ? '—' : `${bull_bear.bull_probability}%`}</span>
-          </div>
-        </ResearchSectionCard>
-      )}
-    </div>
-  )
-}
-
-const CUSTOMIZE_SECTIONS = [
-  ['investment_thesis', 'Investment Thesis'],
-  ['financial_health', 'Financial Health'],
-  ['growth_engine', 'Growth Engine'],
-  ['moat_analysis', 'Moat Analysis'],
-  ['valuation', 'Valuation'],
-  ['institutional', 'Institutional Thesis'],
-  ['competitive', 'Competitive Comparison'],
-  ['risk_analysis', 'Risk Analysis'],
-  ['bull_bear', 'Bull vs Bear'],
-] as const
 
 function CustomizeResearch({ sections, setSections, textSize, setTextSize, data, onClose }: any) {
   const toggle = (key: string) => setSections((s: any) => ({ ...s, [key]: !s[key] }))
