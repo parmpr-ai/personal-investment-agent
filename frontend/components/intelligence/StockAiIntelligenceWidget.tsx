@@ -602,7 +602,6 @@ function AiCompactV2({
   const effectiveState: VerdictState = (verdictState === 'trim') ? 'balanced' : verdictState
   const caseType = verdictToCase(effectiveState)
   const verdictText = caseType === 'BUY' ? 'BUY' : caseType === 'SELL' ? 'SELL' : 'HOLD'
-  const badgeText = caseType === 'BUY' ? 'BULL CASE' : caseType === 'SELL' ? 'BEAR CASE' : 'EVEN CASE'
   const subtitleText = caseType === 'BUY' ? 'Strong Opportunity' : caseType === 'SELL' ? 'High Risk' : 'Mixed Signals'
   const riskLabel = riskDisplayLabel(risk)
   const riskColor = riskColorClass(risk)
@@ -620,7 +619,6 @@ function AiCompactV2({
     >
       <div className="sai-p2-top">
         <div className="sai-p2-lft">
-          <span className="sai-p2-badge">{hidden ? mask : badgeText}</span>
           <span className="sai-p2-ttl">AI Intelligence</span>
           <strong className="sai-p2-verdict">{hidden ? mask : verdictText}</strong>
           <span className="sai-p2-sub">{hidden ? mask : subtitleText}</span>
@@ -1031,12 +1029,16 @@ function AiExpandedV2({
     : ''
 
   // ── V2.5 data derivations ──────────────────────────────────────
-  const bullishDriversList = bullCaseArr.slice(0, 4)
-    .map((s: string) => (s.split('.')[0] || s).trim()).filter(Boolean)
-  const keyWatchouts = whatCouldChange.slice(0, 3)
-    .map((s: string) => (s.split('.')[0] || s).trim())
-  const mainRisks = bearCaseArr.slice(0, 3)
-    .map((s: string) => (s.split('.')[0] || s).trim()).filter(Boolean)
+  // Short phrase: first comma/period segment, max 4 words — matches approved mock compact labels
+  const shortPhrase = (s: string) => {
+    const part = (s.split(/[,.]/)[0] || s).trim()
+    const words = part.split(/\s+/)
+    return (words.length <= 4 ? words : words.slice(0, 4)).join(' ')
+  }
+  const bullishDriversList = bullCaseArr.slice(0, 4).map(shortPhrase).filter(Boolean)
+  const keyWatchouts = whatCouldChange.slice(0, 3).map(shortPhrase)
+  const mainRisks = bearCaseArr.slice(0, 3).map(shortPhrase).filter(Boolean)
+  const riskShortLabel = risk == null ? EMPTY : risk <= 25 ? 'Low' : risk <= 50 ? 'Medium' : risk <= 75 ? 'Elevated' : 'High'
 
   const catItems: any[] = fc?.catalysts ?? []
   const nextCatName = catItems[0]?.name ?? 'Earnings Call'
@@ -1056,7 +1058,7 @@ function AiExpandedV2({
     ? `Strong Opportunity · ${composite != null && composite >= 70 ? 'Strong' : 'Moderate'} Conviction`
     : verdictText === 'SELL'
     ? `High Risk · ${composite != null && composite <= 35 ? 'Strong' : 'Moderate'} Bear Thesis`
-    : `Mixed Signals · ${composite != null && composite >= 60 ? 'Moderate' : 'Low'} Conviction`
+    : `Mixed Signals · ${composite != null && composite >= 45 ? 'Moderate' : 'Low'} Conviction`
 
   const pfImpactItems = [
     { label: 'Diversification', value: risk != null ? (risk < 35 ? 'Positive' : risk < 65 ? 'Neutral' : 'Negative') : 'Positive', pos: risk == null || risk < 65 },
@@ -1167,7 +1169,7 @@ function AiExpandedV2({
                   <div className="sai-exp25-hm-col">
                     <span className="sai-exp25-hm-lbl">RISK LEVEL</span>
                     <span className={`sai-exp25-hm-risk sai-p2-rsk-${riskColor}`}>
-                      {hidden ? mask : riskLabel}
+                      {hidden ? mask : riskShortLabel}
                     </span>
                     <span className="sai-exp25-hm-sub">
                       {risk != null && risk >= 65 ? 'Elevated' : risk != null && risk >= 35 ? 'Moderate' : 'Controlled'}
@@ -1317,10 +1319,10 @@ function AiExpandedV2({
                   {/* Bull column */}
                   <div className="sai-exp25-bvb-col">
                     <span className="sai-exp25-bvb-col-hdr" style={{ color: '#31E95D' }}>BULL FACTORS</span>
-                    {bullCaseArr.slice(0, 4).map((item, i) => (
+                    {bullishDriversList.map((item, i) => (
                       <div key={i} className="sai-exp25-bvb-item">
                         <span className="sai-exp25-bvb-dot" style={{ background: '#31E95D' }} />
-                        <span>{hidden ? mask : (String(item).split('.')[0] || String(item)).trim()}</span>
+                        <span>{hidden ? mask : item}</span>
                       </div>
                     ))}
                   </div>
@@ -1346,10 +1348,10 @@ function AiExpandedV2({
                   {/* Bear column */}
                   <div className="sai-exp25-bvb-col sai-exp25-bvb-bear">
                     <span className="sai-exp25-bvb-col-hdr" style={{ color: '#FF3D3D' }}>BEAR FACTORS</span>
-                    {bearCaseArr.slice(0, 4).map((item, i) => (
+                    {mainRisks.map((item, i) => (
                       <div key={i} className="sai-exp25-bvb-item">
                         <span className="sai-exp25-bvb-dot" style={{ background: '#FF3D3D' }} />
-                        <span>{hidden ? mask : (String(item).split('.')[0] || String(item)).trim()}</span>
+                        <span>{hidden ? mask : item}</span>
                       </div>
                     ))}
                   </div>

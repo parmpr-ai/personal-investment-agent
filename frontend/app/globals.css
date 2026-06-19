@@ -1472,7 +1472,7 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sai-p2-bear{--p2-color:#FF3D3D;--p2-rgb:255,61,61;--p2-glow:rgba(255,61,61,.15)}
 .sai-p2-balanced{--p2-color:#FFBD28;--p2-rgb:255,189,40;--p2-glow:rgba(255,189,40,.15)}
 .sai-p2-trim{--p2-color:#FFBD28;--p2-rgb:255,189,40;--p2-glow:rgba(255,189,40,.15)}
-.sai-p2-top{display:grid;grid-template-columns:1fr 150px;gap:8px;align-items:flex-start;padding-bottom:20px;min-height:150px}
+.sai-p2-top{display:grid;grid-template-columns:1fr 150px;gap:8px;align-items:flex-start;padding-bottom:20px;min-height:170px}
 .sai-p2-lft{display:flex;flex-direction:column;gap:0;padding-top:2px}
 .sai-p2-badge{display:inline-flex;align-items:center;height:32px;padding:6px 12px;border-radius:999px;border:1px solid var(--p2-color);color:var(--p2-color);font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;width:fit-content;margin-bottom:14px}
 .sai-p2-ttl{font-size:22px;font-weight:600;line-height:28px;color:rgba(255,255,255,.72);margin-bottom:8px}
@@ -1483,14 +1483,14 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sai-p2-rlbl{display:block;font-size:14px;font-weight:700;line-height:18px;color:rgba(255,255,255,.72);margin-bottom:8px}
 .sai-p2-reason p{margin:0;font-size:18px;font-weight:400;color:#f1f5f9;line-height:26px}
 .sai-p2-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-top:1px solid rgba(255,255,255,.10);padding:20px 0}
-.sai-p2-mc{display:flex;flex-direction:column;gap:6px}
+.sai-p2-mc{display:flex;flex-direction:column;gap:6px;overflow:hidden}
 .sai-p2-mlbl{font-size:14px;color:rgba(255,255,255,.52);font-weight:500;line-height:18px}
 .sai-p2-mval{font-size:32px;font-weight:800;font-variant-numeric:tabular-nums;color:#f8faff;line-height:38px;letter-spacing:-.02em;display:block}
 .sai-p2-mval small{font-size:14px;font-weight:600;color:rgba(255,255,255,.42);margin-left:2px;letter-spacing:0}
 .sai-p2-pos{color:#31E95D!important}
 .sai-p2-neg{color:#FF3D3D!important}
 /* Risk pill — spec: Pill display, colored */
-.sai-p2-rsk{display:inline-flex;align-items:center;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:700;line-height:1;white-space:nowrap;margin-top:4px;border:1px solid}
+.sai-p2-rsk{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:700;line-height:1;white-space:nowrap;margin-top:4px;border:1px solid;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .sai-p2-rsk-green{background:rgba(49,233,93,.12);border-color:rgba(49,233,93,.35);color:#31E95D}
 .sai-p2-rsk-amber{background:rgba(255,189,40,.12);border-color:rgba(255,189,40,.35);color:#FFBD28}
 .sai-p2-rsk-orange{background:rgba(249,115,22,.12);border-color:rgba(249,115,22,.35);color:#fb923c}
@@ -2058,26 +2058,26 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 
 /* Section wrapper */
 .sai-exp25-section{padding:14px 14px 0}
-.sai-exp25-sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sai-exp25-sec-hdr{display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;margin-bottom:14px;border-bottom:1px solid rgba(255,255,255,.07)}
 .sai-exp25-sec-title{font-size:16px;font-weight:700;color:#fff;margin:0}
 .sai-exp25-view-all{background:none;border:none;color:#00D9FF;font-size:13px;cursor:pointer;padding:0;font-weight:500}
 
 /* ── Hero card ── */
 .sai-exp25-hero-card{padding:14px;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.07)}
-.sai-exp25-hero-top{display:grid;grid-template-columns:1fr 160px;align-items:flex-start;min-height:120px}
+.sai-exp25-hero-top{display:grid;grid-template-columns:1fr 180px;align-items:center;min-height:160px}
 .sai-exp25-hero-verdict{display:flex;flex-direction:column;gap:4px;padding-top:4px}
 .sai-exp25-av-lbl{font-size:10px;font-weight:600;color:rgba(255,255,255,.45);letter-spacing:.1em}
-.sai-exp25-verdict-big{font-size:48px;font-weight:900;letter-spacing:-.01em;line-height:1}
+.sai-exp25-verdict-big{font-size:52px;font-weight:900;letter-spacing:-.01em;line-height:1}
 .sai-exp25-verdict-sub{font-size:12px;color:rgba(255,255,255,.6);line-height:1.3;margin-top:4px}
 .sai-exp25-hero-asset{display:flex;align-items:center;justify-content:center;overflow:visible}
-.sai-exp25-hero-asset .aih-root{width:160px!important;height:160px!important}
+.sai-exp25-hero-asset .aih-root{width:180px!important;height:180px!important}
 .sai-exp25-hero-metrics{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:0;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);margin-top:12px}
 .sai-exp25-hm-col{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center}
 .sai-exp25-hm-lbl{font-size:9px;font-weight:600;color:rgba(255,255,255,.45);letter-spacing:.08em}
 .sai-exp25-hm-val{font-size:18px;font-weight:800;line-height:1}
 .sai-exp25-hm-sub{font-size:10px;color:rgba(255,255,255,.45)}
 .sai-exp25-hm-div{width:1px;height:36px;background:rgba(255,255,255,.1);margin:0 4px}
-.sai-exp25-hm-risk{font-size:13px;font-weight:700}
+.sai-exp25-hm-risk{font-size:14px;font-weight:800;white-space:nowrap}
 
 /* ── Conviction Brief ── */
 .sai-exp25-conv-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
@@ -2146,14 +2146,15 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 
 /* Responsive */
 @media(max-width:390px){
-  .sai-exp25-hero-top{grid-template-columns:1fr 140px}
-  .sai-exp25-hero-asset .aih-root{width:140px!important;height:140px!important}
-  .sai-exp25-verdict-big{font-size:40px}
+  .sai-exp25-hero-top{grid-template-columns:1fr 160px}
+  .sai-exp25-hero-asset .aih-root{width:160px!important;height:160px!important}
+  .sai-exp25-verdict-big{font-size:46px}
   .sai-exp25-pfi-row{grid-template-columns:56px 1fr auto}
   .sai-exp25-rec-action{font-size:22px}
 }
 @media(max-width:360px){
   .sai-exp25-conv-grid{grid-template-columns:1fr}
-  .sai-exp25-hero-top{grid-template-columns:1fr 120px}
-  .sai-exp25-hero-asset .aih-root{width:120px!important;height:120px!important}
+  .sai-exp25-hero-top{grid-template-columns:1fr 130px}
+  .sai-exp25-hero-asset .aih-root{width:130px!important;height:130px!important}
+  .sai-exp25-verdict-big{font-size:40px}
 }
