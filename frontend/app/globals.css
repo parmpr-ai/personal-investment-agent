@@ -2031,3 +2031,129 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 @media(max-width:390px){.sai-p2-top{grid-template-columns:1fr 180px!important}.sai-p2-rgt{width:180px!important;height:180px!important}}
 @media(max-width:375px){.sai-p2-top{grid-template-columns:1fr 160px!important}.sai-p2-rgt{width:160px!important;height:160px!important}}
 @media(max-width:360px){.sai-p2-top{grid-template-columns:1fr 140px!important}.sai-p2-rgt{width:140px!important;height:140px!important}}
+
+/* ══════════════════════════════════════════════════════════
+   AI INTELLIGENCE V2.5 — ARTEMIS tabbed expanded sheet
+   ══════════════════════════════════════════════════════════ */
+
+/* Panel shell */
+.sai-exp25-panel{position:fixed;bottom:0;left:0;right:0;height:92vh;background:#0d1117;border-radius:16px 16px 0 0;display:flex;flex-direction:column;z-index:901;overflow:hidden;animation:sai-exp2-slide-up .28s ease-out}
+
+/* Sticky header */
+.sai-exp25-header{flex-shrink:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.08)}
+.sai-exp25-header-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 0}
+.sai-exp25-hdr-identity{display:flex;align-items:center;gap:6px;min-width:0;flex:1}
+.sai-exp25-hdr-ticker{font-size:15px;font-weight:700;color:#fff;letter-spacing:.02em}
+.sai-exp25-hdr-company{font-size:12px;color:rgba(255,255,255,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.sai-exp25-hdr-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.sai-exp25-hdr-pill{font-size:11px;font-weight:800;padding:3px 8px;border-radius:6px;border:1.5px solid;letter-spacing:.05em}
+
+/* Tab bar */
+.sai-exp25-tabs{display:flex;padding:0 14px;gap:0}
+.sai-exp25-tab{flex:1;background:none;border:none;border-bottom:2px solid transparent;color:rgba(255,255,255,.45);font-size:13px;font-weight:500;padding:8px 4px;cursor:pointer;transition:color .18s,border-color .18s;text-align:center}
+.sai-exp25-tab-on{color:#fff;border-bottom-color:#00D9FF;font-weight:600}
+
+/* Scrollable body */
+.sai-exp25-body{flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:32px}
+
+/* Section wrapper */
+.sai-exp25-section{padding:14px 14px 0}
+.sai-exp25-sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sai-exp25-sec-title{font-size:16px;font-weight:700;color:#fff;margin:0}
+.sai-exp25-view-all{background:none;border:none;color:#00D9FF;font-size:13px;cursor:pointer;padding:0;font-weight:500}
+
+/* ── Hero card ── */
+.sai-exp25-hero-card{padding:14px;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.07)}
+.sai-exp25-hero-top{display:grid;grid-template-columns:1fr 160px;align-items:flex-start;min-height:120px}
+.sai-exp25-hero-verdict{display:flex;flex-direction:column;gap:4px;padding-top:4px}
+.sai-exp25-av-lbl{font-size:10px;font-weight:600;color:rgba(255,255,255,.45);letter-spacing:.1em}
+.sai-exp25-verdict-big{font-size:48px;font-weight:900;letter-spacing:-.01em;line-height:1}
+.sai-exp25-verdict-sub{font-size:12px;color:rgba(255,255,255,.6);line-height:1.3;margin-top:4px}
+.sai-exp25-hero-asset{display:flex;align-items:center;justify-content:center;overflow:visible}
+.sai-exp25-hero-asset .aih-root{width:160px!important;height:160px!important}
+.sai-exp25-hero-metrics{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:0;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);margin-top:12px}
+.sai-exp25-hm-col{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center}
+.sai-exp25-hm-lbl{font-size:9px;font-weight:600;color:rgba(255,255,255,.45);letter-spacing:.08em}
+.sai-exp25-hm-val{font-size:18px;font-weight:800;line-height:1}
+.sai-exp25-hm-sub{font-size:10px;color:rgba(255,255,255,.45)}
+.sai-exp25-hm-div{width:1px;height:36px;background:rgba(255,255,255,.1);margin:0 4px}
+.sai-exp25-hm-risk{font-size:13px;font-weight:700}
+
+/* ── Conviction Brief ── */
+.sai-exp25-conv-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.sai-exp25-conv-col{display:flex;flex-direction:column;gap:5px}
+.sai-exp25-conv-hdr{font-size:8px;font-weight:700;letter-spacing:.08em;margin-bottom:2px;display:block}
+.sai-exp25-conv-item{display:flex;align-items:flex-start;gap:5px;font-size:11px;color:rgba(255,255,255,.75);line-height:1.3}
+.sai-exp25-conv-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:4px}
+
+/* ── Catalysts ── */
+.sai-exp25-cat-next{display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.05);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.sai-exp25-cat-lbl{font-size:9px;font-weight:600;color:rgba(255,255,255,.45);letter-spacing:.08em;display:block;margin-bottom:2px}
+.sai-exp25-cat-name{font-size:14px;font-weight:600;color:#fff;display:block}
+.sai-exp25-cat-badge{font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;white-space:nowrap}
+.sai-exp25-cat-strength{margin-bottom:12px}
+.sai-exp25-cat-str-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.sai-exp25-cat-str-val{font-size:13px;font-weight:700;color:#fff}
+.sai-exp25-cat-str-lbl{font-size:11px;color:rgba(255,255,255,.5);margin-top:4px;display:block}
+.sai-exp25-bar-track{height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden}
+.sai-exp25-bar-fill{height:100%;border-radius:3px;transition:width .5s ease}
+.sai-exp25-cat-horizon{padding-top:2px}
+.sai-exp25-hz-row{display:grid;grid-template-columns:36px 1fr 28px;align-items:center;gap:8px;margin-top:8px}
+.sai-exp25-hz-lbl{font-size:11px;color:rgba(255,255,255,.55)}
+.sai-exp25-hz-bar{height:4px}
+.sai-exp25-hz-val{font-size:11px;font-weight:600;color:#fff;text-align:right}
+
+/* ── Portfolio Fit & Impact ── */
+.sai-exp25-pfi-row{display:grid;grid-template-columns:68px 1fr auto;gap:10px;align-items:center;background:rgba(255,255,255,.04);border-radius:12px;padding:12px}
+.sai-exp25-pfi-left{display:flex;align-items:center;justify-content:center}
+.sai-exp25-pfi-mid{display:flex;flex-direction:column;gap:5px}
+.sai-exp25-pfi-metric{display:flex;align-items:center;gap:4px}
+.sai-exp25-pfi-m-lbl{font-size:11px;color:rgba(255,255,255,.5)}
+.sai-exp25-pfi-m-val{font-size:11px;font-weight:600}
+.sai-exp25-pfi-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px;min-width:90px;border-left:1px solid rgba(255,255,255,.1);padding-left:10px}
+.sai-exp25-rec-lbl{font-size:8px;font-weight:700;color:rgba(255,255,255,.45);letter-spacing:.08em;text-align:right}
+.sai-exp25-rec-action{font-size:26px;font-weight:900;letter-spacing:-.01em;line-height:1;text-align:right}
+.sai-exp25-rec-sub{font-size:9px;color:rgba(255,255,255,.4);text-align:right;margin-top:4px}
+.sai-exp25-rec-range{font-size:10px;color:rgba(255,255,255,.7);text-align:right}
+
+/* ── Bull vs Bear ── */
+.sai-exp25-bvb-row{display:grid;grid-template-columns:1fr 80px 1fr;gap:8px;align-items:flex-start}
+.sai-exp25-bvb-col{display:flex;flex-direction:column;gap:5px}
+.sai-exp25-bvb-bear{align-items:flex-end}
+.sai-exp25-bvb-col-hdr{font-size:8px;font-weight:700;letter-spacing:.08em;margin-bottom:3px;display:block}
+.sai-exp25-bvb-item{display:flex;align-items:flex-start;gap:5px;font-size:10px;color:rgba(255,255,255,.75);line-height:1.3}
+.sai-exp25-bvb-bear .sai-exp25-bvb-item{flex-direction:row-reverse}
+.sai-exp25-bvb-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:3px}
+.sai-exp25-bvb-center{display:flex;flex-direction:column;align-items:center;gap:4px}
+.sai-exp25-bvb-heroes{display:flex;gap:2px}
+.sai-exp25-bvb-hero{width:28px;height:28px;object-fit:contain}
+
+/* ── News & Catalysts ── */
+.sai-exp25-news-scroll{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.sai-exp25-news-scroll::-webkit-scrollbar{display:none}
+.sai-exp25-news-card{flex-shrink:0;width:160px;background:#161b24;border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.sai-exp25-news-img{width:100%;height:80px;flex-shrink:0}
+.sai-exp25-news-hl{font-size:12px;font-weight:500;color:#fff;line-height:1.4;margin:0;padding:8px 10px 4px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;flex:1}
+.sai-exp25-news-meta{display:flex;align-items:center;gap:4px;padding:0 10px 8px;flex-shrink:0}
+.sai-exp25-news-time{font-size:10px;color:rgba(255,255,255,.4)}
+.sai-exp25-news-sent{font-size:10px;font-weight:500}
+
+/* Customize panel — right-side drag handle */
+.sai-exp25-customize-row{justify-content:flex-start!important}
+.sai-exp25-customize-row .sai-exp2-customize-label{flex:1}
+.sai-exp25-customize-row .sai-exp2-customize-drag{order:3;margin-left:8px;margin-right:0!important}
+.sai-exp25-customize-row .sai-exp2-customize-toggle{order:2}
+
+/* Responsive */
+@media(max-width:390px){
+  .sai-exp25-hero-top{grid-template-columns:1fr 140px}
+  .sai-exp25-hero-asset .aih-root{width:140px!important;height:140px!important}
+  .sai-exp25-verdict-big{font-size:40px}
+  .sai-exp25-pfi-row{grid-template-columns:56px 1fr auto}
+  .sai-exp25-rec-action{font-size:22px}
+}
+@media(max-width:360px){
+  .sai-exp25-conv-grid{grid-template-columns:1fr}
+  .sai-exp25-hero-top{grid-template-columns:1fr 120px}
+  .sai-exp25-hero-asset .aih-root{width:120px!important;height:120px!important}
+}

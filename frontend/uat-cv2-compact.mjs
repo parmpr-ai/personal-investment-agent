@@ -150,14 +150,14 @@ async function captureExpanded(browser, c, viewport, suffix) {
   try { await sai.tap() } catch { await sai.click() }
   await page.waitForTimeout(1200)
 
-  const panel = await page.$('.sai-exp2-panel')
+  const panel = await page.$('.sai-exp25-panel')
   if (panel) {
     await page.waitForTimeout(400)
     const fname = `${OUT}/${suffix}.png`
     writeFileSync(fname, await panel.screenshot())
     console.log(`  ✓ ${fname}`)
   } else {
-    console.log(`  ⚠ .sai-exp2-panel not found — taking full page screenshot`)
+    console.log(`  ⚠ .sai-exp25-panel not found — taking full page screenshot`)
     const fname = `${OUT}/${suffix}.png`
     writeFileSync(fname, await page.screenshot({ fullPage: false }))
     console.log(`  ✓ ${fname} (fallback viewport)`)
