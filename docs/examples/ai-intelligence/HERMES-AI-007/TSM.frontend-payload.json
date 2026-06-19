@@ -1,0 +1,401 @@
+{
+  "aiSummary": "TSM is a BUY setup with 12.8% expected return and moderate risk.",
+  "aiVerdict": "BUY",
+  "analystConsensus": {
+    "analystCount": 18,
+    "averageAnalystRating": "1.5 - Strong Buy",
+    "consensusRating": "strong_buy",
+    "consensusVerdict": "Overweight",
+    "ratingDistribution": {
+      "buy": 17,
+      "buy_only": 12,
+      "hold": 2,
+      "sell": 0,
+      "sell_only": 0,
+      "strong_buy": 5,
+      "strong_sell": 0
+    },
+    "recommendationMean": 1.47368
+  },
+  "bearCase": [
+    "Risk rises faster than expected return improves.",
+    "Earnings or news flow weakens the thesis.",
+    "Sector or portfolio concentration limits actionability."
+  ],
+  "bullCase": [
+    "Momentum and trend continue to confirm the setup.",
+    "Analyst target support remains constructive.",
+    "Macro regime remains supportive for risk exposure."
+  ],
+  "caseType": "BUY",
+  "catalysts": {
+    "negative": [
+      {
+        "description": "Rates, volatility, or risk regime can pressure growth and high-duration equities.",
+        "impact": "Medium",
+        "probability": 66,
+        "timeframe": "0-3 months",
+        "title": "Macro Slowdown"
+      },
+      {
+        "description": "Peer competition remains a standing risk in the industry context.",
+        "impact": "Medium",
+        "probability": 54,
+        "timeframe": "6-12 months",
+        "title": "Competition"
+      }
+    ],
+    "positive": [
+      {
+        "description": "AI infrastructure and compute demand remain visible in company and news context.",
+        "impact": "High",
+        "probability": 79,
+        "timeframe": "3-6 months",
+        "title": "AI Demand Acceleration"
+      },
+      {
+        "description": "Consensus tone remains constructive across available analyst inputs.",
+        "impact": "Medium",
+        "probability": 66,
+        "timeframe": "1-3 months",
+        "title": "Analyst Upgrades"
+      },
+      {
+        "description": "Recent reported results exceeded available estimates.",
+        "impact": "Medium",
+        "probability": 63,
+        "timeframe": "0-3 months",
+        "title": "Earnings Beat Potential"
+      }
+    ],
+    "upcoming": [
+      {
+        "date": "2026-07-16",
+        "event": "TSM Earnings",
+        "importance": "High"
+      },
+      {
+        "date": "2026-06-21",
+        "event": "CPI print",
+        "importance": "Medium"
+      }
+    ]
+  },
+  "conviction": 76,
+  "driverScorecard": [
+    {
+      "label": "Momentum",
+      "level": "high",
+      "score": 89,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Trend",
+      "level": "high",
+      "score": 89,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Sentiment",
+      "level": "balanced",
+      "score": 54,
+      "sourceSection": "newsSentiment"
+    },
+    {
+      "label": "Risk",
+      "level": "balanced",
+      "score": 48,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Analysts",
+      "level": "medium",
+      "score": 72,
+      "sourceSection": "analystConsensus"
+    },
+    {
+      "label": "Portfolio Fit",
+      "level": "medium",
+      "score": 73,
+      "sourceSection": "portfolioFitInputs"
+    }
+  ],
+  "evidence": [
+    {
+      "detail": "Momentum 89, trend 89, risk Moderate.",
+      "sourceSection": "technicalIndicators",
+      "title": "Technical setup"
+    },
+    {
+      "detail": "Consensus target implies 12.3% expected return.",
+      "sourceSection": "analystTargets",
+      "title": "Analyst target context"
+    },
+    {
+      "detail": "6 recent headlines plus sector weight 21.46% inform the view on TSM.",
+      "sourceSection": "newsSentiment",
+      "title": "News and sector read"
+    }
+  ],
+  "executiveBrief": [
+    "Analyst target context implies 2.4% upside.",
+    "Moat rating is strong with Technology Leadership, Scale Advantage.",
+    "Primary positive catalyst is ai demand acceleration.",
+    "Upcoming TSM Earnings remains a key catalyst window.",
+    "News impact is medium across 6 recent headlines."
+  ],
+  "expectedReturn": {
+    "basePct": 12.26,
+    "eventAdjustmentPct": 0.56,
+    "pct": 12.82,
+    "sourceSection": "analystTargets"
+  },
+  "institutionalView": {
+    "avoidReasons": [
+      "Macro Slowdown",
+      "Competition"
+    ],
+    "buyReasons": [
+      "Strong moat profile",
+      "Technology Leadership",
+      "Scale Advantage",
+      "Constructive analyst consensus",
+      "AI Demand Acceleration"
+    ],
+    "thesis": "Institutional investors are likely to remain constructive on TSM due to strong moat profile and visible catalyst support."
+  },
+  "methodology": {
+    "compactUsesCachedSummary": true,
+    "expandedHydration": "Expanded views can hydrate sourceContexts and engineInputs after the compact contract renders.",
+    "name": "PIA rules-based AI Intelligence V2.5",
+    "summary": "Combines cached fundamentals, analyst data, technicals, momentum, material news, macro, catalysts and portfolio fit. This is not financial advice.",
+    "version": "ARTEMIS-AI-007.0"
+  },
+  "moat": {
+    "components": {
+      "Brand": 62,
+      "Cost Advantage": 77,
+      "Network Effects": 45,
+      "Proprietary Technology": 100,
+      "Scale": 100,
+      "Switching Costs": 87
+    },
+    "drivers": [
+      "Technology Leadership",
+      "Scale Advantage",
+      "High Switching Costs",
+      "Cost Advantage"
+    ],
+    "rating": "Strong",
+    "score": 78
+  },
+  "newsImpact": {
+    "direction": "Positive",
+    "directionalScore": 22,
+    "headlineCount": 6,
+    "importance": "Medium",
+    "materialEvents": [],
+    "score": 48
+  },
+  "risk": {
+    "level": "Moderate",
+    "score": 52
+  },
+  "scenarioOutlook": {
+    "base": {
+      "price": 521.36,
+      "probability": 55,
+      "returnPct": 12.8
+    },
+    "bear": {
+      "price": 434.39,
+      "probability": 20,
+      "returnPct": -6
+    },
+    "bull": {
+      "price": 576.82,
+      "probability": 25,
+      "returnPct": 24.8
+    }
+  },
+  "schemaVersion": "ARTEMIS-AI-007.0",
+  "sourceStatus": {
+    "analystConsensus": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:11.256344+00:00"
+    },
+    "analystTargets": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:11.256344+00:00"
+    },
+    "companyFundamentals": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 900,
+      "updatedAt": "2026-06-19T08:45:11.256344+00:00"
+    },
+    "competitorComparison": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA peer catalog / watchlist",
+      "status": "cached",
+      "ttlSeconds": 30,
+      "updatedAt": "2026-06-19T08:45:01.174448+00:00"
+    },
+    "earningsCalendar": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:11.256344+00:00"
+    },
+    "earningsHistory": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:11.256344+00:00"
+    },
+    "macroEnvironment": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA macro snapshot",
+      "status": "cached",
+      "ttlSeconds": 60,
+      "updatedAt": "2026-06-19T08:45:01.174309+00:00"
+    },
+    "newsSentiment": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo RSS / PIA News Intelligence",
+      "status": "cached",
+      "ttlSeconds": 120,
+      "updatedAt": "2026-06-19T08:45:09.819215+00:00"
+    },
+    "portfolioContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio provider",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "portfolioFitInputs": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio fit input adapter",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "positionSizingContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA sizing rules",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "sectorComparison": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio provider / PIA sector catalog",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "technicalIndicators": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA AI signal engine",
+      "status": "cached",
+      "ttlSeconds": 300,
+      "updatedAt": "2026-06-19T08:45:10.101601+00:00"
+    },
+    "watchlistContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA watchlist state",
+      "status": "cached",
+      "ttlSeconds": 30,
+      "updatedAt": "2026-06-19T08:45:01.174448+00:00"
+    }
+  },
+  "symbol": "TSM",
+  "type": "AIIntelligenceFrontendPayload",
+  "verdictHistory": [
+    {
+      "caseType": "BUY",
+      "period": "T-5",
+      "score": 74
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-4",
+      "score": 78
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-3",
+      "score": 74
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-2",
+      "score": 65
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-1",
+      "score": 77
+    },
+    {
+      "caseType": "BUY",
+      "period": "current",
+      "score": 72
+    }
+  ],
+  "verdictWeighting": {
+    "componentScores": {
+      "analysts": 67,
+      "catalysts": 57,
+      "fundamentals": 68,
+      "macro": 48,
+      "momentum": 89,
+      "news": 58,
+      "portfolioFit": 73,
+      "technicals": 75
+    },
+    "compositeScore": 67,
+    "expectedReturnAdjustmentPct": 0.56,
+    "method": "Dynamic V2 weighting: fundamentals 25, analysts 15, technicals 15, momentum 10, news 10, macro 10, catalysts 10, portfolio fit 5.",
+    "version": "HERMES-AI-007-V2.5",
+    "weights": {
+      "analysts": 15,
+      "catalysts": 10,
+      "fundamentals": 25,
+      "macro": 10,
+      "momentum": 10,
+      "news": 10,
+      "portfolioFit": 5,
+      "technicals": 15
+    }
+  },
+  "whatCouldChangeThisView": [
+    "A material change in analyst targets or consensus.",
+    "A break in trend, momentum, or relative strength.",
+    "A change in macro risk mode or portfolio concentration."
+  ]
+}

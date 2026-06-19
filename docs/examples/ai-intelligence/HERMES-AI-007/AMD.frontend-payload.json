@@ -1,0 +1,484 @@
+{
+  "aiSummary": "AMD is a BUY setup with 18.1% expected return and elevated risk.",
+  "aiVerdict": "BUY",
+  "analystConsensus": {
+    "analystCount": 48,
+    "averageAnalystRating": "1.5 - Strong Buy",
+    "consensusRating": "strong_buy",
+    "consensusVerdict": "Overweight",
+    "ratingDistribution": {
+      "buy": 42,
+      "buy_only": 37,
+      "hold": 9,
+      "sell": 0,
+      "sell_only": 0,
+      "strong_buy": 5,
+      "strong_sell": 0
+    },
+    "recommendationMean": 1.45098
+  },
+  "bearCase": [
+    "Risk rises faster than expected return improves.",
+    "Earnings or news flow weakens the thesis.",
+    "Sector or portfolio concentration limits actionability."
+  ],
+  "bullCase": [
+    "Momentum and trend continue to confirm the setup.",
+    "Analyst target support remains constructive.",
+    "Macro regime remains supportive for risk exposure."
+  ],
+  "caseType": "BUY",
+  "catalysts": {
+    "negative": [
+      {
+        "description": "The valuation multiple is elevated relative to a broad market baseline.",
+        "impact": "High",
+        "probability": 88,
+        "timeframe": "0-6 months",
+        "title": "Valuation Compression"
+      },
+      {
+        "description": "Rates, volatility, or risk regime can pressure growth and high-duration equities.",
+        "impact": "Medium",
+        "probability": 66,
+        "timeframe": "0-3 months",
+        "title": "Macro Slowdown"
+      },
+      {
+        "description": "Peer competition remains a standing risk in the industry context.",
+        "impact": "Medium",
+        "probability": 54,
+        "timeframe": "6-12 months",
+        "title": "Competition"
+      }
+    ],
+    "positive": [
+      {
+        "description": "AI infrastructure and compute demand remain visible in company and news context.",
+        "impact": "High",
+        "probability": 89,
+        "timeframe": "3-6 months",
+        "title": "AI Demand Acceleration"
+      },
+      {
+        "description": "Consensus tone remains constructive across available analyst inputs.",
+        "impact": "Medium",
+        "probability": 66,
+        "timeframe": "1-3 months",
+        "title": "Analyst Upgrades"
+      },
+      {
+        "description": "Recent reported results exceeded available estimates.",
+        "impact": "Medium",
+        "probability": 64,
+        "timeframe": "0-3 months",
+        "title": "Earnings Beat Potential"
+      },
+      {
+        "description": "Product cycle language is present in company, headline, or sector context.",
+        "impact": "Medium",
+        "probability": 64,
+        "timeframe": "3-6 months",
+        "title": "New Product Cycle"
+      }
+    ],
+    "upcoming": [
+      {
+        "date": "2026-08-04",
+        "event": "AMD Earnings",
+        "importance": "High"
+      },
+      {
+        "date": "2026-07-01",
+        "event": "AMD earnings",
+        "importance": "High"
+      },
+      {
+        "date": "2026-06-21",
+        "event": "CPI print",
+        "importance": "Medium"
+      }
+    ]
+  },
+  "conviction": 76,
+  "driverScorecard": [
+    {
+      "label": "Momentum",
+      "level": "high",
+      "score": 100,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Trend",
+      "level": "high",
+      "score": 100,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Sentiment",
+      "level": "balanced",
+      "score": 54,
+      "sourceSection": "newsSentiment"
+    },
+    {
+      "label": "Risk",
+      "level": "low",
+      "score": 20,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Analysts",
+      "level": "high",
+      "score": 80,
+      "sourceSection": "analystConsensus"
+    },
+    {
+      "label": "Portfolio Fit",
+      "level": "medium",
+      "score": 69,
+      "sourceSection": "portfolioFitInputs"
+    }
+  ],
+  "evidence": [
+    {
+      "detail": "Momentum 100, trend 100, risk Elevated.",
+      "sourceSection": "technicalIndicators",
+      "title": "Technical setup"
+    },
+    {
+      "detail": "Consensus target implies 12.7% expected return.",
+      "sourceSection": "analystTargets",
+      "title": "Analyst target context"
+    },
+    {
+      "detail": "6 recent headlines plus sector weight 21.46% inform the view on AMD.",
+      "sourceSection": "newsSentiment",
+      "title": "News and sector read"
+    }
+  ],
+  "executiveBrief": [
+    "Analyst target context implies 9.2% downside.",
+    "Moat rating is moderate with Brand Strength, High Switching Costs.",
+    "Primary positive catalyst is ai demand acceleration.",
+    "Upcoming AMD Earnings remains a key catalyst window.",
+    "News impact is medium across 6 recent headlines."
+  ],
+  "expectedReturn": {
+    "basePct": 12.7,
+    "eventAdjustmentPct": 5.36,
+    "pct": 18.06,
+    "sourceSection": "analystTargets"
+  },
+  "institutionalView": {
+    "avoidReasons": [
+      "Elevated risk score",
+      "Valuation Compression",
+      "Macro Slowdown"
+    ],
+    "buyReasons": [
+      "Brand Strength",
+      "High Switching Costs",
+      "Constructive analyst consensus",
+      "AI Demand Acceleration",
+      "Material headline flow is supportive"
+    ],
+    "thesis": "Institutional investors are likely to remain constructive on AMD due to brand strength and visible catalyst support."
+  },
+  "methodology": {
+    "compactUsesCachedSummary": true,
+    "expandedHydration": "Expanded views can hydrate sourceContexts and engineInputs after the compact contract renders.",
+    "name": "PIA rules-based AI Intelligence V2.5",
+    "summary": "Combines cached fundamentals, analyst data, technicals, momentum, material news, macro, catalysts and portfolio fit. This is not financial advice.",
+    "version": "ARTEMIS-AI-007.0"
+  },
+  "moat": {
+    "components": {
+      "Brand": 92,
+      "Cost Advantage": 45,
+      "Network Effects": 70,
+      "Proprietary Technology": 78,
+      "Scale": 80,
+      "Switching Costs": 81
+    },
+    "drivers": [
+      "Brand Strength",
+      "High Switching Costs",
+      "Scale Advantage",
+      "Technology Leadership"
+    ],
+    "rating": "Moderate",
+    "score": 74
+  },
+  "newsImpact": {
+    "direction": "Positive",
+    "directionalScore": 74,
+    "headlineCount": 6,
+    "importance": "Medium",
+    "materialEvents": [
+      {
+        "date": "2026-06-18T23:52:40+00:00",
+        "direction": "Positive",
+        "eventType": "AI demand",
+        "impactScore": 74,
+        "importance": "Medium",
+        "source": "Yahoo",
+        "summary": "Live headline for AMD. Confirm price action before sizing.",
+        "title": "Is The AI Super-Cycle Real Enough To Bet On Micron Stock?"
+      }
+    ],
+    "score": 74
+  },
+  "portfolioAssessment": {
+    "constraints": {
+      "sectorLimitPct": 35.0,
+      "singlePositionLimitPct": 25.0,
+      "suggestedAction": "measured_add_allowed",
+      "suggestedMaxAddPct": 1.08
+    },
+    "isHeld": true,
+    "sizingBand": "small",
+    "suggestedAction": "measured_add_allowed"
+  },
+  "portfolioFit": {
+    "beta": 3.14,
+    "candidateCountry": "US",
+    "candidateIndustry": "CPUs, GPUs, and data-center accelerators",
+    "candidateSector": "Semis",
+    "concentrationAfterHypotheticalAddPct": 23.92,
+    "constraints": {
+      "sectorLimitPct": 35.0,
+      "singlePositionLimitPct": 25.0,
+      "suggestedAction": "measured_add_allowed",
+      "suggestedMaxAddPct": 1.08
+    },
+    "correlationGroup": {
+      "peers": [
+        "NVDA",
+        "INTC",
+        "QCOM",
+        "AVGO",
+        "TSM"
+      ],
+      "sector": "Semis"
+    },
+    "currentPortfolioWeightPct": 22.84,
+    "currentPrice": 537.37,
+    "diversificationBenefit": "Low",
+    "expectedReturnPct": 12.7,
+    "hypotheticalAddPct": 1.08,
+    "macroSensitivity": 77,
+    "momentumScore": 100.0,
+    "portfolioFitScore": 69,
+    "riskScore": 80.0,
+    "sectorWeightPct": 21.46,
+    "trendScore": 100.0
+  },
+  "portfolioImpact": {
+    "currentWeightPct": 22.84,
+    "sectorWeightPct": 21.46,
+    "suggestedMaxAddPct": 1.08,
+    "suggestedMaxAddValue": 1172.08
+  },
+  "recommendedAction": "measured_add_allowed",
+  "risk": {
+    "level": "Elevated",
+    "score": 80
+  },
+  "scenarioOutlook": {
+    "base": {
+      "price": 634.42,
+      "probability": 53,
+      "returnPct": 18.1
+    },
+    "bear": {
+      "price": 505.13,
+      "probability": 23,
+      "returnPct": -6
+    },
+    "bull": {
+      "price": 716.1,
+      "probability": 24,
+      "returnPct": 33.3
+    }
+  },
+  "schemaVersion": "ARTEMIS-AI-007.0",
+  "sourceStatus": {
+    "analystConsensus": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:07.575303+00:00"
+    },
+    "analystTargets": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:07.575303+00:00"
+    },
+    "companyFundamentals": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 900,
+      "updatedAt": "2026-06-19T08:45:07.575303+00:00"
+    },
+    "competitorComparison": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA peer catalog / watchlist",
+      "status": "cached",
+      "ttlSeconds": 30,
+      "updatedAt": "2026-06-19T08:45:01.174448+00:00"
+    },
+    "earningsCalendar": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:07.575303+00:00"
+    },
+    "earningsHistory": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:07.575303+00:00"
+    },
+    "macroEnvironment": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA macro snapshot",
+      "status": "cached",
+      "ttlSeconds": 60,
+      "updatedAt": "2026-06-19T08:45:01.174309+00:00"
+    },
+    "newsSentiment": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo RSS / PIA News Intelligence",
+      "status": "cached",
+      "ttlSeconds": 120,
+      "updatedAt": "2026-06-19T08:45:05.845044+00:00"
+    },
+    "portfolioContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio provider",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "portfolioFitInputs": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio fit input adapter",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "positionSizingContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA sizing rules",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "sectorComparison": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio provider / PIA sector catalog",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "technicalIndicators": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA AI signal engine",
+      "status": "cached",
+      "ttlSeconds": 300,
+      "updatedAt": "2026-06-19T08:45:06.216328+00:00"
+    },
+    "watchlistContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA watchlist state",
+      "status": "cached",
+      "ttlSeconds": 30,
+      "updatedAt": "2026-06-19T08:45:01.174448+00:00"
+    }
+  },
+  "symbol": "AMD",
+  "type": "AIIntelligenceFrontendPayload",
+  "verdictHistory": [
+    {
+      "caseType": "BUY",
+      "period": "T-5",
+      "score": 76
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-4",
+      "score": 74
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-3",
+      "score": 70
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-2",
+      "score": 69
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-1",
+      "score": 70
+    },
+    {
+      "caseType": "BUY",
+      "period": "current",
+      "score": 71
+    }
+  ],
+  "verdictWeighting": {
+    "componentScores": {
+      "analysts": 62,
+      "catalysts": 55,
+      "fundamentals": 56,
+      "macro": 48,
+      "momentum": 100,
+      "news": 78,
+      "portfolioFit": 69,
+      "technicals": 72
+    },
+    "compositeScore": 66,
+    "expectedReturnAdjustmentPct": 5.36,
+    "method": "Dynamic V2 weighting: fundamentals 25, analysts 15, technicals 15, momentum 10, news 10, macro 10, catalysts 10, portfolio fit 5.",
+    "version": "HERMES-AI-007-V2.5",
+    "weights": {
+      "analysts": 15,
+      "catalysts": 10,
+      "fundamentals": 25,
+      "macro": 10,
+      "momentum": 10,
+      "news": 10,
+      "portfolioFit": 5,
+      "technicals": 15
+    }
+  },
+  "whatCouldChangeThisView": [
+    "A material change in analyst targets or consensus.",
+    "A break in trend, momentum, or relative strength.",
+    "A change in macro risk mode or portfolio concentration."
+  ]
+}

@@ -1,0 +1,475 @@
+{
+  "aiSummary": "NBIS is a HOLD setup with 12.2% expected return and high risk.",
+  "aiVerdict": "HOLD",
+  "analystConsensus": {
+    "analystCount": 14,
+    "averageAnalystRating": "2.1 - Buy",
+    "consensusRating": "buy",
+    "consensusVerdict": "Overweight",
+    "ratingDistribution": {
+      "buy": 9,
+      "buy_only": 8,
+      "hold": 6,
+      "sell": 1,
+      "sell_only": 1,
+      "strong_buy": 1,
+      "strong_sell": 0
+    },
+    "recommendationMean": 2.0625
+  },
+  "bearCase": [
+    "Risk rises faster than expected return improves.",
+    "Earnings or news flow weakens the thesis.",
+    "Sector or portfolio concentration limits actionability."
+  ],
+  "bullCase": [
+    "Momentum and trend continue to confirm the setup.",
+    "Analyst target support remains constructive.",
+    "Macro regime remains supportive for risk exposure."
+  ],
+  "caseType": "HOLD",
+  "catalysts": {
+    "negative": [
+      {
+        "description": "The valuation multiple is elevated relative to a broad market baseline.",
+        "impact": "High",
+        "probability": 87,
+        "timeframe": "0-6 months",
+        "title": "Valuation Compression"
+      },
+      {
+        "description": "Portfolio guardrails limit additional exposure despite the stock thesis.",
+        "impact": "High",
+        "probability": 80,
+        "timeframe": "Current",
+        "title": "Portfolio Concentration"
+      },
+      {
+        "description": "Rates, volatility, or risk regime can pressure growth and high-duration equities.",
+        "impact": "Medium",
+        "probability": 66,
+        "timeframe": "0-3 months",
+        "title": "Macro Slowdown"
+      },
+      {
+        "description": "Peer competition remains a standing risk in the industry context.",
+        "impact": "Medium",
+        "probability": 54,
+        "timeframe": "6-12 months",
+        "title": "Competition"
+      }
+    ],
+    "positive": [
+      {
+        "description": "AI infrastructure and compute demand remain visible in company and news context.",
+        "impact": "High",
+        "probability": 81,
+        "timeframe": "3-6 months",
+        "title": "AI Demand Acceleration"
+      },
+      {
+        "description": "Consensus tone remains constructive across available analyst inputs.",
+        "impact": "Medium",
+        "probability": 66,
+        "timeframe": "1-3 months",
+        "title": "Analyst Upgrades"
+      },
+      {
+        "description": "Product cycle language is present in company, headline, or sector context.",
+        "impact": "Medium",
+        "probability": 64,
+        "timeframe": "3-6 months",
+        "title": "New Product Cycle"
+      },
+      {
+        "description": "Recent reported results exceeded available estimates.",
+        "impact": "Medium",
+        "probability": 62,
+        "timeframe": "0-3 months",
+        "title": "Earnings Beat Potential"
+      }
+    ],
+    "upcoming": [
+      {
+        "date": "2026-08-06",
+        "event": "NBIS Earnings",
+        "importance": "High"
+      },
+      {
+        "date": "2026-06-21",
+        "event": "CPI print",
+        "importance": "Medium"
+      }
+    ]
+  },
+  "conviction": 71,
+  "driverScorecard": [
+    {
+      "label": "Momentum",
+      "level": "high",
+      "score": 100,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Trend",
+      "level": "high",
+      "score": 100,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Sentiment",
+      "level": "medium",
+      "score": 55,
+      "sourceSection": "newsSentiment"
+    },
+    {
+      "label": "Risk",
+      "level": "low",
+      "score": 13,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Analysts",
+      "level": "medium",
+      "score": 72,
+      "sourceSection": "analystConsensus"
+    },
+    {
+      "label": "Portfolio Fit",
+      "level": "balanced",
+      "score": 47,
+      "sourceSection": "portfolioFitInputs"
+    }
+  ],
+  "evidence": [
+    {
+      "detail": "Momentum 100, trend 100, risk High.",
+      "sourceSection": "technicalIndicators",
+      "title": "Technical setup"
+    },
+    {
+      "detail": "Consensus target implies 11.9% expected return.",
+      "sourceSection": "analystTargets",
+      "title": "Analyst target context"
+    },
+    {
+      "detail": "6 recent headlines plus sector weight 35.42% inform the view on NBIS.",
+      "sourceSection": "newsSentiment",
+      "title": "News and sector read"
+    }
+  ],
+  "executiveBrief": [
+    "Analyst target context implies 14.9% downside.",
+    "Moat rating is moderate with High Switching Costs, Technology Leadership.",
+    "Primary positive catalyst is ai demand acceleration.",
+    "Upcoming NBIS Earnings remains a key catalyst window.",
+    "News impact is medium across 6 recent headlines."
+  ],
+  "expectedReturn": {
+    "basePct": 11.93,
+    "eventAdjustmentPct": 0.24,
+    "pct": 12.17,
+    "sourceSection": "analystTargets"
+  },
+  "institutionalView": {
+    "avoidReasons": [
+      "Elevated risk score",
+      "Valuation Compression",
+      "Portfolio Concentration",
+      "Portfolio guardrails limit adding"
+    ],
+    "buyReasons": [
+      "High Switching Costs",
+      "Technology Leadership",
+      "Constructive analyst consensus",
+      "AI Demand Acceleration",
+      "Material headline flow is supportive"
+    ],
+    "thesis": "Institutional investors are likely to remain constructive on NBIS due to high switching costs and visible catalyst support."
+  },
+  "methodology": {
+    "compactUsesCachedSummary": true,
+    "expandedHydration": "Expanded views can hydrate sourceContexts and engineInputs after the compact contract renders.",
+    "name": "PIA rules-based AI Intelligence V2.5",
+    "summary": "Combines cached fundamentals, analyst data, technicals, momentum, material news, macro, catalysts and portfolio fit. This is not financial advice.",
+    "version": "ARTEMIS-AI-007.0"
+  },
+  "moat": {
+    "components": {
+      "Brand": 50,
+      "Cost Advantage": 45,
+      "Network Effects": 70,
+      "Proprietary Technology": 78,
+      "Scale": 68,
+      "Switching Costs": 81
+    },
+    "drivers": [
+      "High Switching Costs",
+      "Technology Leadership",
+      "Network Effects"
+    ],
+    "rating": "Moderate",
+    "score": 65
+  },
+  "newsImpact": {
+    "direction": "Positive",
+    "directionalScore": 24,
+    "headlineCount": 6,
+    "importance": "Medium",
+    "materialEvents": [],
+    "score": 48
+  },
+  "portfolioAssessment": {
+    "constraints": {
+      "sectorLimitPct": 35.0,
+      "singlePositionLimitPct": 25.0,
+      "suggestedAction": "trim_or_hold_no_add",
+      "suggestedMaxAddPct": 0.0
+    },
+    "isHeld": true,
+    "sizingBand": "none",
+    "suggestedAction": "trim_or_hold_no_add"
+  },
+  "portfolioFit": {
+    "beta": 2.87,
+    "candidateCountry": "Netherlands",
+    "candidateIndustry": "AI cloud and GPU infrastructure",
+    "candidateSector": "AI Infra",
+    "concentrationAfterHypotheticalAddPct": 37.7,
+    "constraints": {
+      "sectorLimitPct": 35.0,
+      "singlePositionLimitPct": 25.0,
+      "suggestedAction": "trim_or_hold_no_add",
+      "suggestedMaxAddPct": 0.0
+    },
+    "correlationGroup": {
+      "peers": [
+        "CRWV",
+        "IREN",
+        "NVDA",
+        "AMD",
+        "TSM"
+      ],
+      "sector": "AI Infra"
+    },
+    "currentPortfolioWeightPct": 37.7,
+    "currentPrice": 286.69,
+    "diversificationBenefit": "Negative",
+    "expectedReturnPct": 11.93,
+    "hypotheticalAddPct": 0.0,
+    "macroSensitivity": 98,
+    "momentumScore": 100.0,
+    "portfolioFitScore": 47,
+    "riskScore": 87.0,
+    "sectorWeightPct": 35.42,
+    "trendScore": 100.0
+  },
+  "portfolioImpact": {
+    "currentWeightPct": 37.7,
+    "sectorWeightPct": 35.42,
+    "suggestedMaxAddPct": 0.0,
+    "suggestedMaxAddValue": 0.0
+  },
+  "recommendedAction": "trim_or_hold_no_add",
+  "risk": {
+    "level": "High",
+    "score": 87
+  },
+  "scenarioOutlook": {
+    "base": {
+      "price": 321.58,
+      "probability": 55,
+      "returnPct": 12.2
+    },
+    "bear": {
+      "price": 269.49,
+      "probability": 25,
+      "returnPct": -6
+    },
+    "bull": {
+      "price": 355.98,
+      "probability": 20,
+      "returnPct": 24.2
+    }
+  },
+  "schemaVersion": "ARTEMIS-AI-007.0",
+  "sourceStatus": {
+    "analystConsensus": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:09.444146+00:00"
+    },
+    "analystTargets": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:09.444146+00:00"
+    },
+    "companyFundamentals": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 900,
+      "updatedAt": "2026-06-19T08:45:09.444146+00:00"
+    },
+    "competitorComparison": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA peer catalog / watchlist",
+      "status": "cached",
+      "ttlSeconds": 30,
+      "updatedAt": "2026-06-19T08:45:01.174448+00:00"
+    },
+    "earningsCalendar": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:09.444146+00:00"
+    },
+    "earningsHistory": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:09.444146+00:00"
+    },
+    "macroEnvironment": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA macro snapshot",
+      "status": "cached",
+      "ttlSeconds": 60,
+      "updatedAt": "2026-06-19T08:45:01.174309+00:00"
+    },
+    "newsSentiment": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo RSS / PIA News Intelligence",
+      "status": "cached",
+      "ttlSeconds": 120,
+      "updatedAt": "2026-06-19T08:45:07.888885+00:00"
+    },
+    "portfolioContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio provider",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "portfolioFitInputs": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio fit input adapter",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "positionSizingContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA sizing rules",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "sectorComparison": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio provider / PIA sector catalog",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "technicalIndicators": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA AI signal engine",
+      "status": "cached",
+      "ttlSeconds": 300,
+      "updatedAt": "2026-06-19T08:45:08.232268+00:00"
+    },
+    "watchlistContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA watchlist state",
+      "status": "cached",
+      "ttlSeconds": 30,
+      "updatedAt": "2026-06-19T08:45:01.174448+00:00"
+    }
+  },
+  "symbol": "NBIS",
+  "type": "AIIntelligenceFrontendPayload",
+  "verdictHistory": [
+    {
+      "caseType": "BUY",
+      "period": "T-5",
+      "score": 69
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-4",
+      "score": 69
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-3",
+      "score": 69
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-2",
+      "score": 69
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-1",
+      "score": 69
+    },
+    {
+      "caseType": "BUY",
+      "period": "current",
+      "score": 69
+    }
+  ],
+  "verdictWeighting": {
+    "componentScores": {
+      "analysts": 51,
+      "catalysts": 53,
+      "fundamentals": 53,
+      "macro": 48,
+      "momentum": 100,
+      "news": 59,
+      "portfolioFit": 47,
+      "technicals": 70
+    },
+    "compositeScore": 60,
+    "expectedReturnAdjustmentPct": 0.24,
+    "method": "Dynamic V2 weighting: fundamentals 25, analysts 15, technicals 15, momentum 10, news 10, macro 10, catalysts 10, portfolio fit 5.",
+    "version": "HERMES-AI-007-V2.5",
+    "weights": {
+      "analysts": 15,
+      "catalysts": 10,
+      "fundamentals": 25,
+      "macro": 10,
+      "momentum": 10,
+      "news": 10,
+      "portfolioFit": 5,
+      "technicals": 15
+    }
+  },
+  "whatCouldChangeThisView": [
+    "A material change in analyst targets or consensus.",
+    "A break in trend, momentum, or relative strength.",
+    "A change in macro risk mode or portfolio concentration."
+  ]
+}

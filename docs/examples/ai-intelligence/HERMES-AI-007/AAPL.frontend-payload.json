@@ -1,0 +1,387 @@
+{
+  "aiSummary": "AAPL is a HOLD setup with 6.8% expected return and low risk.",
+  "aiVerdict": "HOLD",
+  "analystConsensus": {
+    "analystCount": 43,
+    "averageAnalystRating": "2.0 - Buy",
+    "consensusRating": "buy",
+    "consensusVerdict": "Overweight",
+    "ratingDistribution": {
+      "buy": 30,
+      "buy_only": 23,
+      "hold": 15,
+      "sell": 3,
+      "sell_only": 1,
+      "strong_buy": 7,
+      "strong_sell": 2
+    },
+    "recommendationMean": 1.97917
+  },
+  "bearCase": [
+    "Risk rises faster than expected return improves.",
+    "Earnings or news flow weakens the thesis.",
+    "Sector or portfolio concentration limits actionability."
+  ],
+  "bullCase": [
+    "Momentum and trend continue to confirm the setup.",
+    "Analyst target support remains constructive.",
+    "Macro regime remains supportive for risk exposure."
+  ],
+  "caseType": "HOLD",
+  "catalysts": {
+    "negative": [
+      {
+        "description": "Rates, volatility, or risk regime can pressure growth and high-duration equities.",
+        "impact": "Medium",
+        "probability": 66,
+        "timeframe": "0-3 months",
+        "title": "Macro Slowdown"
+      },
+      {
+        "description": "Peer competition remains a standing risk in the industry context.",
+        "impact": "Medium",
+        "probability": 54,
+        "timeframe": "6-12 months",
+        "title": "Competition"
+      }
+    ],
+    "positive": [
+      {
+        "description": "Consensus tone remains constructive across available analyst inputs.",
+        "impact": "Medium",
+        "probability": 66,
+        "timeframe": "1-3 months",
+        "title": "Analyst Upgrades"
+      },
+      {
+        "description": "Recent reported results exceeded available estimates.",
+        "impact": "Medium",
+        "probability": 61,
+        "timeframe": "0-3 months",
+        "title": "Earnings Beat Potential"
+      }
+    ],
+    "upcoming": [
+      {
+        "date": "2026-07-30",
+        "event": "AAPL Earnings",
+        "importance": "High"
+      }
+    ]
+  },
+  "conviction": 72,
+  "driverScorecard": [
+    {
+      "label": "Momentum",
+      "level": "medium",
+      "score": 61,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Trend",
+      "level": "medium",
+      "score": 63,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Sentiment",
+      "level": "balanced",
+      "score": 50,
+      "sourceSection": "newsSentiment"
+    },
+    {
+      "label": "Risk",
+      "level": "high",
+      "score": 75,
+      "sourceSection": "technicalIndicators"
+    },
+    {
+      "label": "Analysts",
+      "level": "high",
+      "score": 79,
+      "sourceSection": "analystConsensus"
+    },
+    {
+      "label": "Portfolio Fit",
+      "level": "medium",
+      "score": 71,
+      "sourceSection": "portfolioFitInputs"
+    }
+  ],
+  "evidence": [
+    {
+      "detail": "Momentum 61, trend 63, risk Low.",
+      "sourceSection": "technicalIndicators",
+      "title": "Technical setup"
+    },
+    {
+      "detail": "Consensus target implies 6.5% expected return.",
+      "sourceSection": "analystTargets",
+      "title": "Analyst target context"
+    },
+    {
+      "detail": "6 recent headlines plus sector weight 0.0% inform the view on AAPL.",
+      "sourceSection": "newsSentiment",
+      "title": "News and sector read"
+    }
+  ],
+  "executiveBrief": [
+    "Analyst target context implies 4.9% upside.",
+    "Moat rating is developing with Brand Strength, Scale Advantage.",
+    "Primary positive catalyst is analyst upgrades.",
+    "Upcoming AAPL Earnings remains a key catalyst window.",
+    "News impact is medium across 6 recent headlines."
+  ],
+  "expectedReturn": {
+    "basePct": 6.55,
+    "eventAdjustmentPct": 0.24,
+    "pct": 6.79,
+    "sourceSection": "analystTargets"
+  },
+  "institutionalView": {
+    "avoidReasons": [
+      "Macro Slowdown",
+      "Competition",
+      "Material headline flow is negative"
+    ],
+    "buyReasons": [
+      "Brand Strength",
+      "Scale Advantage",
+      "Constructive analyst consensus",
+      "Analyst Upgrades"
+    ],
+    "thesis": "Institutional investors are likely to remain constructive on AAPL due to brand strength and visible catalyst support."
+  },
+  "methodology": {
+    "compactUsesCachedSummary": true,
+    "expandedHydration": "Expanded views can hydrate sourceContexts and engineInputs after the compact contract renders.",
+    "name": "PIA rules-based AI Intelligence V2.5",
+    "summary": "Combines cached fundamentals, analyst data, technicals, momentum, material news, macro, catalysts and portfolio fit. This is not financial advice.",
+    "version": "ARTEMIS-AI-007.0"
+  },
+  "moat": {
+    "components": {
+      "Brand": 92,
+      "Cost Advantage": 45,
+      "Network Effects": 45,
+      "Proprietary Technology": 50,
+      "Scale": 80,
+      "Switching Costs": 45
+    },
+    "drivers": [
+      "Brand Strength",
+      "Scale Advantage"
+    ],
+    "rating": "Developing",
+    "score": 60
+  },
+  "newsImpact": {
+    "direction": "Negative",
+    "directionalScore": -22,
+    "headlineCount": 6,
+    "importance": "Medium",
+    "materialEvents": [],
+    "score": 48
+  },
+  "risk": {
+    "level": "Low",
+    "score": 25
+  },
+  "scenarioOutlook": {
+    "base": {
+      "price": 318.24,
+      "probability": 55,
+      "returnPct": 6.8
+    },
+    "bear": {
+      "price": 280.13,
+      "probability": 20,
+      "returnPct": -6
+    },
+    "bull": {
+      "price": 354.01,
+      "probability": 25,
+      "returnPct": 18.8
+    }
+  },
+  "schemaVersion": "ARTEMIS-AI-007.0",
+  "sourceStatus": {
+    "analystConsensus": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:05.558994+00:00"
+    },
+    "analystTargets": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:05.558994+00:00"
+    },
+    "companyFundamentals": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 900,
+      "updatedAt": "2026-06-19T08:45:05.558994+00:00"
+    },
+    "competitorComparison": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA peer catalog / watchlist",
+      "status": "cached",
+      "ttlSeconds": 30,
+      "updatedAt": "2026-06-19T08:45:01.174448+00:00"
+    },
+    "earningsCalendar": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:05.558994+00:00"
+    },
+    "earningsHistory": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo Finance",
+      "status": "cached",
+      "ttlSeconds": 3600,
+      "updatedAt": "2026-06-19T08:45:05.558994+00:00"
+    },
+    "macroEnvironment": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA macro snapshot",
+      "status": "cached",
+      "ttlSeconds": 60,
+      "updatedAt": "2026-06-19T08:45:01.174309+00:00"
+    },
+    "newsSentiment": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "Yahoo RSS / PIA News Intelligence",
+      "status": "cached",
+      "ttlSeconds": 120,
+      "updatedAt": "2026-06-19T08:45:01.451284+00:00"
+    },
+    "portfolioContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio provider",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "portfolioFitInputs": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio fit input adapter",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "positionSizingContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA sizing rules",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "sectorComparison": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA portfolio provider / PIA sector catalog",
+      "status": "cached",
+      "ttlSeconds": 10,
+      "updatedAt": "2026-06-19T08:45:01.174345+00:00"
+    },
+    "technicalIndicators": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA AI signal engine",
+      "status": "cached",
+      "ttlSeconds": 300,
+      "updatedAt": "2026-06-19T08:45:02.071531+00:00"
+    },
+    "watchlistContext": {
+      "availabilityStatus": "available",
+      "freshnessStatus": "cached",
+      "provider": "PIA watchlist state",
+      "status": "cached",
+      "ttlSeconds": 30,
+      "updatedAt": "2026-06-19T08:45:01.174448+00:00"
+    }
+  },
+  "symbol": "AAPL",
+  "type": "AIIntelligenceFrontendPayload",
+  "verdictHistory": [
+    {
+      "caseType": "HOLD",
+      "period": "T-5",
+      "score": 58
+    },
+    {
+      "caseType": "HOLD",
+      "period": "T-4",
+      "score": 63
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-3",
+      "score": 76
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-2",
+      "score": 78
+    },
+    {
+      "caseType": "BUY",
+      "period": "T-1",
+      "score": 77
+    },
+    {
+      "caseType": "HOLD",
+      "period": "current",
+      "score": 63
+    }
+  ],
+  "verdictWeighting": {
+    "componentScores": {
+      "analysts": 74,
+      "catalysts": 53,
+      "fundamentals": 64,
+      "macro": 48,
+      "momentum": 61,
+      "news": 42,
+      "portfolioFit": 71,
+      "technicals": 67
+    },
+    "compositeScore": 61,
+    "expectedReturnAdjustmentPct": 0.24,
+    "method": "Dynamic V2 weighting: fundamentals 25, analysts 15, technicals 15, momentum 10, news 10, macro 10, catalysts 10, portfolio fit 5.",
+    "version": "HERMES-AI-007-V2.5",
+    "weights": {
+      "analysts": 15,
+      "catalysts": 10,
+      "fundamentals": 25,
+      "macro": 10,
+      "momentum": 10,
+      "news": 10,
+      "portfolioFit": 5,
+      "technicals": 15
+    }
+  },
+  "whatCouldChangeThisView": [
+    "A material change in analyst targets or consensus.",
+    "A break in trend, momentum, or relative strength.",
+    "A change in macro risk mode or portfolio concentration."
+  ]
+}

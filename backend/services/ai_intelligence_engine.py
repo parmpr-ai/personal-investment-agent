@@ -5,30 +5,14 @@ from copy import deepcopy
 from typing import Any
 
 from services.ai_data_sources import STATUS_AVAILABLE, STATUS_DISABLED, STATUS_MISSING, STATUS_PARTIAL
+from services.ai_intelligence_v25 import V25_VERDICT_WEIGHTS, build_news_impact
 from services.source_registry import SourceRegistry
 
 
 DEFAULT_HORIZON = "6-12M"
 SCORE_CACHE_TTL_SECONDS = 5 * 60
 
-FACTOR_WEIGHTS = {
-    "fundamentals": 12,
-    "earningsGuidance": 12,
-    "valuation": 10,
-    "analystTargets": 8,
-    "analystRevisions": 8,
-    "technicalAnalysis": 12,
-    "momentum": 8,
-    "volume": 4,
-    "news": 8,
-    "seekingAlpha": 5,
-    "macro": 5,
-    "geopolitical": 3,
-    "competitors": 4,
-    "upcomingEvents": 3,
-    "advisorSignals": 5,
-    "positionContext": 10,
-}
+FACTOR_WEIGHTS = dict(V25_VERDICT_WEIGHTS)
 
 _SCORE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -82,6 +66,17 @@ def _status_multiplier(status: str) -> float:
     if status == STATUS_PARTIAL:
         return 0.55
     return 0.0
+
+
+def _combined_status(*statuses: str | None) -> str:
+    usable = [status for status in statuses if status and status != STATUS_DISABLED]
+    if not usable:
+        return STATUS_MISSING
+    if all(status == STATUS_AVAILABLE for status in usable):
+        return STATUS_AVAILABLE
+    if any(status == STATUS_AVAILABLE for status in usable) or any(status == STATUS_PARTIAL for status in usable):
+        return STATUS_PARTIAL
+    return STATUS_MISSING
 
 
 def _direction(value: float) -> str:
@@ -476,24 +471,251 @@ def _score_position(position_payload: dict[str, Any], status: str) -> dict[str, 
     return _factor("positionContext", "Position Context", score, summary, status, source_id="portfolio_positions", details={"portfolioWeight": weight, "risk": risk, "unrealizedPct": unrealized_pct})
 
 
+def _score_fundamentals_v2(
+    fundamentals: dict[str, Any],
+    valuation: dict[str, Any],
+    earnings: dict[str, Any],
+    status: str,
+) -> dict[str, Any]:
+    eps = _num(_first(fundamentals.get("eps"), valuation.get("eps"), earnings.get("reported_eps")))
+    pe = _num(valuation.get("pe"))
+    market_cap = _num(_first(fundamentals.get("market_cap"), valuation.get("market_cap")))
+    reported = _num(earnings.get("reported_eps"))
+    estimate = _num(earnings.get("eps_estimate"))
+    score = 0.0
+    if eps is not None:
+        score += 7 if eps > 0 else -8
+    if pe is not None:
+        if 0 < pe <= 28:
+            score += 8
+        elif pe <= 45:
+            score += 3
+        elif pe <= 80:
+            score -= 7
+        else:
+            score -= 12
+    if market_cap is not None:
+        score += 4 if market_cap >= 50_000_000_000 else 1
+    if reported is not None and estimate not in (None, 0):
+        surprise = (reported / estimate - 1) * 100
+        score += max(-8, min(8, surprise * 0.45))
+    score *= _status_multiplier(status)
+    summary = "Fundamentals support the thesis." if score > 2 else "Fundamentals are mixed and do not fully carry the thesis."
+    if score < -2:
+        summary = "Fundamentals or valuation pressure the thesis."
+    if status == STATUS_MISSING:
+        summary = "Fundamental inputs are missing, so this category stays neutral and reduces confidence."
+    return _factor("fundamentals", "Fundamentals", score, summary, status, source_id="fundamentals")
+
+
+def _score_analysts_v2(
+    targets: dict[str, Any],
+    revisions: dict[str, Any],
+    target_status: str,
+    revision_status: str,
+) -> dict[str, Any]:
+    status = _combined_status(target_status, revision_status)
+    current = _num(targets.get("current_price"))
+    average = _num(targets.get("average_target"))
+    upside = _pct(average, current)
+    key = str(_first(targets.get("consensus_rating"), revisions.get("recommendation_key"), revisions.get("average_analyst_rating"), "")).lower()
+    mean = _num(revisions.get("recommendation_mean"))
+    score = 0.0
+    if upside is not None:
+        score += max(-10, min(10, upside * 0.55))
+    if "strong" in key and "buy" in key:
+        score += 7
+    elif "buy" in key or "outperform" in key:
+        score += 5
+    elif "sell" in key or "underperform" in key:
+        score -= 8
+    if mean is not None:
+        score += max(-4, min(4, (3 - mean) * 1.6))
+    if _num(targets.get("analyst_count")) is not None:
+        score += 1.5
+    score *= _status_multiplier(status)
+    summary = "Analyst consensus and targets are constructive." if score > 2 else "Analyst support is balanced."
+    if score < -2:
+        summary = "Analyst targets or revisions are a headwind."
+    if status == STATUS_MISSING:
+        summary = "Analyst inputs are unavailable, reducing confidence only."
+    return _factor("analysts", "Analysts", score, summary, status, source_id="analyst_targets", details={"upsidePct": round(upside, 2) if upside is not None else None})
+
+
+def _score_technicals_v2(technical: dict[str, Any], status: str) -> dict[str, Any]:
+    price = _num(technical.get("price"))
+    high = _num(technical.get("fifty_two_week_high"))
+    low = _num(technical.get("fifty_two_week_low"))
+    day_change = _num(technical.get("day_change_pct"))
+    spark = technical.get("sparkline") if isinstance(technical.get("sparkline"), list) else []
+    score = 0.0
+    if price is not None and high is not None and low is not None and high > low:
+        range_pos = (price - low) / (high - low)
+        score += (range_pos - 0.5) * 14
+    if len(spark) >= 2:
+        start = _num(spark[0])
+        end = _num(spark[-1])
+        trend = _pct(end, start)
+        if trend is not None:
+            score += max(-7, min(7, trend * 0.55))
+    if day_change is not None:
+        score += max(-3, min(3, day_change))
+    score *= _status_multiplier(status)
+    summary = "Technical trend confirms the setup." if score > 2 else "Technical trend is mixed."
+    if score < -2:
+        summary = "Technical trend argues for patience."
+    if status == STATUS_MISSING:
+        summary = "Technical inputs are unavailable, so trend confirmation is limited."
+    return _factor("technicals", "Technicals", score, summary, status, source_id="technical_analysis")
+
+
+def _score_momentum_v2(momentum_data: dict[str, Any], volume: dict[str, Any], status: str) -> dict[str, Any]:
+    raw = _num(momentum_data.get("momentum_score"))
+    day_change = _num(momentum_data.get("day_change_pct"))
+    current_volume = _num(volume.get("current_volume"))
+    average_volume = _num(volume.get("average_volume"))
+    score = 0.0
+    if raw is not None:
+        score += ((raw - 50) / 50) * FACTOR_WEIGHTS["momentum"]
+    if day_change is not None:
+        score += max(-2, min(2, day_change / 2))
+    if current_volume is not None and average_volume not in (None, 0):
+        ratio = current_volume / average_volume
+        if ratio >= 1.4:
+            score += 1.5 if (day_change or 0) >= 0 else -1.5
+    score *= _status_multiplier(status)
+    summary = "Momentum is constructive." if score > 1 else "Momentum is not decisive."
+    if score < -1:
+        summary = "Momentum is deteriorating."
+    if status == STATUS_MISSING:
+        summary = "Momentum inputs are unavailable."
+    return _factor("momentum", "Momentum", score, summary, status, source_id="momentum")
+
+
+def _score_news_v2(news_data: dict[str, Any], status: str) -> dict[str, Any]:
+    impact = build_news_impact(news_data)
+    directional = _num(impact.get("directionalScore")) or 0
+    score = directional / 100 * FACTOR_WEIGHTS["news"]
+    if not impact.get("materialEvents"):
+        items = news_data.get("items") or []
+        titles = [str(item.get("title") or item.get("summary") or "") for item in items[:8] if isinstance(item, dict)]
+        score = max(-FACTOR_WEIGHTS["news"], min(FACTOR_WEIGHTS["news"], sum(_sentiment_score(title) for title in titles) * 1.15))
+    score *= _status_multiplier(status)
+    summary = "Material news flow is supportive." if score > 2 else "Recent headline tone is mixed."
+    if score < -2:
+        summary = "Material news flow is pressuring the thesis."
+    if status == STATUS_MISSING:
+        summary = "Ticker news is unavailable, reducing confidence only."
+    elif impact.get("materialEvents"):
+        summary = f"{impact['importance']} material news impact detected: {impact['materialEvents'][0]['eventType']}."
+    return _factor("news", "News Impact", score, summary, status, source_id="news", details={"newsImpact": impact})
+
+
+def _score_macro_v2(macro_data: dict[str, Any], status: str) -> dict[str, Any]:
+    vix = _num(macro_data.get("vix"))
+    us10y = _num(macro_data.get("us10y"))
+    risk_mode = str(macro_data.get("risk_mode") or "").lower()
+    score = 0.0
+    if "buy" in risk_mode:
+        score += 3
+    elif "risk" in risk_mode and "off" in risk_mode:
+        score -= 5
+    if vix is not None:
+        score += 3 if vix < 18 else -5 if vix >= 25 else -2 if vix >= 20 else 0
+    if us10y is not None and us10y >= 4.4:
+        score -= 4
+    score *= _status_multiplier(status)
+    summary = "Macro backdrop is acceptable for risk assets." if score >= 0 else "Macro backdrop is a headwind."
+    if status == STATUS_MISSING:
+        summary = "Macro inputs are missing, reducing confidence."
+    return _factor("macro", "Macro", score, summary, status, source_id="macro")
+
+
+def _score_catalysts_v2(
+    events_data: dict[str, Any],
+    earnings_data: dict[str, Any],
+    news_data: dict[str, Any],
+    status: str,
+) -> dict[str, Any]:
+    impact = build_news_impact(news_data)
+    events = events_data.get("events") or []
+    reported = _num(earnings_data.get("reported_eps"))
+    estimate = _num(earnings_data.get("eps_estimate"))
+    score = 0.0
+    if events:
+        score += 2.5
+    if reported is not None and estimate not in (None, 0):
+        surprise = (reported / estimate - 1) * 100
+        score += max(-4, min(4, surprise * 0.35))
+    if impact.get("materialEvents"):
+        score += (_num(impact.get("directionalScore")) or 0) / 100 * 6
+    score *= _status_multiplier(status)
+    summary = "Upcoming or active catalysts support the thesis." if score > 1 else "Catalysts are visible but not decisive."
+    if score < -1:
+        summary = "Catalyst risk is negative."
+    if status == STATUS_MISSING:
+        summary = "No specific upcoming catalyst is visible."
+    return _factor("catalysts", "Catalysts", score, summary, status, source_id="upcoming_events", details={"eventCount": len(events), "newsImpact": impact})
+
+
+def _score_portfolio_fit_v2(position_payload: dict[str, Any], status: str) -> dict[str, Any]:
+    position = position_payload.get("position") or {}
+    if not position:
+        return _factor("portfolioFit", "Portfolio Fit", 1.0, "No current position leaves room for starter sizing if the stock thesis is strong.", status, source_id="portfolio_positions")
+    weight = _num(position.get("portfolio_pct")) or 0
+    risk = _num(position.get("risk")) or 50
+    unrealized_pct = _num(position.get("unrealized_pct")) or 0
+    score = 1.5
+    if weight > 30:
+        score -= 5
+    elif weight > 20:
+        score -= 3.5
+    elif weight > 15:
+        score -= 2
+    if risk >= 85:
+        score -= 2
+    elif risk < 55:
+        score += 1
+    if unrealized_pct > 25 and risk >= 75:
+        score -= 1.5
+    score *= _status_multiplier(status)
+    summary = "Portfolio fit leaves room for measured exposure."
+    if score <= -3:
+        summary = "Portfolio concentration materially constrains the recommendation."
+    elif score < 0:
+        summary = "Portfolio exposure limits the need to add risk."
+    return _factor("portfolioFit", "Portfolio Fit", score, summary, status, source_id="portfolio_positions", details={"portfolioWeight": weight, "risk": risk, "unrealizedPct": unrealized_pct})
+
+
 def _factor_rows(statuses: dict[str, str], inputs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     rows = [
-        _score_fundamentals(inputs.get("fundamentals", {}), statuses.get("fundamentals", STATUS_MISSING)),
-        _score_earnings(inputs.get("earnings", {}), statuses.get("earnings", STATUS_MISSING)),
-        _score_valuation(inputs.get("valuation", {}), statuses.get("valuation", STATUS_MISSING)),
-        _score_analyst_targets(inputs.get("analyst_targets", {}), statuses.get("analyst_targets", STATUS_MISSING)),
-        _score_analyst_revisions(inputs.get("analyst_revisions", {}), statuses.get("analyst_revisions", STATUS_MISSING)),
-        _score_technical(inputs.get("technical_analysis", {}), statuses.get("technical_analysis", STATUS_MISSING)),
-        _score_momentum(inputs.get("momentum", {}), statuses.get("momentum", STATUS_MISSING)),
-        _score_volume(inputs.get("volume", {}), statuses.get("volume", STATUS_MISSING), inputs.get("momentum", {})),
-        _score_news(inputs.get("news", {}), statuses.get("news", STATUS_MISSING)),
-        _score_optional("seeking_alpha", "seekingAlpha", "Seeking Alpha", statuses.get("seeking_alpha", STATUS_MISSING)),
-        _score_macro(inputs.get("macro", {}), statuses.get("macro", STATUS_MISSING)),
-        _score_geopolitical(inputs.get("geopolitical", {}), statuses.get("geopolitical", STATUS_MISSING)),
-        _score_competitors(inputs.get("competitors", {}), statuses.get("competitors", STATUS_MISSING)),
-        _score_events(inputs.get("upcoming_events", {}), statuses.get("upcoming_events", STATUS_MISSING)),
-        _score_optional("advisor_discord", "advisorSignals", "Advisor Signals", statuses.get("advisor_discord", STATUS_MISSING)),
-        _score_position(inputs.get("portfolio_positions", {}), statuses.get("portfolio_positions", STATUS_MISSING)),
+        _score_fundamentals_v2(
+            inputs.get("fundamentals", {}),
+            inputs.get("valuation", {}),
+            inputs.get("earnings", {}),
+            _combined_status(statuses.get("fundamentals"), statuses.get("valuation"), statuses.get("earnings")),
+        ),
+        _score_analysts_v2(
+            inputs.get("analyst_targets", {}),
+            inputs.get("analyst_revisions", {}),
+            statuses.get("analyst_targets", STATUS_MISSING),
+            statuses.get("analyst_revisions", STATUS_MISSING),
+        ),
+        _score_technicals_v2(inputs.get("technical_analysis", {}), statuses.get("technical_analysis", STATUS_MISSING)),
+        _score_momentum_v2(
+            inputs.get("momentum", {}),
+            inputs.get("volume", {}),
+            _combined_status(statuses.get("momentum"), statuses.get("volume")),
+        ),
+        _score_news_v2(inputs.get("news", {}), statuses.get("news", STATUS_MISSING)),
+        _score_macro_v2(inputs.get("macro", {}), statuses.get("macro", STATUS_MISSING)),
+        _score_catalysts_v2(
+            inputs.get("upcoming_events", {}),
+            inputs.get("earnings", {}),
+            inputs.get("news", {}),
+            _combined_status(statuses.get("upcoming_events"), statuses.get("earnings"), statuses.get("news")),
+        ),
+        _score_portfolio_fit_v2(inputs.get("portfolio_positions", {}), statuses.get("portfolio_positions", STATUS_MISSING)),
     ]
     return rows
 
@@ -583,6 +805,26 @@ def _probabilities(stock_score: int, risk_level: str) -> dict[str, int]:
     return {"bear": bear, "base": base, "bull": bull}
 
 
+def _adjust_probabilities_for_news(probabilities: dict[str, int], news_impact: dict[str, Any]) -> dict[str, int]:
+    adjusted = dict(probabilities)
+    if not news_impact.get("materialEvents"):
+        return adjusted
+    importance = str(news_impact.get("importance") or "")
+    direction = str(news_impact.get("direction") or "")
+    shift = 7 if importance == "High" else 4 if importance == "Medium" else 2
+    if direction == "Positive":
+        adjusted["bull"] = _int(_clamp(adjusted.get("bull", 0) + shift, 5, 55))
+        adjusted["bear"] = _int(_clamp(adjusted.get("bear", 0) - max(2, shift // 2), 5, 55))
+    elif direction == "Negative":
+        adjusted["bear"] = _int(_clamp(adjusted.get("bear", 0) + shift, 5, 60))
+        adjusted["bull"] = _int(_clamp(adjusted.get("bull", 0) - max(2, shift // 2), 5, 55))
+    adjusted["base"] = max(5, 100 - adjusted["bear"] - adjusted["bull"])
+    total = adjusted["bear"] + adjusted["base"] + adjusted["bull"]
+    if total != 100:
+        adjusted["base"] += 100 - total
+    return adjusted
+
+
 def _scenario_returns(stock_score: int, factors: list[dict[str, Any]], inputs: dict[str, dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], float]:
     targets = inputs.get("analyst_targets") or {}
     fundamentals = inputs.get("fundamentals") or {}
@@ -600,12 +842,24 @@ def _scenario_returns(stock_score: int, factors: list[dict[str, Any]], inputs: d
     bear_return = _pct(low, price)
     if bear_return is None:
         bear_return = min(base_return - 12, (stock_score - 50) * 0.35 - 14)
+    news_impact = build_news_impact(inputs.get("news") or {})
+    if news_impact.get("materialEvents"):
+        directional = (_num(news_impact.get("directionalScore")) or 0) / 100
+        materiality = (_num(news_impact.get("score")) or 0) / 100
+        adjustment = directional * (3 + materiality * 5)
+        base_return += adjustment
+        if adjustment > 0:
+            bull_return += adjustment * 1.3
+            bear_return += adjustment * 0.4
+        elif adjustment < 0:
+            bear_return += adjustment * 1.3
+            bull_return += adjustment * 0.4
 
     def scenario(return_pct: float) -> dict[str, Any]:
         return {"price": round(price * (1 + return_pct / 100), 2) if price is not None else None, "returnPct": _int(return_pct)}
 
     scenarios = {"bear": scenario(bear_return), "base": scenario(base_return), "bull": scenario(bull_return)}
-    probabilities = _probabilities(stock_score, _risk_level(factors, None, inputs))
+    probabilities = _adjust_probabilities_for_news(_probabilities(stock_score, _risk_level(factors, None, inputs)), news_impact)
     expected = (
         scenarios["bear"]["returnPct"] * probabilities["bear"]
         + scenarios["base"]["returnPct"] * probabilities["base"]
@@ -750,7 +1004,7 @@ def _score_response(
     )["coverage"]
     data_coverage = float(coverage.get("coverage_percent") or 0)
     factors = _factor_rows(status_map, payloads)
-    stock_factors = [row for row in factors if row["id"] != "positionContext"]
+    stock_factors = [row for row in factors if row["id"] != "portfolioFit"]
     stock_weight = sum(FACTOR_WEIGHTS[row["id"]] for row in stock_factors)
     all_weight = sum(FACTOR_WEIGHTS[row["id"]] for row in factors)
     stock_score = _normalize(sum(row["contribution"] for row in stock_factors), stock_weight)
@@ -761,7 +1015,8 @@ def _score_response(
     portfolio_verdict = _portfolio_recommendation(has_position, stock_verdict, final_score, position, risk_level)
     final_verdict = portfolio_verdict
     visual_state = _visual_state(stock_verdict, portfolio_verdict)
-    probabilities = _probabilities(stock_score, risk_level)
+    news_impact = build_news_impact(payloads.get("news") or {})
+    probabilities = _adjust_probabilities_for_news(_probabilities(stock_score, risk_level), news_impact)
     price_scenarios, expected_return = _scenario_returns(stock_score, factors, payloads)
     expected_return = (
         price_scenarios["bear"]["returnPct"] * probabilities["bear"]
@@ -805,6 +1060,8 @@ def _score_response(
         "bullCase": bull_case,
         "bearCase": bear_case,
         "scoreBreakdown": score_breakdown,
+        "verdictWeights": FACTOR_WEIGHTS,
+        "newsImpact": news_impact,
         "factorsEvaluated": factors_evaluated,
         "confidenceNotes": confidence_notes,
         "explanation": explanation,
