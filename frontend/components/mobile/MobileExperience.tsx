@@ -7,7 +7,10 @@ import {
   BarChart3,
   Bell,
   BriefcaseBusiness,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
+  Cpu,
   Gauge,
   Home,
   Search,
@@ -15,8 +18,10 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Target,
   Wallet,
   X,
+  Zap,
 } from 'lucide-react'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 
@@ -501,21 +506,339 @@ function PositionCards({ rows, onSelect }: { rows: any[]; onSelect: (position: a
   )
 }
 
+function MobileSection({
+  title,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  title: string
+  collapsed?: boolean
+  onToggle: () => void
+  children: ReactNode
+}) {
+  return (
+    <div style={{ background: '#0d131c', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+      <button
+        onClick={onToggle}
+        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'transparent', border: 0, color: '#eef4fb', cursor: 'pointer' }}
+      >
+        <span style={{ fontWeight: 600, fontSize: 13 }}>{title}</span>
+        {collapsed ? <ChevronDown size={14} color="var(--muted)" /> : <ChevronUp size={14} color="var(--muted)" />}
+      </button>
+      {!collapsed && <div style={{ padding: '0 14px 14px' }}>{children}</div>}
+    </div>
+  )
+}
+
+function MobileResearchContent({ data }: { data: any }) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const toggle = (key: string) => setCollapsed((s) => ({ ...s, [key]: !s[key] }))
+
+  if (!data) {
+    return (
+      <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
+        Loading research data…
+      </div>
+    )
+  }
+
+  const scores = data.scores || {}
+  const thesis = data.investment_thesis || {}
+  const fin = data.financial_health || {}
+  const growth = data.growth || {}
+  const moat = data.moat || {}
+  const valuation = data.valuation || {}
+  const institutional = data.institutional || {}
+  const risk = data.risk || {}
+  const bullbear = data.bull_bear || {}
+
+  const tone = (s: number) => (s >= 80 ? '#24d18c' : s >= 60 ? '#fbbf24' : '#ff6375')
+  const toneBg = (s: number) =>
+    s >= 80 ? 'rgba(36,209,140,.12)' : s >= 60 ? 'rgba(251,191,36,.12)' : 'rgba(255,99,117,.12)'
+  const toneLabel = (s: number) => (s >= 80 ? 'Strong' : s >= 60 ? 'Moderate' : 'Weak')
+
+  const scoreCards = [
+    { icon: <Cpu size={15} />, label: 'AI Score', score: scores.ai_score },
+    { icon: <ShieldCheck size={15} />, label: 'Confidence', score: scores.confidence },
+    { icon: <Zap size={15} />, label: 'Events', score: scores.events },
+    { icon: <Target size={15} />, label: 'Overall', score: scores.overall },
+  ]
+
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      {/* Score cards 2×2 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {scoreCards.map(({ icon, label: lbl, score }) => {
+          const s = score || 0
+          const pts = [0.52, 0.6, 0.55, 0.68, 0.64, 0.74, 0.8, 0.87, 0.93, 1].map((m, i) =>
+            Math.max(1, s * m + ((i % 3) - 1) * 1.5),
+          )
+          return (
+            <div
+              key={lbl}
+              style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 14, padding: 12, overflow: 'hidden' }}
+            >
+              <div
+                style={{ width: 30, height: 30, borderRadius: 8, background: toneBg(s), color: tone(s), display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}
+              >
+                {icon}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, color: tone(s) }}>
+                <span style={{ fontSize: 28, fontWeight: 800, lineHeight: 1 }}>{s}</span>
+                <span style={{ fontSize: 10, color: 'var(--muted)' }}>/100</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                <span style={{ fontSize: 10, color: 'var(--muted)' }}>{lbl}</span>
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: toneBg(s), color: tone(s) }}>
+                  {toneLabel(s)}
+                </span>
+              </div>
+              <div style={{ marginTop: 8, marginLeft: -12, marginRight: -12, marginBottom: -12 }}>
+                <Sparkline values={pts} tone={s >= 80 ? 'good' : s >= 60 ? 'neutral' : 'bad'} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Summary */}
+      {thesis.summary && (
+        <div style={{ background: '#0d131c', border: '1px solid var(--line)', borderRadius: 14, padding: 12 }}>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.55 }}>{thesis.summary}</p>
+        </div>
+      )}
+
+      {/* Investment Thesis */}
+      <MobileSection title="Investment Thesis" collapsed={collapsed['thesis']} onToggle={() => toggle('thesis')}>
+        {thesis.tags?.length > 0 && (
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
+            {thesis.tags.map((t: string) => (
+              <span key={t} style={{ background: '#122033', color: '#b9d7ff', borderRadius: 999, padding: '3px 9px', fontSize: 10 }}>{t}</span>
+            ))}
+          </div>
+        )}
+        {thesis.business_overview && (
+          <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, margin: '0 0 10px' }}>{thesis.business_overview}</p>
+        )}
+        {thesis.key_drivers?.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, margin: '0 0 5px', color: '#24d18c' }}>Key Drivers</p>
+            <ul style={{ margin: 0, paddingLeft: 16, display: 'grid', gap: 4 }}>
+              {thesis.key_drivers.map((d: string) => (
+                <li key={d} style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>{d}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {thesis.break_thesis?.length > 0 && (
+          <div>
+            <p style={{ fontSize: 11, fontWeight: 600, margin: '0 0 5px', color: '#ff6375' }}>What Could Break the Thesis</p>
+            <ul style={{ margin: 0, paddingLeft: 16, display: 'grid', gap: 4 }}>
+              {thesis.break_thesis.map((d: string) => (
+                <li key={d} style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>{d}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </MobileSection>
+
+      {/* Financial Health */}
+      {fin.metrics?.length > 0 && (
+        <MobileSection title="Financial Health" collapsed={collapsed['fin']} onToggle={() => toggle('fin')}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {fin.metrics.map((m: any) => (
+              <div key={m.label} style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
+                <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block' }}>{m.label}</span>
+                <b style={{ fontSize: 16, display: 'block', margin: '4px 0 2px' }}>{m.value}</b>
+                {m.change != null && (
+                  <span style={{ fontSize: 10, color: m.change > 0 ? '#24d18c' : '#ff6375' }}>
+                    {m.change > 0 ? '+' : ''}{m.change}%
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </MobileSection>
+      )}
+
+      {/* Growth Engine */}
+      {growth.drivers?.length > 0 && (
+        <MobileSection title="Growth Engine" collapsed={collapsed['growth']} onToggle={() => toggle('growth')}>
+          {growth.drivers.map((d: any) => (
+            <div key={d.label} style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{d.label}</span>
+                <b style={{ fontSize: 11 }}>{d.value}%</b>
+              </div>
+              <div style={{ height: 6, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.min(Number(d.value), 100)}%`, background: 'linear-gradient(90deg,#60a5fa,#24d18c)', borderRadius: 'inherit' }} />
+              </div>
+            </div>
+          ))}
+        </MobileSection>
+      )}
+
+      {/* Moat Analysis */}
+      {(moat.score != null || moat.metrics?.length > 0) && (
+        <MobileSection title="Moat Analysis" collapsed={collapsed['moat']} onToggle={() => toggle('moat')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div>
+              <span style={{ fontSize: 28, fontWeight: 800, color: tone(moat.score || 0) }}>{moat.score || 0}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>/100</span>
+            </div>
+            <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 999, background: toneBg(moat.score || 0), color: tone(moat.score || 0) }}>
+              {toneLabel(moat.score || 0)}
+            </span>
+          </div>
+          {(moat.metrics || []).map((m: any) => (
+            <div key={m.label} style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{m.label}</span>
+                <b style={{ fontSize: 11 }}>{m.value}</b>
+              </div>
+              <div style={{ height: 5, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.min(Number(m.value), 100)}%`, background: '#60a5fa', borderRadius: 'inherit' }} />
+              </div>
+            </div>
+          ))}
+        </MobileSection>
+      )}
+
+      {/* Valuation */}
+      {valuation.fair_value_dcf != null && (
+        <MobileSection title="Valuation" collapsed={collapsed['val']} onToggle={() => toggle('val')}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+            <div style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
+              <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block' }}>Fair Value (DCF)</span>
+              <b style={{ fontSize: 18, display: 'block', marginTop: 4 }}>${valuation.fair_value_dcf}</b>
+            </div>
+            <div style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
+              <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block' }}>Fair Value (P/E)</span>
+              <b style={{ fontSize: 18, display: 'block', marginTop: 4 }}>${valuation.fair_value_pe}</b>
+            </div>
+          </div>
+          <div style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Upside Potential</span>
+            <b style={{ fontSize: 16, color: '#24d18c' }}>{valuation.upside}%</b>
+          </div>
+          {valuation.metrics?.length > 0 && (
+            <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+              {valuation.metrics.map((m: any) => (
+                <div key={m.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: 'var(--muted)' }}>{m.label}</span>
+                  <b>{m.value}</b>
+                </div>
+              ))}
+            </div>
+          )}
+        </MobileSection>
+      )}
+
+      {/* Institutional Thesis */}
+      {institutional.ownership_pct != null && (
+        <MobileSection title="Institutional Thesis" collapsed={collapsed['inst']} onToggle={() => toggle('inst')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Institutional Ownership</span>
+            <b style={{ fontSize: 20, color: '#60a5fa' }}>{institutional.ownership_pct}%</b>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 600, margin: '0 0 5px', color: '#24d18c' }}>Why Buy</p>
+              <ul style={{ margin: 0, paddingLeft: 14, display: 'grid', gap: 4 }}>
+                {(institutional.bull_points || []).map((point: string) => (
+                  <li key={point} style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.4 }}>{point}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 600, margin: '0 0 5px', color: '#ff6375' }}>Why Short</p>
+              <ul style={{ margin: 0, paddingLeft: 14, display: 'grid', gap: 4 }}>
+                {(institutional.bear_points || []).map((point: string) => (
+                  <li key={point} style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.4 }}>{point}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </MobileSection>
+      )}
+
+      {/* Risk Analysis */}
+      {risk.categories?.length > 0 && (
+        <MobileSection title="Risk Analysis" collapsed={collapsed['risk']} onToggle={() => toggle('risk')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div>
+              <span style={{ fontSize: 28, fontWeight: 800, color: (risk.score || 0) >= 70 ? '#ff6375' : '#fbbf24' }}>{risk.score || 0}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>/100</span>
+            </div>
+            <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 999, background: (risk.score || 0) >= 70 ? 'rgba(255,99,117,.12)' : 'rgba(251,191,36,.12)', color: (risk.score || 0) >= 70 ? '#ff6375' : '#fbbf24' }}>
+              {(risk.score || 0) >= 70 ? 'High Risk' : 'Moderate'}
+            </span>
+          </div>
+          {risk.categories.map((c: any) => (
+            <div key={c.label} style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{c.label}</span>
+                <b style={{ fontSize: 11, color: c.tone === 'bad' ? '#ff6375' : c.tone === 'warn' ? '#fbbf24' : '#24d18c' }}>{c.value}</b>
+              </div>
+              <div style={{ height: 5, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.min(Number(c.value), 100)}%`, background: c.tone === 'bad' ? '#ff6375' : c.tone === 'warn' ? '#fbbf24' : '#24d18c', borderRadius: 'inherit' }} />
+              </div>
+            </div>
+          ))}
+        </MobileSection>
+      )}
+
+      {/* Bull vs Bear */}
+      {bullbear.scenarios?.length > 0 && (
+        <MobileSection title="Bull vs Bear" collapsed={collapsed['bb']} onToggle={() => toggle('bb')}>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+              <span style={{ fontSize: 11, color: '#24d18c' }}>Bull {bullbear.bull_probability || 0}%</span>
+              <span style={{ fontSize: 11, color: '#ff6375' }}>Bear {100 - (bullbear.bull_probability || 0)}%</span>
+            </div>
+            <div style={{ height: 8, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${bullbear.bull_probability || 0}%`, background: 'linear-gradient(90deg,#24d18c,#60a5fa)', borderRadius: 'inherit' }} />
+            </div>
+          </div>
+          {bullbear.scenarios.map((s: any) => (
+            <div
+              key={s.label}
+              style={{ background: '#080d12', border: `1px solid ${s.tone === 'bull' ? 'rgba(36,209,140,.2)' : s.tone === 'bear' ? 'rgba(255,99,117,.2)' : 'var(--line)'}`, borderLeft: `3px solid ${s.tone === 'bull' ? '#24d18c' : s.tone === 'bear' ? '#ff6375' : '#60a5fa'}`, borderRadius: 12, padding: 10, marginBottom: 8 }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <b style={{ fontSize: 12 }}>{s.label}</b>
+                <b style={{ fontSize: 14, color: s.tone === 'bull' ? '#24d18c' : s.tone === 'bear' ? '#ff6375' : '#60a5fa' }}>{s.target}</b>
+              </div>
+              <p style={{ margin: 0, fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{s.description}</p>
+            </div>
+          ))}
+        </MobileSection>
+      )}
+    </div>
+  )
+}
+
 function MobileDetailView({ position, onClose }: { position: any; onClose: () => void }) {
-  const [tab, setTab] = useState('AI Thesis')
+  const [tab, setTab] = useState('Research')
   const [details, setDetails] = useState<any>(null)
+  const [research, setResearch] = useState<any>(null)
   const ticker = position.symbol || position.ticker
   const change = Number(position.day_change_pct || position.change_pct || position.change || 0)
 
   useEffect(() => {
     if (!ticker) return
     fetch(`${API}/stock/${encodeURIComponent(ticker)}`)
-      .then((response) => response.json())
+      .then((r) => r.json())
       .then(setDetails)
+      .catch(() => {})
+    fetch(`${API}/research/${encodeURIComponent(ticker)}`)
+      .then((r) => r.json())
+      .then(setResearch)
       .catch(() => {})
   }, [ticker])
 
-  const tabs = ['AI Thesis', 'News', 'Risk']
+  const tabs = ['Research', 'AI Thesis', 'News', 'Risk']
 
   return (
     <div className="mobile-detail" role="dialog" aria-modal="true" aria-label={`${ticker} details`}>
@@ -540,14 +863,15 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
           <b>{change >= 0 ? 'Constructive tape' : 'Pressure zone'}</b>
         </div>
       </section>
-      <div className="mobile-detail-tabs">
+      <div className="mobile-detail-tabs" style={{ gridTemplateColumns: 'repeat(4,minmax(0,1fr))' }}>
         {tabs.map((item) => (
           <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>
             {item}
           </button>
         ))}
       </div>
-      <section className="mobile-detail-panel">
+      <section className="mobile-detail-panel" style={tab === 'Research' ? { background: 'transparent', border: 'none', padding: 0 } : {}}>
+        {tab === 'Research' && <MobileResearchContent data={research} />}
         {tab === 'AI Thesis' && (
           <p>
             {details?.position?.ai_view ||

@@ -1593,22 +1593,31 @@ function scoreBadgeClass(s: number): string {
 
 function ResearchScoreCard({ icon, label, score, sublabel, hidden }: any) {
   const tone = scoreTone(score || 0)
+  const bg = scoreIconBg(score || 0)
+  const pts = [0.52, 0.6, 0.55, 0.68, 0.64, 0.74, 0.80, 0.87, 0.93, 1].map((m, i) => ({
+    i, v: Math.max(1, (score || 0) * m + (i % 3 - 1) * 1.5),
+  }))
   return (
     <div className="r-score-card">
-      <div style={{
-        width: 42, height: 42, borderRadius: 12, flexShrink: 0,
-        background: scoreIconBg(score || 0), color: tone,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8,
-      }}>
-        {icon}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, background: bg, color: tone, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {icon}
+        </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, color: tone }}>
-        <span style={{ fontSize: 42, fontWeight: 800, lineHeight: 1 }}>{hidden ? '—' : score}</span>
-        <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 400 }}>/100</span>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, color: tone, lineHeight: 1 }}>
+        <span style={{ fontSize: 36, fontWeight: 800 }}>{hidden ? '—' : score}</span>
+        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>/100</span>
       </div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 5 }}>{hidden ? 'Score' : label}</div>
-      <div style={{ fontSize: 11, fontWeight: 700, color: tone, marginTop: 2, letterSpacing: '.3px' }}>
-        {hidden ? '' : (sublabel || scoreLabel(score || 0))}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5 }}>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{hidden ? 'Score' : label}</span>
+        {!hidden && <span className={scoreBadgeClass(score || 0)} style={{ fontSize: 10 }}>{sublabel || scoreLabel(score || 0)}</span>}
+      </div>
+      <div style={{ marginTop: 8, marginLeft: -14, marginRight: -14, marginBottom: -14 }}>
+        <ResponsiveContainer width="100%" height={32}>
+          <AreaChart data={pts} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+            <Area type="monotone" dataKey="v" stroke={tone} strokeWidth={1.5} fill={tone} fillOpacity={0.15} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
     </div>
   )
@@ -1666,42 +1675,45 @@ function ResearchContent({ data, hidden, sections, textSize }: any) {
           {!hidden && <span className="muted" style={{ fontSize: 11 }}>Data as of {data.updated}</span>}
         </div>
         <div className="r-score-grid">
-          <ResearchScoreCard icon={<CheckCircle2 size={22} />} label="AI Score" score={scores?.ai_score} hidden={hidden} />
-          <ResearchScoreCard icon={<Target size={22} />} label="Confidence" score={scores?.confidence} hidden={hidden} />
-          <ResearchScoreCard icon={<Zap size={22} />} label="Events" score={scores?.events} hidden={hidden} />
-          <ResearchScoreCard
-            icon={<Shield size={22} />} label="Overall" score={scores?.overall}
-            sublabel={scores?.overall >= 70 ? 'Buy' : scores?.overall >= 55 ? 'Hold' : 'Watchlist'} hidden={hidden}
-          />
+          <ResearchScoreCard icon={<CheckCircle2 size={18} />} label="AI Score" score={scores?.ai_score} hidden={hidden} />
+          <ResearchScoreCard icon={<Target size={18} />} label="Confidence" score={scores?.confidence} hidden={hidden} />
+          <ResearchScoreCard icon={<Zap size={18} />} label="Events" score={scores?.events} hidden={hidden} />
+          <ResearchScoreCard icon={<Shield size={18} />} label="Overall" score={scores?.overall}
+            sublabel={scores?.overall >= 70 ? 'Buy' : scores?.overall >= 55 ? 'Hold' : 'Watch'} hidden={hidden} />
         </div>
       </div>
 
       {/* ── Investment Thesis ── */}
       {sections.investment_thesis && thesis && (
-        <ResearchSectionCard title="Investment Thesis" updated={thesis.updated} hidden={hidden}>
+        <ResearchSectionCard title="Investment Thesis" score={89} updated={thesis.updated} hidden={hidden}>
           <div className="r-tags" style={{ marginBottom: 10 }}>
             {(thesis.tags || []).map((tag: string) => (
               <span key={tag} className="r-tag">{hidden ? '••' : tag}</span>
             ))}
           </div>
-          <details className="r-detail">
-            <summary>Business Overview</summary>
-            <p style={{ margin: 0, lineHeight: 1.65, color: 'var(--muted)' }}>{hidden ? mask : thesis.business_overview}</p>
-          </details>
-          <div className="r-thesis-cols">
+          {!hidden && thesis.summary && (
+            <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+              {thesis.summary}
+            </p>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <div>
-              <p className="r-col-header r-col-header-green">Key Drivers</p>
+              <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Business Overview</p>
+              <p style={{ margin: 0, fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>{hidden ? mask : thesis.business_overview}</p>
+            </div>
+            <div>
+              <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Key Drivers</p>
               <ul className="r-list r-list-green">
                 {(thesis.key_drivers || []).map((d: string, i: number) => (
-                  <li key={i}>{hidden ? mask : d}</li>
+                  <li key={i} style={{ fontSize: 11 }}>{hidden ? mask : d}</li>
                 ))}
               </ul>
             </div>
             <div>
-              <p className="r-col-header r-col-header-red">What Could Break the Thesis</p>
+              <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '.5px' }}>What Could Break the Thesis</p>
               <ul className="r-list r-list-red">
                 {(thesis.break_thesis || []).map((d: string, i: number) => (
-                  <li key={i}>{hidden ? mask : d}</li>
+                  <li key={i} style={{ fontSize: 11 }}>{hidden ? mask : d}</li>
                 ))}
               </ul>
             </div>
@@ -1720,7 +1732,7 @@ function ResearchContent({ data, hidden, sections, textSize }: any) {
               { label: 'Net Margin', value: fh.margin, color: 'var(--violet)', seed: 68 },
             ].map(({ label, value, color, seed }) => (
               <div key={label} className="r-fin-cell">
-                <span className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                <span style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px' }}>
                   {hidden ? 'Metric' : label}
                 </span>
                 <b style={{ fontSize: 20, fontWeight: 700, color, marginTop: 2 }}>{hidden ? mask : value}</b>
@@ -1731,7 +1743,7 @@ function ResearchContent({ data, hidden, sections, textSize }: any) {
           {!hidden && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
               <Globe2 size={12} style={{ color: 'var(--muted)' }} />
-              <span className="muted" style={{ fontSize: 11 }}>Source: {fh.source}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>Source: {fh.source}</span>
             </div>
           )}
         </ResearchSectionCard>
@@ -1740,22 +1752,30 @@ function ResearchContent({ data, hidden, sections, textSize }: any) {
       {/* ── Growth Engine ── */}
       {sections.growth_engine && growth && (
         <ResearchSectionCard title="Growth Engine" score={growth.score} updated={growth.updated} hidden={hidden}>
-          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px' }}>
-            Key Growth Drivers
-          </p>
-          {(growth.drivers || []).map((d: any, i: number) => (
-            <div key={i} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                <span style={{ fontSize: 12, lineHeight: 1.4, paddingRight: 12 }}>{hidden ? mask : d.label}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: scoreTone(d.value), flexShrink: 0 }}>
-                  {hidden ? '—' : `${d.value}%`}
-                </span>
-              </div>
-              <div className="bar" style={{ height: 7, borderRadius: 99 }}>
-                <i style={{ width: `${d.value}%`, background: `linear-gradient(90deg,${scoreTone(d.value)}88,${scoreTone(d.value)})`, borderRadius: 99 }} />
-              </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <p style={{ margin: '0 0 10px', fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Key Growth Drivers</p>
+              {(growth.drivers || []).map((d: any, i: number) => (
+                <div key={i} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, lineHeight: 1.4, paddingRight: 8, color: 'var(--muted)' }}>{hidden ? mask : d.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: scoreTone(d.value), flexShrink: 0 }}>{hidden ? '—' : `${d.value}%`}</span>
+                  </div>
+                  <div className="bar" style={{ height: 6, borderRadius: 99 }}>
+                    <i style={{ width: `${d.value}%`, background: `linear-gradient(90deg,${scoreTone(d.value)}77,${scoreTone(d.value)})`, borderRadius: 99 }} />
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+            <div>
+              <p style={{ margin: '0 0 10px', fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>New Growth Drivers</p>
+              <ul className="r-list r-list-green">
+                {(growth.drivers || []).slice(0, 3).map((d: any, i: number) => (
+                  <li key={i} style={{ fontSize: 11, marginBottom: 6 }}>{hidden ? mask : d.label}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
         </ResearchSectionCard>
       )}
 
@@ -1766,26 +1786,24 @@ function ResearchContent({ data, hidden, sections, textSize }: any) {
             <div style={{ flex: 1 }}>
               {(moat.metrics || []).map((m: any, i: number) => (
                 <div key={i} style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <span style={{ fontSize: 12 }}>{hidden ? mask : m.label}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: scoreTone(m.value) }}>{hidden ? '—' : m.value}</span>
                   </div>
-                  <div className="bar" style={{ height: 7, borderRadius: 99 }}>
-                    <i style={{ width: `${m.value}%`, background: `linear-gradient(90deg,${scoreTone(m.value)}88,${scoreTone(m.value)})`, borderRadius: 99 }} />
+                  <div className="bar" style={{ height: 6, borderRadius: 99 }}>
+                    <i style={{ width: `${m.value}%`, background: `linear-gradient(90deg,${scoreTone(m.value)}77,${scoreTone(m.value)})`, borderRadius: 99 }} />
                   </div>
                 </div>
               ))}
             </div>
             {!hidden && (
               <div className="r-ring-wrap">
-                <div
-                  className="r-conic-ring"
-                  style={{ '--ring-deg': `${(moat.score || 0) * 3.6}deg`, color: scoreTone(moat.score) } as any}
-                >
-                  <Shield size={20} />
+                <div className="r-conic-ring" style={{ '--ring-deg': `${(moat.score || 0) * 3.6}deg`, color: scoreTone(moat.score) } as any}>
+                  <Shield size={18} />
                   <span style={{ fontWeight: 800, fontSize: 18 }}>{moat.score}</span>
                 </div>
-                <span className="muted" style={{ fontSize: 10, textAlign: 'center' }}>Moat Score</span>
+                <span style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', marginTop: 4 }}>Overall Moat Score</span>
+                <span className={scoreBadgeClass(moat.score)} style={{ fontSize: 10, marginTop: 2 }}>{scoreLabel(moat.score)}</span>
               </div>
             )}
           </div>
@@ -1795,88 +1813,85 @@ function ResearchContent({ data, hidden, sections, textSize }: any) {
       {/* ── Valuation ── */}
       {sections.valuation && valuation && (
         <ResearchSectionCard title="Valuation" score={valuation.score} hidden={hidden}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-            {[
-              { label: 'Fair Value (DCF)', value: valuation.fair_value_dcf, color: 'var(--green)' },
-              { label: 'Fair Value (P/E)', value: valuation.fair_value_pe, color: 'var(--blue)' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="r-fin-cell">
-                <span className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.4px' }}>
-                  {hidden ? 'Metric' : label}
-                </span>
-                <b style={{ fontSize: 22, fontWeight: 800, color, marginTop: 4 }}>{hidden ? mask : value}</b>
-                {!hidden && (
-                  <span style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>
-                    <TrendingUp size={11} style={{ display: 'inline', marginRight: 3 }} />
-                    {valuation.upside} upside
-                  </span>
-                )}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: 14, alignItems: 'start' }}>
+            <div>
+              <p style={{ margin: '0 0 10px', fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Fair Value Analysis</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                {[
+                  { label: 'Fair Value (DCF)', value: valuation.fair_value_dcf, color: 'var(--green)' },
+                  { label: 'Fair Value (P/E)', value: valuation.fair_value_pe, color: 'var(--blue)' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="r-fin-cell">
+                    <span style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px' }}>{hidden ? 'Metric' : label}</span>
+                    <b style={{ fontSize: 20, fontWeight: 800, color, marginTop: 4 }}>{hidden ? mask : value}</b>
+                    {!hidden && <span style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>↑ {valuation.upside} upside</span>}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div style={{ display: 'grid', gap: 7 }}>
-            {(valuation.metrics || []).map((m: any, i: number) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid var(--line)' }}>
-                <span className="muted" style={{ fontSize: 12 }}>{hidden ? mask : m.label}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontWeight: 700 }}>{hidden ? mask : m.value}</span>
-                  {!hidden && (
-                    <span className={`rs-badge ${m.tone === 'green' ? 'rs-badge-green' : m.tone === 'red' ? 'rs-badge-red' : 'rs-badge-amber'}`}>
-                      {m.vs_sector.startsWith('+') ? '↑' : '↓'} vs sector
-                    </span>
-                  )}
+              <div style={{ display: 'grid', gap: 0 }}>
+                {(valuation.metrics || []).map((m: any, i: number) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--line)' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{hidden ? mask : m.label}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>{hidden ? mask : m.value}</span>
+                      {!hidden && <span style={{ fontSize: 10, color: m.tone === 'green' ? 'var(--green)' : m.tone === 'red' ? 'var(--red)' : 'var(--amber)' }}>{m.vs_sector} vs sector</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {!hidden && (
+                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>Overall:</span>
+                  <span className={scoreBadgeClass(valuation.score)}>{valuation.summary}</span>
+                </div>
+              )}
+            </div>
+            {!hidden && (
+              <div className="r-ring-wrap">
+                <div className="r-conic-ring" style={{ '--ring-deg': `${(valuation.score || 0) * 3.6}deg`, color: scoreTone(valuation.score), width: 90, height: 90 } as any}>
+                  <span style={{ fontWeight: 800, fontSize: 16 }}>{valuation.score}</span>
+                  <span style={{ fontSize: 9, color: 'var(--muted)' }}>Fair</span>
                 </div>
               </div>
-            ))}
+            )}
           </div>
-          {!hidden && (
-            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="muted" style={{ fontSize: 11 }}>Overall:</span>
-              <span className={scoreBadgeClass(valuation.score)}>{valuation.summary}</span>
-            </div>
-          )}
         </ResearchSectionCard>
       )}
 
       {/* ── Institutional Thesis ── */}
       {sections.institutional && institutional && (
         <ResearchSectionCard title="Institutional Thesis" hidden={hidden}>
-          <div className="r-gauge-layout">
-            <div style={{ flex: 1 }}>
-              <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 600, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '.4px' }}>
-                Why Institutions Are Buying
-              </p>
-              <ul className="r-list r-list-green" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Why Institutions Buy</p>
+              <ul className="r-list r-list-green">
                 {(institutional.bull_points || []).map((p: string, i: number) => (
-                  <li key={i}>{hidden ? mask : p}</li>
+                  <li key={i} style={{ fontSize: 11, marginBottom: 5 }}>{hidden ? mask : p}</li>
                 ))}
               </ul>
-              {institutional.bear_points?.length > 0 && (
-                <>
-                  <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 600, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '.4px' }}>
-                    Risk Factors
-                  </p>
-                  <ul className="r-list r-list-red">
-                    {(institutional.bear_points || []).map((p: string, i: number) => (
-                      <li key={i}>{hidden ? mask : p}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
             </div>
-            {!hidden && (
-              <div className="r-ring-wrap">
-                <div
-                  className="r-conic-ring"
-                  style={{ '--ring-deg': `${(institutional.ownership_pct || 0) * 3.6}deg`, color: 'var(--blue)' } as any}
-                >
-                  <Building2 size={18} />
-                  <span style={{ fontWeight: 800, fontSize: 17 }}>{institutional.ownership_pct}%</span>
-                </div>
-                <span className="muted" style={{ fontSize: 10, textAlign: 'center' }}>Institutional</span>
-              </div>
-            )}
+            <div>
+              <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Why Institutions Short</p>
+              <ul className="r-list r-list-red">
+                {(institutional.bear_points || []).map((p: string, i: number) => (
+                  <li key={i} style={{ fontSize: 11, marginBottom: 5 }}>{hidden ? mask : p}</li>
+                ))}
+              </ul>
+            </div>
           </div>
+          {!hidden && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+              <div className="r-ring-wrap">
+                <div className="r-conic-ring" style={{ '--ring-deg': `${(institutional.ownership_pct || 0) * 3.6}deg`, color: 'var(--blue)', width: 80, height: 80 } as any}>
+                  <span style={{ fontWeight: 800, fontSize: 16 }}>{institutional.ownership_pct}%</span>
+                </div>
+              </div>
+              <div>
+                <p style={{ margin: '0 0 2px', fontSize: 11, color: 'var(--muted)' }}>Institutional Ownership</p>
+                <p style={{ margin: 0, fontSize: 11, fontWeight: 600 }}>{institutional.ownership_pct}% of float held by institutions</p>
+              </div>
+            </div>
+          )}
         </ResearchSectionCard>
       )}
 
@@ -1884,34 +1899,31 @@ function ResearchContent({ data, hidden, sections, textSize }: any) {
       {sections.competitive && competitive && (
         <ResearchSectionCard title="Competitive Comparison" hidden={hidden}>
           <div className="table-wrap" style={{ marginTop: 4 }}>
-            <table style={{ borderSpacing: '0 4px' }}>
+            <table style={{ borderSpacing: '0 3px' }}>
               <thead>
-                <tr>
-                  {(competitive.columns || []).map((c: string) => <th key={c}>{c}</th>)}
-                </tr>
+                <tr>{(competitive.columns || []).map((c: string) => <th key={c} style={{ fontSize: 10 }}>{c}</th>)}</tr>
               </thead>
               <tbody>
                 {(competitive.rows || []).map((row: any) => (
-                  <tr key={row.Company}>
-                    <td style={row.highlight ? { background: '#0f1d2e' } : {}}>
+                  <tr key={row.Company} style={row.highlight ? { background: '#0d1b2a' } : {}}>
+                    <td style={row.highlight ? { background: '#0d1b2a', borderRadius: '10px 0 0 10px' } : {}}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{
-                          width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                          width: 26, height: 26, borderRadius: 7, flexShrink: 0,
                           background: COMP_COLORS[row.Company] || '#1f2937',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 9, fontWeight: 800, color: '#fff', letterSpacing: '-.3px',
+                          fontSize: 8, fontWeight: 800, color: '#fff',
                         }}>
-                          {hidden ? '•' : (row.Company || '').slice(0, 2)}
+                          {hidden ? '•' : (row.Company || '').slice(0, 4)}
                         </div>
-                        <span style={{ fontWeight: row.highlight ? 700 : 400 }}>
-                          {hidden ? '••••' : row.Company}
-                        </span>
+                        <span style={{ fontSize: 12, fontWeight: row.highlight ? 700 : 500 }}>{hidden ? '••••' : row.Company}</span>
                       </div>
                     </td>
                     {(competitive.columns || []).slice(1).map((c: string) => (
                       <td key={c} style={{
-                        ...(row.highlight ? { background: '#0f1d2e' } : {}),
-                        color: c === 'AI Score' ? scoreTone(parseInt(row[c]) || 0) : 'inherit',
+                        fontSize: 11,
+                        ...(row.highlight ? { background: '#0d1b2a' } : {}),
+                        color: c === 'AI Score' ? scoreTone(parseInt(row[c]) || 0) : c === 'Rev Growth' && !hidden ? 'var(--green)' : 'inherit',
                         fontWeight: c === 'AI Score' ? 700 : 400,
                       }}>
                         {hidden ? '—' : row[c]}
@@ -1934,12 +1946,12 @@ function ResearchContent({ data, hidden, sections, textSize }: any) {
                 const rColor = c.tone === 'red' ? 'var(--red)' : c.tone === 'amber' ? 'var(--amber)' : 'var(--green)'
                 return (
                   <div key={i} style={{ marginBottom: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                       <span style={{ fontSize: 12 }}>{hidden ? mask : c.label}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: rColor }}>{hidden ? '—' : c.value}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: rColor }}>{hidden ? '—' : c.value}</span>
                     </div>
-                    <div className="bar" style={{ height: 7, borderRadius: 99 }}>
-                      <i style={{ width: `${c.value}%`, background: `linear-gradient(90deg,${rColor}88,${rColor})`, borderRadius: 99 }} />
+                    <div className="bar" style={{ height: 6, borderRadius: 99 }}>
+                      <i style={{ width: `${c.value}%`, background: `linear-gradient(90deg,${rColor}77,${rColor})`, borderRadius: 99 }} />
                     </div>
                   </div>
                 )
@@ -1947,17 +1959,11 @@ function ResearchContent({ data, hidden, sections, textSize }: any) {
             </div>
             {!hidden && (
               <div className="r-ring-wrap">
-                <div
-                  className="r-conic-ring"
-                  style={{
-                    '--ring-deg': `${(risk.score || 0) * 3.6}deg`,
-                    color: risk.score > 60 ? 'var(--red)' : risk.score > 45 ? 'var(--amber)' : 'var(--green)',
-                  } as any}
-                >
-                  <Shield size={20} />
+                <div className="r-conic-ring" style={{ '--ring-deg': `${(risk.score || 0) * 3.6}deg`, color: risk.score > 60 ? 'var(--red)' : risk.score > 40 ? 'var(--amber)' : 'var(--green)' } as any}>
+                  <Shield size={16} />
                   <span style={{ fontWeight: 800, fontSize: 18 }}>{risk.score}</span>
                 </div>
-                <span className="muted" style={{ fontSize: 10, textAlign: 'center' }}>Risk Score</span>
+                <span style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>Risk Score</span>
               </div>
             )}
           </div>
@@ -1966,38 +1972,35 @@ function ResearchContent({ data, hidden, sections, textSize }: any) {
 
       {/* ── Bull vs Bear ── */}
       {sections.bull_bear && bull_bear && (
-        <ResearchSectionCard title="Bull vs Bear Scenarios" hidden={hidden}>
-          <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+        <ResearchSectionCard title="Bull vs Bear Breakdown" hidden={hidden}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
             {[
-              { key: 'bull', label: 'Bull Case', icon: <TrendingUp size={14} />, color: 'var(--green)' },
-              { key: 'base', label: 'Base Case', icon: <Activity size={14} />, color: 'var(--blue)' },
-              { key: 'bear', label: 'Bear Case', icon: <TrendingDown size={14} />, color: 'var(--red)' },
-            ].map(({ key, label, icon, color }) => (
-              <div key={key} style={{
-                background: '#080d12', border: '1px solid var(--line)',
-                borderLeft: `3px solid ${color}`, borderRadius: '0 12px 12px 0',
-                padding: '10px 12px',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color, marginBottom: 4 }}>
+              { key: 'bull', label: 'Bull Case', color: 'var(--green)', icon: <TrendingUp size={13} /> },
+              { key: 'bear', label: 'Bear Case', color: 'var(--red)', icon: <TrendingDown size={13} /> },
+            ].map(({ key, label, color, icon }) => (
+              <div key={key} style={{ background: '#080d12', border: '1px solid var(--line)', borderTop: `2px solid ${color}`, borderRadius: 10, padding: '10px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color, marginBottom: 6 }}>
                   {icon}
-                  <span style={{ fontWeight: 700, fontSize: 12 }}>{label}</span>
+                  <span style={{ fontWeight: 700, fontSize: 11 }}>{label}</span>
                 </div>
-                <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.55 }}>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--muted)', lineHeight: 1.55 }}>
                   {hidden ? mask : bull_bear.scenarios?.[key]}
                 </p>
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="muted" style={{ fontSize: 11, flexShrink: 0 }}>Bull probability</span>
-            <div className="bar" style={{ flex: 1, height: 8, borderRadius: 99 }}>
-              <i style={{
-                width: `${bull_bear.bull_probability || 0}%`,
-                background: 'linear-gradient(90deg,var(--amber),var(--green))',
-                borderRadius: 99,
-              }} />
+          {!hidden && (
+            <div style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+              <p style={{ margin: '0 0 6px', fontSize: 11, color: 'var(--muted)' }}>Base Case</p>
+              <p style={{ margin: 0, fontSize: 11, lineHeight: 1.55 }}>{bull_bear.scenarios?.base}</p>
             </div>
-            <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0, minWidth: 90 }}>Bull probability:</span>
+            <div className="bar" style={{ flex: 1, height: 8, borderRadius: 99 }}>
+              <i style={{ width: `${bull_bear.bull_probability || 0}%`, background: 'linear-gradient(90deg,var(--amber),var(--green))', borderRadius: 99 }} />
+            </div>
+            <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
               {hidden ? '—' : `${bull_bear.bull_probability}%`}
             </span>
           </div>
@@ -2212,7 +2215,7 @@ function CustomizeResearch({ sections, setSections, textSize, setTextSize, data,
         <div>
           <p className="muted" style={{ fontSize: 11, margin: '0 0 8px' }}>Data Source & Details</p>
           <div className="r-source-card">
-            <div style={{ display: 'flex', justify: 'space-between', gap: 4, flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4, flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span className="muted" style={{ fontSize: 11 }}>Symbol</span>
                 <span style={{ fontSize: 11, fontWeight: 600 }}>{data.ticker}</span>
