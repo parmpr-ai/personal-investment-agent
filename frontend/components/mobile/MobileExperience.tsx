@@ -506,6 +506,47 @@ function PositionCards({ rows, onSelect }: { rows: any[]; onSelect: (position: a
   )
 }
 
+function RadarChart({ metrics, size = 150 }: { metrics: { label: string; value: number }[]; size?: number }) {
+  if (!metrics.length) return null
+  const count = metrics.length
+  const cx = size / 2
+  const cy = size / 2
+  const maxR = size * 0.35
+  const point = (r: number, i: number): [number, number] => {
+    const angle = -Math.PI / 2 + (i * 2 * Math.PI) / count
+    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)]
+  }
+  const poly = (pts: [number, number][]) => pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+  const gridPts = [0.25, 0.5, 0.75, 1].map(f => metrics.map((_, i) => point(f * maxR, i)) as [number, number][])
+  const dataPts = metrics.map((m, i) => point((Math.min(Math.max(Number(m.value), 0), 100) / 100) * maxR, i)) as [number, number][]
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      {gridPts.map((pts, gi) => (
+        <polygon key={gi} points={poly(pts)} fill="none" stroke="rgba(96,165,250,.1)" strokeWidth={0.8} />
+      ))}
+      {metrics.map((_, i) => {
+        const [x, y] = point(maxR, i)
+        return <line key={i} x1={cx} y1={cy} x2={x.toFixed(1)} y2={y.toFixed(1)} stroke="rgba(96,165,250,.08)" strokeWidth={0.8} />
+      })}
+      <polygon points={poly(dataPts)} fill="rgba(36,209,140,.13)" stroke="#24d18c" strokeWidth={1.8} strokeLinejoin="round" />
+      {dataPts.map(([x, y], i) => <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r={3.5} fill="#24d18c" />)}
+      {metrics.map((m, i) => {
+        const labelR = maxR + 18
+        const [lx, ly] = point(labelR, i)
+        const words = m.label.split(' ')
+        return (
+          <text key={i} textAnchor="middle" fill="#64748b" fontSize={7.5} fontWeight={500}>
+            {words.map((w, wi) => (
+              <tspan key={wi} x={lx.toFixed(1)} dy={wi === 0 ? `${ly - (words.length - 1) * 4.5}` : 9}>{w}</tspan>
+            ))}
+          </text>
+        )
+      })}
+    </svg>
+  )
+}
+
 function RingGauge({
   value,
   max = 100,
@@ -600,6 +641,11 @@ function MobileResearchContent({ data }: { data: any }) {
   const toneBg = (s: number) => s >= 80 ? 'rgba(36,209,140,.12)' : s >= 60 ? 'rgba(251,191,36,.12)' : 'rgba(255,99,117,.12)'
   const toneLabel = (s: number) => (s >= 80 ? 'Strong' : s >= 60 ? 'Moderate' : 'Weak')
 
+  const aiScore = scores.ai_score || 0
+  const verdict = aiScore >= 75 ? 'BUY' : aiScore >= 55 ? 'HOLD' : 'SELL'
+  const verdictColor = aiScore >= 75 ? '#24d18c' : aiScore >= 55 ? '#fbbf24' : '#ff6375'
+  const verdictLabel = aiScore >= 80 ? 'Strong Conviction' : aiScore >= 65 ? 'Moderate Conviction' : aiScore >= 55 ? 'Low Conviction' : 'Cautious'
+
   const scoreCards = [
     { icon: <Cpu size={16} />, label: 'AI Score', score: scores.ai_score },
     { icon: <ShieldCheck size={16} />, label: 'Confidence', score: scores.confidence },
@@ -609,6 +655,29 @@ function MobileResearchContent({ data }: { data: any }) {
 
   return (
     <div style={{ display: 'grid', gap: 10 }}>
+
+      {/* ── Research Hero ── */}
+      <div style={{ background: 'linear-gradient(145deg,#0d1827,#080d14)', border: '1px solid rgba(96,165,250,.15)', borderRadius: 20, padding: '16px 12px 14px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr 1px 1fr', alignItems: 'center' }}>
+          <div style={{ textAlign: 'center', padding: '0 8px' }}>
+            <span style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 5, letterSpacing: 0.5 }}>AI VERDICT</span>
+            <span style={{ fontSize: 28, fontWeight: 900, color: verdictColor, lineHeight: 1, display: 'block' }}>{verdict}</span>
+            <span style={{ fontSize: 9, color: verdictColor, display: 'block', marginTop: 4 }}>{verdictLabel}</span>
+          </div>
+          <div style={{ height: 44, background: 'rgba(96,165,250,.1)', borderRadius: 1 }} />
+          <div style={{ textAlign: 'center', padding: '0 8px' }}>
+            <span style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 5, letterSpacing: 0.5 }}>CONVICTION</span>
+            <span style={{ fontSize: 28, fontWeight: 900, color: tone(aiScore), lineHeight: 1, display: 'block' }}>{aiScore}</span>
+            <span style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginTop: 4 }}>/100 · {toneLabel(aiScore)}</span>
+          </div>
+          <div style={{ height: 44, background: 'rgba(96,165,250,.1)', borderRadius: 1 }} />
+          <div style={{ textAlign: 'center', padding: '0 8px' }}>
+            <span style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 5, letterSpacing: 0.5 }}>EXPECTED RETURN</span>
+            <span style={{ fontSize: 22, fontWeight: 900, color: '#24d18c', lineHeight: 1, display: 'block' }}>{valuation.upside || '—'}</span>
+            <span style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginTop: 4 }}>12M Target</span>
+          </div>
+        </div>
+      </div>
 
       {/* ── Score Cards 2×2 ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -740,24 +809,47 @@ function MobileResearchContent({ data }: { data: any }) {
       {/* ── Moat Analysis ── */}
       {(moat.score != null || moat.metrics?.length > 0) && (
         <MobileSection title="Moat Analysis" badge={moat.score != null ? `${moat.score}/100` : undefined} collapsed={collapsed['moat']} onToggle={() => toggle('moat')}>
-          <div style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
-            {moat.score != null && (
-              <RingGauge value={moat.score || 0} size={92} color={tone(moat.score || 0)} thickness={10} label={toneLabel(moat.score || 0)} />
-            )}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {(moat.metrics || []).map((m: any) => (
-                <div key={m.label} style={{ marginBottom: 9 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 11, color: '#94a3b8' }}>{m.label}</span>
-                    <b style={{ fontSize: 11, color: '#eef4fb' }}>{m.value}</b>
-                  </div>
-                  <div style={{ height: 6, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${Math.min(Number(m.value), 100)}%`, background: 'linear-gradient(90deg,#60a5fa,#a78bfa)', borderRadius: 'inherit' }} />
-                  </div>
-                </div>
-              ))}
+          {moat.metrics?.length >= 3 ? (
+            /* Radar layout */
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <RadarChart
+                metrics={(moat.metrics || []).map((m: any) => ({ label: m.label, value: Number(m.value) }))}
+                size={154}
+              />
+              <div style={{ flex: 1, textAlign: 'center' }}>
+                {moat.score != null && (
+                  <>
+                    <span style={{ fontSize: 38, fontWeight: 800, color: tone(moat.score || 0), lineHeight: 1, display: 'block' }}>{moat.score}</span>
+                    <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block', marginTop: 3 }}>/100</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: tone(moat.score || 0), display: 'block', marginTop: 6 }}>
+                      {(moat.score || 0) >= 80 ? 'Wide Moat' : (moat.score || 0) >= 60 ? 'Narrow Moat' : 'Weak Moat'}
+                    </span>
+                    <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block', marginTop: 2 }}>{toneLabel(moat.score || 0)}</span>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            /* Fallback: ring + bars */
+            <div style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
+              {moat.score != null && (
+                <RingGauge value={moat.score || 0} size={92} color={tone(moat.score || 0)} thickness={10} label={toneLabel(moat.score || 0)} />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {(moat.metrics || []).map((m: any) => (
+                  <div key={m.label} style={{ marginBottom: 9 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>{m.label}</span>
+                      <b style={{ fontSize: 11, color: '#eef4fb' }}>{m.value}</b>
+                    </div>
+                    <div style={{ height: 6, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.min(Number(m.value), 100)}%`, background: 'linear-gradient(90deg,#60a5fa,#a78bfa)', borderRadius: 'inherit' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </MobileSection>
       )}
 
