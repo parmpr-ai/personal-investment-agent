@@ -644,21 +644,22 @@ function MobileResearchContent({ data }: { data: any }) {
       </MobileSection>
 
       {/* Financial Health */}
-      {fin.metrics?.length > 0 && (
+      {(fin.market_cap || fin.revenue || fin.cash || fin.margin) && (
         <MobileSection title="Financial Health" collapsed={collapsed['fin']} onToggle={() => toggle('fin')}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {fin.metrics.map((m: any) => (
+            {[
+              { label: 'Market Cap', value: fin.market_cap },
+              { label: 'Revenue', value: fin.revenue },
+              { label: 'Cash', value: fin.cash },
+              { label: 'Net Margin', value: fin.margin },
+            ].filter((m) => m.value).map((m) => (
               <div key={m.label} style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
                 <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block' }}>{m.label}</span>
-                <b style={{ fontSize: 16, display: 'block', margin: '4px 0 2px' }}>{m.value}</b>
-                {m.change != null && (
-                  <span style={{ fontSize: 10, color: m.change > 0 ? '#24d18c' : '#ff6375' }}>
-                    {m.change > 0 ? '+' : ''}{m.change}%
-                  </span>
-                )}
+                <b style={{ fontSize: 16, display: 'block', marginTop: 5 }}>{m.value}</b>
               </div>
             ))}
           </div>
+          {fin.updated && <p style={{ margin: '8px 0 0', fontSize: 10, color: 'var(--muted)' }}>Updated {fin.updated} · {fin.source}</p>}
         </MobileSection>
       )}
 
@@ -711,16 +712,16 @@ function MobileResearchContent({ data }: { data: any }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
             <div style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
               <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block' }}>Fair Value (DCF)</span>
-              <b style={{ fontSize: 18, display: 'block', marginTop: 4 }}>${valuation.fair_value_dcf}</b>
+              <b style={{ fontSize: 18, display: 'block', marginTop: 4 }}>{valuation.fair_value_dcf}</b>
             </div>
             <div style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
               <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block' }}>Fair Value (P/E)</span>
-              <b style={{ fontSize: 18, display: 'block', marginTop: 4 }}>${valuation.fair_value_pe}</b>
+              <b style={{ fontSize: 18, display: 'block', marginTop: 4 }}>{valuation.fair_value_pe}</b>
             </div>
           </div>
           <div style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>Upside Potential</span>
-            <b style={{ fontSize: 16, color: '#24d18c' }}>{valuation.upside}%</b>
+            <b style={{ fontSize: 16, color: '#24d18c' }}>{valuation.upside}</b>
           </div>
           {valuation.metrics?.length > 0 && (
             <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
@@ -775,22 +776,25 @@ function MobileResearchContent({ data }: { data: any }) {
               {(risk.score || 0) >= 70 ? 'High Risk' : 'Moderate'}
             </span>
           </div>
-          {risk.categories.map((c: any) => (
-            <div key={c.label} style={{ marginBottom: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{c.label}</span>
-                <b style={{ fontSize: 11, color: c.tone === 'bad' ? '#ff6375' : c.tone === 'warn' ? '#fbbf24' : '#24d18c' }}>{c.value}</b>
+          {risk.categories.map((c: any) => {
+            const riskColor = c.tone === 'red' ? '#ff6375' : c.tone === 'amber' ? '#fbbf24' : '#24d18c'
+            return (
+              <div key={c.label} style={{ marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{c.label}</span>
+                  <b style={{ fontSize: 11, color: riskColor }}>{c.value}</b>
+                </div>
+                <div style={{ height: 5, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.min(Number(c.value), 100)}%`, background: riskColor, borderRadius: 'inherit' }} />
+                </div>
               </div>
-              <div style={{ height: 5, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.min(Number(c.value), 100)}%`, background: c.tone === 'bad' ? '#ff6375' : c.tone === 'warn' ? '#fbbf24' : '#24d18c', borderRadius: 'inherit' }} />
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </MobileSection>
       )}
 
       {/* Bull vs Bear */}
-      {bullbear.scenarios?.length > 0 && (
+      {bullbear.bull_probability != null && (
         <MobileSection title="Bull vs Bear" collapsed={collapsed['bb']} onToggle={() => toggle('bb')}>
           <div style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
@@ -801,18 +805,21 @@ function MobileResearchContent({ data }: { data: any }) {
               <div style={{ height: '100%', width: `${bullbear.bull_probability || 0}%`, background: 'linear-gradient(90deg,#24d18c,#60a5fa)', borderRadius: 'inherit' }} />
             </div>
           </div>
-          {bullbear.scenarios.map((s: any) => (
-            <div
-              key={s.label}
-              style={{ background: '#080d12', border: `1px solid ${s.tone === 'bull' ? 'rgba(36,209,140,.2)' : s.tone === 'bear' ? 'rgba(255,99,117,.2)' : 'var(--line)'}`, borderLeft: `3px solid ${s.tone === 'bull' ? '#24d18c' : s.tone === 'bear' ? '#ff6375' : '#60a5fa'}`, borderRadius: 12, padding: 10, marginBottom: 8 }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <b style={{ fontSize: 12 }}>{s.label}</b>
-                <b style={{ fontSize: 14, color: s.tone === 'bull' ? '#24d18c' : s.tone === 'bear' ? '#ff6375' : '#60a5fa' }}>{s.target}</b>
+          {(['bull', 'base', 'bear'] as const).map((key) => {
+            const text = bullbear.scenarios?.[key]
+            if (!text) return null
+            const color = key === 'bull' ? '#24d18c' : key === 'bear' ? '#ff6375' : '#60a5fa'
+            const border = key === 'bull' ? 'rgba(36,209,140,.2)' : key === 'bear' ? 'rgba(255,99,117,.2)' : 'var(--line)'
+            return (
+              <div
+                key={key}
+                style={{ background: '#080d12', border: `1px solid ${border}`, borderLeft: `3px solid ${color}`, borderRadius: 12, padding: 10, marginBottom: 8 }}
+              >
+                <b style={{ fontSize: 12, color, display: 'block', marginBottom: 4, textTransform: 'capitalize' }}>{key} Case</b>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{text}</p>
               </div>
-              <p style={{ margin: 0, fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{s.description}</p>
-            </div>
-          ))}
+            )
+          })}
         </MobileSection>
       )}
     </div>
