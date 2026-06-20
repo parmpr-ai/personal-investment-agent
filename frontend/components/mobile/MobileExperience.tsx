@@ -15,6 +15,7 @@ import {
   Gauge,
   Home,
   Landmark,
+  MoreVertical,
   Newspaper,
   Search,
   Settings,
@@ -1069,9 +1070,10 @@ function MobileResearchContent({ data }: { data: any }) {
 }
 
 function MobileDetailView({ position, onClose }: { position: any; onClose: () => void }) {
-  const [tab, setTab] = useState('Research')
+  const [tab, setTab] = useState('Overview')
   const [details, setDetails] = useState<any>(null)
   const [research, setResearch] = useState<any>(null)
+  const [showMenu, setShowMenu] = useState(false)
   const ticker = position.symbol || position.ticker
   const change = Number(position.day_change_pct || position.change_pct || position.change || 0)
 
@@ -1088,38 +1090,102 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
   }, [ticker])
 
   const tabs = ['Overview', 'Research', 'Portfolio', 'History']
+  const aiScore = research?.scores?.ai_score || 0
+  const verdict = aiScore >= 75 ? 'BUY' : aiScore >= 55 ? 'HOLD' : aiScore > 0 ? 'SELL' : '—'
+  const verdictColor = aiScore >= 75 ? '#24d18c' : aiScore >= 55 ? '#fbbf24' : aiScore > 0 ? '#ff6375' : '#64748b'
 
   return (
     <div className="mobile-detail" role="dialog" aria-modal="true" aria-label={`${ticker} details`}>
-      <button className="mobile-detail-close" onClick={onClose} aria-label="Close detail">
-        <X size={22} />
-      </button>
-      <header className="mobile-detail-hero">
-        <div>
-          <span>{position.name || 'Position detail'}</span>
-          <h1>{ticker}</h1>
-          <div className="mobile-detail-price">
-            <strong>{money(position.last || position.price || details?.watch?.price || 0)}</strong>
-            <small className={change >= 0 ? 'green' : 'red'}>{pct(change)}</small>
-          </div>
+
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 14px', gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, color: '#eef4fb', lineHeight: 1.1 }}>{ticker}</h1>
+          <span style={{ fontSize: 12, color: '#64748b', display: 'block', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {position.name || 'Position detail'}
+          </span>
         </div>
-        <Sparkline values={position.spark} tone={change >= 0 ? 'good' : 'bad'} />
-      </header>
-      <section className="mobile-detail-chart">
-        <Sparkline values={[31, 35, 33, 42, 45, 44, 52, 57, 54]} tone={change >= 0 ? 'good' : 'bad'} />
-        <div className="mobile-detail-chart-meta">
-          <span>Chart-first view</span>
-          <b>{change >= 0 ? 'Constructive tape' : 'Pressure zone'}</b>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {aiScore > 0 && (
+            <span style={{ border: `1.5px solid ${verdictColor}`, borderRadius: 10, padding: '4px 11px', fontSize: 13, fontWeight: 800, color: verdictColor, letterSpacing: 0.3 }}>
+              {verdict}
+            </span>
+          )}
+          <button
+            onClick={() => setShowMenu(v => !v)}
+            aria-label="More options"
+            style={{ width: 38, height: 38, borderRadius: 999, border: '1px solid rgba(148,163,184,.2)', background: '#111820', color: '#eef4fb', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+          >
+            <MoreVertical size={17} />
+          </button>
+          <button
+            onClick={onClose}
+            aria-label="Close detail"
+            style={{ width: 38, height: 38, borderRadius: 999, border: '1px solid rgba(148,163,184,.2)', background: '#111820', color: '#eef4fb', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+          >
+            <X size={17} />
+          </button>
         </div>
-      </section>
-      <div className="mobile-detail-tabs" style={{ gridTemplateColumns: 'repeat(4,minmax(0,1fr))' }}>
+      </div>
+
+      {/* ── Tabs (underline style) ── */}
+      <div style={{ display: 'flex', borderBottom: '1px solid rgba(148,163,184,.12)', marginBottom: 16, gap: 0 }}>
         {tabs.map((item) => (
-          <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>
+          <button
+            key={item}
+            onClick={() => setTab(item)}
+            style={{
+              flex: 1,
+              padding: '0 0 11px',
+              background: 'transparent',
+              border: 0,
+              borderBottom: `2px solid ${tab === item ? '#60a5fa' : 'transparent'}`,
+              marginBottom: -1,
+              color: tab === item ? '#eef4fb' : '#64748b',
+              fontWeight: tab === item ? 700 : 400,
+              fontSize: 13,
+              cursor: 'pointer',
+              transition: 'color .15s,border-color .15s',
+            }}
+          >
             {item}
           </button>
         ))}
       </div>
-      <section className="mobile-detail-panel" style={tab === 'Research' ? { background: 'transparent', border: 'none', padding: 0 } : {}}>
+
+      {/* ── Three-dot menu sheet ── */}
+      {showMenu && (
+        <>
+          <div
+            onClick={() => setShowMenu(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.55)' }}
+          />
+          <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: 'min(520px,100vw)', zIndex: 41, background: '#0d1827', borderRadius: '24px 24px 0 0', border: '1px solid rgba(96,165,250,.15)', borderBottom: 0, padding: '20px 20px 36px' }}>
+            <div style={{ width: 36, height: 4, background: 'rgba(148,163,184,.3)', borderRadius: 999, margin: '0 auto 18px' }} />
+            <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: '#eef4fb' }}>{ticker} · Options</h3>
+            {[
+              { icon: <SlidersHorizontal size={16} />, label: 'Customize Research View', sub: 'Show/hide sections and reorder' },
+              { icon: <Bell size={16} />, label: 'Set Price Alert', sub: `Notify when ${ticker} hits a target` },
+              { icon: <Target size={16} />, label: 'Update Price Target', sub: 'Edit your thesis target' },
+              { icon: <AlertTriangle size={16} />, label: 'Mark as Watch Only', sub: 'Remove from active portfolio' },
+            ].map(({ icon, label, sub }) => (
+              <button
+                key={label}
+                onClick={() => setShowMenu(false)}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '13px 0', background: 'transparent', border: 0, borderBottom: '1px solid rgba(148,163,184,.08)', color: '#eef4fb', cursor: 'pointer', textAlign: 'left' }}
+              >
+                <span style={{ width: 36, height: 36, borderRadius: 12, background: 'rgba(96,165,250,.1)', display: 'grid', placeItems: 'center', flexShrink: 0, color: '#60a5fa' }}>{icon}</span>
+                <div>
+                  <span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>{label}</span>
+                  <span style={{ display: 'block', fontSize: 11, color: '#64748b', marginTop: 2 }}>{sub}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <section className="mobile-detail-panel" style={tab === 'Research' ? { background: 'transparent', border: 'none', padding: 0 } : { padding: '14px 0' }}>
         {tab === 'Overview' && (
           <div style={{ display: 'grid', gap: 10 }}>
             <div style={{ background: 'linear-gradient(135deg,rgba(96,165,250,.08),rgba(36,209,140,.04))', border: '1px solid rgba(96,165,250,.15)', borderRadius: 18, padding: '14px 16px' }}>
