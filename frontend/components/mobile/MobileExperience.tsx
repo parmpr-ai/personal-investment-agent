@@ -550,6 +550,7 @@ function MobileResearchContent({ data }: { data: any }) {
   const moat = data.moat || {}
   const valuation = data.valuation || {}
   const institutional = data.institutional || {}
+  const competitive = data.competitive || {}
   const risk = data.risk || {}
   const bullbear = data.bull_bear || {}
 
@@ -760,6 +761,42 @@ function MobileResearchContent({ data }: { data: any }) {
                 ))}
               </ul>
             </div>
+          </div>
+        </MobileSection>
+      )}
+
+      {/* Competitive Comparison */}
+      {competitive.rows?.length > 0 && (
+        <MobileSection title="Competitive Comparison" collapsed={collapsed['comp']} onToggle={() => toggle('comp')}>
+          <div style={{ overflowX: 'auto', marginLeft: -14, marginRight: -14, paddingLeft: 14, paddingRight: 14 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480, fontSize: 11 }}>
+              <thead>
+                <tr>
+                  {(competitive.columns || []).map((col: string) => (
+                    <th key={col} style={{ textAlign: col === 'Company' ? 'left' : 'right', color: 'var(--muted)', fontWeight: 500, padding: '4px 8px', whiteSpace: 'nowrap' }}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {competitive.rows.map((row: any) => (
+                  <tr key={row.Company} style={{ background: row.highlight ? 'rgba(96,165,250,.08)' : 'transparent', borderRadius: 8 }}>
+                    {(competitive.columns || []).map((col: string, ci: number) => {
+                      const val = row[col] ?? '—'
+                      const isComp = col === 'Company'
+                      const isRevGrowth = col === 'Rev Growth'
+                      const color = isRevGrowth
+                        ? String(val).startsWith('+') ? '#24d18c' : '#ff6375'
+                        : isComp && row.highlight ? '#60a5fa' : 'inherit'
+                      return (
+                        <td key={col} style={{ textAlign: isComp ? 'left' : 'right', padding: '7px 8px', color, fontWeight: isComp ? 700 : 400, borderBottom: '1px solid rgba(31,42,55,.5)', whiteSpace: 'nowrap' }}>
+                          {val}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </MobileSection>
       )}
