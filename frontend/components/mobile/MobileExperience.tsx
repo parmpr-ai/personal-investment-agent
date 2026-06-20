@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   BarChart3,
   Bell,
+  Brain,
   BriefcaseBusiness,
   ChevronDown,
   ChevronRight,
@@ -13,12 +14,17 @@ import {
   Cpu,
   Gauge,
   Home,
+  Landmark,
+  Newspaper,
   Search,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Target,
+  TrendingDown,
+  TrendingUp,
+  Users,
   Wallet,
   X,
   Zap,
@@ -679,93 +685,43 @@ function MobileResearchContent({ data }: { data: any }) {
         </div>
       </div>
 
-      {/* ── Score Cards 2×2 ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {scoreCards.map(({ icon, label: lbl, score }) => {
-          const s = score || 0
-          const pts = [0.52, 0.6, 0.55, 0.68, 0.64, 0.74, 0.8, 0.87, 0.93, 1].map((m, i) =>
-            Math.max(1, s * m + ((i % 3) - 1) * 1.5),
-          )
-          return (
-            <div
-              key={lbl}
-              style={{ background: 'linear-gradient(145deg,#0d1827,#080d14)', border: '1px solid rgba(96,165,250,.1)', borderRadius: 18, padding: '14px 12px', overflow: 'hidden', position: 'relative' }}
-            >
-              <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80, borderRadius: '50%', background: toneBg(s), filter: 'blur(22px)', pointerEvents: 'none' }} />
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 10, background: toneBg(s), color: tone(s), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {icon}
+      {/* ── Evidence & Data ── */}
+      <div style={{ background: 'linear-gradient(145deg,#0d1827,#080d14)', border: '1px solid rgba(96,165,250,.12)', borderRadius: 20, padding: '14px 14px 13px' }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#eef4fb', display: 'block', marginBottom: 14 }}>Evidence &amp; Data</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 14 }}>
+          {([
+            { Icon: Brain,     label: 'AI Sentiment',       score: scores.ai_score,   color: '#a78bfa' },
+            { Icon: Users,     label: 'Analyst Sentiment',  score: scores.confidence, color: '#60a5fa' },
+            { Icon: Newspaper, label: 'News Sentiment',     score: scores.events,     color: '#fbbf24' },
+            { Icon: Landmark,  label: 'Institutional Flow', score: scores.overall,    color: '#24d18c' },
+          ] as const).map(({ Icon, label, score, color }) => {
+            const s = score || 0
+            const sent = s >= 70 ? 'Positive' : s >= 50 ? 'Neutral' : 'Negative'
+            const sentColor = s >= 70 ? '#24d18c' : s >= 50 ? '#fbbf24' : '#ff6375'
+            const shortLabel = label.split(' ').pop()!
+            return (
+              <div key={label} style={{ textAlign: 'center' }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: `${color}18`, border: `1px solid ${color}28`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 7px', color }}>
+                  <Icon size={20} />
                 </div>
-                <RingGauge value={s} size={52} color={tone(s)} thickness={6} />
+                <span style={{ fontSize: 14, fontWeight: 800, color: '#eef4fb', display: 'block', lineHeight: 1 }}>{s}</span>
+                <span style={{ fontSize: 8, color: 'var(--muted)', display: 'block', marginTop: 1 }}>/100</span>
+                <span style={{ fontSize: 9, color: sentColor, display: 'block', marginTop: 4, fontWeight: 700 }}>{sent}</span>
+                <span style={{ fontSize: 8, color: 'var(--muted)', display: 'block', marginTop: 2, lineHeight: 1.2 }}>{shortLabel}</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 3 }}>
-                <span style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, color: tone(s) }}>{s}</span>
-                <span style={{ fontSize: 10, color: 'var(--muted)' }}>/100</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>{lbl}</span>
-                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: toneBg(s), color: tone(s) }}>{toneLabel(s)}</span>
-              </div>
-              <div style={{ marginTop: 10, marginLeft: -12, marginRight: -12, marginBottom: -14 }}>
-                <Sparkline values={pts} tone={s >= 80 ? 'good' : s >= 60 ? 'neutral' : 'bad'} />
-              </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 9, color: 'var(--muted)', whiteSpace: 'nowrap' }}>AI Confidence in Verdict</span>
+          <div style={{ flex: 1, height: 6, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${scores.overall || 0}%`, background: 'linear-gradient(90deg,#24d18c,#60a5fa)', borderRadius: 'inherit' }} />
+          </div>
+          <span style={{ fontSize: 9, fontWeight: 700, color: '#24d18c', whiteSpace: 'nowrap' }}>
+            {(scores.overall || 0) >= 70 ? 'High' : (scores.overall || 0) >= 50 ? 'Medium' : 'Low'} ({scores.overall || 0}%)
+          </span>
+        </div>
       </div>
-
-      {/* ── AI Summary Hero ── */}
-      {thesis.summary && (
-        <div style={{ background: 'linear-gradient(135deg,rgba(96,165,250,.08),rgba(36,209,140,.04))', border: '1px solid rgba(96,165,250,.15)', borderRadius: 18, padding: '14px 16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Sparkles size={13} color="#60a5fa" />
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#60a5fa', letterSpacing: 0.5 }}>AI SUMMARY</span>
-          </div>
-          <p style={{ margin: 0, fontSize: 12, color: '#c4d4e8', lineHeight: 1.65 }}>{thesis.summary}</p>
-        </div>
-      )}
-
-      {/* ── Investment Thesis ── */}
-      <MobileSection title="Investment Thesis" badge={thesis.tags?.[0]} collapsed={collapsed['thesis']} onToggle={() => toggle('thesis')}>
-        {thesis.tags?.length > 0 && (
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 12 }}>
-            {thesis.tags.map((t: string) => (
-              <span key={t} style={{ background: 'rgba(96,165,250,.1)', color: '#93c5fd', borderRadius: 999, padding: '3px 10px', fontSize: 10, fontWeight: 600, border: '1px solid rgba(96,165,250,.2)' }}>{t}</span>
-            ))}
-          </div>
-        )}
-        {thesis.business_overview && (
-          <p style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6, margin: '0 0 14px' }}>{thesis.business_overview}</p>
-        )}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {thesis.key_drivers?.length > 0 && (
-            <div style={{ background: 'rgba(36,209,140,.05)', borderRadius: 12, padding: 10, border: '1px solid rgba(36,209,140,.12)' }}>
-              <p style={{ fontSize: 10, fontWeight: 700, margin: '0 0 8px', color: '#24d18c', letterSpacing: 0.4 }}>KEY DRIVERS</p>
-              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
-                {thesis.key_drivers.map((d: string) => (
-                  <li key={d} style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4, paddingLeft: 11, position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 0, top: 5, width: 4, height: 4, borderRadius: '50%', background: '#24d18c', display: 'block', flexShrink: 0 }} />
-                    {d}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {thesis.break_thesis?.length > 0 && (
-            <div style={{ background: 'rgba(255,99,117,.05)', borderRadius: 12, padding: 10, border: '1px solid rgba(255,99,117,.12)' }}>
-              <p style={{ fontSize: 10, fontWeight: 700, margin: '0 0 8px', color: '#ff6375', letterSpacing: 0.4 }}>RISKS</p>
-              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
-                {thesis.break_thesis.map((d: string) => (
-                  <li key={d} style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4, paddingLeft: 11, position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 0, top: 5, width: 4, height: 4, borderRadius: '50%', background: '#ff6375', display: 'block', flexShrink: 0 }} />
-                    {d}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </MobileSection>
 
       {/* ── Financial Health ── */}
       {(fin.market_cap || fin.revenue || fin.cash || fin.margin) && (
@@ -889,37 +845,38 @@ function MobileResearchContent({ data }: { data: any }) {
       {/* ── Institutional Thesis ── */}
       {institutional.ownership_pct != null && (
         <MobileSection title="Institutional Thesis" badge={`${institutional.ownership_pct}% owned`} collapsed={collapsed['inst']} onToggle={() => toggle('inst')}>
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>Institutional Ownership</span>
-              <b style={{ fontSize: 26, color: '#60a5fa', lineHeight: 1 }}>{institutional.ownership_pct}%</b>
-            </div>
-            <div style={{ height: 12, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${Math.min(institutional.ownership_pct || 0, 100)}%`, background: 'linear-gradient(90deg,#3b82f6,#a78bfa)', borderRadius: 'inherit', boxShadow: '0 0 10px rgba(96,165,250,.2)' }} />
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div style={{ background: 'rgba(36,209,140,.05)', border: '1px solid rgba(36,209,140,.12)', borderRadius: 12, padding: 10 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, margin: '0 0 8px', color: '#24d18c', letterSpacing: 0.4 }}>WHY BUY</p>
-              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
-                {(institutional.bull_points || []).map((point: string) => (
-                  <li key={point} style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4, paddingLeft: 11, position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 0, top: 5, width: 4, height: 4, borderRadius: '50%', background: '#24d18c', display: 'block' }} />
-                    {point}
-                  </li>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {/* Left: top take quote */}
+            <div>
+              <p style={{ fontSize: 9, color: 'var(--muted)', margin: '0 0 7px', fontWeight: 600, letterSpacing: 0.3 }}>TOP INSTITUTIONAL TAKE</p>
+              <div style={{ background: 'rgba(167,139,250,.07)', border: '1px solid rgba(167,139,250,.18)', borderRadius: 12, padding: '10px 10px 8px', minHeight: 90 }}>
+                {thesis.summary ? (
+                  <p style={{ margin: 0, fontSize: 10, color: '#c4d4e8', lineHeight: 1.55, fontStyle: 'italic' }}>
+                    &ldquo;{thesis.summary.slice(0, 120)}{thesis.summary.length > 120 ? '…' : ''}&rdquo;
+                  </p>
+                ) : (institutional.bull_points || []).slice(0, 2).map((pt: string, i: number) => (
+                  <p key={i} style={{ margin: i > 0 ? '5px 0 0' : 0, fontSize: 10, color: '#c4d4e8', lineHeight: 1.45 }}>• {pt}</p>
                 ))}
-              </ul>
+              </div>
             </div>
-            <div style={{ background: 'rgba(255,99,117,.05)', border: '1px solid rgba(255,99,117,.12)', borderRadius: 12, padding: 10 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, margin: '0 0 8px', color: '#ff6375', letterSpacing: 0.4 }}>WHY SHORT</p>
-              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
-                {(institutional.bear_points || []).map((point: string) => (
-                  <li key={point} style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4, paddingLeft: 11, position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 0, top: 5, width: 4, height: 4, borderRadius: '50%', background: '#ff6375', display: 'block' }} />
-                    {point}
-                  </li>
-                ))}
-              </ul>
+            {/* Right: donut ring + legend */}
+            <div>
+              <p style={{ fontSize: 9, color: 'var(--muted)', margin: '0 0 7px', fontWeight: 600, letterSpacing: 0.3 }}>INSTITUTIONAL OWNERSHIP</p>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <RingGauge value={institutional.ownership_pct || 0} size={78} color="#60a5fa" thickness={9} label={`${institutional.ownership_pct}%`} />
+                <div style={{ display: 'grid', gap: 4, width: '100%' }}>
+                  {[
+                    { label: 'Bull View', color: '#24d18c', pts: institutional.bull_points?.length || 0 },
+                    { label: 'Bear View', color: '#ff6375', pts: institutional.bear_points?.length || 0 },
+                  ].map(item => (
+                    <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: item.color, flexShrink: 0, display: 'inline-block' }} />
+                      <span style={{ fontSize: 9, color: '#94a3b8', flex: 1 }}>{item.label}</span>
+                      <b style={{ fontSize: 9, color: item.color }}>{item.pts} pts</b>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </MobileSection>
@@ -994,9 +951,9 @@ function MobileResearchContent({ data }: { data: any }) {
         </MobileSection>
       )}
 
-      {/* ── Bull vs Bear ── */}
+      {/* ── Scenario Outlook ── */}
       {bullbear.bull_probability != null && (
-        <MobileSection title="Bull vs Bear" badge={`${bullbear.bull_probability || 0}% bull`} collapsed={collapsed['bb']} onToggle={() => toggle('bb')}>
+        <MobileSection title="Scenario Outlook" badge={`${bullbear.bull_probability || 0}% bull bias`} collapsed={collapsed['bb']} onToggle={() => toggle('bb')}>
           <style>{`
             @keyframes bb-bull-in { from { transform: translateX(-36px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
             @keyframes bb-bear-in { from { transform: translateX(36px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
@@ -1004,50 +961,107 @@ function MobileResearchContent({ data }: { data: any }) {
             @keyframes bb-bear-nudge { 0%,100% { transform: translateX(0); } 50% { transform: translateX(-7px); } }
           `}</style>
 
-          {/* Hero: animated bull vs bear */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px 18px' }}>
+          {/* Animated hero */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 16px 16px' }}>
             <div style={{ animation: 'bb-bull-in 0.45s ease-out both' }}>
-              <div style={{ animation: 'bb-bull-nudge 1.8s ease-in-out 0.55s infinite', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 46, lineHeight: 1 }}>🐂</span>
-                <span style={{ fontSize: 20, fontWeight: 800, color: '#24d18c', lineHeight: 1 }}>{bullbear.bull_probability || 0}%</span>
-                <span style={{ fontSize: 9, fontWeight: 700, color: '#24d18c', letterSpacing: 0.6 }}>BULL</span>
+              <div style={{ animation: 'bb-bull-nudge 1.8s ease-in-out 0.55s infinite', textAlign: 'center' }}>
+                <span style={{ fontSize: 38, lineHeight: 1, display: 'block' }}>🐂</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#24d18c', display: 'block', marginTop: 4 }}>BULL</span>
               </div>
             </div>
-
-            <span style={{ fontSize: 11, fontWeight: 900, color: 'rgba(148,163,184,.28)', letterSpacing: 4 }}>VS</span>
-
+            <span style={{ fontSize: 10, fontWeight: 900, color: 'rgba(148,163,184,.25)', letterSpacing: 4 }}>VS</span>
             <div style={{ animation: 'bb-bear-in 0.45s ease-out both' }}>
-              <div style={{ animation: 'bb-bear-nudge 1.8s ease-in-out 0.55s infinite', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 46, lineHeight: 1, display: 'inline-block', transform: 'scaleX(-1)' }}>🐻</span>
-                <span style={{ fontSize: 20, fontWeight: 800, color: '#ff6375', lineHeight: 1 }}>{100 - (bullbear.bull_probability || 0)}%</span>
-                <span style={{ fontSize: 9, fontWeight: 700, color: '#ff6375', letterSpacing: 0.6 }}>BEAR</span>
+              <div style={{ animation: 'bb-bear-nudge 1.8s ease-in-out 0.55s infinite', textAlign: 'center' }}>
+                <span style={{ fontSize: 38, lineHeight: 1, display: 'inline-block', transform: 'scaleX(-1)' }}>🐻</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#ff6375', display: 'block', marginTop: 4 }}>BEAR</span>
               </div>
             </div>
           </div>
 
-          {/* Probability bar */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ height: 13, background: '#121a25', borderRadius: 999, overflow: 'hidden', display: 'flex' }}>
-              <div style={{ flex: bullbear.bull_probability || 0, background: 'linear-gradient(90deg,#24d18c,#60a5fa)', borderRadius: '999px 0 0 999px' }} />
-              <div style={{ flex: 100 - (bullbear.bull_probability || 0), background: 'linear-gradient(90deg,#7c3aed,#ff6375)', borderRadius: '0 999px 999px 0' }} />
-            </div>
-          </div>
-          {(['bull', 'base', 'bear'] as const).map((key) => {
-            const text = bullbear.scenarios?.[key]
-            if (!text) return null
-            const color = key === 'bull' ? '#24d18c' : key === 'bear' ? '#ff6375' : '#60a5fa'
-            const bg = key === 'bull' ? 'rgba(36,209,140,.05)' : key === 'bear' ? 'rgba(255,99,117,.05)' : 'rgba(96,165,250,.05)'
-            const border = key === 'bull' ? 'rgba(36,209,140,.2)' : key === 'bear' ? 'rgba(255,99,117,.2)' : 'rgba(96,165,250,.2)'
-            return (
-              <div
-                key={key}
-                style={{ background: bg, border: `1px solid ${border}`, borderLeft: `3px solid ${color}`, borderRadius: 14, padding: '11px 13px', marginBottom: 8 }}
-              >
-                <b style={{ fontSize: 10, color, display: 'block', marginBottom: 5, letterSpacing: 0.5 }}>{key.toUpperCase()} CASE</b>
-                <p style={{ margin: 0, fontSize: 11, color: '#94a3b8', lineHeight: 1.55 }}>{text}</p>
+          {/* Scenario % bars (12M) */}
+          {(() => {
+            const bull = Math.round((bullbear.bull_probability || 50) * 0.5)
+            const base = 50
+            const bear = 100 - bull - base
+            return [
+              { label: 'Bull Case', pct: bull, color: '#24d18c', emoji: '🐂' },
+              { label: 'Base Case', pct: base, color: '#60a5fa', emoji: '🌐' },
+              { label: 'Bear Case', pct: Math.max(bear, 0), color: '#ff6375', emoji: '🐻' },
+            ].map(({ label, pct, color, emoji }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 11 }}>
+                <span style={{ fontSize: 18, width: 24, textAlign: 'center' }}>{emoji}</span>
+                <span style={{ fontSize: 11, color: '#94a3b8', width: 65, flexShrink: 0 }}>{label}</span>
+                <div style={{ flex: 1, height: 8, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 'inherit', opacity: 0.85 }} />
+                </div>
+                <b style={{ fontSize: 12, color, width: 30, textAlign: 'right', flexShrink: 0 }}>{pct}%</b>
               </div>
-            )
-          })}
+            ))
+          })()}
+
+          {valuation.upside && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,.06)', paddingTop: 11, marginTop: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>Expected Value</span>
+              <b style={{ fontSize: 15, color: '#24d18c' }}>{valuation.upside}</b>
+            </div>
+          )}
+
+          {/* Scenario text cards */}
+          <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+            {(['bull', 'base', 'bear'] as const).map((key) => {
+              const text = bullbear.scenarios?.[key]
+              if (!text) return null
+              const color = key === 'bull' ? '#24d18c' : key === 'bear' ? '#ff6375' : '#60a5fa'
+              const bg = key === 'bull' ? 'rgba(36,209,140,.05)' : key === 'bear' ? 'rgba(255,99,117,.05)' : 'rgba(96,165,250,.05)'
+              const border = key === 'bull' ? 'rgba(36,209,140,.2)' : key === 'bear' ? 'rgba(255,99,117,.2)' : 'rgba(96,165,250,.2)'
+              return (
+                <div key={key} style={{ background: bg, border: `1px solid ${border}`, borderLeft: `3px solid ${color}`, borderRadius: 14, padding: '10px 12px' }}>
+                  <b style={{ fontSize: 10, color, display: 'block', marginBottom: 5, letterSpacing: 0.5 }}>{key.toUpperCase()} CASE</b>
+                  <p style={{ margin: 0, fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>{text}</p>
+                </div>
+              )
+            })}
+          </div>
+        </MobileSection>
+      )}
+
+      {/* ── What Could Change This View ── */}
+      {(thesis.key_drivers?.length > 0 || thesis.break_thesis?.length > 0) && (
+        <MobileSection title="What Could Change This View" collapsed={collapsed['change']} onToggle={() => toggle('change')}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {thesis.key_drivers?.length > 0 && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+                  <TrendingUp size={13} color="#24d18c" />
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#24d18c' }}>What Would Increase Conviction</span>
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
+                  {thesis.key_drivers.map((d: string) => (
+                    <li key={d} style={{ fontSize: 10, color: '#94a3b8', lineHeight: 1.4, paddingLeft: 10, position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 0, top: 4, width: 4, height: 4, borderRadius: '50%', background: '#24d18c', display: 'block' }} />
+                      {d}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {thesis.break_thesis?.length > 0 && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+                  <TrendingDown size={13} color="#ff6375" />
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#ff6375' }}>What Would Decrease Conviction</span>
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
+                  {thesis.break_thesis.map((d: string) => (
+                    <li key={d} style={{ fontSize: 10, color: '#94a3b8', lineHeight: 1.4, paddingLeft: 10, position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 0, top: 4, width: 4, height: 4, borderRadius: '50%', background: '#ff6375', display: 'block' }} />
+                      {d}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </MobileSection>
       )}
     </div>
@@ -1073,7 +1087,7 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
       .catch(() => {})
   }, [ticker])
 
-  const tabs = ['Research', 'AI Thesis', 'News', 'Risk']
+  const tabs = ['Overview', 'Research', 'Portfolio', 'History']
 
   return (
     <div className="mobile-detail" role="dialog" aria-modal="true" aria-label={`${ticker} details`}>
@@ -1106,43 +1120,59 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
         ))}
       </div>
       <section className="mobile-detail-panel" style={tab === 'Research' ? { background: 'transparent', border: 'none', padding: 0 } : {}}>
-        {tab === 'Research' && <MobileResearchContent data={research} />}
-        {tab === 'AI Thesis' && (
-          <p>
-            {details?.position?.ai_view ||
-              position.ai_view ||
-              details?.forecast?.base ||
-              'PIA has no saved thesis yet. Treat this as a watch item until catalyst, valuation, and risk checks agree.'}
-          </p>
+        {tab === 'Overview' && (
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ background: 'linear-gradient(135deg,rgba(96,165,250,.08),rgba(36,209,140,.04))', border: '1px solid rgba(96,165,250,.15)', borderRadius: 18, padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <Sparkles size={13} color="#60a5fa" />
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#60a5fa', letterSpacing: 0.5 }}>AI THESIS</span>
+              </div>
+              <p style={{ margin: 0, fontSize: 12, color: '#c4d4e8', lineHeight: 1.65 }}>
+                {details?.position?.ai_view || position.ai_view || details?.forecast?.base || 'PIA has no saved thesis yet. Treat this as a watch item until catalyst, valuation, and risk checks agree.'}
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+              {[
+                { label: 'Portfolio Weight', value: pct(position.portfolio_pct) },
+                { label: 'Risk Score', value: String(position.risk || 31) },
+                { label: 'Stop Level', value: position.stop || '—' },
+              ].map(m => (
+                <div key={m.label} style={{ background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 14, padding: '10px 8px 8px', textAlign: 'center' }}>
+                  <b style={{ fontSize: 15, display: 'block', color: '#eef4fb', lineHeight: 1 }}>{m.value}</b>
+                  <span style={{ fontSize: 8, color: 'var(--muted)', display: 'block', marginTop: 5, lineHeight: 1.2 }}>{m.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
-        {tab === 'News' && (
+        {tab === 'Research' && <MobileResearchContent data={research} />}
+        {tab === 'Portfolio' && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {[
+                { label: 'Market Value', value: money(position.market_value || 0), color: '#60a5fa' },
+                { label: 'Portfolio %', value: pct(position.portfolio_pct), color: '#a78bfa' },
+                { label: 'Day Change', value: `${Number(position.day_change_pct || 0).toFixed(2)}%`, color: change >= 0 ? '#24d18c' : '#ff6375' },
+                { label: 'Momentum', value: `${position.momentum || position.momentum_score || 52}/100`, color: '#fbbf24' },
+              ].map(m => (
+                <div key={m.label} style={{ background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 14, padding: '12px 12px 10px' }}>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{m.label}</span>
+                  <b style={{ fontSize: 18, color: m.color, lineHeight: 1 }}>{m.value}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {tab === 'History' && (
           <div className="mobile-news-list">
             {(details?.news?.length ? details.news : [{ title: 'No fresh news loaded', impact: 'Neutral', action: 'Monitor only' }]).map(
               (item: any) => (
                 <article key={item.title}>
                   <strong>{item.title}</strong>
-                  <span>
-                    {item.impact} - {item.action}
-                  </span>
+                  <span>{item.impact} · {item.action}</span>
                 </article>
               ),
             )}
-          </div>
-        )}
-        {tab === 'Risk' && (
-          <div className="mobile-risk-grid">
-            <span>
-              Portfolio weight
-              <b>{pct(position.portfolio_pct)}</b>
-            </span>
-            <span>
-              Risk score
-              <b>{position.risk || 31}</b>
-            </span>
-            <span>
-              Stop discipline
-              <b>{position.stop || 'Required'}</b>
-            </span>
           </div>
         )}
       </section>
