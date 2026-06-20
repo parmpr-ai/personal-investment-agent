@@ -962,21 +962,44 @@ function MobileResearchContent({ data }: { data: any }) {
             @keyframes bb-bear-nudge { 0%,100% { transform: translateX(0); } 50% { transform: translateX(-7px); } }
           `}</style>
 
-          {/* Animated hero */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 16px 16px' }}>
-            <div style={{ animation: 'bb-bull-in 0.45s ease-out both' }}>
-              <div style={{ animation: 'bb-bull-nudge 1.8s ease-in-out 0.55s infinite', textAlign: 'center' }}>
-                <span style={{ fontSize: 38, lineHeight: 1, display: 'block' }}>🐂</span>
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#24d18c', display: 'block', marginTop: 4 }}>BULL</span>
+          {/* Animated hero — icon-based, matches app design language */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 18px', gap: 8 }}>
+
+            {/* Bull hero */}
+            <div style={{ animation: 'bb-bull-in 0.45s ease-out both', flex: 1 }}>
+              <div style={{ animation: 'bb-bull-nudge 1.8s ease-in-out 0.55s infinite' }}>
+                <div style={{ background: 'linear-gradient(145deg,rgba(36,209,140,.18),rgba(36,209,140,.06))', border: '1px solid rgba(36,209,140,.3)', borderRadius: 20, padding: '14px 0 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                  {/* Icon ring */}
+                  <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'radial-gradient(circle at 35% 35%,rgba(36,209,140,.35),rgba(36,209,140,.08))', border: '1.5px solid rgba(36,209,140,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 18px rgba(36,209,140,.2)' }}>
+                    <TrendingUp size={26} color="#24d18c" strokeWidth={2.2} />
+                  </div>
+                  <span style={{ fontSize: 18, fontWeight: 900, color: '#24d18c', letterSpacing: -0.5, lineHeight: 1 }}>{bullbear.bull_probability || 0}%</span>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(36,209,140,.7)', letterSpacing: 1.5 }}>BULL</span>
+                </div>
               </div>
             </div>
-            <span style={{ fontSize: 10, fontWeight: 900, color: 'rgba(148,163,184,.25)', letterSpacing: 4 }}>VS</span>
-            <div style={{ animation: 'bb-bear-in 0.45s ease-out both' }}>
-              <div style={{ animation: 'bb-bear-nudge 1.8s ease-in-out 0.55s infinite', textAlign: 'center' }}>
-                <span style={{ fontSize: 38, lineHeight: 1, display: 'inline-block', transform: 'scaleX(-1)' }}>🐻</span>
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#ff6375', display: 'block', marginTop: 4 }}>BEAR</span>
+
+            {/* VS divider */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <div style={{ width: 1, height: 16, background: 'rgba(148,163,184,.12)' }} />
+              <span style={{ fontSize: 9, fontWeight: 900, color: 'rgba(148,163,184,.3)', letterSpacing: 3 }}>VS</span>
+              <div style={{ width: 1, height: 16, background: 'rgba(148,163,184,.12)' }} />
+            </div>
+
+            {/* Bear hero */}
+            <div style={{ animation: 'bb-bear-in 0.45s ease-out both', flex: 1 }}>
+              <div style={{ animation: 'bb-bear-nudge 1.8s ease-in-out 0.55s infinite' }}>
+                <div style={{ background: 'linear-gradient(145deg,rgba(255,99,117,.18),rgba(255,99,117,.06))', border: '1px solid rgba(255,99,117,.3)', borderRadius: 20, padding: '14px 0 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                  {/* Icon ring */}
+                  <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'radial-gradient(circle at 35% 35%,rgba(255,99,117,.35),rgba(255,99,117,.08))', border: '1.5px solid rgba(255,99,117,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 18px rgba(255,99,117,.2)' }}>
+                    <TrendingDown size={26} color="#ff6375" strokeWidth={2.2} />
+                  </div>
+                  <span style={{ fontSize: 18, fontWeight: 900, color: '#ff6375', letterSpacing: -0.5, lineHeight: 1 }}>{100 - (bullbear.bull_probability || 0)}%</span>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,99,117,.7)', letterSpacing: 1.5 }}>BEAR</span>
+                </div>
               </div>
             </div>
+
           </div>
 
           {/* Scenario % bars (12M) */}
