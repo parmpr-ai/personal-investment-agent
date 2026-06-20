@@ -513,119 +513,6 @@ function PositionCards({ rows, onSelect }: { rows: any[]; onSelect: (position: a
   )
 }
 
-function BullSVG({ size = 90 }: { size?: number }) {
-  return (
-    <svg width={size} height={Math.round(size * 0.88)} viewBox="0 0 110 97" fill="none">
-      <defs>
-        <filter id="bull-glow" x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="2.8" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-        <radialGradient id="bull-floor" cx="50%" cy="100%" r="50%">
-          <stop offset="0%" stopColor="#24d18c" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#24d18c" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      {/* floor glow */}
-      <ellipse cx="55" cy="93" rx="38" ry="6" fill="url(#bull-floor)" />
-      <g filter="url(#bull-glow)" stroke="#24d18c" strokeLinejoin="round" strokeLinecap="round">
-        {/* body */}
-        <polygon points="38,24 86,16 92,50 80,66 34,64 28,44" fill="#24d18c18" strokeWidth="1.6" />
-        {/* internal body facets */}
-        <line x1="38" y1="24" x2="60" y2="48" stroke="#24d18c" strokeWidth="0.7" opacity="0.5" />
-        <line x1="86" y1="16" x2="60" y2="48" stroke="#24d18c" strokeWidth="0.7" opacity="0.5" />
-        <line x1="92" y1="50" x2="60" y2="48" stroke="#24d18c" strokeWidth="0.7" opacity="0.5" />
-        <line x1="80" y1="66" x2="60" y2="48" stroke="#24d18c" strokeWidth="0.7" opacity="0.5" />
-        <line x1="34" y1="64" x2="60" y2="48" stroke="#24d18c" strokeWidth="0.7" opacity="0.5" />
-        <line x1="28" y1="44" x2="60" y2="48" stroke="#24d18c" strokeWidth="0.7" opacity="0.5" />
-        {/* head */}
-        <polygon points="6,36 38,24 28,44 4,52" fill="#24d18c20" strokeWidth="1.6" />
-        <line x1="6" y1="36" x2="22" y2="40" stroke="#24d18c" strokeWidth="0.7" opacity="0.5" />
-        <line x1="28" y1="44" x2="22" y2="40" stroke="#24d18c" strokeWidth="0.7" opacity="0.5" />
-        {/* snout */}
-        <polygon points="0,48 6,36 4,52 0,56" fill="#24d18c28" strokeWidth="1.2" />
-        {/* horn L */}
-        <polyline points="14,28 2,6 22,22" strokeWidth="2" />
-        {/* horn R */}
-        <polyline points="26,22 26,2 38,18" strokeWidth="2" />
-        {/* front leg 1 */}
-        <polygon points="32,64 40,64 39,86 31,86" fill="#24d18c14" strokeWidth="1.4" />
-        {/* front leg 2 */}
-        <polygon points="44,64 52,64 51,86 43,86" fill="#24d18c14" strokeWidth="1.4" />
-        {/* back leg 1 */}
-        <polygon points="66,64 74,64 75,86 67,86" fill="#24d18c14" strokeWidth="1.4" />
-        {/* back leg 2 */}
-        <polygon points="76,62 84,62 86,84 78,84" fill="#24d18c14" strokeWidth="1.4" />
-        {/* tail */}
-        <path d="M89,18 Q102,8 98,0" strokeWidth="1.8" fill="none" />
-        {/* eye */}
-        <circle cx="14" cy="40" r="2.2" fill="#24d18c" stroke="none" />
-        {/* highlight dots */}
-        <circle cx="60" cy="30" r="1.2" fill="#24d18c" stroke="none" opacity="0.6" />
-        <circle cx="75" cy="22" r="0.9" fill="#24d18c" stroke="none" opacity="0.5" />
-      </g>
-    </svg>
-  )
-}
-
-function BearSVG({ size = 90 }: { size?: number }) {
-  return (
-    <svg width={size} height={Math.round(size * 1.02)} viewBox="0 0 100 102" fill="none">
-      <defs>
-        <filter id="bear-glow" x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="2.8" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-        <radialGradient id="bear-floor" cx="50%" cy="100%" r="50%">
-          <stop offset="0%" stopColor="#ff6375" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#ff6375" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      {/* floor glow */}
-      <ellipse cx="50" cy="97" rx="34" ry="5" fill="url(#bear-floor)" />
-      <g filter="url(#bear-glow)" stroke="#ff6375" strokeLinejoin="round" strokeLinecap="round">
-        {/* body */}
-        <polygon points="22,70 50,60 78,70 76,90 50,96 24,90" fill="#ff637518" strokeWidth="1.6" />
-        {/* body facets */}
-        <line x1="22" y1="70" x2="50" y2="78" stroke="#ff6375" strokeWidth="0.7" opacity="0.5" />
-        <line x1="78" y1="70" x2="50" y2="78" stroke="#ff6375" strokeWidth="0.7" opacity="0.5" />
-        <line x1="76" y1="90" x2="50" y2="78" stroke="#ff6375" strokeWidth="0.7" opacity="0.5" />
-        <line x1="24" y1="90" x2="50" y2="78" stroke="#ff6375" strokeWidth="0.7" opacity="0.5" />
-        <line x1="50" y1="60" x2="50" y2="78" stroke="#ff6375" strokeWidth="0.7" opacity="0.5" />
-        {/* head */}
-        <polygon points="30,36 50,28 70,36 68,56 50,62 32,56" fill="#ff637518" strokeWidth="1.6" />
-        {/* head facets */}
-        <line x1="30" y1="36" x2="50" y2="46" stroke="#ff6375" strokeWidth="0.7" opacity="0.5" />
-        <line x1="70" y1="36" x2="50" y2="46" stroke="#ff6375" strokeWidth="0.7" opacity="0.5" />
-        <line x1="68" y1="56" x2="50" y2="46" stroke="#ff6375" strokeWidth="0.7" opacity="0.5" />
-        <line x1="32" y1="56" x2="50" y2="46" stroke="#ff6375" strokeWidth="0.7" opacity="0.5" />
-        {/* ear L */}
-        <polygon points="28,32 36,20 44,30" fill="#ff637522" strokeWidth="1.4" />
-        {/* ear R */}
-        <polygon points="56,30 64,20 72,32" fill="#ff637522" strokeWidth="1.4" />
-        {/* snout */}
-        <polygon points="40,50 60,50 58,60 42,60" fill="#ff637530" strokeWidth="1.2" />
-        {/* nose */}
-        <ellipse cx="50" cy="50" rx="5" ry="3.5" fill="#ff6375" stroke="none" />
-        {/* arm L */}
-        <polygon points="14,66 24,62 22,84 12,86" fill="#ff637514" strokeWidth="1.4" />
-        {/* arm R */}
-        <polygon points="76,62 86,66 88,86 78,84" fill="#ff637514" strokeWidth="1.4" />
-        {/* leg L */}
-        <polygon points="30,90 42,90 40,102 28,102" fill="#ff637514" strokeWidth="1.4" />
-        {/* leg R */}
-        <polygon points="58,90 70,90 72,102 60,102" fill="#ff637514" strokeWidth="1.4" />
-        {/* eyes */}
-        <circle cx="42" cy="40" r="2.5" fill="#ff6375" stroke="none" />
-        <circle cx="58" cy="40" r="2.5" fill="#ff6375" stroke="none" />
-        {/* highlight dots */}
-        <circle cx="50" cy="32" r="1.2" fill="#ff6375" stroke="none" opacity="0.6" />
-        <circle cx="62" cy="28" r="0.9" fill="#ff6375" stroke="none" opacity="0.5" />
-      </g>
-    </svg>
-  )
-}
-
 function RadarChart({ metrics, size = 150 }: { metrics: { label: string; value: number }[]; size?: number }) {
   if (!metrics.length) return null
   const count = metrics.length
@@ -1075,16 +962,18 @@ function MobileResearchContent({ data }: { data: any }) {
             @keyframes bb-bear-nudge { 0%,100% { transform: translateX(0); } 50% { transform: translateX(-7px); } }
           `}</style>
 
-          {/* Animated hero — geometric SVG bull vs bear */}
+          {/* Animated hero — same emoji as bar icons, scaled up */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 18px', gap: 6 }}>
 
             {/* Bull hero */}
             <div style={{ animation: 'bb-bull-in 0.45s ease-out both', flex: 1 }}>
               <div style={{ animation: 'bb-bull-nudge 1.8s ease-in-out 0.55s infinite' }}>
-                <div style={{ background: 'linear-gradient(160deg,rgba(36,209,140,.12),rgba(7,20,14,.8))', border: '1px solid rgba(36,209,140,.25)', borderRadius: 20, padding: '14px 6px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                  <BullSVG size={86} />
-                  <span style={{ fontSize: 20, fontWeight: 900, color: '#24d18c', letterSpacing: -0.5, lineHeight: 1 }}>{bullbear.bull_probability || 0}%</span>
-                  <span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(36,209,140,.65)', letterSpacing: 2 }}>BULL</span>
+                <div style={{ background: 'linear-gradient(160deg,rgba(36,209,140,.14),rgba(7,18,12,.9))', border: '1px solid rgba(36,209,140,.28)', borderRadius: 20, padding: '16px 6px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 76, height: 76, borderRadius: '50%', background: 'radial-gradient(circle at 40% 38%, rgba(36,209,140,.3) 0%, rgba(36,209,140,.06) 70%)', border: '1.5px solid rgba(36,209,140,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 22px rgba(36,209,140,.18), inset 0 1px 0 rgba(36,209,140,.2)' }}>
+                    <span style={{ fontSize: 46, lineHeight: 1 }}>🐂</span>
+                  </div>
+                  <span style={{ fontSize: 22, fontWeight: 900, color: '#24d18c', letterSpacing: -0.5, lineHeight: 1 }}>{bullbear.bull_probability || 0}%</span>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(36,209,140,.7)', letterSpacing: 2 }}>BULL</span>
                 </div>
               </div>
             </div>
@@ -1099,10 +988,12 @@ function MobileResearchContent({ data }: { data: any }) {
             {/* Bear hero */}
             <div style={{ animation: 'bb-bear-in 0.45s ease-out both', flex: 1 }}>
               <div style={{ animation: 'bb-bear-nudge 1.8s ease-in-out 0.55s infinite' }}>
-                <div style={{ background: 'linear-gradient(160deg,rgba(255,99,117,.12),rgba(20,7,10,.8))', border: '1px solid rgba(255,99,117,.25)', borderRadius: 20, padding: '14px 6px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                  <BearSVG size={86} />
-                  <span style={{ fontSize: 20, fontWeight: 900, color: '#ff6375', letterSpacing: -0.5, lineHeight: 1 }}>{100 - (bullbear.bull_probability || 0)}%</span>
-                  <span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,99,117,.65)', letterSpacing: 2 }}>BEAR</span>
+                <div style={{ background: 'linear-gradient(160deg,rgba(255,99,117,.14),rgba(18,7,9,.9))', border: '1px solid rgba(255,99,117,.28)', borderRadius: 20, padding: '16px 6px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 76, height: 76, borderRadius: '50%', background: 'radial-gradient(circle at 40% 38%, rgba(255,99,117,.3) 0%, rgba(255,99,117,.06) 70%)', border: '1.5px solid rgba(255,99,117,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 22px rgba(255,99,117,.18), inset 0 1px 0 rgba(255,99,117,.2)' }}>
+                    <span style={{ fontSize: 46, lineHeight: 1 }}>🐻</span>
+                  </div>
+                  <span style={{ fontSize: 22, fontWeight: 900, color: '#ff6375', letterSpacing: -0.5, lineHeight: 1 }}>{100 - (bullbear.bull_probability || 0)}%</span>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,99,117,.7)', letterSpacing: 2 }}>BEAR</span>
                 </div>
               </div>
             </div>
