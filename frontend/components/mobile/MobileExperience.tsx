@@ -905,11 +905,36 @@ function MobileResearchContent({ data }: { data: any }) {
       {/* ── Bull vs Bear ── */}
       {bullbear.bull_probability != null && (
         <MobileSection title="Bull vs Bear" badge={`${bullbear.bull_probability || 0}% bull`} collapsed={collapsed['bb']} onToggle={() => toggle('bb')}>
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7 }}>
-              <span style={{ fontSize: 12, color: '#24d18c', fontWeight: 700 }}>Bull {bullbear.bull_probability || 0}%</span>
-              <span style={{ fontSize: 12, color: '#ff6375', fontWeight: 700 }}>Bear {100 - (bullbear.bull_probability || 0)}%</span>
+          <style>{`
+            @keyframes bb-bull-in { from { transform: translateX(-36px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+            @keyframes bb-bear-in { from { transform: translateX(36px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+            @keyframes bb-bull-nudge { 0%,100% { transform: translateX(0); } 50% { transform: translateX(7px); } }
+            @keyframes bb-bear-nudge { 0%,100% { transform: translateX(0); } 50% { transform: translateX(-7px); } }
+          `}</style>
+
+          {/* Hero: animated bull vs bear */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px 18px' }}>
+            <div style={{ animation: 'bb-bull-in 0.45s ease-out both' }}>
+              <div style={{ animation: 'bb-bull-nudge 1.8s ease-in-out 0.55s infinite', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 46, lineHeight: 1 }}>🐂</span>
+                <span style={{ fontSize: 20, fontWeight: 800, color: '#24d18c', lineHeight: 1 }}>{bullbear.bull_probability || 0}%</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#24d18c', letterSpacing: 0.6 }}>BULL</span>
+              </div>
             </div>
+
+            <span style={{ fontSize: 11, fontWeight: 900, color: 'rgba(148,163,184,.28)', letterSpacing: 4 }}>VS</span>
+
+            <div style={{ animation: 'bb-bear-in 0.45s ease-out both' }}>
+              <div style={{ animation: 'bb-bear-nudge 1.8s ease-in-out 0.55s infinite', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 46, lineHeight: 1, display: 'inline-block', transform: 'scaleX(-1)' }}>🐻</span>
+                <span style={{ fontSize: 20, fontWeight: 800, color: '#ff6375', lineHeight: 1 }}>{100 - (bullbear.bull_probability || 0)}%</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#ff6375', letterSpacing: 0.6 }}>BEAR</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Probability bar */}
+          <div style={{ marginBottom: 16 }}>
             <div style={{ height: 13, background: '#121a25', borderRadius: 999, overflow: 'hidden', display: 'flex' }}>
               <div style={{ flex: bullbear.bull_probability || 0, background: 'linear-gradient(90deg,#24d18c,#60a5fa)', borderRadius: '999px 0 0 999px' }} />
               <div style={{ flex: 100 - (bullbear.bull_probability || 0), background: 'linear-gradient(90deg,#7c3aed,#ff6375)', borderRadius: '0 999px 999px 0' }} />
