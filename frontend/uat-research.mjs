@@ -220,15 +220,38 @@ for (const c of CASES) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
   const page = await ctx.newPage()
 
-  // Same routes that work in uat-capture-v3.mjs
-  await page.route('**/api/dashboard**', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockDash(c)) }))
-  await page.route('**/api/stock/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockStock(c)) }))
-  await page.route('**/api/ai-intelligence/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAI(c)) }))
-  await page.route('**/api/settings**', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockSettings) }))
-  await page.route('**/api/portfolio/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }))
-  await page.route('**/api/watchlist**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
-  await page.route('**/api/scanner**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
-  await page.route('**/api/macros**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"market_strip":[]}' }))
+  // Inject fetch mock and WebSocket block at browser level (before any JS runs)
+  const dashBody = JSON.stringify(mockDash(c))
+  const stockBody = JSON.stringify(mockStock(c))
+  const aiBody = JSON.stringify(mockAI(c))
+  const settingsBody = JSON.stringify(mockSettings)
+  await page.addInitScript(({ dashBody, stockBody, aiBody, settingsBody }) => {
+    const orig = window.fetch
+    window.fetch = async (url, ...args) => {
+      const s = String(url)
+      if (s.includes('/api/dashboard')) return new Response(dashBody, { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (s.includes('/api/stock/')) return new Response(stockBody, { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (s.includes('/api/ai-intelligence/')) return new Response(aiBody, { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (s.includes('/api/settings')) return new Response(settingsBody, { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (s.includes('/api/portfolio/')) return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (s.includes('/api/watchlist')) return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (s.includes('/api/scanner')) return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (s.includes('/api/macros')) return new Response('{"market_strip":[]}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+      return orig(url, ...args)
+    }
+    // Block WebSocket to backend so it can't push real data
+    const OrigWS = window.WebSocket
+    window.WebSocket = class extends OrigWS {
+      constructor(url, ...rest) {
+        if (String(url).includes(':8000') || String(url).includes('127.0.0.1')) {
+          super('ws://localhost:65535'); return
+        }
+        super(url, ...rest)
+      }
+    }
+  }, { dashBody, stockBody, aiBody, settingsBody })
+
+  // Research endpoint still needs page.route because we must parse URL per-request
   await page.route('**/api/intelligence/**', r => {
     const url = r.request().url()
     if (/\/intelligence\/[^/?]+\/research/.test(url))
@@ -237,48 +260,46 @@ for (const c of CASES) {
   })
 
   await page.goto(`${BASE}/mobile`, { waitUntil: 'networkidle', timeout: 25000 }).catch(() => {})
-  await page.waitForTimeout(2500)
+  await page.waitForTimeout(3000)
 
-  // Nav to portfolio
-  for (const btn of await page.$$('.mobile-bottom-nav button')) {
-    if ((await btn.innerText().catch(() => '')).toLowerCase().includes('port')) {
-      await btn.click(); await page.waitForTimeout(2000); break
-    }
-  }
+  // Nav to portfolio — use evaluate click (Playwright synthetic click doesn't trigger React handlers here)
+  await page.waitForSelector('.mobile-bottom-nav', { timeout: 8000 }).catch(() => {})
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.mobile-bottom-nav button')]
+      .find(b => (b.textContent || '').toLowerCase().includes('portfolio'))
+    btn?.click()
+  })
+  await page.waitForTimeout(2500)
 
   // Click position card
   let found = false
-  for (const sel of ['.mptbl-frow', '.mobile-position-card']) {
+  for (const sel of ['.mptbl-frow', '.mtt-sym-label']) {
     const els = await page.$$(sel)
     if (els.length > 0) {
-      try { await els[0].tap() } catch { await els[0].click() }
+      const target = sel === '.mtt-sym-label'
+        ? await els[0].evaluateHandle(el => el.closest('button')).catch(() => null)
+        : els[0]
+      if (!target) continue
+      await page.evaluate(el => el.click(), target)
       await page.waitForTimeout(2500); found = true; break
     }
   }
   if (!found) { console.log('  ⚠ no position card'); await ctx.close(); continue }
 
   // Open expanded view
-  const sai = await page.$('.sai-p2')
-  if (sai) {
-    try { await sai.tap() } catch { await sai.click() }
-    await page.waitForTimeout(2000)
-  }
+  await page.evaluate(() => { document.querySelector('.sai-p2')?.click() })
+  await page.waitForTimeout(2000)
 
   // Click Research tab
   const panel = await page.$('.sai-exp25-panel')
   if (!panel) { console.log('  ⚠ panel not found'); await ctx.close(); continue }
 
-  // Find Research tab button
-  const tabs = await page.$$('.sai-exp25-tab')
-  let researchTab = null
-  for (const tab of tabs) {
-    const txt = (await tab.innerText().catch(() => '')).toLowerCase()
-    if (txt.includes('research')) { researchTab = tab; break }
-  }
-
-  if (!researchTab) { console.log('  ⚠ research tab not found'); await ctx.close(); continue }
-
-  await researchTab.click()
+  const clickedResearch = await page.evaluate(() => {
+    const tab = [...document.querySelectorAll('.sai-exp25-tab')]
+      .find(t => (t.textContent || '').toLowerCase().includes('research'))
+    tab?.click(); return !!tab
+  })
+  if (!clickedResearch) { console.log('  ⚠ research tab not found'); await ctx.close(); continue }
   await page.waitForTimeout(2500)
 
   // Screenshot: Research tab top
@@ -300,46 +321,41 @@ for (const c of CASES) {
   // Expand additional sections to capture their body content
   await page.$eval('.sai-exp25-body', el => el.scrollTop = 0).catch(() => {})
   await page.waitForTimeout(300)
-  // Click Financial Health, Growth Engine, Moat Analysis sections to expand them
-  const sectionHeaders = await page.$$('.sai-res-sec-hdr')
-  for (const hdr of sectionHeaders) {
-    const txt = (await hdr.innerText().catch(() => '')).trim()
-    if (['Financial Health', 'Growth Engine', 'Moat Analysis'].includes(txt.split('\n')[0]?.trim())) {
-      try { await hdr.click() } catch {}
-      await page.waitForTimeout(200)
-    }
-  }
-  await page.waitForTimeout(500)
+  // Expand Financial Health, Growth Engine, Moat Analysis sections
+  await page.evaluate(() => {
+    const targets = ['Financial Health', 'Growth Engine', 'Moat Analysis']
+    document.querySelectorAll('.sai-res-sec-hdr').forEach(hdr => {
+      if (targets.includes((hdr.textContent || '').split('\n')[0]?.trim())) hdr.click()
+    })
+  })
+  await page.waitForTimeout(700)
   writeFileSync(`${OUT}/${c.name}-sections-fh-ge-ma.png`, await panel.screenshot())
   console.log(`  ✓ sections expanded (FH/GE/MA)`)
 
   // Scroll down and expand Valuation, Risk Analysis, Bull vs Bear
   await page.$eval('.sai-exp25-body', el => el.scrollTop += 600).catch(() => {})
   await page.waitForTimeout(300)
-  const sectionHeaders2 = await page.$$('.sai-res-sec-hdr')
-  for (const hdr of sectionHeaders2) {
-    const txt = (await hdr.innerText().catch(() => '')).trim()
-    if (['Valuation', 'Risk Analysis', 'Bull vs Bear Debate'].includes(txt.split('\n')[0]?.trim())) {
-      try { await hdr.click() } catch {}
-      await page.waitForTimeout(200)
-    }
-  }
-  await page.waitForTimeout(500)
+  await page.evaluate(() => {
+    const targets = ['Valuation', 'Risk Analysis', 'Bull vs Bear Debate']
+    document.querySelectorAll('.sai-res-sec-hdr').forEach(hdr => {
+      if (targets.includes((hdr.textContent || '').split('\n')[0]?.trim())) hdr.click()
+    })
+  })
+  await page.waitForTimeout(700)
   writeFileSync(`${OUT}/${c.name}-sections-val-risk-bvb.png`, await panel.screenshot())
   console.log(`  ✓ sections expanded (Val/Risk/BvB)`)
 
   // Open Customize drawer
-  const custBtn = await page.$('.sai-res-cust-btn')
-  if (custBtn) {
+  const hasCustBtn = await page.$('.sai-res-cust-btn').then(el => !!el)
+  if (hasCustBtn) {
     await page.$eval('.sai-exp25-body', el => el.scrollTop = 99999).catch(() => {})
     await page.waitForTimeout(400)
-    try { await custBtn.tap() } catch { await custBtn.click() }
+    await page.evaluate(() => document.querySelector('.sai-res-cust-btn')?.click())
     await page.waitForTimeout(800)
     writeFileSync(`${OUT}/${c.name}-customize.png`, await page.screenshot())
     console.log(`  ✓ customize`)
-    // Close
-    const close = await page.$('.sai-rsc-close')
-    if (close) { await close.click(); await page.waitForTimeout(400) }
+    await page.evaluate(() => document.querySelector('.sai-rsc-close')?.click())
+    await page.waitForTimeout(400)
   }
 
   await ctx.close()

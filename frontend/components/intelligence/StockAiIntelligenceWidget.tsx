@@ -2150,7 +2150,7 @@ export default function StockAiIntelligenceWidget({
   const v2BearCase = fc?.bearCase ?? bearCaseText
 
   // Company info for expanded header
-  const companyName = source?.fundamentals?.name ?? source?.name ?? source?.company ?? ''
+  const companyName = source?.fundamentals?.name ?? source?.name ?? (typeof source?.company === 'string' ? source.company : source?.company?.name) ?? ''
   const companySymbol = (ticker || source?.ticker || source?.symbol || fc?.symbol || '').split(' ')[0].toUpperCase()
 
   return (
