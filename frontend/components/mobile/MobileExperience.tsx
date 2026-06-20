@@ -962,37 +962,45 @@ function MobileResearchContent({ data }: { data: any }) {
             @keyframes bb-bear-nudge { 0%,100% { transform: translateX(0); } 50% { transform: translateX(-7px); } }
           `}</style>
 
-          {/* Animated hero — same emoji as bar icons, scaled up */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 18px', gap: 6 }}>
+          {/* Hero cards — large diagonal arrow SVGs matching reference design */}
+          <div style={{ display: 'flex', alignItems: 'stretch', justifyContent: 'space-between', padding: '4px 4px 18px', gap: 8 }}>
 
             {/* Bull hero */}
             <div style={{ animation: 'bb-bull-in 0.45s ease-out both', flex: 1 }}>
-              <div style={{ animation: 'bb-bull-nudge 1.8s ease-in-out 0.55s infinite' }}>
-                <div style={{ background: 'linear-gradient(160deg,rgba(36,209,140,.14),rgba(7,18,12,.9))', border: '1px solid rgba(36,209,140,.28)', borderRadius: 20, padding: '16px 6px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 76, height: 76, borderRadius: '50%', background: 'radial-gradient(circle at 40% 38%, rgba(36,209,140,.3) 0%, rgba(36,209,140,.06) 70%)', border: '1.5px solid rgba(36,209,140,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 22px rgba(36,209,140,.18), inset 0 1px 0 rgba(36,209,140,.2)' }}>
-                    <span style={{ fontSize: 46, lineHeight: 1 }}>🐂</span>
-                  </div>
-                  <span style={{ fontSize: 22, fontWeight: 900, color: '#24d18c', letterSpacing: -0.5, lineHeight: 1 }}>{bullbear.bull_probability || 0}%</span>
+              <div style={{ animation: 'bb-bull-nudge 1.8s ease-in-out 0.55s infinite', height: '100%' }}>
+                <div style={{ background: 'linear-gradient(160deg,rgba(36,209,140,.18) 0%,rgba(4,22,14,.95) 100%)', border: '1px solid rgba(36,209,140,.32)', borderRadius: 22, padding: '18px 8px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, height: '100%', boxSizing: 'border-box' }}>
+                  <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: 'drop-shadow(0 0 14px rgba(36,209,140,.6))' }}>
+                    <circle cx="40" cy="40" r="38" stroke="rgba(36,209,140,.18)" strokeWidth="1.5" fill="rgba(36,209,140,.07)" />
+                    {/* Curved trending-up arrow body */}
+                    <path d="M16 60 Q28 44 44 26" stroke="#24d18c" strokeWidth="5.5" strokeLinecap="round" fill="none" />
+                    {/* Arrowhead — top right */}
+                    <path d="M44 26 L62 26 L62 44" stroke="#24d18c" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  </svg>
+                  <span style={{ fontSize: 24, fontWeight: 900, color: '#24d18c', letterSpacing: -0.5, lineHeight: 1 }}>{bullbear.bull_probability || 0}%</span>
                   <span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(36,209,140,.7)', letterSpacing: 2 }}>BULL</span>
                 </div>
               </div>
             </div>
 
             {/* VS divider */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-              <div style={{ width: 1, height: 20, background: 'rgba(148,163,184,.1)' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, flexShrink: 0 }}>
+              <div style={{ width: 1, height: 24, background: 'rgba(148,163,184,.1)' }} />
               <span style={{ fontSize: 9, fontWeight: 900, color: 'rgba(148,163,184,.25)', letterSpacing: 3 }}>VS</span>
-              <div style={{ width: 1, height: 20, background: 'rgba(148,163,184,.1)' }} />
+              <div style={{ width: 1, height: 24, background: 'rgba(148,163,184,.1)' }} />
             </div>
 
             {/* Bear hero */}
             <div style={{ animation: 'bb-bear-in 0.45s ease-out both', flex: 1 }}>
-              <div style={{ animation: 'bb-bear-nudge 1.8s ease-in-out 0.55s infinite' }}>
-                <div style={{ background: 'linear-gradient(160deg,rgba(255,99,117,.14),rgba(18,7,9,.9))', border: '1px solid rgba(255,99,117,.28)', borderRadius: 20, padding: '16px 6px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 76, height: 76, borderRadius: '50%', background: 'radial-gradient(circle at 40% 38%, rgba(255,99,117,.3) 0%, rgba(255,99,117,.06) 70%)', border: '1.5px solid rgba(255,99,117,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 22px rgba(255,99,117,.18), inset 0 1px 0 rgba(255,99,117,.2)' }}>
-                    <span style={{ fontSize: 46, lineHeight: 1 }}>🐻</span>
-                  </div>
-                  <span style={{ fontSize: 22, fontWeight: 900, color: '#ff6375', letterSpacing: -0.5, lineHeight: 1 }}>{100 - (bullbear.bull_probability || 0)}%</span>
+              <div style={{ animation: 'bb-bear-nudge 1.8s ease-in-out 0.55s infinite', height: '100%' }}>
+                <div style={{ background: 'linear-gradient(160deg,rgba(255,99,117,.18) 0%,rgba(22,4,8,.95) 100%)', border: '1px solid rgba(255,99,117,.32)', borderRadius: 22, padding: '18px 8px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, height: '100%', boxSizing: 'border-box' }}>
+                  <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: 'drop-shadow(0 0 14px rgba(255,99,117,.6))' }}>
+                    <circle cx="40" cy="40" r="38" stroke="rgba(255,99,117,.18)" strokeWidth="1.5" fill="rgba(255,99,117,.07)" />
+                    {/* Curved trending-down arrow body */}
+                    <path d="M16 20 Q28 36 44 54" stroke="#ff6375" strokeWidth="5.5" strokeLinecap="round" fill="none" />
+                    {/* Arrowhead — bottom right */}
+                    <path d="M44 54 L62 54 L62 36" stroke="#ff6375" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  </svg>
+                  <span style={{ fontSize: 24, fontWeight: 900, color: '#ff6375', letterSpacing: -0.5, lineHeight: 1 }}>{100 - (bullbear.bull_probability || 0)}%</span>
                   <span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,99,117,.7)', letterSpacing: 2 }}>BEAR</span>
                 </div>
               </div>
