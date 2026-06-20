@@ -506,27 +506,69 @@ function PositionCards({ rows, onSelect }: { rows: any[]; onSelect: (position: a
   )
 }
 
+function RingGauge({
+  value,
+  max = 100,
+  size = 88,
+  color,
+  thickness = 9,
+  label,
+}: {
+  value: number
+  max?: number
+  size?: number
+  color: string
+  thickness?: number
+  label?: string
+}) {
+  const r = (size - thickness) / 2
+  const circ = 2 * Math.PI * r
+  const fill = (Math.min(Math.max(value, 0), max) / max) * circ
+  return (
+    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size} style={{ display: 'block', transform: 'rotate(-90deg)' }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#18212d" strokeWidth={thickness} />
+        <circle
+          cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={thickness}
+          strokeDasharray={`${fill.toFixed(1)} ${circ.toFixed(1)}`} strokeLinecap="round"
+        />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ fontSize: Math.round(size * 0.26), fontWeight: 800, color, lineHeight: 1 }}>{value}</span>
+        {label && <span style={{ fontSize: Math.round(size * 0.12), color: 'var(--muted)', marginTop: 2, textAlign: 'center' }}>{label}</span>}
+      </div>
+    </div>
+  )
+}
+
 function MobileSection({
   title,
+  badge,
   collapsed,
   onToggle,
   children,
 }: {
   title: string
+  badge?: string
   collapsed?: boolean
   onToggle: () => void
   children: ReactNode
 }) {
   return (
-    <div style={{ background: '#0d131c', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+    <div style={{ background: 'linear-gradient(160deg,#0d1827 0%,#080d14 100%)', border: '1px solid rgba(96,165,250,.12)', borderRadius: 20, overflow: 'hidden' }}>
       <button
         onClick={onToggle}
-        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'transparent', border: 0, color: '#eef4fb', cursor: 'pointer' }}
+        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: 'transparent', border: 0, color: '#eef4fb', cursor: 'pointer' }}
       >
-        <span style={{ fontWeight: 600, fontSize: 13 }}>{title}</span>
-        {collapsed ? <ChevronDown size={14} color="var(--muted)" /> : <ChevronUp size={14} color="var(--muted)" />}
+        <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: 0.2 }}>{title}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {badge && collapsed && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#60a5fa', background: 'rgba(96,165,250,.12)', borderRadius: 999, padding: '2px 8px' }}>{badge}</span>
+          )}
+          {collapsed ? <ChevronDown size={15} color="rgba(148,163,184,.5)" /> : <ChevronUp size={15} color="rgba(148,163,184,.5)" />}
+        </div>
       </button>
-      {!collapsed && <div style={{ padding: '0 14px 14px' }}>{children}</div>}
+      {!collapsed && <div style={{ padding: '0 16px 16px' }}>{children}</div>}
     </div>
   )
 }
@@ -555,20 +597,20 @@ function MobileResearchContent({ data }: { data: any }) {
   const bullbear = data.bull_bear || {}
 
   const tone = (s: number) => (s >= 80 ? '#24d18c' : s >= 60 ? '#fbbf24' : '#ff6375')
-  const toneBg = (s: number) =>
-    s >= 80 ? 'rgba(36,209,140,.12)' : s >= 60 ? 'rgba(251,191,36,.12)' : 'rgba(255,99,117,.12)'
+  const toneBg = (s: number) => s >= 80 ? 'rgba(36,209,140,.12)' : s >= 60 ? 'rgba(251,191,36,.12)' : 'rgba(255,99,117,.12)'
   const toneLabel = (s: number) => (s >= 80 ? 'Strong' : s >= 60 ? 'Moderate' : 'Weak')
 
   const scoreCards = [
-    { icon: <Cpu size={15} />, label: 'AI Score', score: scores.ai_score },
-    { icon: <ShieldCheck size={15} />, label: 'Confidence', score: scores.confidence },
-    { icon: <Zap size={15} />, label: 'Events', score: scores.events },
-    { icon: <Target size={15} />, label: 'Overall', score: scores.overall },
+    { icon: <Cpu size={16} />, label: 'AI Score', score: scores.ai_score },
+    { icon: <ShieldCheck size={16} />, label: 'Confidence', score: scores.confidence },
+    { icon: <Zap size={16} />, label: 'Events', score: scores.events },
+    { icon: <Target size={16} />, label: 'Overall', score: scores.overall },
   ]
 
   return (
     <div style={{ display: 'grid', gap: 10 }}>
-      {/* Score cards 2×2 */}
+
+      {/* ── Score Cards 2×2 ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {scoreCards.map(({ icon, label: lbl, score }) => {
           const s = score || 0
@@ -578,24 +620,24 @@ function MobileResearchContent({ data }: { data: any }) {
           return (
             <div
               key={lbl}
-              style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 14, padding: 12, overflow: 'hidden' }}
+              style={{ background: 'linear-gradient(145deg,#0d1827,#080d14)', border: '1px solid rgba(96,165,250,.1)', borderRadius: 18, padding: '14px 12px', overflow: 'hidden', position: 'relative' }}
             >
-              <div
-                style={{ width: 30, height: 30, borderRadius: 8, background: toneBg(s), color: tone(s), display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}
-              >
-                {icon}
+              <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80, borderRadius: '50%', background: toneBg(s), filter: 'blur(22px)', pointerEvents: 'none' }} />
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 10, background: toneBg(s), color: tone(s), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {icon}
+                </div>
+                <RingGauge value={s} size={52} color={tone(s)} thickness={6} />
               </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, color: tone(s) }}>
-                <span style={{ fontSize: 28, fontWeight: 800, lineHeight: 1 }}>{s}</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginBottom: 3 }}>
+                <span style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, color: tone(s) }}>{s}</span>
                 <span style={{ fontSize: 10, color: 'var(--muted)' }}>/100</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-                <span style={{ fontSize: 10, color: 'var(--muted)' }}>{lbl}</span>
-                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: toneBg(s), color: tone(s) }}>
-                  {toneLabel(s)}
-                </span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>{lbl}</span>
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: toneBg(s), color: tone(s) }}>{toneLabel(s)}</span>
               </div>
-              <div style={{ marginTop: 8, marginLeft: -12, marginRight: -12, marginBottom: -12 }}>
+              <div style={{ marginTop: 10, marginLeft: -12, marginRight: -12, marginBottom: -14 }}>
                 <Sparkline values={pts} tone={s >= 80 ? 'good' : s >= 60 ? 'neutral' : 'bad'} />
               </div>
             </div>
@@ -603,133 +645,148 @@ function MobileResearchContent({ data }: { data: any }) {
         })}
       </div>
 
-      {/* Summary */}
+      {/* ── AI Summary Hero ── */}
       {thesis.summary && (
-        <div style={{ background: '#0d131c', border: '1px solid var(--line)', borderRadius: 14, padding: 12 }}>
-          <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.55 }}>{thesis.summary}</p>
+        <div style={{ background: 'linear-gradient(135deg,rgba(96,165,250,.08),rgba(36,209,140,.04))', border: '1px solid rgba(96,165,250,.15)', borderRadius: 18, padding: '14px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <Sparkles size={13} color="#60a5fa" />
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#60a5fa', letterSpacing: 0.5 }}>AI SUMMARY</span>
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: '#c4d4e8', lineHeight: 1.65 }}>{thesis.summary}</p>
         </div>
       )}
 
-      {/* Investment Thesis */}
-      <MobileSection title="Investment Thesis" collapsed={collapsed['thesis']} onToggle={() => toggle('thesis')}>
+      {/* ── Investment Thesis ── */}
+      <MobileSection title="Investment Thesis" badge={thesis.tags?.[0]} collapsed={collapsed['thesis']} onToggle={() => toggle('thesis')}>
         {thesis.tags?.length > 0 && (
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 12 }}>
             {thesis.tags.map((t: string) => (
-              <span key={t} style={{ background: '#122033', color: '#b9d7ff', borderRadius: 999, padding: '3px 9px', fontSize: 10 }}>{t}</span>
+              <span key={t} style={{ background: 'rgba(96,165,250,.1)', color: '#93c5fd', borderRadius: 999, padding: '3px 10px', fontSize: 10, fontWeight: 600, border: '1px solid rgba(96,165,250,.2)' }}>{t}</span>
             ))}
           </div>
         )}
         {thesis.business_overview && (
-          <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, margin: '0 0 10px' }}>{thesis.business_overview}</p>
+          <p style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6, margin: '0 0 14px' }}>{thesis.business_overview}</p>
         )}
-        {thesis.key_drivers?.length > 0 && (
-          <div style={{ marginBottom: 10 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, margin: '0 0 5px', color: '#24d18c' }}>Key Drivers</p>
-            <ul style={{ margin: 0, paddingLeft: 16, display: 'grid', gap: 4 }}>
-              {thesis.key_drivers.map((d: string) => (
-                <li key={d} style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>{d}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {thesis.break_thesis?.length > 0 && (
-          <div>
-            <p style={{ fontSize: 11, fontWeight: 600, margin: '0 0 5px', color: '#ff6375' }}>What Could Break the Thesis</p>
-            <ul style={{ margin: 0, paddingLeft: 16, display: 'grid', gap: 4 }}>
-              {thesis.break_thesis.map((d: string) => (
-                <li key={d} style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>{d}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {thesis.key_drivers?.length > 0 && (
+            <div style={{ background: 'rgba(36,209,140,.05)', borderRadius: 12, padding: 10, border: '1px solid rgba(36,209,140,.12)' }}>
+              <p style={{ fontSize: 10, fontWeight: 700, margin: '0 0 8px', color: '#24d18c', letterSpacing: 0.4 }}>KEY DRIVERS</p>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
+                {thesis.key_drivers.map((d: string) => (
+                  <li key={d} style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4, paddingLeft: 11, position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 0, top: 5, width: 4, height: 4, borderRadius: '50%', background: '#24d18c', display: 'block', flexShrink: 0 }} />
+                    {d}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {thesis.break_thesis?.length > 0 && (
+            <div style={{ background: 'rgba(255,99,117,.05)', borderRadius: 12, padding: 10, border: '1px solid rgba(255,99,117,.12)' }}>
+              <p style={{ fontSize: 10, fontWeight: 700, margin: '0 0 8px', color: '#ff6375', letterSpacing: 0.4 }}>RISKS</p>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
+                {thesis.break_thesis.map((d: string) => (
+                  <li key={d} style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4, paddingLeft: 11, position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 0, top: 5, width: 4, height: 4, borderRadius: '50%', background: '#ff6375', display: 'block', flexShrink: 0 }} />
+                    {d}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       </MobileSection>
 
-      {/* Financial Health */}
+      {/* ── Financial Health ── */}
       {(fin.market_cap || fin.revenue || fin.cash || fin.margin) && (
-        <MobileSection title="Financial Health" collapsed={collapsed['fin']} onToggle={() => toggle('fin')}>
+        <MobileSection title="Financial Health" badge={fin.margin || undefined} collapsed={collapsed['fin']} onToggle={() => toggle('fin')}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {[
-              { label: 'Market Cap', value: fin.market_cap },
-              { label: 'Revenue', value: fin.revenue },
-              { label: 'Cash', value: fin.cash },
-              { label: 'Net Margin', value: fin.margin },
+              { label: 'Market Cap', value: fin.market_cap, color: '#60a5fa' },
+              { label: 'Revenue', value: fin.revenue, color: '#24d18c' },
+              { label: 'Cash', value: fin.cash, color: '#a78bfa' },
+              { label: 'Net Margin', value: fin.margin, color: '#fbbf24' },
             ].filter((m) => m.value).map((m) => (
-              <div key={m.label} style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
-                <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block' }}>{m.label}</span>
-                <b style={{ fontSize: 16, display: 'block', marginTop: 5 }}>{m.value}</b>
+              <div key={m.label} style={{ background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 14, padding: '12px 12px 10px' }}>
+                <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block', marginBottom: 5, fontWeight: 500 }}>{m.label}</span>
+                <b style={{ fontSize: 20, display: 'block', color: m.color, lineHeight: 1 }}>{m.value}</b>
               </div>
             ))}
           </div>
-          {fin.updated && <p style={{ margin: '8px 0 0', fontSize: 10, color: 'var(--muted)' }}>Updated {fin.updated} · {fin.source}</p>}
+          {fin.updated && <p style={{ margin: '10px 0 0', fontSize: 10, color: 'var(--muted)' }}>Updated {fin.updated} · {fin.source}</p>}
         </MobileSection>
       )}
 
-      {/* Growth Engine */}
+      {/* ── Growth Engine ── */}
       {growth.drivers?.length > 0 && (
         <MobileSection title="Growth Engine" collapsed={collapsed['growth']} onToggle={() => toggle('growth')}>
-          {growth.drivers.map((d: any) => (
-            <div key={d.label} style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{d.label}</span>
-                <b style={{ fontSize: 11 }}>{d.value}%</b>
+          <div style={{ display: 'grid', gap: 13 }}>
+            {growth.drivers.map((d: any) => (
+              <div key={d.label}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: '#c4d4e8', fontWeight: 500 }}>{d.label}</span>
+                  <b style={{ fontSize: 12, color: '#24d18c' }}>{d.value}%</b>
+                </div>
+                <div style={{ height: 10, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.min(Number(d.value), 100)}%`, background: 'linear-gradient(90deg,#3b82f6,#24d18c)', borderRadius: 'inherit', boxShadow: '0 0 8px rgba(36,209,140,.25)' }} />
+                </div>
               </div>
-              <div style={{ height: 6, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.min(Number(d.value), 100)}%`, background: 'linear-gradient(90deg,#60a5fa,#24d18c)', borderRadius: 'inherit' }} />
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </MobileSection>
       )}
 
-      {/* Moat Analysis */}
+      {/* ── Moat Analysis ── */}
       {(moat.score != null || moat.metrics?.length > 0) && (
-        <MobileSection title="Moat Analysis" collapsed={collapsed['moat']} onToggle={() => toggle('moat')}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div>
-              <span style={{ fontSize: 28, fontWeight: 800, color: tone(moat.score || 0) }}>{moat.score || 0}</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>/100</span>
+        <MobileSection title="Moat Analysis" badge={moat.score != null ? `${moat.score}/100` : undefined} collapsed={collapsed['moat']} onToggle={() => toggle('moat')}>
+          <div style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
+            {moat.score != null && (
+              <RingGauge value={moat.score || 0} size={92} color={tone(moat.score || 0)} thickness={10} label={toneLabel(moat.score || 0)} />
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {(moat.metrics || []).map((m: any) => (
+                <div key={m.label} style={{ marginBottom: 9 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: '#94a3b8' }}>{m.label}</span>
+                    <b style={{ fontSize: 11, color: '#eef4fb' }}>{m.value}</b>
+                  </div>
+                  <div style={{ height: 6, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.min(Number(m.value), 100)}%`, background: 'linear-gradient(90deg,#60a5fa,#a78bfa)', borderRadius: 'inherit' }} />
+                  </div>
+                </div>
+              ))}
             </div>
-            <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 999, background: toneBg(moat.score || 0), color: tone(moat.score || 0) }}>
-              {toneLabel(moat.score || 0)}
-            </span>
           </div>
-          {(moat.metrics || []).map((m: any) => (
-            <div key={m.label} style={{ marginBottom: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{m.label}</span>
-                <b style={{ fontSize: 11 }}>{m.value}</b>
-              </div>
-              <div style={{ height: 5, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.min(Number(m.value), 100)}%`, background: '#60a5fa', borderRadius: 'inherit' }} />
-              </div>
-            </div>
-          ))}
         </MobileSection>
       )}
 
-      {/* Valuation */}
+      {/* ── Valuation ── */}
       {valuation.fair_value_dcf != null && (
-        <MobileSection title="Valuation" collapsed={collapsed['val']} onToggle={() => toggle('val')}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-            <div style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
-              <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block' }}>Fair Value (DCF)</span>
-              <b style={{ fontSize: 18, display: 'block', marginTop: 4 }}>{valuation.fair_value_dcf}</b>
+        <MobileSection title="Valuation" badge={valuation.upside || undefined} collapsed={collapsed['val']} onToggle={() => toggle('val')}>
+          <div style={{ background: 'rgba(36,209,140,.05)', border: '1px solid rgba(36,209,140,.18)', borderRadius: 16, padding: '14px 16px', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block', marginBottom: 4, fontWeight: 600, letterSpacing: 0.4 }}>UPSIDE POTENTIAL</span>
+              <span style={{ fontSize: 40, fontWeight: 800, color: '#24d18c', lineHeight: 1 }}>{valuation.upside}</span>
             </div>
-            <div style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
-              <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block' }}>Fair Value (P/E)</span>
-              <b style={{ fontSize: 18, display: 'block', marginTop: 4 }}>{valuation.fair_value_pe}</b>
-            </div>
+            <Sparkles size={38} color="rgba(36,209,140,.28)" />
           </div>
-          <div style={{ background: '#080d12', border: '1px solid var(--line)', borderRadius: 10, padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Upside Potential</span>
-            <b style={{ fontSize: 16, color: '#24d18c' }}>{valuation.upside}</b>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+            <div style={{ background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, padding: '12px 12px' }}>
+              <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Fair Value (DCF)</span>
+              <b style={{ fontSize: 20, display: 'block', color: '#eef4fb' }}>{valuation.fair_value_dcf}</b>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, padding: '12px 12px' }}>
+              <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Fair Value (P/E)</span>
+              <b style={{ fontSize: 20, display: 'block', color: '#eef4fb' }}>{valuation.fair_value_pe}</b>
+            </div>
           </div>
           {valuation.metrics?.length > 0 && (
-            <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+            <div style={{ display: 'grid', gap: 1 }}>
               {valuation.metrics.map((m: any) => (
-                <div key={m.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                  <span style={{ color: 'var(--muted)' }}>{m.label}</span>
-                  <b>{m.value}</b>
+                <div key={m.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+                  <span style={{ color: '#94a3b8' }}>{m.label}</span>
+                  <b style={{ color: '#eef4fb' }}>{m.value}</b>
                 </div>
               ))}
             </div>
@@ -737,27 +794,38 @@ function MobileResearchContent({ data }: { data: any }) {
         </MobileSection>
       )}
 
-      {/* Institutional Thesis */}
+      {/* ── Institutional Thesis ── */}
       {institutional.ownership_pct != null && (
-        <MobileSection title="Institutional Thesis" collapsed={collapsed['inst']} onToggle={() => toggle('inst')}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Institutional Ownership</span>
-            <b style={{ fontSize: 20, color: '#60a5fa' }}>{institutional.ownership_pct}%</b>
+        <MobileSection title="Institutional Thesis" badge={`${institutional.ownership_pct}% owned`} collapsed={collapsed['inst']} onToggle={() => toggle('inst')}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>Institutional Ownership</span>
+              <b style={{ fontSize: 26, color: '#60a5fa', lineHeight: 1 }}>{institutional.ownership_pct}%</b>
+            </div>
+            <div style={{ height: 12, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${Math.min(institutional.ownership_pct || 0, 100)}%`, background: 'linear-gradient(90deg,#3b82f6,#a78bfa)', borderRadius: 'inherit', boxShadow: '0 0 10px rgba(96,165,250,.2)' }} />
+            </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <p style={{ fontSize: 11, fontWeight: 600, margin: '0 0 5px', color: '#24d18c' }}>Why Buy</p>
-              <ul style={{ margin: 0, paddingLeft: 14, display: 'grid', gap: 4 }}>
+            <div style={{ background: 'rgba(36,209,140,.05)', border: '1px solid rgba(36,209,140,.12)', borderRadius: 12, padding: 10 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, margin: '0 0 8px', color: '#24d18c', letterSpacing: 0.4 }}>WHY BUY</p>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
                 {(institutional.bull_points || []).map((point: string) => (
-                  <li key={point} style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.4 }}>{point}</li>
+                  <li key={point} style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4, paddingLeft: 11, position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 0, top: 5, width: 4, height: 4, borderRadius: '50%', background: '#24d18c', display: 'block' }} />
+                    {point}
+                  </li>
                 ))}
               </ul>
             </div>
-            <div>
-              <p style={{ fontSize: 11, fontWeight: 600, margin: '0 0 5px', color: '#ff6375' }}>Why Short</p>
-              <ul style={{ margin: 0, paddingLeft: 14, display: 'grid', gap: 4 }}>
+            <div style={{ background: 'rgba(255,99,117,.05)', border: '1px solid rgba(255,99,117,.12)', borderRadius: 12, padding: 10 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, margin: '0 0 8px', color: '#ff6375', letterSpacing: 0.4 }}>WHY SHORT</p>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
                 {(institutional.bear_points || []).map((point: string) => (
-                  <li key={point} style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.4 }}>{point}</li>
+                  <li key={point} style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4, paddingLeft: 11, position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 0, top: 5, width: 4, height: 4, borderRadius: '50%', background: '#ff6375', display: 'block' }} />
+                    {point}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -765,30 +833,30 @@ function MobileResearchContent({ data }: { data: any }) {
         </MobileSection>
       )}
 
-      {/* Competitive Comparison */}
+      {/* ── Competitive Comparison ── */}
       {competitive.rows?.length > 0 && (
         <MobileSection title="Competitive Comparison" collapsed={collapsed['comp']} onToggle={() => toggle('comp')}>
-          <div style={{ overflowX: 'auto', marginLeft: -14, marginRight: -14, paddingLeft: 14, paddingRight: 14 }}>
+          <div style={{ overflowX: 'auto', marginLeft: -16, marginRight: -16, paddingLeft: 16, paddingRight: 16 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480, fontSize: 11 }}>
               <thead>
                 <tr>
                   {(competitive.columns || []).map((col: string) => (
-                    <th key={col} style={{ textAlign: col === 'Company' ? 'left' : 'right', color: 'var(--muted)', fontWeight: 500, padding: '4px 8px', whiteSpace: 'nowrap' }}>{col}</th>
+                    <th key={col} style={{ textAlign: col === 'Company' ? 'left' : 'right', color: 'var(--muted)', fontWeight: 600, padding: '5px 8px', whiteSpace: 'nowrap', fontSize: 10, letterSpacing: 0.3 }}>{col}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {competitive.rows.map((row: any) => (
-                  <tr key={row.Company} style={{ background: row.highlight ? 'rgba(96,165,250,.08)' : 'transparent', borderRadius: 8 }}>
-                    {(competitive.columns || []).map((col: string, ci: number) => {
+                  <tr key={row.Company} style={{ background: row.highlight ? 'rgba(96,165,250,.06)' : 'transparent' }}>
+                    {(competitive.columns || []).map((col: string) => {
                       const val = row[col] ?? '—'
                       const isComp = col === 'Company'
                       const isRevGrowth = col === 'Rev Growth'
                       const color = isRevGrowth
                         ? String(val).startsWith('+') ? '#24d18c' : '#ff6375'
-                        : isComp && row.highlight ? '#60a5fa' : 'inherit'
+                        : isComp && row.highlight ? '#60a5fa' : '#c4d4e8'
                       return (
-                        <td key={col} style={{ textAlign: isComp ? 'left' : 'right', padding: '7px 8px', color, fontWeight: isComp ? 700 : 400, borderBottom: '1px solid rgba(31,42,55,.5)', whiteSpace: 'nowrap' }}>
+                        <td key={col} style={{ textAlign: isComp ? 'left' : 'right', padding: '8px 8px', color, fontWeight: isComp ? 700 : 400, borderBottom: '1px solid rgba(31,42,55,.5)', whiteSpace: 'nowrap' }}>
                           {val}
                         </td>
                       )
@@ -801,59 +869,65 @@ function MobileResearchContent({ data }: { data: any }) {
         </MobileSection>
       )}
 
-      {/* Risk Analysis */}
+      {/* ── Risk Analysis ── */}
       {risk.categories?.length > 0 && (
-        <MobileSection title="Risk Analysis" collapsed={collapsed['risk']} onToggle={() => toggle('risk')}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div>
-              <span style={{ fontSize: 28, fontWeight: 800, color: (risk.score || 0) >= 70 ? '#ff6375' : '#fbbf24' }}>{risk.score || 0}</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>/100</span>
+        <MobileSection title="Risk Analysis" badge={risk.score != null ? `${risk.score} risk` : undefined} collapsed={collapsed['risk']} onToggle={() => toggle('risk')}>
+          <div style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
+            {risk.score != null && (
+              <RingGauge
+                value={risk.score || 0}
+                size={92}
+                color={(risk.score || 0) >= 70 ? '#ff6375' : '#fbbf24'}
+                thickness={10}
+                label={(risk.score || 0) >= 70 ? 'High Risk' : 'Moderate'}
+              />
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {risk.categories.map((c: any) => {
+                const riskColor = c.tone === 'red' ? '#ff6375' : c.tone === 'amber' ? '#fbbf24' : '#24d18c'
+                return (
+                  <div key={c.label} style={{ marginBottom: 9 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>{c.label}</span>
+                      <b style={{ fontSize: 11, color: riskColor }}>{c.value}</b>
+                    </div>
+                    <div style={{ height: 7, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.min(Number(c.value), 100)}%`, background: riskColor, borderRadius: 'inherit', opacity: 0.85 }} />
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-            <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 999, background: (risk.score || 0) >= 70 ? 'rgba(255,99,117,.12)' : 'rgba(251,191,36,.12)', color: (risk.score || 0) >= 70 ? '#ff6375' : '#fbbf24' }}>
-              {(risk.score || 0) >= 70 ? 'High Risk' : 'Moderate'}
-            </span>
           </div>
-          {risk.categories.map((c: any) => {
-            const riskColor = c.tone === 'red' ? '#ff6375' : c.tone === 'amber' ? '#fbbf24' : '#24d18c'
-            return (
-              <div key={c.label} style={{ marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{c.label}</span>
-                  <b style={{ fontSize: 11, color: riskColor }}>{c.value}</b>
-                </div>
-                <div style={{ height: 5, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.min(Number(c.value), 100)}%`, background: riskColor, borderRadius: 'inherit' }} />
-                </div>
-              </div>
-            )
-          })}
         </MobileSection>
       )}
 
-      {/* Bull vs Bear */}
+      {/* ── Bull vs Bear ── */}
       {bullbear.bull_probability != null && (
-        <MobileSection title="Bull vs Bear" collapsed={collapsed['bb']} onToggle={() => toggle('bb')}>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-              <span style={{ fontSize: 11, color: '#24d18c' }}>Bull {bullbear.bull_probability || 0}%</span>
-              <span style={{ fontSize: 11, color: '#ff6375' }}>Bear {100 - (bullbear.bull_probability || 0)}%</span>
+        <MobileSection title="Bull vs Bear" badge={`${bullbear.bull_probability || 0}% bull`} collapsed={collapsed['bb']} onToggle={() => toggle('bb')}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7 }}>
+              <span style={{ fontSize: 12, color: '#24d18c', fontWeight: 700 }}>Bull {bullbear.bull_probability || 0}%</span>
+              <span style={{ fontSize: 12, color: '#ff6375', fontWeight: 700 }}>Bear {100 - (bullbear.bull_probability || 0)}%</span>
             </div>
-            <div style={{ height: 8, background: '#121a25', borderRadius: 999, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${bullbear.bull_probability || 0}%`, background: 'linear-gradient(90deg,#24d18c,#60a5fa)', borderRadius: 'inherit' }} />
+            <div style={{ height: 13, background: '#121a25', borderRadius: 999, overflow: 'hidden', display: 'flex' }}>
+              <div style={{ flex: bullbear.bull_probability || 0, background: 'linear-gradient(90deg,#24d18c,#60a5fa)', borderRadius: '999px 0 0 999px' }} />
+              <div style={{ flex: 100 - (bullbear.bull_probability || 0), background: 'linear-gradient(90deg,#7c3aed,#ff6375)', borderRadius: '0 999px 999px 0' }} />
             </div>
           </div>
           {(['bull', 'base', 'bear'] as const).map((key) => {
             const text = bullbear.scenarios?.[key]
             if (!text) return null
             const color = key === 'bull' ? '#24d18c' : key === 'bear' ? '#ff6375' : '#60a5fa'
-            const border = key === 'bull' ? 'rgba(36,209,140,.2)' : key === 'bear' ? 'rgba(255,99,117,.2)' : 'var(--line)'
+            const bg = key === 'bull' ? 'rgba(36,209,140,.05)' : key === 'bear' ? 'rgba(255,99,117,.05)' : 'rgba(96,165,250,.05)'
+            const border = key === 'bull' ? 'rgba(36,209,140,.2)' : key === 'bear' ? 'rgba(255,99,117,.2)' : 'rgba(96,165,250,.2)'
             return (
               <div
                 key={key}
-                style={{ background: '#080d12', border: `1px solid ${border}`, borderLeft: `3px solid ${color}`, borderRadius: 12, padding: 10, marginBottom: 8 }}
+                style={{ background: bg, border: `1px solid ${border}`, borderLeft: `3px solid ${color}`, borderRadius: 14, padding: '11px 13px', marginBottom: 8 }}
               >
-                <b style={{ fontSize: 12, color, display: 'block', marginBottom: 4, textTransform: 'capitalize' }}>{key} Case</b>
-                <p style={{ margin: 0, fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{text}</p>
+                <b style={{ fontSize: 10, color, display: 'block', marginBottom: 5, letterSpacing: 0.5 }}>{key.toUpperCase()} CASE</b>
+                <p style={{ margin: 0, fontSize: 11, color: '#94a3b8', lineHeight: 1.55 }}>{text}</p>
               </div>
             )
           })}
