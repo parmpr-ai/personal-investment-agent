@@ -19,6 +19,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { mask } from '../../lib/pia-api'
 import AIHero from './AIHero'
 import type { CaseType as HeroCaseType } from './AIHero'
+import StockAiResearchTab from './StockAiResearchTab'
 
 const EMPTY = '--'
 const METRIC_EMPTY = 'Not enough data available to calculate this metric.'
@@ -801,6 +802,7 @@ function AiExpandedV2({
   frontendContract,
   companyName,
   companySymbol,
+  source,
 }: {
   verdictState: VerdictState
   composite: number | null
@@ -819,6 +821,7 @@ function AiExpandedV2({
   frontendContract?: any
   companyName?: string
   companySymbol?: string
+  source?: any
 }) {
   const [activeTab, setActiveTab] = useState<'overview' | 'research' | 'portfolio' | 'history'>('overview')
   const [infoPopover, setInfoPopover] = useState<{ section: string; top: number; left: number } | null>(null)
@@ -1395,9 +1398,12 @@ function AiExpandedV2({
 
           {/* ═════════════ RESEARCH TAB ════════════════ */}
           {activeTab === 'research' && (
-            <div style={{ padding: '24px 16px', color: 'rgba(255,255,255,.5)', fontSize: 15, textAlign: 'center' }}>
-              Research analysis coming soon.
-            </div>
+            <StockAiResearchTab
+              ticker={companySymbol || ''}
+              source={source}
+              hidden={hidden}
+              caseType={caseType}
+            />
           )}
 
           {/* ═════════════ PORTFOLIO TAB ════════════════ */}
@@ -2179,6 +2185,7 @@ export default function StockAiIntelligenceWidget({
           frontendContract={fc}
           companyName={companyName}
           companySymbol={companySymbol}
+          source={source}
         />
       )}
 

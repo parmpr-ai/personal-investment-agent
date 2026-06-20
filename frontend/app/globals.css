@@ -2158,3 +2158,237 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
   .sai-exp25-hero-asset .aih-root{width:130px!important;height:130px!important}
   .sai-exp25-verdict-big{font-size:40px}
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   AI RESEARCH TAB  —  sai-res-*  /  sai-rsc-*
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Root */
+.sai-res-root{padding:0 0 32px;color:#fff;background:transparent}
+.sai-res-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:48px 16px;color:rgba(255,255,255,.4);font-size:13px}
+.sai-res-spinner{width:28px;height:28px;border:3px solid rgba(255,255,255,.12);border-top-color:#31E95D;border-radius:50%;animation:spin .8s linear infinite}
+.sai-res-empty{padding:32px 16px;color:rgba(255,255,255,.4);font-size:13px;text-align:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Research Summary ──────────────────────────────────────────── */
+.sai-res-summary{padding:14px 16px 0}
+.sai-res-sum-hdr{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+.sai-res-sum-ttl{font-size:13px;font-weight:700;color:#fff}
+.sai-res-sum-date{font-size:10px;color:rgba(255,255,255,.35)}
+.sai-res-sum-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.sai-res-sum-card{background:#13131f;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:8px 6px;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer;transition:border-color .2s;text-align:center}
+.sai-res-sum-card:hover{border-color:rgba(255,255,255,.18)}
+.sai-res-sum-score{font-size:18px;font-weight:900;line-height:1}
+.sai-res-sum-max{font-size:8px;color:rgba(255,255,255,.35);margin-top:-1px}
+.sai-res-sum-label{font-size:9px;font-weight:600;color:rgba(255,255,255,.5);letter-spacing:.05em;margin-top:2px}
+.sai-res-sum-class{font-size:8px;font-weight:600;letter-spacing:.04em}
+
+/* ── Section container ─────────────────────────────────────────── */
+.sai-res-section{border-bottom:1px solid rgba(255,255,255,.06)}
+.sai-res-sec-hdr{display:flex;align-items:center;justify-content:space-between;padding:13px 16px 13px;cursor:pointer;user-select:none}
+.sai-res-sec-ttl{font-size:14px;font-weight:700;color:#fff}
+.sai-res-sec-hdr-right{display:flex;align-items:center;gap:8px}
+.sai-res-chevron{font-size:10px;color:rgba(255,255,255,.4);width:12px;text-align:center}
+
+/* ── Accordion body ────────────────────────────────────────────── */
+.sai-res-body{overflow:hidden;max-height:0;opacity:0;transition:max-height .3s ease,opacity .2s ease}
+.sai-res-body--open{max-height:2400px;opacity:1}
+
+/* ── Score bar ─────────────────────────────────────────────────── */
+.sai-res-bar-track{width:100%;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden}
+.sai-res-bar-fill{height:100%;border-radius:99px;transition:width .4s ease}
+
+/* ── Provenance footer ─────────────────────────────────────────── */
+.sai-res-prov{padding:10px 16px 14px;border-top:1px solid rgba(255,255,255,.05);margin-top:8px;display:flex;flex-direction:column;gap:3px}
+.sai-res-prov-row{display:flex;flex-wrap:wrap;gap:8px}
+.sai-res-prov span{font-size:9px;color:rgba(255,255,255,.3)}
+.sai-res-prov strong{font-weight:600;color:rgba(255,255,255,.45)}
+.sai-res-prov-calc{font-size:9px;color:rgba(255,255,255,.22);line-height:1.4;margin-top:2px}
+
+/* ── Tags ──────────────────────────────────────────────────────── */
+.sai-res-tag{display:inline-block;font-size:10px;font-weight:600;color:rgba(255,255,255,.6);background:rgba(255,255,255,.07);border-radius:5px;padding:2px 7px}
+.sai-res-it-tags{display:flex;flex-wrap:wrap;gap:5px;padding:8px 16px 0}
+
+/* ── Summary text (generic fallback) ─────────────────────────── */
+.sai-res-summary-text{padding:12px 16px;font-size:12px;color:rgba(255,255,255,.6);line-height:1.5}
+
+/* ── Investment Thesis ─────────────────────────────────────────── */
+.sai-res-it-body{padding:4px 0 0}
+.sai-res-it-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0;border-bottom:1px solid rgba(255,255,255,.06)}
+.sai-res-it-col{padding:10px 14px 12px;border-right:1px solid rgba(255,255,255,.06)}
+.sai-res-it-col:nth-child(2n){border-right:none}
+.sai-res-it-col:nth-child(3),.sai-res-it-col:nth-child(4){border-top:1px solid rgba(255,255,255,.06)}
+.sai-res-it-col-ttl{font-size:9px;font-weight:700;letter-spacing:.07em;color:rgba(255,255,255,.45);text-transform:uppercase;margin-bottom:6px}
+.sai-res-it-para{font-size:11px;color:rgba(255,255,255,.7);line-height:1.5;margin:0}
+.sai-res-it-moat{font-size:10px;color:rgba(255,255,255,.45);margin-top:5px}
+.sai-res-it-moat strong{color:rgba(255,255,255,.7)}
+.sai-res-it-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:5px}
+.sai-res-it-list li{font-size:11px;color:rgba(255,255,255,.7);line-height:1.4;padding-left:10px;position:relative}
+.sai-res-it-list li::before{content:'•';position:absolute;left:0;color:rgba(255,255,255,.3)}
+.sai-res-it-list--green li::before{color:#31E95D}
+.sai-res-it-list--red li::before{color:#FF3D3D}
+.sai-res-it-na{font-size:10px!important;color:rgba(255,255,255,.25)!important}
+
+/* ── Financial Health ──────────────────────────────────────────── */
+.sai-res-fh-body{padding:4px 0 0}
+.sai-res-fh-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0}
+.sai-res-fh-card{padding:12px 14px;border-right:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;gap:3px}
+.sai-res-fh-card:nth-child(2n){border-right:none}
+.sai-res-fh-lbl{font-size:10px;color:rgba(255,255,255,.4);font-weight:600}
+.sai-res-fh-val{font-size:16px;font-weight:800;line-height:1}
+.sai-res-fh-yoy{font-size:10px;font-weight:600}
+.sai-res-fh-stats{display:flex;gap:0;border-bottom:1px solid rgba(255,255,255,.06)}
+.sai-res-fh-stat{flex:1;padding:10px 14px;border-right:1px solid rgba(255,255,255,.06)}
+.sai-res-fh-stat:last-child{border-right:none}
+.sai-res-fh-stat-lbl{display:block;font-size:9px;color:rgba(255,255,255,.35);margin-bottom:2px}
+.sai-res-fh-stat-val{font-size:13px;font-weight:700;color:#fff}
+
+/* ── Growth Engine ─────────────────────────────────────────────── */
+.sai-res-ge-body{padding:12px 16px 4px}
+.sai-res-ge-score-row{display:flex;gap:16px;align-items:flex-start;margin-bottom:16px}
+.sai-res-ge-score-panel{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:72px}
+.sai-res-ge-score-num{font-size:36px;font-weight:900;line-height:1}
+.sai-res-ge-score-lbl{font-size:10px;color:rgba(255,255,255,.4);white-space:nowrap}
+.sai-res-ge-info{flex:1}
+.sai-res-ge-info-ttl{font-size:10px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.sai-res-ge-info-val{font-size:16px;font-weight:800}
+.sai-res-ge-info-sub{font-size:10px;color:rgba(255,255,255,.45);margin-top:2px;line-height:1.4}
+.sai-res-ge-drivers-ttl{font-size:10px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.sai-res-ge-drivers{display:flex;flex-direction:column;gap:7px;margin-bottom:12px}
+.sai-res-ge-driver-row{display:flex;align-items:center;gap:8px}
+.sai-res-ge-driver-lbl{font-size:11px;color:rgba(255,255,255,.75);min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sai-res-ge-driver-row .sai-res-bar-track{width:80px;height:4px;flex-shrink:0}
+.sai-res-ge-driver-badge{font-size:10px;font-weight:600;flex-shrink:0}
+.sai-res-ge-kp{display:flex;flex-direction:column;gap:4px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06)}
+.sai-res-ge-kp-item{font-size:10px;color:rgba(255,255,255,.45);line-height:1.4}
+
+/* ── Moat Analysis ─────────────────────────────────────────────── */
+.sai-res-ma-body{padding:12px 16px 4px}
+.sai-res-ma-row{display:flex;gap:12px;align-items:flex-start}
+.sai-res-ma-comps{flex:1;display:flex;flex-direction:column;gap:8px}
+.sai-res-ma-comp-row{display:flex;align-items:center;gap:6px}
+.sai-res-ma-comp-lbl{font-size:10px;color:rgba(255,255,255,.6);min-width:100px;flex-shrink:0}
+.sai-res-ma-comp-val{font-size:11px;font-weight:700;min-width:24px;text-align:right;flex-shrink:0}
+.sai-res-ma-comp-bar{flex:1;height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;min-width:40px}
+.sai-res-ma-score-panel{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:72px;flex-shrink:0}
+.sai-res-ma-score-shield{display:flex;flex-direction:column;align-items:center;background:rgba(255,255,255,.05);border-radius:12px;padding:8px 10px;border:1px solid rgba(255,255,255,.1)}
+.sai-res-ma-score-num{font-size:28px;font-weight:900;line-height:1}
+.sai-res-ma-score-sub{font-size:9px;color:rgba(255,255,255,.3)}
+.sai-res-ma-score-lbl{font-size:9px;color:rgba(255,255,255,.4);text-align:center;margin-top:2px}
+.sai-res-ma-rating{font-size:11px;font-weight:700;text-align:center}
+.sai-res-ma-drivers{display:flex;flex-direction:column;gap:2px;margin-top:6px;align-items:center}
+.sai-res-ma-driver{font-size:9px;color:rgba(255,255,255,.45);text-align:center;line-height:1.3}
+
+/* ── Valuation ─────────────────────────────────────────────────── */
+.sai-res-val-body{padding:12px 16px 4px}
+.sai-res-val-row{display:flex;gap:12px;align-items:flex-start}
+.sai-res-val-prices{flex:1;display:flex;flex-direction:column;gap:8px}
+.sai-res-val-price-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.05)}
+.sai-res-val-price-row:last-child{border-bottom:none}
+.sai-res-val-price-lbl{font-size:11px;color:rgba(255,255,255,.45)}
+.sai-res-val-price-val{font-size:14px;font-weight:700;color:#fff}
+.sai-res-val-range{padding:6px 0}
+.sai-res-val-range-row{display:flex;justify-content:space-between;font-size:10px;font-weight:600}
+.sai-res-val-score-col{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:80px;flex-shrink:0}
+.sai-res-val-score{font-size:32px;font-weight:900;line-height:1}
+.sai-res-val-score-lbl{font-size:9px;color:rgba(255,255,255,.4);text-align:center}
+.sai-res-val-score-col .sai-res-bar-track{width:64px;height:4px}
+.sai-res-val-multiples{display:flex;flex-direction:column;gap:4px;width:100%;margin-top:8px}
+.sai-res-val-mult-row{display:flex;justify-content:space-between;font-size:10px}
+.sai-res-val-mult-row span:first-child{color:rgba(255,255,255,.4)}
+.sai-res-val-mult-row span:last-child{font-weight:600;color:#fff}
+
+/* ── Institutional Thesis ──────────────────────────────────────── */
+.sai-res-inst-body{padding:12px 0 4px}
+.sai-res-inst-row{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid rgba(255,255,255,.06)}
+.sai-res-inst-col{padding:0 14px 12px;border-right:1px solid rgba(255,255,255,.06)}
+.sai-res-inst-col:last-child{border-right:none}
+.sai-res-inst-col-ttl{font-size:8px;font-weight:700;letter-spacing:.08em;margin-bottom:8px}
+.sai-res-inst-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:5px}
+.sai-res-inst-list li{font-size:11px;color:rgba(255,255,255,.7);padding-left:10px;position:relative;line-height:1.35}
+.sai-res-inst-list li::before{content:'•';position:absolute;left:0;color:#31E95D}
+.sai-res-inst-list--red li::before{color:#FF3D3D}
+.sai-res-inst-footer{display:flex;align-items:center;gap:16px;padding:12px 16px}
+.sai-res-inst-own{display:flex;align-items:center;gap:8px}
+.sai-res-inst-own-lbl{font-size:9px;color:rgba(255,255,255,.4);line-height:1.4}
+.sai-res-inst-sent{display:flex;flex-direction:column;gap:2px}
+.sai-res-inst-flow{display:flex;flex-direction:column;gap:2px}
+.sai-res-inst-sent-lbl{font-size:9px;color:rgba(255,255,255,.35)}
+.sai-res-inst-sent-val{font-size:14px;font-weight:800}
+
+/* ── Competitive Comparison ────────────────────────────────────── */
+.sai-res-cc-body{padding:0 0 4px}
+.sai-res-cc-empty{padding:12px 16px}
+.sai-res-cc-empty p{font-size:11px;color:rgba(255,255,255,.45);line-height:1.5;margin:0 0 8px}
+.sai-res-cc-table-wrap{overflow-x:auto;padding:0 16px}
+.sai-res-cc-table{width:100%;border-collapse:collapse;font-size:11px}
+.sai-res-cc-table th{font-size:9px;color:rgba(255,255,255,.35);font-weight:600;letter-spacing:.05em;text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.08)}
+.sai-res-cc-table td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);color:rgba(255,255,255,.8)}
+.sai-res-cc-table tr:last-child td{border-bottom:none}
+
+/* ── Risk Analysis ─────────────────────────────────────────────── */
+.sai-res-ra-body{padding:12px 16px 4px}
+.sai-res-ra-overview{display:flex;gap:20px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.06)}
+.sai-res-ra-stat{display:flex;flex-direction:column;gap:2px}
+.sai-res-ra-stat-lbl{font-size:9px;color:rgba(255,255,255,.35)}
+.sai-res-ra-stat-val{font-size:16px;font-weight:800}
+.sai-res-ra-cards{display:flex;flex-direction:column;gap:8px}
+.sai-res-ra-card{background:rgba(255,255,255,.03);border-radius:8px;padding:10px 12px;border:1px solid rgba(255,255,255,.06)}
+.sai-res-ra-card-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+.sai-res-ra-card-ttl{font-size:12px;font-weight:700;color:#fff}
+.sai-res-ra-sev{font-size:9px;font-weight:700;border:1px solid;border-radius:4px;padding:1px 6px;letter-spacing:.04em}
+.sai-res-ra-impact{font-size:11px;color:rgba(255,255,255,.6);margin:0 0 3px;line-height:1.4}
+.sai-res-ra-watch{font-size:10px;color:rgba(255,255,255,.35);margin:0;line-height:1.4;font-style:italic}
+
+/* ── Bull vs Bear Debate ───────────────────────────────────────── */
+.sai-res-bvb-body{padding:12px 0 4px}
+.sai-res-bvb-cols{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid rgba(255,255,255,.06)}
+.sai-res-bvb-col{padding:0 14px 12px;border-right:1px solid rgba(255,255,255,.06)}
+.sai-res-bvb-col:last-child{border-right:none}
+.sai-res-bvb-col-ttl{font-size:8px;font-weight:700;letter-spacing:.08em;margin-bottom:6px}
+.sai-res-bvb-arg{font-size:11px;color:rgba(255,255,255,.7);margin:0 0 6px;line-height:1.4}
+.sai-res-bvb-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:5px}
+.sai-res-bvb-col--bull .sai-res-bvb-list li::before{content:'•';color:#31E95D}
+.sai-res-bvb-col--bear .sai-res-bvb-list li::before{content:'•';color:#FF3D3D}
+.sai-res-bvb-list li{font-size:10px;color:rgba(255,255,255,.65);padding-left:10px;position:relative;line-height:1.35}
+.sai-res-bvb-neutral{padding:12px 16px}
+.sai-res-bvb-neutral-ttl{font-size:10px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+.sai-res-bvb-neutral p{font-size:11px;color:rgba(255,255,255,.6);margin:0;line-height:1.5}
+
+/* ── Earnings Breakdown ────────────────────────────────────────── */
+.sai-res-eb-body{padding:12px 16px 4px}
+.sai-res-eb-row{display:flex;flex-wrap:wrap;gap:0;margin-bottom:12px}
+.sai-res-eb-stat{flex:1;min-width:80px;padding:0 12px 10px 0}
+.sai-res-eb-stat-lbl{display:block;font-size:9px;color:rgba(255,255,255,.35);margin-bottom:3px}
+.sai-res-eb-stat-val{font-size:16px;font-weight:800;color:#fff}
+.sai-res-eb-takeaway{font-size:11px;color:rgba(255,255,255,.5);line-height:1.5;margin:0;padding-top:8px;border-top:1px solid rgba(255,255,255,.06)}
+
+/* ── Customize button ──────────────────────────────────────────── */
+.sai-res-cust-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:calc(100% - 32px);margin:16px 16px 0;padding:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;color:rgba(255,255,255,.6);font-size:12px;font-weight:600;cursor:pointer;transition:background .2s}
+.sai-res-cust-btn:hover{background:rgba(255,255,255,.09)}
+
+/* ── Customize drawer ──────────────────────────────────────────── */
+.sai-rsc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:stretch}
+.sai-rsc-drawer{position:fixed;right:0;top:0;bottom:0;width:300px;max-width:92vw;background:#141420;border-left:1px solid rgba(255,255,255,.1);display:flex;flex-direction:column;overflow-y:auto;z-index:10000;padding-bottom:32px}
+.sai-rsc-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;font-size:14px;font-weight:700;color:#fff}
+.sai-rsc-close{background:none;border:none;color:rgba(255,255,255,.5);font-size:16px;cursor:pointer;padding:2px 6px}
+.sai-rsc-group{padding:16px;border-bottom:1px solid rgba(255,255,255,.06)}
+.sai-rsc-group-ttl{font-size:11px;font-weight:700;color:rgba(255,255,255,.45);letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px}
+.sai-rsc-layout-list{display:flex;flex-direction:column;gap:0}
+.sai-rsc-layout-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.sai-rsc-layout-row:last-child{border-bottom:none}
+.sai-rsc-drag-handle{font-size:14px;color:rgba(255,255,255,.2);cursor:grab;flex-shrink:0}
+.sai-rsc-layout-lbl{flex:1;font-size:12px;color:rgba(255,255,255,.75)}
+.sai-rsc-toggle{width:36px;height:20px;border-radius:10px;border:none;background:rgba(255,255,255,.12);position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+.sai-rsc-toggle--on{background:#31E95D}
+.sai-rsc-toggle-knob{position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .2s}
+.sai-rsc-toggle--on .sai-rsc-toggle-knob{transform:translateX(16px)}
+.sai-rsc-size-row{display:flex;gap:6px}
+.sai-rsc-size-btn{flex:1;padding:8px 4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.6);font-size:12px;font-weight:600;cursor:pointer;transition:all .2s}
+.sai-rsc-size-btn--active{background:#31E95D;border-color:#31E95D;color:#000}
+.sai-rsc-state-list{display:flex;flex-direction:column;gap:5px}
+.sai-rsc-state-btn{width:100%;padding:9px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:8px;color:rgba(255,255,255,.6);font-size:12px;text-align:left;cursor:pointer;transition:all .2s}
+.sai-rsc-state-btn--active{background:rgba(49,233,93,.1);border-color:#31E95D;color:#31E95D}
+.sai-rsc-hint{font-size:10px;color:rgba(255,255,255,.25);margin-top:4px}
+.sai-rsc-reset{margin:12px 16px 0;padding:9px;background:none;border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.4);font-size:11px;cursor:pointer;width:calc(100% - 32px)}
+.sai-rsc-reset:hover{border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.6)}
