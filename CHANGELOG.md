@@ -1,5 +1,26 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.28 - AI Intelligence V2 Governance Refresh (ATHENA-GOV-021)
+
+Date: 2026-06-22
+Status: Documentation/governance only — no code. AI Intelligence V2 is a Release Candidate pending UAT.
+
+### Locked decisions
+
+* **DEC-AI-009 — Shared Intelligence Data Layer:** AI Intelligence consumes data exclusively via the Shared Intelligence Context Layer; widgets may not access providers directly. Consumers: AI Intelligence, Analyst Targets, Company, Financials, News, Videos.
+* **DEC-AI-010 — AI Verdict Separation:** AI Verdict (BUY/HOLD/SELL) is independent from Portfolio Recommendation (ADD/HOLD/TRIM/REDUCE/AVOID). Compact = verdict only; Expanded may show portfolio recommendation.
+* **DEC-AI-011 — Hero System Standardization:** shared neon-wireframe/lattice hero assets across all states; solid-fill/mascot/cartoon/emoji rejected; compact + expanded use identical hero.
+
+### Delivery / status
+
+* HERMES-AI-005 (Shared Intelligence Context Layer) and HERMES-AI-006 (cache, freshness, frontend contract lock, example payloads, validation, lightweight contract mode) — COMPLETE/Accepted. Perf: warm 6ms compact / 9ms expanded; cold 1.9–2.8s.
+* ARTEMIS-AI-011 V2 (Compact + Expanded) — IN PROGRESS. CR-AI-011 visual parity — OPEN (release blocker).
+* Backlog added: HERMES-AI-007 (Parallel Context Hydration, P2), CR-HERMES-006-01 (Contract Versioning, P3).
+
+### New trackers
+
+* `docs/PROJECT_STATUS.md`, `docs/ROADMAP.md`, `docs/RELEASE_NOTES_DRAFT.md`. Progress: backend 98% / frontend 80% / overall 92–93%. Release blockers: CR-AI-011, real endpoint wiring, final UAT.
+
 ## v0.3.27 - AI Intelligence Compact V3 Redesign
 
 Date: 2026-06-22

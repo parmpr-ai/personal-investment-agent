@@ -128,6 +128,32 @@ Screenshots committed under `frontend/uat-screenshots/cr-ai-compact-v3-cr002/` f
 
 ---
 
+## 1c. AI Intelligence V2 — Governance, Decisions & Delivery (ATHENA-GOV-021)
+
+Release status: **Release Candidate — pending UAT.** Backend 98% / Frontend 80% / Overall 92–93%.
+
+### Locked decisions
+- **DEC-AI-009 — Shared Intelligence Data Layer:** AI Intelligence consumes data exclusively through the Shared Intelligence Context Layer; direct provider access from widgets is prohibited. Consumers: AI Intelligence, Analyst Targets, Company, Financials, News, Videos.
+- **DEC-AI-010 — AI Verdict Separation:** AI Verdict (BUY/HOLD/SELL) ⟂ Portfolio Recommendation (ADD/HOLD/TRIM/REDUCE/AVOID). Compact shows verdict only; Expanded may show portfolio recommendation.
+- **DEC-AI-011 — Hero System Standardization:** shared neon-wireframe/lattice/institutional hero assets across all states; identical hero in Compact and Expanded; solid-fill/mascot/cartoon/emoji rejected.
+
+### Backend delivery (HERMES)
+- **HERMES-AI-005 (COMPLETE/Accepted):** Shared Intelligence Context Layer — context aggregation, context endpoints, validation suite, coverage validation.
+- **HERMES-AI-006 (COMPLETE/Accepted):** cache policy, source freshness metadata, frontend contract lock, example payloads, contract validation, frontend lightweight contract mode.
+- Performance — warm: 6ms compact / 9ms expanded. Cold: AAPL 2822ms, NVDA 2446ms, AMD 1919ms, TSM 1924ms, PLTR 1887ms (cold-load optimization tracked as HERMES-AI-007).
+
+### Frontend delivery (ARTEMIS)
+- **ARTEMIS-AI-011 (IN PROGRESS):** AI Intelligence V2 Compact + Expanded.
+- **CR-AI-011 (OPEN, release blocker):** visual parity — expanded V2 UX fixes + compact overflow.
+
+### Release blockers
+CR-AI-011 visual parity · real endpoint wiring · final UAT pass.
+
+### Design lock tracker
+AI Intelligence V2 design locked (APPROVED). Spec under `docs/mocks/ai-intelligence/APPROVED/` (compact spec present as stub — completion required per DESIGN-LOCK-002). Implementation IN PROGRESS; current CR = CR-AI-011.
+
+---
+
 ## 2. AI Engine
 
 ### Status

@@ -92,6 +92,14 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - CR-AI-COMPACT-REDESIGN-002 — Card customization (show/hide, drag reorder, three-dot Customize AI Cards sheet, persisted). IMPLEMENTED (ARTEMIS, 3887882).
   - CR-AI-COMPACT-REDESIGN-003 — Semantic tone engine (tone → border/glow/chart stroke; High=red, Low=green; BUY may contain red cards). IMPLEMENTED (ARTEMIS, 3887882).
   - CR-AI-COMPACT-V3-UAT — UAT PASS decision PENDING (APOLLO/PO): NVDA BUY / NBIS HOLD / AAPL HOLD widget+customize screenshots at 390/430 under frontend/uat-screenshots/cr-ai-compact-v3-cr002/.
+- EPIC AI Intelligence V2 — Release Candidate (pending UAT) — 2026-06-22 (ATHENA-GOV-021). Backend 98% / Frontend 80% / Overall 92–93%. Blockers: CR-AI-011 visual parity, real endpoint wiring, final UAT.
+  - HERMES-AI-005 Shared Intelligence Context Layer — COMPLETE/Accepted (HERMES): context aggregation, context endpoints, validation suite, coverage validation.
+  - HERMES-AI-006 Cache + Freshness + Frontend Contract Lock — COMPLETE/Accepted (HERMES): cache policy, source freshness metadata, frontend contract lock, example payloads, contract validation, lightweight contract mode. Perf: warm 6ms compact / 9ms expanded; cold AAPL 2822 / NVDA 2446 / AMD 1919 / TSM 1924 / PLTR 1887 ms.
+  - ARTEMIS-AI-011 AI Intelligence V2 full implementation (Compact + Expanded) — IN PROGRESS (ARTEMIS, commits 4982058/32a7814/8a1b579).
+  - CR-AI-011 Visual parity (expanded V2 UX fixes + compact overflow) — OPEN (ARTEMIS, e67952f); release blocker.
+  - HERMES-AI-007 Parallel Context Hydration — BACKLOG P2 (cold 1.9–2.8s → target <1.5s).
+  - CR-HERMES-006-01 Contract Versioning (schemaVersion/contractVersion in frontendPayload) — BACKLOG P3.
+  - Decisions: DEC-AI-009/010/011 LOCKED. Design tracker: AI_INTELLIGENCE_COMPACT_V2_DESIGN_SPEC.md (stub — see DESIGN-LOCK-002).
 - ATHENA-AI-001 AI Intelligence Architecture & Documentation Consolidation. IMPLEMENTED 2026-06-17 (ATHENA): Architecture document created at `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md`. All 9 AI Intelligence subsystems captured: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, Auto Investor. Changelog and UAT Tracking synchronized.
 - EPIC-AI-INTELLIGENCE-ENGINE-001 Explainable Multi-Source Investment Intelligence Engine. IMPLEMENTED 2026-06-17 (HERMES): V1 backend scoring engine added for actionable stock verdict, portfolio-aware recommendation, expected return, conviction, thesis strength, risk, visual state, scenario probabilities, drivers/risks, score breakdown, factors evaluated, confidence notes, debug mode, and cache-backed `/api/intelligence/{symbol}/score`.
 - ATHENA-AI-002 AI Engine — Full Scoring Pipeline. ROADMAP: Rules-based scoring for Momentum, Trend, Sentiment, Institutional, Fair Value, Risk metrics with sub-factor breakdowns. Requires metric score persistence layer (ATHENA-AI-003). Owner: ATHENA.
@@ -305,6 +313,9 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - AI Intelligence V2 is the official approved design (PO-approved, 10/10); V1 deprecated. Spec: docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md. All future AI Intelligence work must follow V2.
 - DEC-GOV-004 (LOCKED): Approved Mock Preservation & Design Lock Traceability — every Design Lock must archive the approved mock under `docs/mocks/<feature>/APPROVED_<feature>_v<version>.png` and COMMIT it before implementation starts; record the approved-mock path in the backlog item, UAT ticket, and Design Lock notes. Process: Requirement → UX Mockup → Design Review → Design Lock → SAVE approved mock → COMMIT approved mock → Implementation → UAT. UAT reports must include Approved Mock <path>, Design Lock Commit <id>, Implementation Commit <id>. Non-compliance: implementation started without an archived approved mock is a governance violation and is blocked until the mock is committed. Reason: Analyst Targets drifted because the approved mock was not preserved as a repo source of truth.
 - DEC-AI-CV3 (LOCKED): AI Intelligence Compact V3 design lock principles — (1) no Last Updated; (2) no score badge; (3) no dots/arrows; (4) 3 rows; (5) 4 cards per row; (6) 2.2 visible cards per row; (7) card customization (show/hide, reorder, persisted); (8) semantic card coloring (tone → border/glow/chart stroke). Approved Compact V3 redesign; commits 1b7d426, 3887882.
+- DEC-AI-009 (LOCKED): Shared Intelligence Data Layer — AI Intelligence consumes data exclusively through the Shared Intelligence Context Layer; direct provider access from widgets is prohibited. Consumers: AI Intelligence, Analyst Targets, Company, Financials, News, Videos. Rationale: avoid duplicate fetch logic; consistency; centralized caching + validation.
+- DEC-AI-010 (LOCKED): AI Verdict Separation — AI Verdict (BUY/HOLD/SELL) and Portfolio Recommendation (ADD/HOLD/TRIM/REDUCE/AVOID) are independent. Compact shows AI Verdict only; Expanded may display portfolio recommendation.
+- DEC-AI-011 (LOCKED): Hero System Standardization — all AI Intelligence states use shared hero assets (Neon Wireframe SVG, lattice geometry, institutional/premium). Rejected: solid-fill, mascot, cartoon, emoji. Compact and Expanded must use identical hero assets.
 
 ## PM Operating Model
 
@@ -467,6 +478,14 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.28 - AI Intelligence V2 Governance Refresh (ATHENA-GOV-021)
+Date: 2026-06-22
+Status: Documentation/governance only. Release Candidate pending UAT.
+- Decisions LOCKED: DEC-AI-009 (Shared Intelligence Data Layer), DEC-AI-010 (AI Verdict Separation), DEC-AI-011 (Hero System Standardization).
+- Backend HERMES-AI-005 + HERMES-AI-006 COMPLETE/Accepted (contract ready). ARTEMIS-AI-011 IN PROGRESS; CR-AI-011 OPEN (release blocker).
+- Backlog added: HERMES-AI-007 (P2 Parallel Context Hydration), CR-HERMES-006-01 (P3 Contract Versioning).
+- New trackers: docs/PROJECT_STATUS.md, docs/ROADMAP.md, docs/RELEASE_NOTES_DRAFT.md. Status: backend 98% / frontend 80% / overall 92–93%.
 
 ### v0.3.27 - AI Intelligence Compact V3 Redesign
 Date: 2026-06-22

@@ -450,3 +450,16 @@ Structure scaffolded under docs/mocks/<feature>/{APPROVED,WORKING,UAT} for ai-in
 * UAT PENDING (PO PASS decision): NVDA BUY / NBIS HOLD / AAPL HOLD screenshots at 390/430 under frontend/uat-screenshots/cr-ai-compact-v3-cr002/.
 * Governance: per DESIGN-LOCK-002 (GOV-007), a committed DESIGN_SPEC.md in docs/mocks/ai-intelligence/APPROVED/ is required to fully validate the Compact V3 lock (currently a stub).
 * Architecture documented: docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md §1b. Mirrored in MASTER_BACKLOG .md/.xlsx (Backlog, Architecture Decisions DEC-AI-CV3, CHANGELOG) and CHANGELOG.md v0.3.27.
+
+
+
+---
+
+## 2026-06-22 AI Intelligence V2 — Governance Refresh (ATHENA-GOV-021)
+
+* AI Intelligence V2 = **Release Candidate pending UAT**. Backend 98% / Frontend 80% / Overall 92–93%.
+* LOCKED: DEC-AI-009 (Shared Intelligence Data Layer), DEC-AI-010 (AI Verdict Separation: AI Verdict ⟂ Portfolio Recommendation), DEC-AI-011 (Hero System Standardization).
+* Backend HERMES-AI-005 + HERMES-AI-006 COMPLETE/Accepted (contract ready; warm 6/9ms, cold 1.9–2.8s). ARTEMIS-AI-011 IN PROGRESS; CR-AI-011 OPEN (release blocker).
+* Backlog: HERMES-AI-007 (Parallel Context Hydration P2), CR-HERMES-006-01 (Contract Versioning P3).
+* Release blockers: CR-AI-011 visual parity · real endpoint wiring · final UAT.
+* New trackers: docs/PROJECT_STATUS.md, docs/ROADMAP.md, docs/RELEASE_NOTES_DRAFT.md. Mirrored in MASTER_BACKLOG .md/.xlsx (Architecture Decisions, Backlog, CHANGELOG) + CHANGELOG.md v0.3.28 + AI_INTELLIGENCE_ARCHITECTURE.md §1c.
