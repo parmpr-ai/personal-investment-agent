@@ -1,4 +1,5 @@
 import os, asyncio, csv, io, shutil, socket, ssl, subprocess, urllib.request, urllib.error
+from typing import Optional
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, UploadFile, File, HTTPException
@@ -35,14 +36,20 @@ class ThesisRequest(BaseModel):
  summary: str
  full_text: str
 class ManualHoldingRequest(BaseModel):
- ticker: str
- name: str
+ ticker: str=''
+ name: str=''
  asset_type: str='Stock'
  broker: str='Manual'
- quantity: float
- avg_price: float
+ quantity: float=0.0
+ avg_price: float=0.0
  currency: str='USD'
  notes: str=''
+ underlying: Optional[str]=None
+ expiry: Optional[str]=None
+ strike: Optional[float]=None
+ callPut: Optional[str]=None
+ assetClass: Optional[str]=None
+ multiplier: Optional[float]=None
 
 THESIS_STORE={}
 TRANSACTIONS=[]

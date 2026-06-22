@@ -2401,4 +2401,14 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 /* portfolio chart empty state */
 .pf-chart-empty{display:flex;align-items:center;justify-content:center;height:46px;color:var(--muted);font-size:11px;letter-spacing:.03em}
 /* option label in frozen ticker */
-.mtt-sym-option{font-size:11px;font-weight:700;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mtt-sym-option{font-size:11px;font-weight:700;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}/* manual holding — asset type selector */
+.mf-asset-type-row{display:flex;gap:6px;margin-bottom:14px}
+.mf-asset-type-btn{flex:1;padding:8px 4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.55);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+.mf-asset-type-btn.active{background:rgba(96,165,250,.18);border-color:#60a5fa;color:#93c5fd}
+/* two-column option form rows */
+.mf-option-row2{display:flex;gap:10px}
+.mf-option-row2 .field{flex:1;min-width:0}
+/* call/put toggle row */
+.mf-callput-row{display:flex;gap:6px;margin-top:4px}
+.mf-callput-btn{flex:1;padding:9px 4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.55);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+.mf-callput-btn.active{background:rgba(52,211,153,.18);border-color:#34d399;color:#6ee7b7}

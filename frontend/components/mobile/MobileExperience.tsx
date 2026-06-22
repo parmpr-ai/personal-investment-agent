@@ -41,7 +41,7 @@ import MobileReorderableSections from '../dashboard/MobileReorderableSections'
 import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
 import CompanyLogo from '../intelligence/CompanyLogo'
 import { preloadStockIntelligence } from '../intelligence/useStockIntelligence'
-import { dedupePortfolioPositions, portfolioSourceBadgeLabel } from '../../lib/pia-api'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolveAssetClass } from '../../lib/pia-api'
 import ReorderList from './ReorderList'
 import {
   WorkspaceShell,
@@ -2008,11 +2008,22 @@ function defaultWlCardPrefs(): CardPrefs {
 
 type ManualInstrumentMatch = InstrumentMatch
 
-const emptyManualHoldingForm = {
+type ManualAssetType = 'Stock' | 'Option' | 'Crypto'
+
+const EMPTY_MANUAL_FORM = {
+  asset_type: 'Stock' as ManualAssetType,
   ticker: '',
   quantity: '',
   avg_price: '',
+  underlying: '',
+  expiry: '',
+  strike: '',
+  call_put: 'C',
+  contracts: '1',
+  premium: '',
 }
+
+const emptyManualHoldingForm = EMPTY_MANUAL_FORM
 
 function validManualSearch(value: string) {
   return /^[A-Z0-9][A-Z0-9 .,&'()\/\-=^]{0,79}$/i.test(value.trim())
@@ -2627,7 +2638,7 @@ function AddManualHoldingSheet({
   onClose: () => void
   onSaved: () => Promise<unknown>
 }) {
-  const [form, setForm] = useState(emptyManualHoldingForm)
+  const [form, setForm] = useState(EMPTY_MANUAL_FORM)
   const [matches, setMatches] = useState<ManualInstrumentMatch[]>([])
   const [selected, setSelected] = useState<ManualInstrumentMatch | null>(null)
   const [lookupLoading, setLookupLoading] = useState(false)
@@ -2635,12 +2646,14 @@ function AddManualHoldingSheet({
   const [status, setStatus] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const searchText = form.ticker.trim()
+  const assetType = form.asset_type
+  const isOptionMode = assetType === 'Option'
+  const searchText = isOptionMode ? '' : form.ticker.trim()
   const selectedTicker = selected?.symbol || ''
-  const selectedMatchesSearch = Boolean(selectedTicker && selectedTicker === searchText.toUpperCase())
+  const selectedMatchesSearch = !isOptionMode && Boolean(selectedTicker && selectedTicker === searchText.toUpperCase())
 
   useEffect(() => {
-    if (!searchText) {
+    if (isOptionMode || !searchText) {
       setMatches([])
       setLookupMessage('')
       setLookupLoading(false)
@@ -2670,28 +2683,30 @@ function AddManualHoldingSheet({
         return null
       })
       if (!active) return
-      if (!result) {
-        setLookupLoading(false)
-        return
-      }
+      if (!result) { setLookupLoading(false); return }
       const nextMatches = result.matches
       setMatches(nextMatches)
       setLookupMessage(nextMatches.length ? 'Select the matching instrument before saving.' : 'No matching instruments found.')
       setLookupLoading(false)
     }, 300)
-    return () => {
-      active = false
-      window.clearTimeout(timer)
-    }
-  }, [searchText, selectedMatchesSearch, selectedTicker])
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [searchText, selectedMatchesSearch, selectedTicker, isOptionMode])
 
-  function update(key: keyof typeof emptyManualHoldingForm, value: string) {
+  function updateField(key: string, value: string) {
     if (key === 'ticker') {
       const nextTicker = value.trim().toUpperCase()
       setSelected((current) => (current?.symbol === nextTicker ? current : null))
       setStatus('')
     }
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function changeAssetType(next: ManualAssetType) {
+    setForm({ ...EMPTY_MANUAL_FORM, asset_type: next })
+    setSelected(null)
+    setMatches([])
+    setLookupMessage('')
+    setStatus('')
   }
 
   function selectInstrument(match: ManualInstrumentMatch) {
@@ -2706,110 +2721,226 @@ function AddManualHoldingSheet({
     event.preventDefault()
     setStatus('')
     if (saving) return
-    if (!searchText || !validManualSearch(searchText)) {
-      setStatus('Enter a ticker or company name.')
-      return
-    }
-    if (lookupLoading) {
-      setStatus('Finish the instrument search before saving.')
-      return
-    }
-    if (!selectedMatchesSearch) {
-      setStatus('Select a matching instrument from the search results before saving.')
-      return
-    }
-    const sel = selected
-    if (!sel) {
-      setStatus('Select a matching instrument from the search results before saving.')
-      return
-    }
-    const ticker = sel.symbol
-    const quantity = Number(form.quantity)
-    const avgPrice = Number(form.avg_price)
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      setStatus('Enter a quantity greater than zero.')
-      return
-    }
-    if (!Number.isFinite(avgPrice) || avgPrice < 0) {
-      setStatus('Enter a valid average cost.')
-      return
-    }
     setSaving(true)
-    const result = await fetch('/api/manual-holdings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ticker,
-        name: sel.name || ticker,
-        asset_type: sel.asset_type || 'Stock',
+    let payload: Record<string, unknown>
+    if (isOptionMode) {
+      const underlying = form.underlying.trim().toUpperCase()
+      const strike = Number(form.strike)
+      const contracts = Number(form.contracts)
+      const premium = Number(form.premium)
+      if (!underlying) { setStatus('Enter the underlying ticker (e.g. SOFI).'); setSaving(false); return }
+      if (!form.expiry) { setStatus('Enter the expiry date.'); setSaving(false); return }
+      if (!Number.isFinite(strike) || strike <= 0) { setStatus('Enter a valid strike price.'); setSaving(false); return }
+      if (!Number.isFinite(contracts) || contracts <= 0) { setStatus('Enter the number of contracts.'); setSaving(false); return }
+      if (!Number.isFinite(premium) || premium < 0) { setStatus('Enter a valid premium.'); setSaving(false); return }
+      payload = {
+        ticker: underlying,
+        name: `${underlying} ${strike}${form.call_put} ${form.expiry}`,
+        asset_type: 'Option',
+        broker: 'Manual',
+        underlying,
+        expiry: form.expiry,
+        strike,
+        callPut: form.call_put,
+        quantity: contracts,
+        avg_price: premium,
+        currency: 'USD',
+        notes: `Manual option: ${underlying} ${strike}${form.call_put} exp ${form.expiry}`,
+      }
+    } else {
+      if (!searchText || !validManualSearch(searchText)) { setStatus('Enter a ticker or company name.'); setSaving(false); return }
+      if (lookupLoading) { setStatus('Finish the instrument search before saving.'); setSaving(false); return }
+      if (!selectedMatchesSearch) { setStatus('Select a matching instrument from the search results before saving.'); setSaving(false); return }
+      const sel = selected
+      if (!sel) { setStatus('Select a matching instrument from the search results before saving.'); setSaving(false); return }
+      const quantity = Number(form.quantity)
+      const avgPrice = Number(form.avg_price)
+      if (!Number.isFinite(quantity) || quantity <= 0) { setStatus('Enter a quantity greater than zero.'); setSaving(false); return }
+      if (!Number.isFinite(avgPrice) || avgPrice < 0) { setStatus('Enter a valid average cost.'); setSaving(false); return }
+      payload = {
+        ticker: sel.symbol,
+        name: sel.name || sel.symbol,
+        asset_type: assetType,
         broker: 'Manual',
         quantity,
         avg_price: avgPrice,
         currency: sel.currency || 'USD',
         notes: `Added from Portfolio menu${sel.exchange ? ` (${sel.exchange})` : ''}.`,
-      }),
+      }
+    }
+    const result = await fetch('/api/manual-holdings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     }).then(async (response) => {
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw body
       return body
     }).catch((error) => {
-      setStatus(manualHoldingError(error, 'Unable to save manual holding. The save proxy could not reach the backend or the backend rejected the holding.'))
+      setStatus(manualHoldingError(error, 'Unable to save. The backend rejected the holding or is unavailable.'))
       return null
     })
-    if (!result) {
-      setSaving(false)
-      return
-    }
+    if (!result) { setSaving(false); return }
     await onSaved().catch(() => {})
     setSaving(false)
     onClose()
   }
 
+  const canSubmit = isOptionMode
+    ? Boolean(form.underlying.trim() && form.expiry && Number(form.strike) > 0 && Number(form.contracts) > 0)
+    : selectedMatchesSearch
+
   return (
     <MobileSheet title="Add Manual Holding" onClose={onClose} closeOnOverlay={!saving}>
       <form className="manual-form manual-sheet-form" onSubmit={save}>
-        <label className="field">
-          <span>Ticker or company</span>
-          <input value={form.ticker} autoComplete="off" placeholder="AMD or Apple" onChange={(event) => update('ticker', event.target.value)} />
-        </label>
-        <div className="field wide manual-lookup">
-          <span>Instrument match</span>
-          {lookupLoading && <div className="manual-lookup-status">Searching instruments...</div>}
-          {!lookupLoading && selectedMatchesSearch && selected && (() => {
-            const s = selected
-            return (
-              <div className="manual-selected">
-                <b>{s.symbol}</b>
-                <span>{s.name || 'Selected instrument'}</span>
-                <small>{[s.exchange, s.asset_type, s.currency].filter(Boolean).join(' / ')}</small>
-              </div>
-            )
-          })()}
-          {!lookupLoading && lookupMessage && !selectedMatchesSearch && (
-            <div className="manual-lookup-status">{lookupMessage}</div>
-          )}
-          {!lookupLoading && matches.length > 0 && (
-            <div className="manual-lookup-results">
-              {matches.map((match) => (
-                <button type="button" key={`${match.symbol}-${match.exchange || match.name}`} onClick={() => selectInstrument(match)}>
-                  <b>{match.symbol}</b>
-                  <span>{match.name || match.symbol}</span>
-                  <small>{[match.exchange, match.asset_type, match.currency].filter(Boolean).join(' / ')}</small>
-                </button>
-              ))}
-            </div>
-          )}
+        {/* Asset type selector */}
+        <div className="mf-asset-type-row">
+          {(['Stock', 'Option', 'Crypto'] as ManualAssetType[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`mf-asset-type-btn${assetType === t ? ' active' : ''}`}
+              onClick={() => changeAssetType(t)}
+            >
+              {t}
+            </button>
+          ))}
         </div>
-        <label className="field">
-          <span>Quantity</span>
-          <input value={form.quantity} inputMode="decimal" disabled={!selectedMatchesSearch} onChange={(event) => update('quantity', event.target.value)} />
-        </label>
-        <label className="field">
-          <span>Average Cost</span>
-          <input value={form.avg_price} inputMode="decimal" disabled={!selectedMatchesSearch} onChange={(event) => update('avg_price', event.target.value)} />
-        </label>
+
+        {isOptionMode ? (
+          /* Option form */
+          <>
+            <label className="field">
+              <span>Underlying (ticker)</span>
+              <input
+                value={form.underlying}
+                autoComplete="off"
+                placeholder="e.g. SOFI"
+                onChange={(e) => updateField('underlying', e.target.value.toUpperCase())}
+              />
+            </label>
+            <div className="mf-option-row2">
+              <label className="field">
+                <span>Expiry date</span>
+                <input
+                  type="date"
+                  value={form.expiry}
+                  onChange={(e) => updateField('expiry', e.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Strike</span>
+                <input
+                  value={form.strike}
+                  inputMode="decimal"
+                  placeholder="22.00"
+                  onChange={(e) => updateField('strike', e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="mf-option-row2">
+              <div className="field">
+                <span>Type</span>
+                <div className="mf-callput-row">
+                  <button
+                    type="button"
+                    className={`mf-callput-btn${form.call_put === 'C' ? ' active' : ''}`}
+                    onClick={() => updateField('call_put', 'C')}
+                  >
+                    Call
+                  </button>
+                  <button
+                    type="button"
+                    className={`mf-callput-btn${form.call_put === 'P' ? ' active' : ''}`}
+                    onClick={() => updateField('call_put', 'P')}
+                  >
+                    Put
+                  </button>
+                </div>
+              </div>
+              <label className="field">
+                <span>Contracts</span>
+                <input
+                  value={form.contracts}
+                  inputMode="numeric"
+                  placeholder="1"
+                  onChange={(e) => updateField('contracts', e.target.value)}
+                />
+              </label>
+            </div>
+            <label className="field">
+              <span>Premium per share ($)</span>
+              <input
+                value={form.premium}
+                inputMode="decimal"
+                placeholder="1.25"
+                onChange={(e) => updateField('premium', e.target.value)}
+              />
+            </label>
+          </>
+        ) : (
+          /* Stock / Crypto form */
+          <>
+            <label className="field">
+              <span>{assetType === 'Crypto' ? 'Symbol (e.g. BTC)' : 'Ticker or company'}</span>
+              <input
+                value={form.ticker}
+                autoComplete="off"
+                placeholder={assetType === 'Crypto' ? 'BTC or Bitcoin' : 'AMD or Apple'}
+                onChange={(event) => updateField('ticker', event.target.value)}
+              />
+            </label>
+            <div className="field wide manual-lookup">
+              <span>Instrument match</span>
+              {lookupLoading && <div className="manual-lookup-status">Searching instruments...</div>}
+              {!lookupLoading && selectedMatchesSearch && selected && (() => {
+                const s = selected
+                return (
+                  <div className="manual-selected">
+                    <b>{s.symbol}</b>
+                    <span>{s.name || 'Selected instrument'}</span>
+                    <small>{[s.exchange, s.asset_type, s.currency].filter(Boolean).join(' / ')}</small>
+                  </div>
+                )
+              })()}
+              {!lookupLoading && lookupMessage && !selectedMatchesSearch && (
+                <div className="manual-lookup-status">{lookupMessage}</div>
+              )}
+              {!lookupLoading && matches.length > 0 && (
+                <div className="manual-lookup-results">
+                  {matches.map((match) => (
+                    <button type="button" key={`${match.symbol}-${match.exchange || match.name}`} onClick={() => selectInstrument(match)}>
+                      <b>{match.symbol}</b>
+                      <span>{match.name || match.symbol}</span>
+                      <small>{[match.exchange, match.asset_type, match.currency].filter(Boolean).join(' / ')}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <label className="field">
+              <span>Quantity</span>
+              <input
+                value={form.quantity}
+                inputMode="decimal"
+                disabled={!selectedMatchesSearch}
+                onChange={(event) => updateField('quantity', event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>Average Cost</span>
+              <input
+                value={form.avg_price}
+                inputMode="decimal"
+                disabled={!selectedMatchesSearch}
+                onChange={(event) => updateField('avg_price', event.target.value)}
+              />
+            </label>
+          </>
+        )}
+
         <div className="manual-actions">
-          <button className="tab active" type="submit" disabled={saving || !selectedMatchesSearch}>
+          <button className="tab active" type="submit" disabled={saving || !canSubmit}>
             <Plus size={15} /> {saving ? 'Saving...' : 'Add holding'}
           </button>
         </div>
@@ -2931,11 +3062,12 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
 
   function renderTickerCell(position: any): ReactNode {
     const sym = String(position.symbol || '')
-    const isOpt = position.asset_class === 'Option' || position.instrument_type === 'OPT' || sym.includes(' ')
+    const isOpt = resolveAssetClass(position) === 'option'
     if (isOpt) {
       const base = String(position.underlying || sym.split(' ')[0] || sym)
       const strike = position.strike ? String(position.strike) : ''
-      const pc = position.put_call ? String(position.put_call).charAt(0).toUpperCase() : ''
+      const rawPc = position.call_put || position.callPut || position.put_call || ''
+      const pc = rawPc ? String(rawPc).charAt(0).toUpperCase() : ''
       const meta = strike && pc ? `${strike}${pc}` : pc || strike
       const expRaw = position.expiry || position.last_trade_date || ''
       let expStr = ''
@@ -3080,12 +3212,10 @@ export default function MobileExperience() {
   const filteredPositions = useMemo(() => {
     if (positionFilter === 'all') return positions
     return positions.filter((p: any) => {
-      const sym = String(p.symbol || '')
-      const isOption = p.asset_class === 'Option' || p.instrument_type === 'OPT' || sym.includes(' ')
-      const isCrypto = p.asset_class === 'Crypto' || p.instrument_type === 'CRYPTO' || p.sec_type === 'CRYPTO' || p.asset_class === 'CRYPTO'
-      if (positionFilter === 'options') return isOption
-      if (positionFilter === 'crypto') return isCrypto
-      return !isOption && !isCrypto
+      const cls = resolveAssetClass(p)
+      if (positionFilter === 'options') return cls === 'option'
+      if (positionFilter === 'crypto') return cls === 'crypto'
+      return cls === 'stock'
     })
   }, [positions, positionFilter])
   const advancedFieldDefs = useMemo(() => discoverAdvancedFields(positions), [positions])

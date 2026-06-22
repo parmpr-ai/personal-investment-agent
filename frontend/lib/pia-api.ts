@@ -113,6 +113,14 @@ export function portfolioSourceBadgeLabel(source: unknown, mode?: unknown) {
   return 'MOCK'
 }
 
+export function resolveAssetClass(p: any): 'stock' | 'option' | 'crypto' {
+  const raw = String(p.asset_class || p.assetClass || p.sec_type || p.asset_type || '').trim().toUpperCase()
+  const sym = String(p.symbol || p.ticker || '')
+  if (raw === 'OPT' || raw === 'OPTION' || raw === 'OPTIONS' || p.instrument_type === 'OPT' || sym.includes(' ')) return 'option'
+  if (raw === 'CRYPTO' || raw === 'CRYPTOCURRENCY') return 'crypto'
+  return 'stock'
+}
+
 export const safeMessage = (value: unknown, fallback: string) =>
   typeof value === 'string' ? value : typeof (value as { message?: string })?.message === 'string' ? (value as { message: string }).message : fallback
 
