@@ -37,7 +37,7 @@
 .mptbl-frozen{flex:0 0 auto;position:relative;z-index:2;background:#070b12;border-right:1px solid rgba(148,163,184,.2);box-shadow:6px 0 10px -6px rgba(0,0,0,.55)}
 .mptbl-fcell{display:flex;align-items:center;box-sizing:border-box;width:100%;padding:0 10px 0 12px;background:#070b12;border-bottom:1px solid rgba(148,163,184,.07);white-space:nowrap}
 .mptbl-fhead{height:34px;position:sticky;top:0;z-index:3;background:#05080e;color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid rgba(148,163,184,.14);cursor:pointer;gap:2px}
-.mptbl-frow{height:46px;border-top:0;border-left:0;border-right:0;color:#eef4fb;text-align:left;cursor:pointer;font:inherit}
+.mptbl-frow{height:44px;border-top:0;border-left:0;border-right:0;color:#eef4fb;text-align:left;cursor:pointer;font:inherit}
 .mptbl-frow:active{background:#0f1928}
 .mptbl-frozen .mtt-symbol{gap:7px}
 .mptbl-scrollarea{flex:1 1 auto;min-width:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x pan-y;padding-right:12px;scrollbar-width:none;-ms-overflow-style:none}
@@ -46,7 +46,7 @@
 .mptbl-scrollarea .mobile-terminal-table{min-width:max-content}
 .mptbl-scrollarea .mobile-terminal-table thead th,.mptbl-scrollarea .mobile-terminal-table tbody td{box-sizing:border-box}
 .mptbl-scrollarea .mobile-terminal-table thead th{height:34px}
-.mptbl-scrollarea .mobile-terminal-table tbody td{height:40px}
+.mptbl-scrollarea .mobile-terminal-table tbody td{height:44px}
 .mptbl-scrollarea .mobile-terminal-table th:first-child,.mptbl-scrollarea .mobile-terminal-table td:first-child{padding-left:9px;min-width:0}
 /* PIA-UX-036 IBKR-style Manage Display (full-screen, PIA dark theme) */
 .pf-manage{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;background:#05080e;color:#eef4fb}
@@ -2392,3 +2392,13 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .sai-rsc-hint{font-size:10px;color:rgba(255,255,255,.25);margin-top:4px}
 .sai-rsc-reset{margin:12px 16px 0;padding:9px;background:none;border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.4);font-size:11px;cursor:pointer;width:calc(100% - 32px)}
 .sai-rsc-reset:hover{border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.6)}
+
+/* source badge variants */
+.badge--live{background:rgba(5,36,22,.9)!important;color:#86efac!important;border:1px solid rgba(34,197,94,.35)}
+.badge--lastupdate{background:rgba(39,28,5,.9)!important;color:#fde68a!important;border:1px solid rgba(251,191,36,.35)}
+.badge--mock{background:#142034!important;color:#b9d7ff!important;border:1px solid rgba(96,165,250,.2)}
+.pf-count-badge{font-size:10px;padding:2px 7px;margin-left:7px;vertical-align:middle}
+/* portfolio chart empty state */
+.pf-chart-empty{display:flex;align-items:center;justify-content:center;height:46px;color:var(--muted);font-size:11px;letter-spacing:.03em}
+/* option label in frozen ticker */
+.mtt-sym-option{font-size:11px;font-weight:700;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

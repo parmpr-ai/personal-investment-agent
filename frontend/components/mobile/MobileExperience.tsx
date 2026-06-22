@@ -580,26 +580,26 @@ function buildNotificationItems(portfolio: any) {
     },
   ]
   const items: { id: string; title: string; text: string; level: string; time: string; category: string }[] = []
-  for (const alert of portfolio.guardrails || []) {
+  ;(portfolio.guardrails || []).forEach((alert: any, i: number) => {
     items.push({
-      id: `guardrail-${alert.title}`,
+      id: `guardrail-${i}`,
       title: alert.title,
       text: alert.text,
       level: alert.level || 'warn',
       time: 'Now',
       category: 'Risk',
     })
-  }
-  for (const action of portfolio.today_actions || []) {
+  })
+  ;(portfolio.today_actions || []).forEach((action: any, i: number) => {
     items.push({
-      id: `action-${action.title}`,
+      id: `action-${i}`,
       title: action.title,
       text: action.text,
       level: 'good',
       time: 'Today',
       category: 'Brief',
     })
-  }
+  })
   return items.length ? items : fallback
 }
 
@@ -910,8 +910,8 @@ function PortfolioInsights({ portfolio, positions, hidden }: { portfolio: any; p
   const insights = [
     {
       title: 'Net Worth',
-      value: hidden ? mask : money(portfolio.total_value || 58170),
-      text: hidden ? mask : `${money(portfolio.daily_pnl || 420)} today`,
+      value: hidden ? mask : money(portfolio.total_value || 0),
+      text: hidden ? mask : `${money(portfolio.daily_pnl || 0)} today`,
       type: 'spark',
     },
     {
@@ -1187,7 +1187,7 @@ function PositionCard({
     if (!usePager || pageCount <= 1) return
     const el = bodyRef.current
     if (!el) return
-    function getTrack() { return el.querySelector<HTMLElement>('.card-pager-track') }
+    const getTrack = () => el.querySelector<HTMLElement>('.card-pager-track')
     function onStart(e: TouchEvent) {
       touchState.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null, dx: 0 }
       const t = getTrack(); if (t) t.style.transition = 'none'
@@ -2258,22 +2258,17 @@ function readSavedOrder(): ColKey[] {
   return COL_DEFS.map((c) => c.key)
 }
 
-function generatePortfolioHistory(total: number, tf = '1M'): number[] {
-  const counts: Record<string, number> = { '1D': 24, '1W': 7, '1M': 30, '3M': 90, 'YTD': 120, '1Y': 252, 'ALL': 365 }
-  const drawdowns: Record<string, number> = { '1D': 0.9994, '1W': 0.995, '1M': 0.987, '3M': 0.968, 'YTD': 0.955, '1Y': 0.88, 'ALL': 0.82 }
-  const count = Math.min(counts[tf] || 30, 80)
-  const base = total * (drawdowns[tf] || 0.987)
-  return Array.from({ length: count }, (_, i) => {
-    const t = i / Math.max(count - 1, 1)
-    const trend = base + (total - base) * Math.min(t * 1.08, 1)
-    const wave = (Math.sin(i * 2.1 + 1) * 0.7 + Math.cos(i * 1.4) * 0.5) * (total * 0.007)
-    return i === count - 1 ? total : Math.max(0, trend + wave)
-  })
-}
 
-function PortfolioChart({ data, hidden }: { data: number[]; hidden: boolean }) {
+function PortfolioChart({ data, hidden }: { data: number[] | null; hidden: boolean }) {
   if (hidden) return <div className="pf-chart-hidden" />
-  const vals = data.length ? data : [100, 102, 101, 104, 106, 105, 108]
+  if (!data || data.length < 2) {
+    return (
+      <div className="pf-chart-empty">
+        <span>Portfolio history unavailable</span>
+      </div>
+    )
+  }
+  const vals = data
   const min = Math.min(...vals)
   const max = Math.max(...vals)
   const range = max - min || 1
@@ -2286,6 +2281,13 @@ function PortfolioChart({ data, hidden }: { data: number[]; hidden: boolean }) {
       <line x1="0" x2={W} y1={H - 1} y2={H - 1} stroke="rgba(148,163,184,.12)" />
     </svg>
   )
+}
+
+function sourceBadgeClass(source: unknown, mode?: unknown): string {
+  const lbl = portfolioSourceBadgeLabel(source, mode)
+  if (lbl === 'IBKR LIVE') return 'badge badge--live'
+  if (lbl === 'LAST UPDATE') return 'badge badge--lastupdate'
+  return 'badge badge--mock'
 }
 
 const TF_OPTIONS = ['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'] as const
@@ -2313,7 +2315,48 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
   const spxDelta = (total / 260000).toFixed(2)
   const netDelta = (total / 87500).toFixed(2)
 
-  const history = useMemo(() => generatePortfolioHistory(total || 100000, selectedTf), [total, selectedTf])
+  const [rawHistory, setRawHistory] = useState<{ ts: number; value: number }[] | null>(null)
+  useEffect(() => {
+    fetchJson('/api/portfolio/history?limit=365')
+      .then((res: any) => {
+        const items: any[] = Array.isArray(res?.items) ? res.items : []
+        const parsed = items
+          .map((item) => {
+            const raw = item.timestamp || item.snapshot_timestamp || ''
+            const num = Number(raw)
+            const ts = Number.isFinite(num) ? (num < 10_000_000_000 ? num * 1000 : num) : new Date(raw).getTime()
+            const value = Number(item.net_liquidation || item.total_value || 0)
+            return { ts, value }
+          })
+          .filter((r) => r.ts > 0 && r.value > 0)
+          .sort((a, b) => a.ts - b.ts)
+        setRawHistory(parsed.length >= 2 ? parsed : null)
+      })
+      .catch(() => setRawHistory(null))
+  }, [])
+
+  const TF_CUTOFF_MS: Record<string, number> = {
+    '1D': 86400000,
+    '1W': 7 * 86400000,
+    '1M': 30 * 86400000,
+    '3M': 90 * 86400000,
+    '1Y': 365 * 86400000,
+  }
+
+  const history: number[] | null = useMemo(() => {
+    if (!rawHistory) return null
+    const now = Date.now()
+    let filtered = rawHistory
+    if (selectedTf === 'YTD') {
+      const ytd = new Date(new Date().getFullYear(), 0, 1).getTime()
+      filtered = rawHistory.filter((r) => r.ts >= ytd)
+    } else if (selectedTf !== 'ALL' && TF_CUTOFF_MS[selectedTf]) {
+      const cutoff = now - TF_CUTOFF_MS[selectedTf]
+      filtered = rawHistory.filter((r) => r.ts >= cutoff)
+    }
+    const vals = filtered.map((r) => r.value)
+    return vals.length >= 2 ? vals : null
+  }, [rawHistory, selectedTf])
 
   const fullMetrics = [
     { label: 'Mkt Value', value: money(total) },
@@ -2336,7 +2379,7 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
         <div className="pf-header-nlv">
           <span className="pf-header-label">Portfolio · NLV</span>
           <div className="pf-header-source-row">
-            <span className="badge">{portfolioSourceBadgeLabel(portfolio.source, portfolio.mode)}</span>
+            <span className={sourceBadgeClass(portfolio.source, portfolio.mode)}>{portfolioSourceBadgeLabel(portfolio.source, portfolio.mode)}</span>
             <span className="pf-header-source-time">{hidden ? mask : portfolio.snapshot_timestamp ? `Last updated at ${new Date(portfolio.snapshot_timestamp).toLocaleString()}` : 'Live portfolio'}</span>
           </div>
           <div className="pf-header-hero">{hidden ? mask : money(total)}</div>
@@ -2675,7 +2718,12 @@ function AddManualHoldingSheet({
       setStatus('Select a matching instrument from the search results before saving.')
       return
     }
-    const ticker = selected.symbol
+    const sel = selected
+    if (!sel) {
+      setStatus('Select a matching instrument from the search results before saving.')
+      return
+    }
+    const ticker = sel.symbol
     const quantity = Number(form.quantity)
     const avgPrice = Number(form.avg_price)
     if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -2692,13 +2740,13 @@ function AddManualHoldingSheet({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ticker,
-        name: selected.name || ticker,
-        asset_type: selected.asset_type || 'Stock',
+        name: sel.name || ticker,
+        asset_type: sel.asset_type || 'Stock',
         broker: 'Manual',
         quantity,
         avg_price: avgPrice,
-        currency: selected.currency || 'USD',
-        notes: `Added from Portfolio menu${selected.exchange ? ` (${selected.exchange})` : ''}.`,
+        currency: sel.currency || 'USD',
+        notes: `Added from Portfolio menu${sel.exchange ? ` (${sel.exchange})` : ''}.`,
       }),
     }).then(async (response) => {
       const body = await response.json().catch(() => ({}))
@@ -2727,13 +2775,16 @@ function AddManualHoldingSheet({
         <div className="field wide manual-lookup">
           <span>Instrument match</span>
           {lookupLoading && <div className="manual-lookup-status">Searching instruments...</div>}
-          {!lookupLoading && selectedMatchesSearch && (
-            <div className="manual-selected">
-              <b>{selected.symbol}</b>
-              <span>{selected.name || 'Selected instrument'}</span>
-              <small>{[selected.exchange, selected.asset_type, selected.currency].filter(Boolean).join(' / ')}</small>
-            </div>
-          )}
+          {!lookupLoading && selectedMatchesSearch && selected && (() => {
+            const s = selected
+            return (
+              <div className="manual-selected">
+                <b>{s.symbol}</b>
+                <span>{s.name || 'Selected instrument'}</span>
+                <small>{[s.exchange, s.asset_type, s.currency].filter(Boolean).join(' / ')}</small>
+              </div>
+            )
+          })()}
           {!lookupLoading && lookupMessage && !selectedMatchesSearch && (
             <div className="manual-lookup-status">{lookupMessage}</div>
           )}
@@ -2874,6 +2925,49 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
 
   const sortArrow = <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span>
 
+  function rowKey(position: any, i: number): string {
+    return String(position.conid || `${position.symbol}-${position.asset_class || 'STK'}-${i}`)
+  }
+
+  function renderTickerCell(position: any): ReactNode {
+    const sym = String(position.symbol || '')
+    const isOpt = position.asset_class === 'Option' || position.instrument_type === 'OPT' || sym.includes(' ')
+    if (isOpt) {
+      const base = String(position.underlying || sym.split(' ')[0] || sym)
+      const strike = position.strike ? String(position.strike) : ''
+      const pc = position.put_call ? String(position.put_call).charAt(0).toUpperCase() : ''
+      const meta = strike && pc ? `${strike}${pc}` : pc || strike
+      const expRaw = position.expiry || position.last_trade_date || ''
+      let expStr = ''
+      if (expRaw) {
+        const d = new Date(expRaw)
+        if (!isNaN(d.getTime())) {
+          const mo = d.toLocaleString('en-US', { month: 'short' }).toUpperCase().slice(0, 3)
+          expStr = ` ${mo}${String(d.getFullYear()).slice(2)}`
+        }
+      }
+      const label = hidden ? mask : `${base} ${meta}${expStr}`.trim()
+      return (
+        <div className="mtt-symbol">
+          <CompanyLogo source={{ ...position, symbol: base }} symbol={base} hidden={hidden} className="mtt-logo real-logo" />
+          <div className="mtt-logo" style={{ background: position.accent || '#a78bfa' }}>
+            {hidden ? '●' : base.slice(0, 2)}
+          </div>
+          <strong className="mtt-sym-label mtt-sym-option">{label}</strong>
+        </div>
+      )
+    }
+    return (
+      <div className="mtt-symbol">
+        <CompanyLogo source={position} symbol={sym} hidden={hidden} className="mtt-logo real-logo" />
+        <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
+          {hidden ? '●' : (position.logo || sym.slice(0, 2))}
+        </div>
+        <strong className="mtt-sym-label">{hidden ? mask : sym}</strong>
+      </div>
+    )
+  }
+
   // Split-layer structure: the frozen ticker column is a separate non-scrolling
   // sibling OUTSIDE the horizontal scroll container, so scrolled cells can never
   // pass behind or to the left of it on iOS. Row heights are fixed on both layers
@@ -2885,15 +2979,9 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
           <div className="mptbl-fcell mptbl-fhead" role="button" onClick={() => toggleSort('symbol')}>
             {sort === 'symbol' ? sortArrow : null}Ticker
           </div>
-          {sorted.map((position) => (
-            <button key={position.symbol} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(position)}>
-              <div className="mtt-symbol">
-                <CompanyLogo source={position} symbol={position.symbol} hidden={hidden} className="mtt-logo real-logo" />
-                <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
-                  {hidden ? '●' : (position.logo || String(position.symbol || '').slice(0, 2))}
-                </div>
-                <strong className="mtt-sym-label">{hidden ? mask : position.symbol}</strong>
-              </div>
+          {sorted.map((position, i) => (
+            <button key={rowKey(position, i)} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(position)}>
+              {renderTickerCell(position)}
             </button>
           ))}
         </div>
@@ -2913,8 +3001,8 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
             </tr>
           </thead>
           <tbody>
-            {sorted.map((position) => (
-              <tr key={position.symbol} onClick={() => onSelect(position)}>
+            {sorted.map((position, i) => (
+              <tr key={rowKey(position, i)} onClick={() => onSelect(position)}>
                 {orderedCols.map((col) => renderCell(col.key, position))}
               </tr>
             ))}
@@ -3311,7 +3399,10 @@ export default function MobileExperience() {
               onToggle={toggleHeader}
             />
             <div className="mobile-portfolio-header">
-              <span className="mobile-portfolio-count">Positions</span>
+              <span className="mobile-portfolio-count">
+                Positions
+                {portfolio.source && <span className={`${sourceBadgeClass(portfolio.source, portfolio.mode)} pf-count-badge`}>{portfolioSourceBadgeLabel(portfolio.source, portfolio.mode)}</span>}
+              </span>
               <div className="pf-header-actions">
                 <div className="pf-pos-filter" role="group" aria-label="Position type filter">
                   {(['all', 'stocks', 'options', 'crypto'] as const).map((f) => (
