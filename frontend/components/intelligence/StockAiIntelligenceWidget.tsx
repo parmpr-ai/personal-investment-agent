@@ -2184,6 +2184,7 @@ export default function StockAiIntelligenceWidget({
         nextCatName={v3CatName}
         hidden={hidden}
         onTap={() => setIsExpandedV2(true)}
+        fc={fc}
       />
 
       {isExpandedV2 && (
