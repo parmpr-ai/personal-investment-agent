@@ -1,5 +1,19 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.35 - Frontend Refresh Lifecycle Diagnostic (HERMES-FRONTEND-REFRESH-DIAGNOSTIC-024)
+
+Date: 2026-06-22
+Status: Diagnostic complete; implementation continuation proposed.
+
+### Diagnostics
+
+* Added `/api/debug/ui-refresh-status` and a matching frontend proxy with provider, portfolio, dashboard-cache, and delivery-cadence timestamps.
+* Portfolio, dashboard, provider-status, live portfolio, and Setup diagnostic responses now expose/log response, quote, and portfolio timestamps.
+* Identified hard-coded port `8000` frontend transports while the active backend/proxy uses `8007`, with no polling fallback.
+* Confirmed dashboard stale-while-revalidate returns stale data on the first expired-cache request and refreshes correctly in the background.
+* Confirmed Setup has a one-shot authentication check and cannot react to external TFA approval until retry/navigation/reload.
+* Captured duplicate Next dev servers and mismatched `.next` chunks preventing hydration during UAT.
+
 ## v0.3.34 - IBKR Connectivity Mismatch Hotfix (HERMES-IBKR-CONNECTIVITY-MISMATCH-017)
 
 Date: 2026-06-22

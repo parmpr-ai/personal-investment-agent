@@ -1,6 +1,7 @@
-import os, asyncio, csv, io, shutil, socket, ssl, subprocess, time, urllib.request, urllib.error
+import os, asyncio, csv, io, json, logging, shutil, socket, sqlite3, ssl, subprocess, time, urllib.request, urllib.error
 from typing import Optional
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,6 +67,16 @@ _ROUTE_CACHE_TTL_SECONDS = {
 }
 
 _DEBUG_QUOTE_SYMBOLS = ("AMD", "NVDA", "TSM", "SOFI")
+_UI_REFRESH_LOGGER = logging.getLogger("uvicorn.error")
+_UI_REFRESH_RELEVANT_PATHS = {
+ '/portfolio',
+ '/dashboard',
+ '/setup/diagnostics',
+ '/api/portfolio/provider/status',
+ '/api/portfolio/live/positions',
+ '/api/portfolio/live/summary',
+ '/api/portfolio/live/trades',
+}
 
 
 def _route_source_status(name:str, status:str, latency_ms:float, *, fallback_used:bool=False, error:str|None=None, detail:str|None=None):
@@ -129,6 +140,60 @@ def _select_debug_positions(portfolio:dict, symbols:list[str]):
  wanted = [s.upper().split()[0] for s in symbols if s]
  positions = portfolio.get('positions', []) if isinstance(portfolio, dict) else []
  return [p for p in positions if str(p.get('symbol') or p.get('underlying') or '').upper().split()[0] in wanted]
+
+
+def _utc_now_iso():
+ return datetime.now(timezone.utc).isoformat()
+
+
+def _stamp_ui_refresh_response(payload:dict, path:str):
+ if not isinstance(payload, dict):
+  return payload
+ portfolio = payload.get('portfolio') if isinstance(payload.get('portfolio'), dict) else payload
+ response_timestamp = _utc_now_iso()
+ quote_timestamp = portfolio.get('pricesLastRefresh') or portfolio.get('quoteLastRefresh')
+ portfolio_timestamp = portfolio.get('summaryLastRefresh') or portfolio.get('lastRefresh') or portfolio.get('as_of')
+ payload['responseTimestamp'] = response_timestamp
+ payload['quoteTimestamp'] = quote_timestamp
+ payload['portfolioTimestamp'] = portfolio_timestamp
+ if path in _UI_REFRESH_RELEVANT_PATHS:
+  _UI_REFRESH_LOGGER.info(
+   'UI refresh response path=%s response_timestamp=%s quote_timestamp=%s portfolio_timestamp=%s source=%s',
+   path,
+   response_timestamp,
+   quote_timestamp,
+   portfolio_timestamp,
+   portfolio.get('source') or portfolio.get('active_source'),
+  )
+ return payload
+
+
+def _dashboard_cache_debug():
+ try:
+  from services.provider_cache import DB_PATH
+  with sqlite3.connect(DB_PATH, timeout=0.2) as conn:
+   row=conn.execute(
+    'SELECT payload, updated_at FROM provider_cache WHERE namespace=? AND cache_key=?',
+    ('route', 'DASHBOARD'),
+   ).fetchone()
+  if not row:
+   return {'available':False, 'ttlSeconds':_ROUTE_CACHE_TTL_SECONDS['dashboard']}
+  updated_at=float(row[1])
+  age=max(0.0,time.time()-updated_at)
+  cached=json.loads(row[0])
+  portfolio=cached.get('portfolio') if isinstance(cached,dict) and isinstance(cached.get('portfolio'),dict) else {}
+  return {
+   'available':True,
+   'updatedAt':datetime.fromtimestamp(updated_at,timezone.utc).isoformat(),
+   'ageSeconds':round(age,3),
+   'ttlSeconds':_ROUTE_CACHE_TTL_SECONDS['dashboard'],
+   'fresh':age <= _ROUTE_CACHE_TTL_SECONDS['dashboard'],
+   'quoteTimestamp':portfolio.get('pricesLastRefresh'),
+   'portfolioTimestamp':portfolio.get('summaryLastRefresh') or portfolio.get('lastRefresh') or portfolio.get('as_of'),
+   'source':portfolio.get('source') or portfolio.get('active_source'),
+  }
+ except Exception as exc:
+  return {'available':False, 'ttlSeconds':_ROUTE_CACHE_TTL_SECONDS['dashboard'], 'error':str(exc)}
 
 def get_portfolio_payload():
  import services.state as state_module
@@ -285,7 +350,7 @@ def ibkr_authenticated(timeout:float=1.2)->bool:
 @app.get('/setup/diagnostics')
 def setup_diagnostics():
  gateway_running=port_reachable('127.0.0.1',5000,0.6)
- return {
+ return _stamp_ui_refresh_response({
   'backend_ok':True,
   'java_installed':command_available('java',['-version'],1.0),
   'docker_installed':command_available('docker',['--version'],1.0),
@@ -295,10 +360,10 @@ def setup_diagnostics():
   'ibkr_authenticated':ibkr_authenticated(1.0) if gateway_running else False,
   'demo_mode_available':True,
   'frontend_ok':True,
- }
+ }, '/setup/diagnostics')
 
 @app.get('/portfolio')
-def portfolio(): return get_portfolio_payload()
+def portfolio(): return _stamp_ui_refresh_response(get_portfolio_payload(), '/portfolio')
 @app.get('/manual-holdings')
 def manual_holdings(): return list_manual_holdings()
 @app.get('/instruments/search')
@@ -333,7 +398,8 @@ def dashboard():
  def loader():
   return _build_dashboard_payload()
  fallback=_build_dashboard_partial('Dashboard data is still warming up.')
- return _route_cache('route', 'dashboard', _ROUTE_CACHE_TTL_SECONDS['dashboard'], loader, fallback, wait_timeout_seconds=0.8)
+ result=_route_cache('route', 'dashboard', _ROUTE_CACHE_TTL_SECONDS['dashboard'], loader, fallback, wait_timeout_seconds=0.8)
+ return _stamp_ui_refresh_response(result, '/dashboard')
 @app.get('/macros')
 def macros(): return macro_snapshot()
 @app.get('/news')
@@ -719,7 +785,8 @@ def portfolio_provider_status():
   'provider_class': 'Unknown',
   'sourceStatus': {'provider': _route_source_status('provider', 'timeout', 0, fallback_used=True, detail='Provider status request timed out.')},
  }
- return _route_cache('route', 'provider-status', _ROUTE_CACHE_TTL_SECONDS['provider_status'], loader, fallback, wait_timeout_seconds=0.25)
+ result=_route_cache('route', 'provider-status', _ROUTE_CACHE_TTL_SECONDS['provider_status'], loader, fallback, wait_timeout_seconds=0.25)
+ return _stamp_ui_refresh_response(result, '/api/portfolio/provider/status')
 
 @app.get('/api/portfolio/provider/mode')
 def portfolio_provider_mode():
@@ -741,7 +808,7 @@ def portfolio_live_positions():
   meta = portfolio_meta if isinstance(portfolio_meta, dict) else {}
   is_live = bool(resolution.is_live or meta.get('is_live'))
   is_stale = bool(resolution.is_stale or meta.get('is_stale'))
-  return {
+  return _stamp_ui_refresh_response({
    'source': resolution.active_source,
    'mode': resolution.configured_mode,
    'configured_mode': resolution.configured_mode,
@@ -763,7 +830,7 @@ def portfolio_live_positions():
    'is_stale': bool(resolution.is_stale or meta.get('is_stale')),
    'stale_reason': resolution.stale_reason or meta.get('stale_reason'),
    'positions': meta.get('positions') if isinstance(meta.get('positions'), list) else provider.get_positions()
-  }
+  }, '/api/portfolio/live/positions')
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
 
@@ -795,7 +862,7 @@ def portfolio_live_summary():
   summary['is_live']=bool(resolution.is_live)
   summary['is_stale']=bool(resolution.is_stale or meta.get('is_stale'))
   summary['stale_reason']=resolution.stale_reason or meta.get('stale_reason')
-  return summary
+  return _stamp_ui_refresh_response(summary, '/api/portfolio/live/summary')
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
 
@@ -808,7 +875,7 @@ def portfolio_live_trades():
   meta = portfolio_meta if isinstance(portfolio_meta, dict) else {}
   is_live = bool(resolution.is_live or meta.get('is_live'))
   is_stale = bool(resolution.is_stale or meta.get('is_stale'))
-  return {
+  return _stamp_ui_refresh_response({
    'source': resolution.active_source,
    'mode': resolution.configured_mode,
    'configured_mode': resolution.configured_mode,
@@ -830,7 +897,7 @@ def portfolio_live_trades():
   'is_stale': bool(resolution.is_stale or meta.get('is_stale')),
    'stale_reason': resolution.stale_reason or meta.get('stale_reason'),
    'trades': provider.get_trades()
-  }
+  }, '/api/portfolio/live/trades')
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
 
@@ -878,6 +945,38 @@ def debug_live_status():
 def debug_ibkr_connectivity():
  provider = IbkrLivePortfolioProvider()
  return provider.get_connectivity_diagnostics()
+
+
+@app.get('/api/debug/ui-refresh-status')
+def debug_ui_refresh_status():
+ provider_status = get_provider_status()
+ dashboard_cache = _dashboard_cache_debug()
+ provider_last_updated = provider_status.get('pricesLastRefresh') or provider_status.get('lastRefresh')
+ portfolio_last_updated = provider_status.get('summaryLastRefresh') or provider_status.get('positionsLastRefresh') or provider_last_updated
+ return {
+  'responseTimestamp': _utc_now_iso(),
+  'portfolioLastUpdated': portfolio_last_updated,
+  'dashboardLastUpdated': dashboard_cache.get('updatedAt'),
+  'providerLastUpdated': provider_last_updated,
+  'expectedRefreshInterval': {
+   'providerSeconds': 12,
+   'websocketPushSeconds': 1.5,
+   'dashboardCacheSeconds': _ROUTE_CACHE_TTL_SECONDS['dashboard'],
+   'providerStatusCacheSeconds': _ROUTE_CACHE_TTL_SECONDS['provider_status'],
+   'frontendPollingSeconds': None,
+  },
+  'cacheTtl': _cache_layers_debug(),
+  'dashboardCache': dashboard_cache,
+  'source': provider_status.get('active_source'),
+  'isLive': bool(provider_status.get('is_live')),
+  'pricesLive': bool(provider_status.get('pricesLive')),
+  'deliveryContract': {
+   'backendPush': 'websocket',
+   'backendWebsocketPath': '/ws',
+   'pollingFallback': False,
+   'setupAuthenticationPolling': False,
+  },
+ }
 
 
 @app.get('/api/debug/live-quotes')

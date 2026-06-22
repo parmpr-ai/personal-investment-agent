@@ -549,6 +549,18 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 
 ## CHANGELOG
 
+### v0.3.35 - Frontend Refresh Lifecycle Diagnostic
+Date: 2026-06-22
+Status: Diagnostic complete; P0 implementation continuation OPEN.
+- Backlog: HERMES-FRONTEND-REFRESH-DIAGNOSTIC-024 diagnostic is COMPLETE / LOCAL PASS; implementation follow-up remains P0 OPEN.
+- Root cause: mobile fetches once through the `8007` Next proxy but subscribes to WebSocket port `8000`; desktop and Setup hard-code `8000`; no polling fallback exists.
+- Cache finding: 8-second dashboard stale-while-revalidate works, but the first stale response remains in React because the frontend never performs the required follow-up request.
+- TFA finding: Setup diagnostics run only on step entry/manual Retry; no pending-auth polling exists.
+- Runtime finding: two Next dev servers served mismatched `.next` chunks, causing hydration failure and zero client API/socket activity.
+- UAT evidence: mobile made one dashboard request in 18 seconds, received zero socket frames, and lagged the live provider by more than three minutes; F5 produced refreshed values/timestamps. Desktop received zero responses from three port-8000 requests. Setup made one request in ten seconds with no retry.
+- Proposed architecture DEC-UI-REFRESH-001: one shared frontend HTTP/WS runtime config, WebSocket reconnect, 10-12 second polling fallback, and 2-second pending-TFA polling.
+- Known limitation: live frontend values will continue to require navigation/reload until the continuation implementation is completed.
+
 ### v0.3.34 - IBKR Connectivity Mismatch Hotfix
 Date: 2026-06-22
 Status: Implemented and locally validated against an authenticated Client Portal Gateway.
