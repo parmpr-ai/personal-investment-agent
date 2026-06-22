@@ -93,6 +93,41 @@ Previous behavior (static 82, or `composite + 4`) is removed.
 
 ---
 
+## 1b. AI Intelligence Compact V3 — Widget Architecture
+
+Delivered 2026-06-22 (ARTEMIS). Component: `frontend/components/intelligence/AiIntelligenceCompactV3.{tsx,css}`, mounted via `StockAiIntelligenceWidget`. Commits: 1b7d426 (widget), 3887882 (customization + semantic tones).
+
+### Design Lock principles (DEC-AI-CV3 — LOCKED)
+1. No "Last Updated".
+2. No score badge.
+3. No dots/arrows.
+4. 3 rows.
+5. 4 cards per row.
+6. 2.2 visible cards per row (horizontal-scroll rail; the partial third card signals more).
+7. Card customization.
+8. Semantic card coloring.
+
+### Layout
+Compact widget = a fixed grid of metric cards arranged in 3 rows × 4 cards, with ~2.2 cards visible per row (the rail scrolls horizontally). Header carries the verdict and a three-dot Customize entry; no timestamp, no score badge, no directional dot/arrow glyphs.
+
+### Card source pool
+Cards are selected from a pool of available AI metric cards (the "card source pool"). The active set, order, and visibility are driven by user customization (below); cards absent from the pool/data degrade per DEC-AI-003 (render structure, `--` for missing — never collapse).
+
+### Customization framework (CR-AI-COMPACT-REDESIGN-002)
+- Entry: three-dot "Customize AI Cards" sheet in the compact header.
+- Controls: show/hide each card, drag-reorder, persisted preferences (survive reload).
+- Scope: per-widget card selection/order from the source pool.
+
+### Semantic tone system (CR-AI-COMPACT-REDESIGN-003)
+- Each card carries a semantic tone derived from its metric level, independent of the overall verdict.
+- Tone drives: card border colour, icon glow, and mini-chart stroke.
+- Mapping: Level High → red; Level Low → green (risk-semantics). Consequence: a BUY verdict widget may contain red cards (a high-risk metric reads red even when the composite verdict is bullish).
+
+### UAT
+Screenshots committed under `frontend/uat-screenshots/cr-ai-compact-v3-cr002/` for NVDA (BUY), NBIS (HOLD), AAPL (HOLD) at 390/430. PASS decision pending. Governance note: per DESIGN-LOCK-002, a committed `DESIGN_SPEC.md` is required to fully validate the Compact V3 lock (currently a stub).
+
+---
+
 ## 2. AI Engine
 
 ### Status

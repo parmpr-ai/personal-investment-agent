@@ -1,5 +1,32 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.27 - AI Intelligence Compact V3 Redesign
+
+Date: 2026-06-22
+Status: Implemented (ARTEMIS). UAT PASS decision pending (NVDA BUY / NBIS HOLD / AAPL HOLD screenshots captured).
+Tasks: ARTEMIS-AI-COMPACT-REDESIGN-001, CR-AI-COMPACT-REDESIGN-002, CR-AI-COMPACT-REDESIGN-003.
+Commits: 1b7d426, 3887882.
+
+### Added — Compact V3 redesign
+
+* `AiIntelligenceCompactV3` premium compact widget (1b7d426): **3 rows × 4 cards**, **2.2 visible cards per row** (horizontal-scroll rail); **no Last Updated**, **no score badge**, **no dots/arrows** (per locked design principles).
+
+### Added — Card customization (CR-AI-COMPACT-REDESIGN-002)
+
+* Three-dot **Customize AI Cards** sheet in the compact widget header: show/hide cards, drag reorder, persisted preferences. Backed by a card source pool.
+
+### Added — Semantic tone engine (CR-AI-COMPACT-REDESIGN-003)
+
+* Semantic card coloring: a card's tone drives its border colour, icon glow, and mini-chart stroke. Level **High = red**, **Low = green**. A **BUY** widget may contain red cards (tone reflects each metric, not the overall verdict).
+
+### Design Lock
+
+* Compact V3 design principles locked (DEC-AI-CV3): no Last Updated; no score badge; no dots/arrows; 3 rows; 4 cards per row; 2.2 visible cards per row; card customization; semantic card coloring.
+
+### UAT
+
+* Screenshots: `frontend/uat-screenshots/cr-ai-compact-v3-cr002/` — NVDA / NBIS / AAPL × {widget, customize} × {390, 430}. Pending Product Owner PASS decision.
+
 ## v0.3.26 - Explainable AI Intelligence Engine V1
 
 Date: 2026-06-17

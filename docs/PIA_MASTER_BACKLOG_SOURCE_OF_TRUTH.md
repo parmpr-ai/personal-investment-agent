@@ -87,6 +87,11 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 
 ## Active Backlog
 
+- EPIC AI Intelligence — Compact V3 delivery milestone (2026-06-22): premium compact widget + card customization + semantic tone engine shipped. Design locked (DEC-AI-CV3).
+  - ARTEMIS-AI-COMPACT-REDESIGN-001 — AiIntelligenceCompactV3 premium compact widget. IMPLEMENTED (ARTEMIS, 1b7d426): 3 rows × 4 cards, 2.2 visible cards per row; no Last Updated, no score badge, no dots/arrows.
+  - CR-AI-COMPACT-REDESIGN-002 — Card customization (show/hide, drag reorder, three-dot Customize AI Cards sheet, persisted). IMPLEMENTED (ARTEMIS, 3887882).
+  - CR-AI-COMPACT-REDESIGN-003 — Semantic tone engine (tone → border/glow/chart stroke; High=red, Low=green; BUY may contain red cards). IMPLEMENTED (ARTEMIS, 3887882).
+  - CR-AI-COMPACT-V3-UAT — UAT PASS decision PENDING (APOLLO/PO): NVDA BUY / NBIS HOLD / AAPL HOLD widget+customize screenshots at 390/430 under frontend/uat-screenshots/cr-ai-compact-v3-cr002/.
 - ATHENA-AI-001 AI Intelligence Architecture & Documentation Consolidation. IMPLEMENTED 2026-06-17 (ATHENA): Architecture document created at `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md`. All 9 AI Intelligence subsystems captured: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, Auto Investor. Changelog and UAT Tracking synchronized.
 - EPIC-AI-INTELLIGENCE-ENGINE-001 Explainable Multi-Source Investment Intelligence Engine. IMPLEMENTED 2026-06-17 (HERMES): V1 backend scoring engine added for actionable stock verdict, portfolio-aware recommendation, expected return, conviction, thesis strength, risk, visual state, scenario probabilities, drivers/risks, score breakdown, factors evaluated, confidence notes, debug mode, and cache-backed `/api/intelligence/{symbol}/score`.
 - ATHENA-AI-002 AI Engine — Full Scoring Pipeline. ROADMAP: Rules-based scoring for Momentum, Trend, Sentiment, Institutional, Fair Value, Risk metrics with sub-factor breakdowns. Requires metric score persistence layer (ATHENA-AI-003). Owner: ATHENA.
@@ -299,6 +304,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - DEC-AI-003 (LOCKED): AI Intelligence No Widget Collapse — missing data never collapses the widget; render structure and show missing values as `--`; "Data gathering in progress" full-section replacement forbidden; maintain layout stability.
 - AI Intelligence V2 is the official approved design (PO-approved, 10/10); V1 deprecated. Spec: docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md. All future AI Intelligence work must follow V2.
 - DEC-GOV-004 (LOCKED): Approved Mock Preservation & Design Lock Traceability — every Design Lock must archive the approved mock under `docs/mocks/<feature>/APPROVED_<feature>_v<version>.png` and COMMIT it before implementation starts; record the approved-mock path in the backlog item, UAT ticket, and Design Lock notes. Process: Requirement → UX Mockup → Design Review → Design Lock → SAVE approved mock → COMMIT approved mock → Implementation → UAT. UAT reports must include Approved Mock <path>, Design Lock Commit <id>, Implementation Commit <id>. Non-compliance: implementation started without an archived approved mock is a governance violation and is blocked until the mock is committed. Reason: Analyst Targets drifted because the approved mock was not preserved as a repo source of truth.
+- DEC-AI-CV3 (LOCKED): AI Intelligence Compact V3 design lock principles — (1) no Last Updated; (2) no score badge; (3) no dots/arrows; (4) 3 rows; (5) 4 cards per row; (6) 2.2 visible cards per row; (7) card customization (show/hide, reorder, persisted); (8) semantic card coloring (tone → border/glow/chart stroke). Approved Compact V3 redesign; commits 1b7d426, 3887882.
 
 ## PM Operating Model
 
@@ -461,6 +467,14 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.27 - AI Intelligence Compact V3 Redesign
+Date: 2026-06-22
+Status: Implemented (ARTEMIS); UAT PASS decision pending. Commits 1b7d426, 3887882.
+- AiIntelligenceCompactV3 widget: 3 rows × 4 cards, 2.2 visible per row; no Last Updated, no score badge, no dots/arrows (ARTEMIS-AI-COMPACT-REDESIGN-001).
+- Card customization: show/hide, reorder, three-dot Customize AI Cards sheet, persisted (CR-AI-COMPACT-REDESIGN-002).
+- Semantic tone engine: tone → border/glow/chart stroke; High=red, Low=green; BUY may contain red cards (CR-AI-COMPACT-REDESIGN-003).
+- Design lock DEC-AI-CV3. UAT screenshots: frontend/uat-screenshots/cr-ai-compact-v3-cr002/ (NVDA BUY / NBIS HOLD / AAPL HOLD).
 
 ### v0.3.26 - Explainable AI Intelligence Engine V1
 Date: 2026-06-17

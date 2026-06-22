@@ -437,3 +437,16 @@ Structure scaffolded under docs/mocks/<feature>/{APPROVED,WORKING,UAT} for ai-in
 - APOLLO: UAT/QA validation.
 - HERCULES: governance reads/validation.
 - Backend / HEPHAESTUS: data layer, analytics.
+
+
+
+---
+
+## 2026-06-22 AI Intelligence Compact V3 — Documentation Sync (incremental)
+
+* AiIntelligenceCompactV3 shipped (ARTEMIS): premium compact widget (1b7d426) + card customization + semantic tone engine (3887882).
+* Design LOCKED (DEC-AI-CV3): no Last Updated; no score badge; no dots/arrows; 3 rows; 4 cards per row; 2.2 visible per row; card customization; semantic card coloring (High=red, Low=green; a BUY widget may contain red cards).
+* Customization: three-dot Customize AI Cards sheet — show/hide, reorder, persisted; cards drawn from a card source pool.
+* UAT PENDING (PO PASS decision): NVDA BUY / NBIS HOLD / AAPL HOLD screenshots at 390/430 under frontend/uat-screenshots/cr-ai-compact-v3-cr002/.
+* Governance: per DESIGN-LOCK-002 (GOV-007), a committed DESIGN_SPEC.md in docs/mocks/ai-intelligence/APPROVED/ is required to fully validate the Compact V3 lock (currently a stub).
+* Architecture documented: docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md §1b. Mirrored in MASTER_BACKLOG .md/.xlsx (Backlog, Architecture Decisions DEC-AI-CV3, CHANGELOG) and CHANGELOG.md v0.3.27.

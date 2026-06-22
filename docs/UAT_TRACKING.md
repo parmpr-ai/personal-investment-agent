@@ -16,6 +16,27 @@ Format per entry:
 
 ## UAT Log
 
+### AI Intelligence Compact V3 — ARTEMIS-AI-COMPACT-REDESIGN-001 / CR-AI-COMPACT-REDESIGN-002 / -003
+
+Status: PENDING (PASS decision)
+Owner: ARTEMIS (impl) · APOLLO / Product Owner (UAT decision)
+Date: 2026-06-22
+Approved Mock: docs/mocks/ai-intelligence/APPROVED/ (Compact V3 — confirm canonical image; see GOV-007 spec requirement)
+Design Lock Commit: DEC-AI-CV3 (principles recorded 2026-06-22)
+Implementation Commit: 1b7d426 (widget), 3887882 (customization + semantic tones)
+
+Build: PASS (per implementation commits)
+
+Screenshots (390 / 430, captured):
+- NVDA — BUY verdict: `frontend/uat-screenshots/cr-ai-compact-v3-cr002/nvda-widget-390.png`, `nvda-widget-430.png`, `nvda-customize-390.png`, `nvda-customize-430.png`
+- NBIS — HOLD verdict: `frontend/uat-screenshots/cr-ai-compact-v3-cr002/nbis-widget-390.png`, `nbis-widget-430.png`, `nbis-customize-390.png`, `nbis-customize-430.png`
+- AAPL — HOLD verdict: `frontend/uat-screenshots/cr-ai-compact-v3-cr002/aapl-widget-390.png`, `aapl-widget-430.png`, `aapl-customize-390.png`, `aapl-customize-430.png`
+
+Notes:
+- Verified: 3 rows × 4 cards, 2.2 visible per row; no Last Updated, no score badge, no dots/arrows; three-dot Customize sheet (show/hide, reorder, persisted); semantic tone (High=red, Low=green; a BUY widget may contain red cards).
+- Pending: Product Owner PASS / PASS WITH CR / FAIL decision.
+- Governance (GOV-007 / DESIGN-LOCK-002): Compact V3 requires a committed DESIGN_SPEC.md in APPROVED/ before the design lock is fully valid — currently the AI Compact spec is a stub.
+
 ### HERMES-AI-002 - Explainable AI Intelligence Engine V1
 
 Status: PASS
