@@ -8,7 +8,7 @@ from services.state import portfolio_snapshot, macro_snapshot, news_items, catal
 from services.trade_engine import scanner_items, opportunity_for
 from services.ws import manager
 from services.settings_store import get_settings, save_settings, initialize_settings_store
-from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES, get_snapshot_history
+from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES, get_snapshot_history, normalize_positions
 from services.connectors import InstrumentSearchError, source_health, test_source, yahoo_news, yahoo_fundamentals, yahoo_symbol_search
 from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding, initialize_manual_holdings_store
 from services.news_intelligence import get_news_intelligence
@@ -68,6 +68,7 @@ def get_portfolio_payload():
   p['is_live']=p.get('is_live', resolution.is_live)
   p['is_stale']=p.get('is_stale', resolution.is_stale)
   p['stale_reason']=p.get('stale_reason', resolution.stale_reason)
+  p['positions']=normalize_positions(p.get('positions',[]))
   if not p.get('exposures'): p['exposures']=compute_exposures(p.get('positions',[]),p.get('total_value',0))
   if 'guardrails' not in p: p['guardrails']=risk_doctor(p.get('positions',[]),macros)
   if 'today_actions' not in p: p['today_actions']=today_actions(p.get('positions',[]),macros)
@@ -108,6 +109,7 @@ def get_portfolio_payload():
    'journal': [],
   }
   demo['provider_error']=str(e)
+  demo['positions']=normalize_positions(demo.get('positions',[]))
   if resolution.configured_mode == 'mock':
    return merge_manual_holdings(demo,macros,state_module)
   return demo

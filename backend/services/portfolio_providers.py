@@ -231,7 +231,7 @@ def _option_metadata(contract_desc: str, fallback_symbol: str = "") -> Dict[str,
     text = str(contract_desc or "").strip()
     bracket = re.search(r"\[([^\]]+)\]", text)
     candidate = bracket.group(1).strip() if bracket else text
-    normalized = re.sub(r"\s+", " ", candidate)
+    normalized = re.sub(r"\s+", " ", candidate).upper()
     underlying = fallback_symbol.strip().upper()
     expiration = None
     strike = None
@@ -251,7 +251,7 @@ def _option_metadata(contract_desc: str, fallback_symbol: str = "") -> Dict[str,
             expiration = expiry
     else:
         text_match = re.search(
-            r"(?P<underlying>[A-Z0-9.\-]+)\s+(?P<month>[A-Z]{3})(?P<year>\d{4})\s+(?P<strike>\d+(?:\.\d+)?)\s+(?P<cp>[CP])",
+            r"(?P<underlying>[A-Z0-9.\-]+)\s+(?P<month>[A-Z]{3})\s*(?P<year>\d{4})\s+(?P<strike>\d+(?:\.\d+)?)(?:\s*)?(?P<cp>[CP])",
             normalized,
         )
         if text_match:
@@ -275,7 +275,7 @@ def _option_metadata(contract_desc: str, fallback_symbol: str = "") -> Dict[str,
                 }
                 month = month_map.get(text_match.group("month"))
                 if month:
-                    expiration = datetime(int(text_match.group("year")), month, 1).date().isoformat()
+                    expiration = f"{int(text_match.group('year')):04d}-{month:02d}"
             except Exception:
                 pass
     return {
@@ -288,15 +288,13 @@ def _option_metadata(contract_desc: str, fallback_symbol: str = "") -> Dict[str,
 
 def _classify_asset_class(raw: Any, contract_desc: str = "", symbol: str = "") -> str:
     value = str(raw or "").upper().strip()
-    if value in {"OPT", "STK", "ETF", "CASH", "CRYPTO"}:
+    if value in {"OPT", "STK", "CRYPTO"}:
         return value
     desc = f"{contract_desc} {symbol}".upper()
     if any(token in desc for token in ("CASH", "CURRENCY", "FX")):
         return "CASH"
-    if any(token in desc for token in ("BTC", "ETH", "CRYPTO")) or value == "CRYPTO":
+    if any(token in desc for token in ("BTC", "ETH", "XRP", "SOL", "DOGE", "CRYPTO")) or value == "CRYPTO":
         return "CRYPTO"
-    if value in {"ETF", "FUND"}:
-        return "ETF"
     if value in {"OPTION", "OPTIONS"}:
         return "OPT"
     return "STK"
@@ -335,7 +333,8 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "contract_desc": contract_desc,
                 "symbol": str(raw.get("symbol") or option_meta.get("underlying") or symbol or contract_desc or "").strip(),
                 "underlying": str(raw.get("underlying") or option_meta.get("underlying") or symbol or "").strip(),
-                "expiration": raw.get("expiration") or option_meta.get("expiration"),
+                "expiry": raw.get("expiry") or raw.get("expiration") or option_meta.get("expiration"),
+                "expiration": raw.get("expiry") or raw.get("expiration") or option_meta.get("expiration"),
                 "strike": raw.get("strike") if raw.get("strike") is not None else option_meta.get("strike"),
                 "call_put": raw.get("call_put") or option_meta.get("call_put"),
                 "multiplier": multiplier,
@@ -364,7 +363,11 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if raw.get("ai_view"):
             current["ai_view"] = raw.get("ai_view")
         if raw.get("expiration"):
+            current["expiry"] = raw.get("expiration")
             current["expiration"] = raw.get("expiration")
+        if raw.get("expiry"):
+            current["expiry"] = raw.get("expiry")
+            current["expiration"] = raw.get("expiry")
         if raw.get("strike") is not None:
             current["strike"] = raw.get("strike")
         if raw.get("call_put"):
@@ -392,6 +395,7 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if row["assetClass"] == "OPT":
             option_meta = _option_metadata(row["contractDesc"], fallback_symbol=row["underlying"] or row["symbol"])
             row.setdefault("underlying", option_meta.get("underlying") or row["symbol"])
+            row.setdefault("expiry", option_meta.get("expiration"))
             row.setdefault("expiration", option_meta.get("expiration"))
             row.setdefault("strike", option_meta.get("strike"))
             row.setdefault("call_put", option_meta.get("call_put"))
@@ -401,6 +405,10 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         row["portfolio_pct"] = _num(row.get("portfolio_pct"))
         aggregated.append(row)
     return aggregated
+
+
+def normalize_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return _aggregate_positions(list(rows or []))
 
 
 def _save_snapshot_bundle(bundle: Dict[str, Any]) -> None:
@@ -427,12 +435,13 @@ class MockPortfolioProvider:
     def get_portfolio(self) -> Dict[str, Any]:
         from services.state import portfolio_snapshot
         p = portfolio_snapshot()
+        p["positions"] = normalize_positions(p.get("positions", []))
         p["source"] = "MOCK"
         return p
 
     def get_positions(self) -> List[Dict]:
         from services.state import portfolio_snapshot
-        return portfolio_snapshot().get("positions", [])
+        return normalize_positions(portfolio_snapshot().get("positions", []))
 
     def get_summary(self) -> Dict[str, Any]:
         from services.state import portfolio_snapshot

@@ -41,11 +41,32 @@ def initialize_manual_holdings_store() -> None:
                     avg_price REAL NOT NULL,
                     currency TEXT NOT NULL,
                     notes TEXT NOT NULL DEFAULT '',
+                    asset_class TEXT,
+                    sec_type TEXT,
+                    underlying TEXT,
+                    expiry TEXT,
+                    strike REAL,
+                    call_put TEXT,
+                    multiplier REAL,
+                    contract_desc TEXT,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL
                 )
                 """
             )
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(manual_holdings)")}
+            for col, ddl in [
+                ("asset_class", "TEXT"),
+                ("sec_type", "TEXT"),
+                ("underlying", "TEXT"),
+                ("expiry", "TEXT"),
+                ("strike", "REAL"),
+                ("call_put", "TEXT"),
+                ("multiplier", "REAL"),
+                ("contract_desc", "TEXT"),
+            ]:
+                if col not in columns:
+                    conn.execute(f"ALTER TABLE manual_holdings ADD COLUMN {col} {ddl}")
         _DB_INITIALIZED = True
 
 
@@ -62,6 +83,15 @@ def _row_to_holding(row: sqlite3.Row) -> dict[str, Any]:
         "ticker": row["ticker"],
         "name": row["name"],
         "asset_type": row["asset_type"],
+        "assetClass": row["asset_class"] if "asset_class" in row.keys() else None,
+        "sec_type": row["sec_type"] if "sec_type" in row.keys() else None,
+        "underlying": row["underlying"] if "underlying" in row.keys() else None,
+        "expiry": row["expiry"] if "expiry" in row.keys() else None,
+        "expiration": row["expiry"] if "expiry" in row.keys() else None,
+        "strike": row["strike"] if "strike" in row.keys() else None,
+        "callPut": row["call_put"] if "call_put" in row.keys() else None,
+        "multiplier": row["multiplier"] if "multiplier" in row.keys() else None,
+        "contractDesc": row["contract_desc"] if "contract_desc" in row.keys() else None,
         "broker": row["broker"],
         "quantity": row["quantity"],
         "avg_price": row["avg_price"],
@@ -70,10 +100,37 @@ def _row_to_holding(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def _normalize_asset_class(asset_class: str | None, asset_type: str | None, ticker: str, underlying: str | None = None) -> str:
+    raw = str(asset_class or "").strip().upper()
+    if raw in {"STK", "OPT", "CRYPTO"}:
+        return raw
+    asset_type_raw = str(asset_type or "").strip().lower()
+    if asset_type_raw == "option":
+        return "OPT"
+    if asset_type_raw == "crypto" or ticker.upper() in {"BTC", "ETH", "XRP", "SOL", "DOGE"}:
+        return "CRYPTO"
+    if underlying:
+        return "OPT"
+    return "STK"
+
+
+def _option_contract_desc(underlying: str, expiry: str, strike: float | int | str, call_put: str) -> str:
+    expiry_value = str(expiry or "").strip()
+    strike_value = str(strike or "").strip()
+    call_put_value = str(call_put or "").strip().upper()
+    return f"{underlying} {expiry_value} {strike_value} {call_put_value}".strip()
+
+
 def normalize_holding(data: dict[str, Any], existing_id: str | None = None) -> dict[str, Any]:
     ticker = str(data.get("ticker") or "").strip().upper()
     name = str(data.get("name") or ticker).strip()
     asset_type = str(data.get("asset_type") or "Stock").strip()
+    asset_class = _normalize_asset_class(data.get("assetClass"), asset_type, ticker, data.get("underlying"))
+    sec_type = str(data.get("sec_type") or asset_class).strip().upper()
+    underlying = str(data.get("underlying") or "").strip().upper()
+    expiry = str(data.get("expiry") or data.get("expiration") or "").strip()
+    call_put = str(data.get("callPut") or data.get("call_put") or "").strip().upper()
+    strike_raw = data.get("strike")
     broker = str(data.get("broker") or "Manual").strip()
     currency = str(data.get("currency") or "USD").strip().upper()
     notes = str(data.get("notes") or "").strip()
@@ -82,8 +139,23 @@ def normalize_holding(data: dict[str, Any], existing_id: str | None = None) -> d
         avg_price = float(data.get("avg_price"))
     except (TypeError, ValueError):
         raise ValueError("quantity and avg_price must be numbers")
-    if not ticker:
-        raise ValueError("ticker is required")
+    if asset_class == "OPT":
+        if not underlying:
+            raise ValueError("underlying is required for options")
+        if not expiry:
+            raise ValueError("expiry is required for options")
+        if not call_put:
+            raise ValueError("callPut is required for options")
+        try:
+            strike = float(strike_raw)
+        except (TypeError, ValueError):
+            raise ValueError("strike is required for options")
+        if not ticker:
+            ticker = underlying
+    else:
+        if not ticker:
+            raise ValueError("ticker is required")
+        strike = float(strike_raw) if strike_raw not in (None, "") else None
     if not name:
         raise ValueError("name is required")
     if asset_type not in ALLOWED_ASSET_TYPES:
@@ -101,6 +173,15 @@ def normalize_holding(data: dict[str, Any], existing_id: str | None = None) -> d
         "ticker": ticker,
         "name": name,
         "asset_type": asset_type,
+        "assetClass": asset_class,
+        "sec_type": sec_type,
+        "underlying": underlying,
+        "expiry": expiry or None,
+        "expiration": expiry or None,
+        "strike": strike,
+        "callPut": call_put or None,
+        "multiplier": float(data.get("multiplier") or (100 if asset_class == "OPT" else 1)),
+        "contractDesc": str(data.get("contractDesc") or data.get("contract_desc") or (_option_contract_desc(underlying or ticker, expiry, strike_raw, call_put) if asset_class == "OPT" else name)).strip(),
         "broker": broker,
         "quantity": quantity,
         "avg_price": avg_price,
@@ -122,8 +203,8 @@ def create_manual_holding(data: dict[str, Any]) -> dict[str, Any]:
         conn.execute(
             """
             INSERT INTO manual_holdings
-            (id, ticker, name, asset_type, broker, quantity, avg_price, currency, notes, created_at, updated_at)
-            VALUES (:id, :ticker, :name, :asset_type, :broker, :quantity, :avg_price, :currency, :notes, :created_at, :updated_at)
+            (id, ticker, name, asset_type, broker, quantity, avg_price, currency, notes, asset_class, sec_type, underlying, expiry, strike, call_put, multiplier, contract_desc, created_at, updated_at)
+            VALUES (:id, :ticker, :name, :asset_type, :broker, :quantity, :avg_price, :currency, :notes, :assetClass, :sec_type, :underlying, :expiry, :strike, :callPut, :multiplier, :contractDesc, :created_at, :updated_at)
             """,
             {**holding, "created_at": now, "updated_at": now},
         )
@@ -141,7 +222,9 @@ def update_manual_holding(holding_id: str, data: dict[str, Any]) -> dict[str, An
             UPDATE manual_holdings
             SET ticker = :ticker, name = :name, asset_type = :asset_type, broker = :broker,
                 quantity = :quantity, avg_price = :avg_price, currency = :currency,
-                notes = :notes, updated_at = :updated_at
+                notes = :notes, asset_class = :assetClass, sec_type = :sec_type, underlying = :underlying,
+                expiry = :expiry, strike = :strike, call_put = :callPut, multiplier = :multiplier,
+                contract_desc = :contractDesc, updated_at = :updated_at
             WHERE id = :id
             """,
             {**holding, "updated_at": int(time.time())},
@@ -199,28 +282,34 @@ def manual_positions(total_before_cash: float = 0) -> list[dict[str, Any]]:
             last_price = float(last) if last is not None else float(holding["avg_price"])
         except (TypeError, ValueError):
             last_price = float(holding["avg_price"])
-        multiplier = 100 if holding["asset_type"] == "Option" else 1
+        asset_class = str(holding.get("assetClass") or _normalize_asset_class(None, holding["asset_type"], holding["ticker"], holding.get("underlying"))).upper()
+        multiplier = float(holding.get("multiplier") or (100 if asset_class == "OPT" else 1))
         quantity = float(holding["quantity"])
         avg_price = float(holding["avg_price"])
         cost_basis = round(quantity * avg_price * multiplier, 2)
         market_value = round(quantity * last_price * multiplier, 2)
         unrealized = round(market_value - cost_basis, 2)
-        symbol = holding["ticker"]
+        symbol = holding["underlying"] if asset_class == "OPT" and holding.get("underlying") else holding["ticker"]
+        contract_desc = holding.get("contractDesc") or (holding["name"] if asset_class != "OPT" else _option_contract_desc(symbol, holding.get("expiry") or "", holding.get("strike") or "", holding.get("callPut") or ""))
         positions.append(
             {
                 "id": holding["id"],
                 "accountId": f"MANUAL:{holding['broker']}",
                 "account_id": f"MANUAL:{holding['broker']}",
                 "conid": f"manual:{holding['id']}",
-                "contractDesc": holding["name"],
-                "contract_desc": holding["name"],
+                "contractDesc": contract_desc,
+                "contract_desc": contract_desc,
                 "symbol": symbol,
-                "underlying": symbol,
+                "underlying": holding.get("underlying") or symbol,
                 "name": holding["name"],
-                "sec_type": _asset_sec_type(holding["asset_type"]),
+                "sec_type": asset_class,
                 "asset_type": holding["asset_type"],
-                "assetClass": _asset_sec_type(holding["asset_type"]),
+                "assetClass": asset_class,
                 "sector": holding["asset_type"],
+                "expiry": holding.get("expiry"),
+                "expiration": holding.get("expiry"),
+                "strike": holding.get("strike"),
+                "call_put": holding.get("callPut"),
                 "broker": holding["broker"],
                 "qty": quantity,
                 "avg_price": round(avg_price, 4),
@@ -234,7 +323,7 @@ def manual_positions(total_before_cash: float = 0) -> list[dict[str, Any]]:
                 "realized": 0,
                 "unrealized_pct": round((unrealized / cost_basis * 100), 2) if cost_basis else 0,
                 "portfolio_pct": round((market_value / total_before_cash * 100), 2) if total_before_cash else 0,
-                "risk": 86 if holding["asset_type"] in {"Crypto", "Option"} else 58,
+                "risk": 86 if asset_class in {"CRYPTO", "OPT"} else 58,
                 "brand": "#24d18c",
                 "accent": "#60a5fa" if holding["broker"] != "Revolut" else "#24d18c",
                 "logo": symbol[:2],

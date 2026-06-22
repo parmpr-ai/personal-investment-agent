@@ -51,6 +51,7 @@ Developers may stop only for:
   - Mobile correction mock review for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
   - IBKR live portfolio correctness and 3-mode portfolio selection resolved; validate Product Owner review of the new UAT screenshots at `frontend/uat-screenshots/pia-ibkr-live-007/`.
   - HERMES-IBKR-UAT-009 hardens live status evaluation, duplicate detection, option normalization, and snapshot history. Offline validation confirms no mock leakage when live mode falls back to last-update.
+  - HERMES-PORTFOLIO-ASSETCLASS-001 extends the portfolio model with explicit `assetClass` normalization for stock, option, and crypto across mock, snapshot, live, and manual positions.
 
 ## Sprint Summary
 
@@ -314,6 +315,7 @@ Developers may stop only for:
   - PARTIAL 2026-05-28: Help reduce mobile performance lag.
   - DONE 2026-06-22: HERMES-IBKR-LIVE-007 portfolio provider correctness, snapshot persistence, and 3-mode mobile/desktop source sync.
   - DONE 2026-06-22: HERMES-IBKR-UAT-009 live source resolution hardening, snapshot history, duplicate detection, and option normalization.
+  - DONE 2026-06-22: HERMES-PORTFOLIO-ASSETCLASS-001 assetClass normalization and manual holdings schema expansion.
 - ATHENA:
   - DONE 2026-05-28: Create Mobile Portfolio Snapshot, Position Full Screen, Workspace Navigation, and Alerts mocks.
   - DONE 2026-05-28: Fix Market Pulse swipe gestures.
@@ -547,6 +549,15 @@ Status: Implemented and locally validated.
 - Duplicate detection now uses accountId + conid + assetClass + contractDesc + currency, and option rows expose underlying/expiration/strike/call_put/multiplier.
 - Provider status, live endpoints, and `/portfolio` now share strict `is_live`, `is_stale`, `stale_reason`, `snapshot_available`, and `snapshot_timestamp` fields.
 - Validation: `py_compile`, `npm run build`, `/`, `/mobile`, `/setup`, provider mode switching, dedupe checks, and history endpoint smoke tests passed locally. Live gateway validation remains pending because the local IBKR Client Portal Gateway is offline in this environment.
+
+### v0.3.32 - Portfolio Asset Class Normalization
+Date: 2026-06-22
+Status: Implemented and locally validated.
+- HERMES-PORTFOLIO-ASSETCLASS-001 adds explicit `assetClass` normalization across mock, snapshot, live, and manual holdings paths.
+- Manual holdings now persist `assetClass`, `sec_type`, `underlying`, `expiry`, `strike`, `callPut`, `multiplier`, and `contractDesc`.
+- Option text like `SOFI Jun 2027 22C` now normalizes to `assetClass=OPT`, `underlying=SOFI`, `expiry=2027-06`, `strike=22`, `callPut=C`.
+- Crypto symbols such as `BTC`, `ETH`, and `XRP` normalize to `assetClass=CRYPTO`.
+- Validation: backend compile plus API payload smoke checks confirmed `assetClass`, `expiry`, and option metadata are present on portfolio rows.
 
 ### v0.3.29 - AI Intelligence V3 Research Documentation (ATHENA-GOV-022)
 Date: 2026-06-22
