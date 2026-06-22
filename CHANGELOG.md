@@ -1,5 +1,23 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.32 - IBKR Live Diagnostic Trace (HERMES-IBKR-LIVE-DIAGNOSTIC-014)
+
+Date: 2026-06-22
+Status: Implemented and locally validated.
+
+### Diagnostics
+
+* Added `/api/debug/live-status` and `/api/debug/live-quotes` for end-to-end live quote inspection.
+* Added live quote trace capture inside the IBKR portfolio provider so each quote snapshot is tagged with source, timestamps, and age.
+* Exposed cache-layer inventory for quote, portfolio, dashboard, provider status, context, fundamentals, and news routes.
+* Reduced the debug route path so browser-facing diagnostics return partial 200 responses quickly instead of recreating provider stalls.
+
+### Root cause
+
+* Current environment is not actually connected to IBKR Client Portal Gateway. The provider status resolves to `LAST_UPDATE` with `gateway_error=<urlopen error timed out>`.
+* The UI is therefore seeing last-update snapshot data, not fresh live-market quotes.
+* Live quote timestamps remain unchanged across repeated requests because the backend is serving the cached snapshot path.
+
 ## v0.3.31 - Backend Timeout Hotfix (HERMES-BACKEND-TIMEOUT-HOTFIX-013)
 
 Date: 2026-06-22

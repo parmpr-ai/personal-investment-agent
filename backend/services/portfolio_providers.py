@@ -14,6 +14,7 @@ import re
 import ssl
 import time
 import threading
+from collections import deque
 from datetime import timedelta
 import urllib.request
 import urllib.error
@@ -41,6 +42,8 @@ _LAST_UPDATE_MODE_ALIASES = {"demo", "demo-samples", "sample", "snapshot", "last
 _SNAPSHOT_STALE_AFTER_SECONDS = 15 * 60
 _LIVE_REFRESH_SECONDS = 12.0
 _SNAPSHOT_LOCK = threading.RLock()
+_LIVE_QUOTE_TRACE_LOCK = threading.RLock()
+_LIVE_QUOTE_TRACE: deque[Dict[str, Any]] = deque(maxlen=500)
 
 
 def _num(v: Any, d: float = 0.0) -> float:
@@ -240,6 +243,36 @@ def _position_quote_refresh_age(refresh_at: Optional[str]) -> Optional[float]:
     except Exception:
         return None
     return max(0.0, (datetime.now(timezone.utc) - dt).total_seconds())
+
+
+def _record_live_quote_trace(
+    *,
+    symbol: str,
+    conid: str,
+    source: str,
+    quote_timestamp: Optional[str],
+    server_timestamp: Optional[str] = None,
+    age_seconds: Optional[float] = None,
+) -> None:
+    payload = {
+        "symbol": str(symbol or "").upper(),
+        "conid": str(conid or ""),
+        "source": source,
+        "quoteTimestamp": quote_timestamp,
+        "serverTimestamp": server_timestamp or datetime.now(timezone.utc).isoformat(),
+        "ageSeconds": age_seconds,
+    }
+    with _LIVE_QUOTE_TRACE_LOCK:
+        _LIVE_QUOTE_TRACE.append(payload)
+
+
+def get_live_quote_trace(limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    with _LIVE_QUOTE_TRACE_LOCK:
+        rows = list(_LIVE_QUOTE_TRACE)
+    rows.sort(key=lambda row: str(row.get("serverTimestamp") or ""), reverse=True)
+    if limit and limit > 0:
+        return rows[:limit]
+    return rows
 
 
 def _is_snapshot_stale(meta_payload: Dict[str, Any], threshold_seconds: float = _SNAPSHOT_STALE_AFTER_SECONDS) -> bool:
@@ -876,6 +909,8 @@ class IbkrLivePortfolioProvider:
                 conid = str(entry.get("conid") or entry.get("conidEx") or entry.get("conId") or "").strip()
                 if not conid:
                     continue
+                symbol = str(entry.get("symbol") or entry.get("ticker") or entry.get("55") or "").strip().upper()
+                quote_last_refresh = refresh_at
                 quote_map[conid] = {
                     "conid": conid,
                     "last": _maybe_num(entry.get("31") or entry.get("last") or entry.get("lastPrice") or entry.get("mktPrice")),
@@ -884,12 +919,20 @@ class IbkrLivePortfolioProvider:
                     "previous_close": _maybe_num(entry.get("85") or entry.get("previousClose") or entry.get("prevClose") or entry.get("close")),
                     "volume": _maybe_num(entry.get("87") or entry.get("volume")),
                     "bid_size": _maybe_num(entry.get("88") or entry.get("bidSize")),
-                    "quoteLastRefresh": refresh_at,
+                    "quoteLastRefresh": quote_last_refresh,
                     "quoteSource": "IBKR_MARKETDATA_SNAPSHOT",
                     "quoteStale": False,
                     "quoteStaleReason": None,
                     "raw": entry,
                 }
+                _record_live_quote_trace(
+                    symbol=symbol or conid,
+                    conid=conid,
+                    source="LIVE",
+                    quote_timestamp=quote_last_refresh,
+                    server_timestamp=quote_last_refresh,
+                    age_seconds=0.0,
+                )
         return quote_map
 
     def _fetch_partitioned_pnl(self) -> Optional[Dict[str, Any]]:
@@ -1011,6 +1054,14 @@ class IbkrLivePortfolioProvider:
                 if merged.get("quoteLastRefresh"):
                     quote_refreshes.append(str(merged.get("quoteLastRefresh")))
                 fallback_reason = fallback_reason or stale_reason
+                _record_live_quote_trace(
+                    symbol=str(merged.get("symbol") or merged.get("underlying") or merged.get("contractDesc") or "").upper(),
+                    conid=str(merged.get("conid") or ""),
+                    source="LAST_UPDATE" if fallback_source == "POSITION_ENDPOINT" else "CACHE",
+                    quote_timestamp=str(merged.get("quoteLastRefresh") or ""),
+                    server_timestamp=refreshed_at,
+                    age_seconds=_position_quote_refresh_age(str(merged.get("quoteLastRefresh"))) if merged.get("quoteLastRefresh") else None,
+                )
             merged_positions.append(merged)
         if not quote_refreshes:
             prices_live = False
@@ -1575,6 +1626,9 @@ class IbkrLivePortfolioProvider:
             }
         )
         return meta
+
+    def get_live_quote_trace(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        return get_live_quote_trace(limit=limit)
 
 
 # ─── Provider Factory ─────────────────────────────────────────────────────────

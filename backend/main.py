@@ -9,7 +9,7 @@ from services.state import portfolio_snapshot, macro_snapshot, news_items, catal
 from services.trade_engine import scanner_items, opportunity_for
 from services.ws import manager
 from services.settings_store import get_settings, save_settings, initialize_settings_store
-from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES, get_snapshot_history, normalize_positions
+from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES, get_snapshot_history, normalize_positions, get_live_quote_trace, SnapshotPortfolioProvider, IbkrLivePortfolioProvider
 from services.connectors import InstrumentSearchError, source_health, test_source, yahoo_news, yahoo_fundamentals, yahoo_symbol_search
 from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding, initialize_manual_holdings_store
 from services.news_intelligence import get_news_intelligence
@@ -65,6 +65,8 @@ _ROUTE_CACHE_TTL_SECONDS = {
  "news": 12,
 }
 
+_DEBUG_QUOTE_SYMBOLS = ("AMD", "NVDA", "TSM", "SOFI")
+
 
 def _route_source_status(name:str, status:str, latency_ms:float, *, fallback_used:bool=False, error:str|None=None, detail:str|None=None):
  safe_error = None
@@ -90,6 +92,43 @@ def _quick_portfolio_payload():
  p=portfolio_snapshot()
  p['positions']=normalize_positions(p.get('positions',[]))
  return p
+
+
+def _cache_layers_debug():
+ return {
+  'quoteCacheTtlSeconds': 12,
+  'portfolioCacheTtlSeconds': 12,
+  'dashboardCacheTtlSeconds': _ROUTE_CACHE_TTL_SECONDS['dashboard'],
+  'stockCacheTtlSeconds': _ROUTE_CACHE_TTL_SECONDS['stock'],
+  'providerStatusCacheTtlSeconds': _ROUTE_CACHE_TTL_SECONDS['provider_status'],
+  'contextCacheTtlSeconds': _ROUTE_CACHE_TTL_SECONDS['context'],
+  'contextBatchCacheTtlSeconds': _ROUTE_CACHE_TTL_SECONDS['context_batch'],
+  'yahooFundamentalsCacheTtlSeconds': _ROUTE_CACHE_TTL_SECONDS['fundamentals'],
+  'yahooNewsCacheTtlSeconds': _ROUTE_CACHE_TTL_SECONDS['news'],
+  'providerCacheDb': 'backend/pia_provider_cache.sqlite3',
+ }
+
+
+def _quote_source_label(resolution, meta:dict, position:dict|None):
+ if resolution.active_source == 'IBKR_LIVE':
+  if meta.get('pricesLive'):
+   return 'LIVE'
+  if meta.get('fallback_active'):
+   return 'CACHE'
+  return 'LIVE'
+ if resolution.active_source == 'LAST_UPDATE':
+  return 'LAST_UPDATE'
+ if resolution.active_source == 'MOCK':
+  return 'CACHE'
+ if position and position.get('quoteSource') == 'IBKR_MARKETDATA_SNAPSHOT' and position.get('quoteLastRefresh'):
+  return 'CACHE'
+ return 'LAST_UPDATE' if resolution.snapshot_available else 'CACHE'
+
+
+def _select_debug_positions(portfolio:dict, symbols:list[str]):
+ wanted = [s.upper().split()[0] for s in symbols if s]
+ positions = portfolio.get('positions', []) if isinstance(portfolio, dict) else []
+ return [p for p in positions if str(p.get('symbol') or p.get('underlying') or '').upper().split()[0] in wanted]
 
 def get_portfolio_payload():
  import services.state as state_module
@@ -795,6 +834,105 @@ def portfolio_live_trades():
   'is_stale': bool(resolution.is_stale or meta.get('is_stale')),
    'stale_reason': resolution.stale_reason or meta.get('stale_reason'),
    'trades': provider.get_trades()
+  }
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get('/api/debug/live-status')
+def debug_live_status():
+ try:
+  provider_status = portfolio_provider_status()
+  quote_trace = get_live_quote_trace(limit=20)
+  last_quote_received = quote_trace[0] if quote_trace else None
+  active_source = str(provider_status.get('active_source') or '').upper()
+  market_data_subscribed = bool(active_source == 'IBKR_LIVE' and provider_status.get('pricesLive'))
+  account_connected = bool(provider_status.get('accounts_available') or provider_status.get('positions_available'))
+  gateway_connected = bool(provider_status.get('ibkr_gateway_reachable') and provider_status.get('ibkr_authenticated'))
+  positions_live = bool(provider_status.get('is_live'))
+  prices_live = bool(provider_status.get('is_live') and provider_status.get('pricesLive'))
+  return {
+   'gatewayConnected': gateway_connected,
+   'accountConnected': account_connected,
+   'marketDataSubscribed': market_data_subscribed,
+   'pricesLive': prices_live,
+   'positionsLive': positions_live,
+   'lastQuoteReceived': last_quote_received,
+   'quoteAgeSeconds': provider_status.get('pricesAgeSeconds'),
+   'providerStatus': provider_status,
+   'portfolioStatus': {
+    'source': provider_status.get('active_source'),
+    'mode': provider_status.get('configured_mode'),
+    'is_live': provider_status.get('is_live'),
+    'is_stale': provider_status.get('is_stale'),
+    'pricesLive': provider_status.get('pricesLive'),
+    'pricesLastRefresh': provider_status.get('pricesLastRefresh'),
+    'positionsLastRefresh': provider_status.get('positionsLastRefresh'),
+    'summaryLastRefresh': provider_status.get('summaryLastRefresh'),
+   },
+   'cacheLayers': _cache_layers_debug(),
+   'providerTrace': quote_trace[:10],
+   'providerClass': provider_status.get('provider_class'),
+  }
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get('/api/debug/live-quotes')
+def debug_live_quotes():
+ try:
+  provider_status = portfolio_provider_status()
+  active_source = str(provider_status.get('active_source') or '').upper()
+  provider = IbkrLivePortfolioProvider() if active_source == 'IBKR_LIVE' else SnapshotPortfolioProvider()
+  positions = provider.get_positions() if hasattr(provider, 'get_positions') else []
+  meta = provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {}
+  positions = _select_debug_positions({'positions': positions}, list(_DEBUG_QUOTE_SYMBOLS))
+  quote_trace = get_live_quote_trace(limit=50)
+  trace_lookup = {}
+  for row in quote_trace:
+   key = f"{str(row.get('symbol') or '').upper().split()[0]}:{str(row.get('conid') or '')}"
+   trace_lookup.setdefault(key, row)
+  output = []
+  for symbol in _DEBUG_QUOTE_SYMBOLS:
+   pos = next((row for row in positions if str(row.get('symbol') or row.get('underlying') or '').upper().split()[0] == symbol), None)
+   key = f"{symbol}:{str(pos.get('conid') or '')}" if pos else f"{symbol}:"
+   trace = trace_lookup.get(key)
+   timestamp = None
+   age_seconds = None
+   source = 'LAST_UPDATE'
+   if trace:
+    timestamp = trace.get('quoteTimestamp') or trace.get('serverTimestamp')
+    age_seconds = trace.get('ageSeconds')
+    source = trace.get('source') or source
+   elif pos:
+    timestamp = pos.get('quoteLastRefresh') or pos.get('lastRefresh') or meta.get('lastRefresh')
+    age_seconds = pos.get('quoteAgeSeconds')
+    source = _quote_source_label(type('Resolution', (), {'active_source': active_source, 'snapshot_available': bool(provider_status.get('snapshot_available'))}), meta, pos)
+   output.append({
+    'symbol': symbol,
+    'conid': pos.get('conid') if pos else None,
+    'price': pos.get('last') if pos else None,
+    'timestamp': timestamp,
+    'ageSeconds': age_seconds,
+    'source': source,
+    'quoteTimestamp': timestamp,
+    'serverTimestamp': trace.get('serverTimestamp') if trace else meta.get('lastRefresh') or meta.get('snapshot_timestamp'),
+   })
+  return {
+   'gatewayConnected': bool(provider_status.get('ibkr_gateway_reachable') and provider_status.get('ibkr_authenticated')),
+   'accountConnected': bool(provider_status.get('accounts_available') or provider_status.get('positions_available')),
+   'marketDataSubscribed': bool(provider_status.get('is_live') and (provider_status.get('pricesLive') or meta.get('pricesLive'))),
+   'pricesLive': bool(provider_status.get('is_live') and (provider_status.get('pricesLive') or meta.get('pricesLive'))),
+   'positionsLive': bool(provider_status.get('is_live')),
+   'lastQuoteReceived': output[0] if output else None,
+   'quoteAgeSeconds': provider_status.get('pricesAgeSeconds') or meta.get('pricesAgeSeconds'),
+   'quotes': output,
+   'providerTrace': quote_trace[:20],
+   'cacheLayers': _cache_layers_debug(),
+   'providerClass': provider_status.get('provider_class'),
+   'source': provider_status.get('active_source'),
+   'fallbackActive': provider_status.get('fallback_active'),
+   'fallbackReason': provider_status.get('fallback_reason'),
   }
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
