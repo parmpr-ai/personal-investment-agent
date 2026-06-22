@@ -29,8 +29,14 @@ export function sampleBody(body: any) {
   return body
 }
 
-export async function proxyJson(url: string, init?: RequestInit) {
-  const response = await fetch(url, { cache: 'no-store', ...init })
-  const body = await response.json().catch(() => ({}))
-  return { response, body }
+export async function proxyJson(url: string, init?: RequestInit, timeoutMs = 12000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { cache: 'no-store', signal: controller.signal, ...init })
+    const body = await response.json().catch(() => ({}))
+    return { response, body }
+  } finally {
+    clearTimeout(timer)
+  }
 }

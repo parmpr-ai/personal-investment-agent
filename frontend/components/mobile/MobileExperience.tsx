@@ -179,33 +179,44 @@ const scannerFallback = [
 
 function useMobileDashboard() {
   const [dashboard, setDashboard] = useState<any>(null)
+  const [backendStatus, setBackendStatus] = useState<'loading' | 'ok' | 'unavailable'>('loading')
 
   const refresh = useCallback(async () => {
-    const response = await fetch('/api/dashboard', { cache: 'no-store' })
-    const data = await response.json()
-    if (!response.ok) throw data
-    setDashboard(data)
-    return data
+    try {
+      const response = await fetch('/api/dashboard', { cache: 'no-store' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) { setBackendStatus('unavailable'); return null }
+      setDashboard(data)
+      setBackendStatus('ok')
+      return data
+    } catch {
+      setBackendStatus('unavailable')
+      return null
+    }
   }, [])
 
   useEffect(() => {
-    refresh().catch(() => {})
+    refresh()
 
     let socket: WebSocket | undefined
     try {
-      socket = new WebSocket('ws://127.0.0.1:8000/ws')
+      const wsHost = window.location.hostname
+      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      socket = new WebSocket(`${wsProto}//${wsHost}:8000/ws`)
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data)
-          if (payload.type === 'dashboard_update') setDashboard(payload)
+          if (payload.type === 'dashboard_update') { setDashboard(payload); setBackendStatus('ok') }
         } catch {}
       }
+      socket.onerror = () => { if (!dashboard) setBackendStatus('unavailable') }
     } catch {}
 
     return () => socket?.close()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh])
 
-  return { dashboard, refresh }
+  return { dashboard, refresh, backendStatus }
 }
 
 function riskTone(value: number) {
@@ -3157,7 +3168,7 @@ const HEADER_TITLE_OVERRIDES: Record<string, string> = {
 }
 
 export default function MobileExperience() {
-  const { dashboard, refresh: refreshDashboard } = useMobileDashboard()
+  const { dashboard, refresh: refreshDashboard, backendStatus } = useMobileDashboard()
   const workspaceConfig = useWorkspaceConfig()
   const [active, setActive] = useState('home')
   const [selected, setSelected] = useState<any>(null)
@@ -3395,6 +3406,12 @@ export default function MobileExperience() {
           </button>
         </div>
       </header>
+
+      {backendStatus === 'unavailable' && (
+        <div className="mobile-backend-offline" role="alert">
+          Backend unavailable — data may be stale
+        </div>
+      )}
 
       {active === 'home' && (
         <MobileReorderableSections

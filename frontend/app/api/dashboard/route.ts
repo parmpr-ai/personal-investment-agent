@@ -15,12 +15,16 @@ export async function GET() {
       { status: response.status },
     )
   } catch (error: any) {
+    const isTimeout = error?.name === 'AbortError' || String(error).includes('abort')
     return NextResponse.json(
       {
-        detail: `Dashboard proxy could not reach backend at ${backendUrl}.`,
+        detail: isTimeout
+          ? `Backend at ${backendUrl} did not respond within 12 s — likely fetching live data.`
+          : `Dashboard proxy could not reach backend at ${backendUrl}.`,
         error: error?.message || String(error),
         request_url: backendUrl,
         response_status: 0,
+        backendReachable: false,
         body_sample: null,
       },
       { status: 502 },

@@ -2412,3 +2412,5 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .mf-callput-row{display:flex;gap:6px;margin-top:4px}
 .mf-callput-btn{flex:1;padding:9px 4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.55);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
 .mf-callput-btn.active{background:rgba(52,211,153,.18);border-color:#34d399;color:#6ee7b7}
+/* backend offline banner */
+.mobile-backend-offline{background:rgba(239,68,68,.12);border-bottom:1px solid rgba(239,68,68,.3);color:#fca5a5;font-size:11px;font-weight:600;letter-spacing:.04em;padding:7px 16px;text-align:center;flex-shrink:0}
