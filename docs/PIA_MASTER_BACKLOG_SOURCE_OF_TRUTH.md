@@ -16,13 +16,31 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - Must preserve working routes, widgets, privacy mode, and responsive behavior.
 - Must prioritize IBKR-inspired ergonomics: dense controls, immediate status, restrained visuals, low-friction navigation.
 
+## AUTONOMOUS EXECUTION RULE (MANDATORY)
+
+- Senior developers must execute autonomously.
+- No repeated confirmations.
+- No micro-questions.
+- No stopping for obvious implementation choices.
+- Read MD/XLSX first.
+- Update backlog, UAT, and changelog after implementation.
+- Commit and push when validation passes.
+
+Developers may stop only for:
+- destructive changes
+- force push
+- data deletion
+- schema-breaking change
+- conflicting product direction
+- missing external credentials/API access
+
 ## Current Active State
 
 - Active branch: `feat/pia-v3-foundation-integration`
 - Stable checkpoint: Sprint 2B implementation branches merged into integration.
 - Current sprint: Sprint 2C execution and UAT failure remediation.
 - Current status: Hybrid mock intelligence data layer deployed for UI evaluation; design governance and mock-first workflow locked; mobile correction mock pack available for Product Owner review.
-- Current status: IBKR live portfolio modes are synchronized across settings, provider status, portfolio endpoints, and mobile/desktop source badges. Mock, last-update, and live modes are persisted and validated; live snapshots persist locally under `backend/data/snapshots/ibkr/`.
+- Current status: IBKR live portfolio modes are synchronized across settings, provider status, portfolio endpoints, and mobile/desktop source badges. Mock, last-update, and live modes are persisted and validated; live snapshots persist locally under `backend/data/snapshots/ibkr/`, with history persisted under `backend/data/snapshots/ibkr/history/` and strict last-update/disconnected reporting when the gateway is offline.
 - Current priorities:
   - Enforce mock-first design governance before any further UI implementation.
   - Interaction stabilization on Home and mobile.
@@ -32,6 +50,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Performance smoothing for motion/render cost.
   - Mobile correction mock review for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
   - IBKR live portfolio correctness and 3-mode portfolio selection resolved; validate Product Owner review of the new UAT screenshots at `frontend/uat-screenshots/pia-ibkr-live-007/`.
+  - HERMES-IBKR-UAT-009 hardens live status evaluation, duplicate detection, option normalization, and snapshot history. Offline validation confirms no mock leakage when live mode falls back to last-update.
 
 ## Sprint Summary
 
@@ -115,6 +134,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Bugs: BUG-HERMES-AI-007-AMD-MATERIAL-NEWS (OPEN P2), BUG-AI-RESEARCH-COMPETITIVE-DATA-MISSING (KNOWN GAP), BUG-AI-RESEARCH-PROVIDER-GAPS (KNOWN GAP).
 - **GOV-022-RESEARCH-MOCK-MISSING (P0, OPEN):** archive + commit the approved Research mock and add RESEARCH_DESIGN_SPEC.md to validate the Research V2 Design Lock (DEC-AI-RESEARCH-005 reference currently broken).
   - HERMES-IBKR-LIVE-007 - IBKR live portfolio correctness and 3-mode portfolio selection. IMPLEMENTED/VALIDATED (HERMES, feat/pia-v3-foundation-integration): provider modes `mock`, `last-update`, `ibkr-live`; live snapshot persistence to `backend/data/snapshots/ibkr/`; deduped live positions; desktop/mobile source badges updated; UAT screenshots captured under `frontend/uat-screenshots/pia-ibkr-live-007/`.
+  - HERMES-IBKR-UAT-009 - IBKR live data correctness, source switching, option handling, snapshot history, and status reporting. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): strict LIVE / LAST_UPDATE / DISCONNECTED reporting, no silent mock fallback, option normalization, duplicate SOFI/options dedupe, `backend/data/snapshots/ibkr/history/` history log, `/api/portfolio/history`, and shared source fields across provider/status/portfolio routes. Live gateway validation remains pending because the local Client Portal Gateway is offline in this environment.
 - ATHENA-AI-001 AI Intelligence Architecture & Documentation Consolidation. IMPLEMENTED 2026-06-17 (ATHENA): Architecture document created at `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md`. All 9 AI Intelligence subsystems captured: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, Auto Investor. Changelog and UAT Tracking synchronized.
 - EPIC-AI-INTELLIGENCE-ENGINE-001 Explainable Multi-Source Investment Intelligence Engine. IMPLEMENTED 2026-06-17 (HERMES): V1 backend scoring engine added for actionable stock verdict, portfolio-aware recommendation, expected return, conviction, thesis strength, risk, visual state, scenario probabilities, drivers/risks, score breakdown, factors evaluated, confidence notes, debug mode, and cache-backed `/api/intelligence/{symbol}/score`.
 - ATHENA-AI-002 AI Engine — Full Scoring Pipeline. ROADMAP: Rules-based scoring for Momentum, Trend, Sentiment, Institutional, Fair Value, Risk metrics with sub-factor breakdowns. Requires metric score persistence layer (ATHENA-AI-003). Owner: ATHENA.
@@ -255,6 +275,14 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - `/`, `/mobile`, and `/setup` returned 200.
   - `GET /api/portfolio/provider/status` resolved to `IBKR_LIVE` for live mode; `mock` and `last-update` persisted correctly after POST mode changes.
   - UAT screenshots captured under `frontend/uat-screenshots/pia-ibkr-live-007/` for `mock`, `last-update`, and `ibkr-live`.
+- Latest HERMES-IBKR-UAT-009 validation, 2026-06-22:
+  - `python -m py_compile backend/services/portfolio_providers.py backend/services/ibkr_service.py backend/services/settings_store.py backend/services/manual_holdings.py backend/main.py` passed.
+  - `npm run build` passed in `frontend/`.
+  - `/`, `/mobile`, and `/setup` returned 200 from the Next dev server.
+  - `GET /api/portfolio/provider/status` returned `MOCK`, `LAST_UPDATE`, and `LAST_UPDATE` in the three tested modes without any mock leakage from live or snapshot paths.
+  - `GET /api/portfolio/live/positions` returned deduped rows with option metadata; the SOFI option row exposed underlying, expiration, strike, call_put, multiplier, and contractDesc.
+  - `GET /api/portfolio/history` returned the new history contract with an empty list because the local IBKR Gateway is offline and no fresh live refresh occurred in this environment.
+  - Live gateway validation remains pending on a machine with an authenticated Client Portal Gateway.
 - Latest Sprint v0.3.6 validation, 2026-05-28:
   - `npm run build` passed (frontend).
   - All 9 tickers (NVDA, AMD, SOFI, IREN, AVAV, GOOGL, TSLA, CRWV, NBIS) return complete intelligence structure from mock layer.
@@ -285,6 +313,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - DONE 2026-05-28: Move Videos last and rework as media-first research feed.
   - PARTIAL 2026-05-28: Help reduce mobile performance lag.
   - DONE 2026-06-22: HERMES-IBKR-LIVE-007 portfolio provider correctness, snapshot persistence, and 3-mode mobile/desktop source sync.
+  - DONE 2026-06-22: HERMES-IBKR-UAT-009 live source resolution hardening, snapshot history, duplicate detection, and option normalization.
 - ATHENA:
   - DONE 2026-05-28: Create Mobile Portfolio Snapshot, Position Full Screen, Workspace Navigation, and Alerts mocks.
   - DONE 2026-05-28: Fix Market Pulse swipe gestures.
@@ -509,6 +538,15 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.31 - IBKR Live Source Resolution Hardening
+Date: 2026-06-22
+Status: Implemented and locally validated.
+- HERMES-IBKR-UAT-009 hardened the provider state machine for `mock`, `last-update`, `ibkr-live`, and `disconnected` resolution.
+- Live refresh now persists snapshot history under `backend/data/snapshots/ibkr/history/` and records refreshed portfolio summary metadata.
+- Duplicate detection now uses accountId + conid + assetClass + contractDesc + currency, and option rows expose underlying/expiration/strike/call_put/multiplier.
+- Provider status, live endpoints, and `/portfolio` now share strict `is_live`, `is_stale`, `stale_reason`, `snapshot_available`, and `snapshot_timestamp` fields.
+- Validation: `py_compile`, `npm run build`, `/`, `/mobile`, `/setup`, provider mode switching, dedupe checks, and history endpoint smoke tests passed locally. Live gateway validation remains pending because the local IBKR Client Portal Gateway is offline in this environment.
 
 ### v0.3.29 - AI Intelligence V3 Research Documentation (ATHENA-GOV-022)
 Date: 2026-06-22

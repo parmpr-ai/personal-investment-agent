@@ -131,7 +131,8 @@ def save_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
     merged = deep_merge(deepcopy(DEFAULT_SETTINGS), settings)
     data_mode = str((merged.get("data_source") or {}).get("mode") or "").lower()
     ibkr = merged.setdefault("ibkr", {})
-    if data_mode == "ibkr-live":
+    if data_mode == "ibkr-live" or str(ibkr.get("mode") or "").lower() == "live":
+        merged.setdefault("data_source", {})["mode"] = "ibkr-live"
         ibkr["mode"] = "live"
         ibkr["enabled"] = True
     elif data_mode in {"mock", "demo", "last-update"}:

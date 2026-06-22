@@ -16,16 +16,19 @@ import threading
 import urllib.request
 import urllib.error
 from dataclasses import dataclass
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 _DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "ibkr-live"
 _SNAPSHOT_DIR = Path(__file__).resolve().parents[1] / "data" / "snapshots" / "ibkr"
+_SNAPSHOT_HISTORY_DIR = _SNAPSHOT_DIR / "history"
 _SNAPSHOT_POSITIONS_FILE = _SNAPSHOT_DIR / "positions_latest.json"
 _SNAPSHOT_SUMMARY_FILE = _SNAPSHOT_DIR / "summary_latest.json"
 _SNAPSHOT_TRADES_FILE = _SNAPSHOT_DIR / "trades_latest.json"
 _SNAPSHOT_META_FILE = _SNAPSHOT_DIR / "meta.json"
+_SNAPSHOT_HISTORY_FILE = _SNAPSHOT_HISTORY_DIR / "history.jsonl"
 _GATEWAY_BASE = "https://localhost:5000/v1/api"
 _PROVIDER_MODES = ("mock", "last-update", "ibkr-live")
 _ACTIVE_SOURCE_MAP = {"mock": "MOCK", "last-update": "LAST_UPDATE", "ibkr-live": "IBKR_LIVE"}
@@ -33,6 +36,7 @@ _MODE_LABELS = {"mock": "Mock Data", "last-update": "Last Update Real Data", "ib
 _SOURCE_LABELS = {"MOCK": "Mock", "MOCK_FALLBACK": "Mock", "LAST_UPDATE": "Last Update", "IBKR_LIVE": "IBKR Live"}
 _LIVE_MODE_ALIASES = {"live", "ibkr-live"}
 _LAST_UPDATE_MODE_ALIASES = {"demo", "demo-samples", "sample", "snapshot", "last-update"}
+_SNAPSHOT_STALE_AFTER_SECONDS = 15 * 60
 _SNAPSHOT_LOCK = threading.RLock()
 
 
@@ -90,6 +94,7 @@ def _snapshot_paths() -> list[Path]:
 
 def _ensure_snapshot_dir() -> None:
     _SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    _SNAPSHOT_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _read_json_file(path: Path, default: Any = None) -> Any:
@@ -128,6 +133,48 @@ def _snapshot_timestamp(meta_payload: Dict[str, Any]) -> Optional[str]:
     return str(timestamp) if timestamp else None
 
 
+def _snapshot_age_seconds(meta_payload: Dict[str, Any]) -> Optional[float]:
+    timestamp = _snapshot_timestamp(meta_payload)
+    if not timestamp:
+        return None
+    try:
+        dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    return max(0.0, (datetime.now(timezone.utc) - dt).total_seconds())
+
+
+def _append_snapshot_history(entry: Dict[str, Any]) -> None:
+    _ensure_snapshot_dir()
+    line = json.dumps(entry, ensure_ascii=False)
+    with open(_SNAPSHOT_HISTORY_FILE, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def _load_snapshot_history(limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    if not _SNAPSHOT_HISTORY_FILE.exists():
+        return []
+    entries: List[Dict[str, Any]] = []
+    try:
+        with open(_SNAPSHOT_HISTORY_FILE, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                    if isinstance(row, dict):
+                        entries.append(row)
+                except Exception:
+                    continue
+    except Exception:
+        return []
+    entries.sort(key=lambda row: str(row.get("timestamp") or row.get("snapshot_timestamp") or ""), reverse=True)
+    if limit and limit > 0:
+        return entries[:limit]
+    return entries
+
+
 def _position_contract_desc(position: Dict[str, Any]) -> str:
     return str(
         position.get("contractDesc")
@@ -150,7 +197,9 @@ def _position_conid(position: Dict[str, Any]) -> str:
 
 def _position_asset_class(position: Dict[str, Any]) -> str:
     raw = position.get("assetClass") or position.get("asset_class") or position.get("sec_type") or position.get("asset_type") or "STK"
-    return str(raw).upper()
+    contract_desc = _position_contract_desc(position)
+    symbol = str(position.get("symbol") or position.get("ticker") or "").strip()
+    return _classify_asset_class(raw, contract_desc, symbol)
 
 
 def _position_currency(position: Dict[str, Any]) -> str:
@@ -158,13 +207,11 @@ def _position_currency(position: Dict[str, Any]) -> str:
 
 
 def _position_key(position: Dict[str, Any]) -> tuple[str, str, str, str, str]:
-    contract_desc = _position_contract_desc(position)
-    symbol = str(position.get("symbol") or position.get("underlying") or position.get("ticker") or contract_desc).upper().strip()
     return (
         _position_account_id(position),
-        symbol or contract_desc.upper(),
         _position_conid(position),
         _position_asset_class(position),
+        _position_contract_desc(position).upper(),
         _position_currency(position),
     )
 
@@ -175,6 +222,86 @@ def _position_multiplier(position: Dict[str, Any]) -> float:
     return _num(position.get("multiplier") or 1, 1)
 
 
+def _is_snapshot_stale(meta_payload: Dict[str, Any], threshold_seconds: float = _SNAPSHOT_STALE_AFTER_SECONDS) -> bool:
+    age = _snapshot_age_seconds(meta_payload)
+    return bool(age is not None and age > threshold_seconds)
+
+
+def _option_metadata(contract_desc: str, fallback_symbol: str = "") -> Dict[str, Any]:
+    text = str(contract_desc or "").strip()
+    bracket = re.search(r"\[([^\]]+)\]", text)
+    candidate = bracket.group(1).strip() if bracket else text
+    normalized = re.sub(r"\s+", " ", candidate)
+    underlying = fallback_symbol.strip().upper()
+    expiration = None
+    strike = None
+    call_put = None
+    iso_match = re.search(r"(?P<underlying>[A-Z0-9.\-]+)\s+(?P<expiry>\d{6}|\d{8})(?P<cp>[CP])(?P<strike>\d{8})", normalized)
+    if iso_match:
+        underlying = iso_match.group("underlying").strip().upper() or underlying
+        expiry = iso_match.group("expiry")
+        call_put = iso_match.group("cp")
+        strike = _num(int(iso_match.group("strike")) / 1000.0)
+        try:
+            if len(expiry) == 6:
+                expiration = datetime.strptime(expiry, "%y%m%d").date().isoformat()
+            else:
+                expiration = datetime.strptime(expiry, "%Y%m%d").date().isoformat()
+        except Exception:
+            expiration = expiry
+    else:
+        text_match = re.search(
+            r"(?P<underlying>[A-Z0-9.\-]+)\s+(?P<month>[A-Z]{3})(?P<year>\d{4})\s+(?P<strike>\d+(?:\.\d+)?)\s+(?P<cp>[CP])",
+            normalized,
+        )
+        if text_match:
+            underlying = text_match.group("underlying").strip().upper() or underlying
+            call_put = text_match.group("cp")
+            strike = _num(text_match.group("strike"))
+            try:
+                month_map = {
+                    "JAN": 1,
+                    "FEB": 2,
+                    "MAR": 3,
+                    "APR": 4,
+                    "MAY": 5,
+                    "JUN": 6,
+                    "JUL": 7,
+                    "AUG": 8,
+                    "SEP": 9,
+                    "OCT": 10,
+                    "NOV": 11,
+                    "DEC": 12,
+                }
+                month = month_map.get(text_match.group("month"))
+                if month:
+                    expiration = datetime(int(text_match.group("year")), month, 1).date().isoformat()
+            except Exception:
+                pass
+    return {
+        "underlying": underlying or fallback_symbol.upper(),
+        "expiration": expiration,
+        "strike": strike,
+        "call_put": call_put,
+    }
+
+
+def _classify_asset_class(raw: Any, contract_desc: str = "", symbol: str = "") -> str:
+    value = str(raw or "").upper().strip()
+    if value in {"OPT", "STK", "ETF", "CASH", "CRYPTO"}:
+        return value
+    desc = f"{contract_desc} {symbol}".upper()
+    if any(token in desc for token in ("CASH", "CURRENCY", "FX")):
+        return "CASH"
+    if any(token in desc for token in ("BTC", "ETH", "CRYPTO")) or value == "CRYPTO":
+        return "CRYPTO"
+    if value in {"ETF", "FUND"}:
+        return "ETF"
+    if value in {"OPTION", "OPTIONS"}:
+        return "OPT"
+    return "STK"
+
+
 def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     grouped: Dict[tuple[str, str, str, str, str], Dict[str, Any]] = {}
     for raw in rows or []:
@@ -183,7 +310,12 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         key = _position_key(raw)
         current = grouped.get(key)
         qty = _num(raw.get("qty") or raw.get("quantity") or raw.get("position"))
-        multiplier = _position_multiplier(raw)
+        contract_desc = _position_contract_desc(raw)
+        symbol = str(raw.get("symbol") or raw.get("ticker") or raw.get("underlying") or "").strip()
+        asset_class = _classify_asset_class(raw.get("assetClass") or raw.get("sec_type") or raw.get("asset_type"), contract_desc, symbol)
+        is_opt = asset_class == "OPT"
+        option_meta = _option_metadata(contract_desc, fallback_symbol=symbol)
+        multiplier = _num(raw.get("multiplier") or (100 if is_opt else 1), 100 if is_opt else 1)
         market_value = _num(raw.get("market_value") or raw.get("marketValue") or raw.get("mktValue"))
         unrealized = _num(raw.get("unrealized") or raw.get("unrealizedPnl") or raw.get("unrealPnl"))
         realized = _num(raw.get("realized") or raw.get("realizedPnl") or raw.get("realPnl"))
@@ -197,6 +329,16 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 **raw,
                 "qty": qty,
                 "quantity": qty,
+                "assetClass": asset_class,
+                "sec_type": asset_class,
+                "contractDesc": contract_desc,
+                "contract_desc": contract_desc,
+                "symbol": str(raw.get("symbol") or option_meta.get("underlying") or symbol or contract_desc or "").strip(),
+                "underlying": str(raw.get("underlying") or option_meta.get("underlying") or symbol or "").strip(),
+                "expiration": raw.get("expiration") or option_meta.get("expiration"),
+                "strike": raw.get("strike") if raw.get("strike") is not None else option_meta.get("strike"),
+                "call_put": raw.get("call_put") or option_meta.get("call_put"),
+                "multiplier": multiplier,
                 "market_value": round(market_value, 2),
                 "unrealized": round(unrealized, 2),
                 "realized": round(realized, 2),
@@ -221,6 +363,13 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             current["last"] = _num(raw.get("last"))
         if raw.get("ai_view"):
             current["ai_view"] = raw.get("ai_view")
+        if raw.get("expiration"):
+            current["expiration"] = raw.get("expiration")
+        if raw.get("strike") is not None:
+            current["strike"] = raw.get("strike")
+        if raw.get("call_put"):
+            current["call_put"] = raw.get("call_put")
+        current["multiplier"] = multiplier
     aggregated: List[Dict[str, Any]] = []
     for row in grouped.values():
         weighted_qty = _num(row.pop("_weighted_qty", 0))
@@ -232,14 +381,23 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         row["unrealized_pct"] = round(row["unrealized"] / row["cost_basis"] * 100, 2) if row.get("cost_basis") else 0
         row["symbol"] = str(row.get("symbol") or row.get("underlying") or _position_contract_desc(row) or "").strip()
         row["underlying"] = str(row.get("underlying") or row.get("symbol") or "").strip()
-        row["sec_type"] = str(row.get("sec_type") or row.get("assetClass") or row.get("asset_type") or "STK").upper()
-        row["assetClass"] = str(row.get("assetClass") or row.get("sec_type") or row.get("asset_type") or "STK").upper()
+        row["sec_type"] = _classify_asset_class(row.get("sec_type") or row.get("assetClass") or row.get("asset_type"), row.get("contractDesc", ""), row.get("symbol", ""))
+        row["assetClass"] = row["sec_type"]
         row["contractDesc"] = str(row.get("contractDesc") or row.get("name") or row.get("symbol") or "").strip()
         row["contract_desc"] = row["contractDesc"]
         row["accountId"] = str(row.get("accountId") or row.get("account_id") or "")
         row["account_id"] = row["accountId"]
         row["conid"] = str(row.get("conid") or row.get("conId") or row.get("contract_id") or "")
         row["currency"] = _position_currency(row)
+        if row["assetClass"] == "OPT":
+            option_meta = _option_metadata(row["contractDesc"], fallback_symbol=row["underlying"] or row["symbol"])
+            row.setdefault("underlying", option_meta.get("underlying") or row["symbol"])
+            row.setdefault("expiration", option_meta.get("expiration"))
+            row.setdefault("strike", option_meta.get("strike"))
+            row.setdefault("call_put", option_meta.get("call_put"))
+            row.setdefault("multiplier", _num(row.get("multiplier") or 100, 100))
+        else:
+            row.setdefault("multiplier", _num(row.get("multiplier") or 1, 1))
         row["portfolio_pct"] = _num(row.get("portfolio_pct"))
         aggregated.append(row)
     return aggregated
@@ -287,11 +445,81 @@ class MockPortfolioProvider:
             "unrealized": p.get("unrealized", 0),
             "unrealized_pct": p.get("unrealized_pct", 0),
             "daily_pnl": p.get("daily_pnl", 0),
+            "daily_pnl_pct": p.get("daily_pnl_pct", 0),
+            "net_liquidation": p.get("total_value", 0),
             "currency": "USD",
+            "is_live": False,
+            "is_stale": False,
+            "stale_reason": None,
         }
 
     def get_trades(self) -> List[Dict]:
         return []
+
+
+class DisconnectedPortfolioProvider:
+    source_name = "DISCONNECTED"
+
+    def is_available(self) -> bool:
+        return False
+
+    def get_portfolio(self) -> Dict[str, Any]:
+        return {
+            "source": "DISCONNECTED",
+            "mode": "disconnected",
+            "as_of": None,
+            "snapshot_available": False,
+            "snapshot_timestamp": None,
+            "is_live": False,
+            "is_stale": True,
+            "stale_reason": "Gateway offline and no saved snapshot is available.",
+            "total_value": 0,
+            "cash": 0,
+            "buying_power": 0,
+            "unrealized": 0,
+            "unrealized_pct": 0,
+            "daily_pnl": 0,
+            "daily_pnl_pct": 0,
+            "cost_basis": 0,
+            "margin_used": 0,
+            "risk_mode": "DISCONNECTED",
+            "positions": [],
+            "exposures": {"rows": [], "top_name": None, "top_pct": 0},
+            "guardrails": [],
+            "today_actions": [],
+            "stress_tests": [],
+            "journal": [],
+        }
+
+    def get_positions(self) -> List[Dict]:
+        return []
+
+    def get_summary(self) -> Dict[str, Any]:
+        return {
+            "source": "DISCONNECTED",
+            "mode": "disconnected",
+            "as_of": None,
+            "total_value": 0,
+            "cash": 0,
+            "buying_power": 0,
+            "unrealized": 0,
+            "unrealized_pct": 0,
+            "daily_pnl": 0,
+            "daily_pnl_pct": 0,
+            "currency": "USD",
+            "snapshot_available": False,
+            "snapshot_timestamp": None,
+            "net_liquidation": 0,
+            "is_live": False,
+            "is_stale": True,
+            "stale_reason": "Gateway offline and no saved snapshot is available.",
+        }
+
+    def get_trades(self) -> List[Dict]:
+        return []
+
+    def get_snapshot_meta(self) -> Dict[str, Any]:
+        return {}
 
 
 @dataclass(frozen=True)
@@ -311,6 +539,9 @@ class ProviderResolution:
     trades_available: bool = False
     snapshot_available: bool = False
     snapshot_timestamp: Optional[str] = None
+    is_live: bool = False
+    is_stale: bool = False
+    stale_reason: Optional[str] = None
 
 
 def _read_settings_mode() -> tuple[dict[str, Any], str, str]:
@@ -380,6 +611,9 @@ class SnapshotPortfolioProvider:
             "as_of": summary.get("as_of") or _snapshot_timestamp(meta),
             "snapshot_available": True,
             "snapshot_timestamp": _snapshot_timestamp(meta),
+            "is_live": False,
+            "is_stale": _is_snapshot_stale(meta),
+            "stale_reason": "Saved snapshot is stale." if _is_snapshot_stale(meta) else None,
             "total_value": round(total_value, 2),
             "cash": _num(summary.get("cash")),
             "buying_power": _num(summary.get("buying_power") or summary.get("buyingPower")),
@@ -388,11 +622,16 @@ class SnapshotPortfolioProvider:
             "init_margin_req": _num(summary.get("init_margin_req") or summary.get("initMarginReq")),
             "excess_liquidity": _num(summary.get("excess_liquidity") or summary.get("excessLiquidity")),
             "gross_position_value": _num(summary.get("gross_position_value") or summary.get("grossPositionValue")),
+            "net_liquidation": round(total_value, 2),
             "currency": str(summary.get("currency") or "USD"),
             "daily_pnl": _num(summary.get("daily_pnl")),
+            "daily_pnl_pct": _num(summary.get("daily_pnl_pct")),
             "unrealized": round(total_unr, 2),
             "unrealized_pct": round(total_unr / total_cb * 100, 2) if total_cb else 0,
             "positions_count": len(positions),
+            "is_live": False,
+            "is_stale": _is_snapshot_stale(meta),
+            "stale_reason": "Saved snapshot is stale." if _is_snapshot_stale(meta) else None,
         })
         return summary
 
@@ -420,6 +659,9 @@ class SnapshotPortfolioProvider:
             "as_of": summary.get("as_of") or _snapshot_timestamp(meta) or datetime.now(timezone.utc).isoformat(),
             "snapshot_available": True,
             "snapshot_timestamp": _snapshot_timestamp(meta),
+            "is_live": False,
+            "is_stale": _is_snapshot_stale(meta),
+            "stale_reason": "Saved snapshot is stale." if _is_snapshot_stale(meta) else None,
             "total_value": round(total_value, 2),
             "cost_basis": round(total_cb, 2),
             "daily_pnl": summary.get("daily_pnl", 0),
@@ -443,6 +685,11 @@ class SnapshotPortfolioProvider:
 
 class IbkrLivePortfolioProvider:
     source_name = "IBKR_LIVE"
+    _CACHE_LOCK = threading.RLock()
+    _CACHE_BUNDLE: Optional[Dict[str, Any]] = None
+    _CACHE_AT: Optional[datetime] = None
+    _CACHE_ERROR: Optional[str] = None
+    _CACHE_TTL_SECONDS = 45.0
 
     def __init__(self) -> None:
         self._ssl_ctx = ssl._create_unverified_context()
@@ -454,18 +701,37 @@ class IbkrLivePortfolioProvider:
         with urllib.request.urlopen(req, timeout=timeout, context=self._ssl_ctx) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
-    def is_available(self) -> bool:
+    def _safe_get(self, path: str, timeout: float = 5.0) -> tuple[Any, Optional[str]]:
         try:
-            data = self._get("/iserver/auth/status", timeout=2.0)
-            return bool(data.get("authenticated"))
-        except Exception:
-            return False
+            return self._get(path, timeout=timeout), None
+        except Exception as exc:
+            return None, str(exc)
+
+    def get_gateway_heartbeat(self) -> Dict[str, Any]:
+        auth, auth_error = self._safe_get("/iserver/auth/status", timeout=2.0)
+        reachable = auth_error is None and isinstance(auth, dict)
+        authenticated = bool(auth.get("authenticated")) if isinstance(auth, dict) else False
+        status = "connected" if reachable and authenticated else ("unauthenticated" if reachable else "gateway_down")
+        return {
+            "gateway_open": bool(reachable and authenticated),
+            "gateway_status": status,
+            "gateway_error": auth_error,
+            "ibkr_authenticated": authenticated,
+            "auth_status": auth if isinstance(auth, dict) else {},
+        }
+
+    def is_available(self) -> bool:
+        return bool(self.get_gateway_heartbeat().get("gateway_open"))
 
     def get_auth_status(self) -> Dict[str, Any]:
-        try:
-            return self._get("/iserver/auth/status", timeout=2.0)
-        except Exception as e:
-            return {"authenticated": False, "error": str(e)}
+        heartbeat = self.get_gateway_heartbeat()
+        auth = heartbeat.get("auth_status") or {}
+        if isinstance(auth, dict):
+            auth.setdefault("authenticated", False)
+            if heartbeat.get("gateway_error"):
+                auth["error"] = heartbeat["gateway_error"]
+            return auth
+        return {"authenticated": False, "error": heartbeat.get("gateway_error")}
 
     def _get_account_id(self) -> Optional[str]:
         if self._account_id:
@@ -480,6 +746,9 @@ class IbkrLivePortfolioProvider:
         return None
 
     def _fetch_live_bundle(self) -> Dict[str, Any]:
+        heartbeat = self.get_gateway_heartbeat()
+        if not heartbeat.get("gateway_open"):
+            raise RuntimeError(heartbeat.get("gateway_error") or "Client Portal Gateway is not reachable.")
         account_id = self._get_account_id()
         if not account_id:
             raise RuntimeError("IBKR: could not resolve account ID")
@@ -508,15 +777,87 @@ class IbkrLivePortfolioProvider:
             "trades": trades,
             "snapshot_timestamp": as_of,
             "snapshot_available": True,
+            "heartbeat": heartbeat,
+            "refreshed_at": as_of,
+            "positions_refreshed_at": as_of,
+            "summary_refreshed_at": as_of,
+            "trades_refreshed_at": as_of if trades else None,
+            "is_live": True,
+            "is_stale": False,
+            "stale_reason": None,
         }
         self._persist_live_snapshot(bundle)
+        with self._CACHE_LOCK:
+            self._CACHE_BUNDLE = deepcopy(bundle)
+            self._CACHE_AT = datetime.now(timezone.utc)
+            self._CACHE_ERROR = None
         return bundle
+
+    def _get_cached_bundle(self) -> Optional[Dict[str, Any]]:
+        with self._CACHE_LOCK:
+            if not self._CACHE_BUNDLE or not self._CACHE_AT:
+                return None
+            age = (datetime.now(timezone.utc) - self._CACHE_AT).total_seconds()
+            if age > self._CACHE_TTL_SECONDS:
+                return None
+            return deepcopy(self._CACHE_BUNDLE)
+
+    def _load_bundle(self) -> Dict[str, Any]:
+        cached = self._get_cached_bundle()
+        if cached:
+            return cached
+        try:
+            return self._fetch_live_bundle()
+        except Exception as exc:
+            cached = self._get_cached_bundle()
+            if cached:
+                cached["is_stale"] = True
+                cached["stale_reason"] = str(exc)
+                cached["fallback_active"] = True
+                cached["fallback_reason"] = str(exc)
+                cached["source"] = "IBKR_LIVE"
+                cached["mode"] = "ibkr-live"
+                return cached
+            raise
+
+    def get_runtime_status(self) -> Dict[str, Any]:
+        heartbeat = self.get_gateway_heartbeat()
+        cached = self._get_cached_bundle()
+        snapshot_meta = self.get_snapshot_meta()
+        snapshot_available = _snapshot_available()
+        snapshot_timestamp = _snapshot_timestamp(snapshot_meta) if snapshot_meta else None
+        is_live = bool(heartbeat.get("gateway_open"))
+        is_stale = False
+        stale_reason = None
+        if not is_live:
+            if snapshot_available:
+                is_stale = _is_snapshot_stale(snapshot_meta) if snapshot_meta else False
+                stale_reason = "Gateway offline; using last saved snapshot." if snapshot_available else "Gateway offline."
+            else:
+                stale_reason = "Gateway offline and no snapshot is available."
+        elif cached and cached.get("is_stale"):
+            is_stale = True
+            stale_reason = cached.get("stale_reason") or "Live cache is stale."
+        return {
+            "gateway_open": bool(heartbeat.get("gateway_open")),
+            "gateway_status": heartbeat.get("gateway_status"),
+            "gateway_error": heartbeat.get("gateway_error"),
+            "ibkr_authenticated": bool(heartbeat.get("ibkr_authenticated")),
+            "is_live": is_live,
+            "is_stale": is_stale,
+            "stale_reason": stale_reason,
+            "snapshot_available": snapshot_available,
+            "snapshot_timestamp": snapshot_timestamp,
+            "provider_class": self.__class__.__name__,
+            "active_source": "IBKR_LIVE" if is_live else ("LAST_UPDATE" if snapshot_available else "DISCONNECTED"),
+        }
 
     def _normalize_live_positions(self, raw_positions: List[Dict[str, Any]], account_id: str) -> List[Dict[str, Any]]:
         normalized: List[Dict[str, Any]] = []
         for p in raw_positions or []:
-            sym = p.get("ticker") or p.get("symbol", "")
-            asset_class = (p.get("assetClass") or p.get("instrumentType") or "STK").upper()
+            sym = str(p.get("ticker") or p.get("symbol") or "").strip()
+            contract_desc = str(p.get("contractDesc") or p.get("description") or p.get("name") or sym).strip()
+            asset_class = _classify_asset_class(p.get("assetClass") or p.get("instrumentType") or p.get("secType"), contract_desc, sym)
             is_opt = asset_class == "OPT"
             qty = _num(p.get("position") or p.get("quantity"))
             avg_price = _num(p.get("avgPrice") or p.get("averageCost"))
@@ -525,20 +866,26 @@ class IbkrLivePortfolioProvider:
             unr = _num(p.get("unrealizedPnl") or p.get("unrealPnl"))
             real = _num(p.get("realizedPnl") or p.get("realPnl"))
             last = _num(p.get("mktPrice") or p.get("lastPrice"))
-            contract_desc = str(p.get("contractDesc") or p.get("description") or p.get("name") or sym).strip()
-            base_sym = re.split(r"\s+", sym)[0] if is_opt else sym
+            base_sym = re.split(r"\s+", sym)[0] if is_opt and sym else sym
+            option_meta = _option_metadata(contract_desc, fallback_symbol=base_sym or sym)
+            multiplier = _num(p.get("multiplier") or (100 if is_opt else 1), 100 if is_opt else 1)
+            cost_basis = round(avg_cost * qty * multiplier if qty else 0, 2)
+            position_symbol = option_meta.get("underlying") or base_sym or sym or contract_desc
             normalized.append({
                 "accountId": account_id,
                 "account_id": account_id,
                 "conid": str(p.get("conid") or p.get("conId") or p.get("contractId") or ""),
                 "contractDesc": contract_desc,
                 "contract_desc": contract_desc,
-                "symbol": sym,
-                "underlying": base_sym,
+                "symbol": position_symbol,
+                "underlying": option_meta.get("underlying") or base_sym or sym,
+                "expiration": option_meta.get("expiration"),
+                "strike": option_meta.get("strike"),
+                "call_put": option_meta.get("call_put"),
                 "sec_type": asset_class,
                 "assetClass": asset_class,
                 "name": p.get("name") or contract_desc or sym,
-                "sector": "Options" if is_opt else "Stock",
+                "sector": "Options" if is_opt else ("Cash" if asset_class == "CASH" else "Stock"),
                 "qty": qty,
                 "quantity": qty,
                 "avg_price": round(avg_price, 4),
@@ -547,10 +894,10 @@ class IbkrLivePortfolioProvider:
                 "day_change_pct": _num(p.get("pctChangeDay") or p.get("changePercentDay")),
                 "day_change": _num(p.get("changeDay") or p.get("change")),
                 "market_value": round(mv, 2),
-                "cost_basis": round(avg_cost * qty * (100 if is_opt else 1), 2),
+                "cost_basis": cost_basis,
                 "unrealized": round(unr, 2),
                 "realized": round(real, 2),
-                "unrealized_pct": round(unr / (avg_cost * qty * (100 if is_opt else 1)) * 100, 2) if avg_cost and qty else 0,
+                "unrealized_pct": round(unr / cost_basis * 100, 2) if cost_basis else 0,
                 "risk": 90 if is_opt else 70,
                 "brand": "#3B82F6",
                 "accent": "#60A5FA",
@@ -560,9 +907,9 @@ class IbkrLivePortfolioProvider:
                 "macro_sensitivity": 75,
                 "ai_view": "Live IBKR position",
                 "currency": p.get("currency", "USD"),
-                "multiplier": _num(p.get("multiplier") or (100 if is_opt else 1), 100 if is_opt else 1),
+                "multiplier": multiplier,
             })
-        return _aggregate_positions(normalized)
+        return [row for row in _aggregate_positions(normalized) if _num(row.get("qty")) != 0 or _num(row.get("market_value")) != 0]
 
     def _normalize_live_summary(self, raw_summary: Any, positions: List[Dict[str, Any]]) -> Dict[str, Any]:
         raw = raw_summary if isinstance(raw_summary, dict) else {}
@@ -594,6 +941,7 @@ class IbkrLivePortfolioProvider:
             "init_margin_req": round(_amt("initmarginreq"), 2),
             "excess_liquidity": round(_amt("excessliquidity"), 2),
             "gross_position_value": round(_amt("grosspositionvalue"), 2),
+            "net_liquidation": round(total_value, 2),
             "currency": currency,
             "daily_pnl": 0,
             "daily_pnl_pct": 0,
@@ -622,6 +970,10 @@ class IbkrLivePortfolioProvider:
         return trades
 
     def _persist_live_snapshot(self, bundle: Dict[str, Any]) -> None:
+        total_value = _num((bundle.get("summary") or {}).get("total_value"))
+        cash = _num((bundle.get("summary") or {}).get("cash"))
+        unrealized = _num((bundle.get("summary") or {}).get("unrealized"))
+        net_liquidation = _num((bundle.get("summary") or {}).get("net_liquidation") or (bundle.get("summary") or {}).get("total_value"))
         positions_payload = {
             "source": bundle.get("source", "IBKR_LIVE"),
             "mode": bundle.get("mode", "ibkr-live"),
@@ -651,6 +1003,12 @@ class IbkrLivePortfolioProvider:
             "positions_count": len(bundle.get("positions", [])),
             "trades_count": len(bundle.get("trades", [])),
             "snapshot_available": True,
+            "is_live": bundle.get("is_live", True),
+            "is_stale": bundle.get("is_stale", False),
+            "stale_reason": bundle.get("stale_reason"),
+            "positions_refreshed_at": bundle.get("positions_refreshed_at"),
+            "summary_refreshed_at": bundle.get("summary_refreshed_at"),
+            "trades_refreshed_at": bundle.get("trades_refreshed_at"),
         }
         _save_snapshot_bundle({
             "positions_payload": positions_payload,
@@ -658,30 +1016,29 @@ class IbkrLivePortfolioProvider:
             "trades_payload": {"trades": trades_payload["trades"], "source": trades_payload["source"], "mode": trades_payload["mode"], "as_of": trades_payload["as_of"]},
             "meta_payload": meta_payload,
         })
+        _append_snapshot_history(
+            {
+                "timestamp": bundle.get("snapshot_timestamp") or bundle.get("as_of"),
+                "total_value": round(total_value, 2),
+                "cash": round(cash, 2),
+                "unrealized": round(unrealized, 2),
+                "net_liquidation": round(net_liquidation, 2),
+            }
+        )
 
     def get_positions(self) -> List[Dict]:
-        return self._fetch_live_bundle()["positions"]
+        return self._load_bundle()["positions"]
 
     def get_summary(self) -> Dict[str, Any]:
-        return self._fetch_live_bundle()["summary"]
+        return self._load_bundle()["summary"]
 
     def get_trades(self) -> List[Dict]:
-        try:
-            bundle = self._fetch_live_bundle()
-            if bundle.get("trades") is not None:
-                return bundle["trades"]
-        except Exception as live_error:
-            bundle = _load_snapshot_bundle()
-            trades_payload = bundle.get("trades_payload") or {}
-            trades = trades_payload.get("trades") if isinstance(trades_payload, dict) else []
-            if isinstance(trades, list):
-                return trades
-            raise live_error
-        return []
+        bundle = self._load_bundle()
+        return bundle.get("trades") or []
 
     def get_portfolio(self) -> Dict[str, Any]:
         from services.state import compute_exposures, risk_doctor, today_actions, stress_tests, macro_snapshot
-        bundle = self._fetch_live_bundle()
+        bundle = self._load_bundle()
         positions = bundle["positions"]
         summary = bundle["summary"]
         total_value = summary.get("total_value", 0) or sum(p.get("market_value", 0) for p in positions)
@@ -696,6 +1053,9 @@ class IbkrLivePortfolioProvider:
             "as_of": bundle["as_of"],
             "snapshot_available": True,
             "snapshot_timestamp": bundle["snapshot_timestamp"],
+            "is_live": bundle.get("is_live", True),
+            "is_stale": bundle.get("is_stale", False),
+            "stale_reason": bundle.get("stale_reason"),
             "total_value": round(total_value, 2),
             "cost_basis": round(total_cb, 2),
             "daily_pnl": summary.get("daily_pnl", 0),
@@ -715,7 +1075,21 @@ class IbkrLivePortfolioProvider:
         }
 
     def get_snapshot_meta(self) -> Dict[str, Any]:
-        return _load_snapshot_bundle()["meta_payload"] or {}
+        bundle = self._load_bundle()
+        meta = _load_snapshot_bundle()["meta_payload"] or {}
+        meta.update(
+            {
+                "source": bundle.get("source", "IBKR_LIVE"),
+                "mode": bundle.get("mode", "ibkr-live"),
+                "snapshot_timestamp": bundle.get("snapshot_timestamp") or bundle.get("as_of"),
+                "as_of": bundle.get("as_of"),
+                "is_live": bundle.get("is_live", True),
+                "is_stale": bundle.get("is_stale", False),
+                "stale_reason": bundle.get("stale_reason"),
+                "provider_class": self.__class__.__name__,
+            }
+        )
+        return meta
 
 
 # ─── Provider Factory ─────────────────────────────────────────────────────────
@@ -757,6 +1131,10 @@ def set_data_source_mode(mode: str) -> str:
     settings.setdefault("ibkr", {})["mode"] = "live" if mode == "ibkr-live" else "client_portal_gateway"
     save_settings(settings)
     return mode
+
+
+def get_snapshot_history(limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    return _load_snapshot_history(limit=limit)
 
 
 def _diagnose_live_provider(provider: IbkrLivePortfolioProvider) -> Dict[str, Any]:
@@ -822,6 +1200,23 @@ def resolve_portfolio_provider() -> ProviderResolution:
     snapshot_available = snapshot.is_available()
     snapshot_meta = snapshot.get_snapshot_meta() if snapshot_available else {}
     snapshot_timestamp = _snapshot_timestamp(snapshot_meta)
+    snapshot_stale = _is_snapshot_stale(snapshot_meta) if snapshot_available else False
+
+    if mode == "mock":
+        mock = MockPortfolioProvider()
+        return ProviderResolution(
+            provider=mock,
+            configured_mode=mode,
+            active_source=mock.source_name,
+            fallback_active=False,
+            fallback_reason=None,
+            provider_class=mock.__class__.__name__,
+            snapshot_available=False,
+            snapshot_timestamp=None,
+            is_live=False,
+            is_stale=False,
+            stale_reason=None,
+        )
 
     if mode == "last-update":
         if snapshot_available:
@@ -834,23 +1229,38 @@ def resolve_portfolio_provider() -> ProviderResolution:
                 provider_class=snapshot.__class__.__name__,
                 snapshot_available=True,
                 snapshot_timestamp=snapshot_timestamp,
+                is_live=False,
+                is_stale=snapshot_stale,
+                stale_reason="Saved snapshot is stale." if snapshot_stale else None,
             )
-        mock = MockPortfolioProvider()
+        disconnected = DisconnectedPortfolioProvider()
         return ProviderResolution(
-            provider=mock,
+            provider=disconnected,
             configured_mode=mode,
-            active_source=mock.source_name,
-            fallback_active=True,
-            fallback_reason="No saved IBKR snapshot available; using mock fallback.",
-            provider_class=mock.__class__.__name__,
+            active_source=disconnected.source_name,
+            fallback_active=False,
+            fallback_reason="No saved IBKR snapshot available.",
+            provider_class=disconnected.__class__.__name__,
             snapshot_available=False,
             snapshot_timestamp=None,
+            is_live=False,
+            is_stale=True,
+            stale_reason="No saved IBKR snapshot available.",
         )
 
     if mode == "ibkr-live":
         live = IbkrLivePortfolioProvider()
-        diagnostics = _diagnose_live_provider(live)
-        if diagnostics["gateway_status"] == "connected" and (diagnostics["positions_available"] or diagnostics["accounts_available"] or diagnostics["ibkr_authenticated"]):
+        heartbeat = live.get_gateway_heartbeat()
+        diagnostics = _diagnose_live_provider(live) if heartbeat.get("gateway_open") else {
+            "gateway_status": heartbeat.get("gateway_status", "gateway_down"),
+            "gateway_error": heartbeat.get("gateway_error"),
+            "ibkr_gateway_reachable": bool(heartbeat.get("gateway_open")),
+            "ibkr_authenticated": bool(heartbeat.get("ibkr_authenticated")),
+            "accounts_available": False,
+            "positions_available": False,
+            "trades_available": False,
+        }
+        if heartbeat.get("gateway_open"):
             live_meta = live.get_snapshot_meta() if hasattr(live, "get_snapshot_meta") else {}
             live_timestamp = _snapshot_timestamp(live_meta) or snapshot_timestamp
             return ProviderResolution(
@@ -862,6 +1272,9 @@ def resolve_portfolio_provider() -> ProviderResolution:
                 provider_class=live.__class__.__name__,
                 snapshot_available=bool(live_timestamp or snapshot_available),
                 snapshot_timestamp=live_timestamp or snapshot_timestamp,
+                is_live=True,
+                is_stale=False,
+                stale_reason=None,
                 **diagnostics,
             )
         if snapshot_available:
@@ -874,18 +1287,24 @@ def resolve_portfolio_provider() -> ProviderResolution:
                 provider_class=snapshot.__class__.__name__,
                 snapshot_available=True,
                 snapshot_timestamp=snapshot_timestamp,
+                is_live=False,
+                is_stale=snapshot_stale,
+                stale_reason="Client Portal Gateway unavailable; using saved snapshot." if snapshot_stale else "Client Portal Gateway unavailable; using last-update snapshot.",
                 **diagnostics,
             )
-        mock = MockPortfolioProvider()
+        disconnected = DisconnectedPortfolioProvider()
         return ProviderResolution(
-            provider=mock,
+            provider=disconnected,
             configured_mode=mode,
-            active_source=mock.source_name,
-            fallback_active=True,
-            fallback_reason="Client Portal Gateway unavailable and no saved snapshot exists; using mock fallback.",
-            provider_class=mock.__class__.__name__,
+            active_source=disconnected.source_name,
+            fallback_active=False,
+            fallback_reason="Client Portal Gateway unavailable and no saved snapshot exists.",
+            provider_class=disconnected.__class__.__name__,
             snapshot_available=False,
             snapshot_timestamp=None,
+            is_live=False,
+            is_stale=True,
+            stale_reason="Client Portal Gateway unavailable and no saved snapshot exists.",
             **diagnostics,
         )
 
@@ -899,6 +1318,9 @@ def resolve_portfolio_provider() -> ProviderResolution:
         provider_class=mock.__class__.__name__,
         snapshot_available=False,
         snapshot_timestamp=None,
+        is_live=False,
+        is_stale=False,
+        stale_reason=None,
     )
 
 
@@ -911,26 +1333,27 @@ def get_provider_status() -> Dict[str, Any]:
     """Return provider status info for API consumers."""
     resolution = resolve_portfolio_provider()
     mode = resolution.configured_mode
-    snapshot_available = resolution.snapshot_available
-    fallback_active = resolution.fallback_active
-    if fallback_active:
-        status = "fallback"
-        message = resolution.fallback_reason or f"{provider_mode_label(mode)} unavailable. Using {provider_source_label(resolution.active_source)}."
-    elif mode == "ibkr-live":
-        if resolution.gateway_status == "connected" and (resolution.ibkr_authenticated or resolution.positions_available or resolution.accounts_available):
-            status = "connected"
-            message = "Connected to Client Portal Gateway."
-        elif resolution.gateway_status == "unauthenticated":
-            status = "unauthenticated"
-            message = "Client Portal Gateway is running. Login required."
-        elif resolution.gateway_status == "gateway_down":
-            status = "gateway_down"
-            message = "Client Portal Gateway is not reachable at https://localhost:5000."
+    snapshot_available = bool(resolution.snapshot_available)
+    fallback_active = bool(resolution.fallback_active)
+    if mode == "ibkr-live":
+        if resolution.is_live:
+            status = "LIVE"
+            message = "Live IBKR Client Portal Gateway is available."
+        elif snapshot_available:
+            status = "LAST_UPDATE"
+            message = resolution.fallback_reason or "Using saved IBKR snapshot."
         else:
-            status = "error"
-            message = "Client Portal Gateway status could not be verified."
+            status = "DISCONNECTED"
+            message = resolution.fallback_reason or "Client Portal Gateway is unavailable and no saved snapshot exists."
+    elif mode == "last-update":
+        if snapshot_available:
+            status = "LAST_UPDATE"
+            message = "Using saved IBKR snapshot."
+        else:
+            status = "DISCONNECTED"
+            message = resolution.fallback_reason or "No saved IBKR snapshot exists."
     else:
-        status = "connected"
+        status = "MOCK"
         message = f"{provider_mode_label(mode)} portfolio data selected."
     return {
         "status": status,
@@ -954,5 +1377,8 @@ def get_provider_status() -> Dict[str, Any]:
         "trades_available": resolution.trades_available,
         "snapshot_available": snapshot_available,
         "snapshot_timestamp": resolution.snapshot_timestamp,
+        "is_live": resolution.is_live,
+        "is_stale": resolution.is_stale,
+        "stale_reason": resolution.stale_reason,
         "mock_available": True,
     }

@@ -8,7 +8,7 @@ from services.state import portfolio_snapshot, macro_snapshot, news_items, catal
 from services.trade_engine import scanner_items, opportunity_for
 from services.ws import manager
 from services.settings_store import get_settings, save_settings, initialize_settings_store
-from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES
+from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES, get_snapshot_history
 from services.connectors import InstrumentSearchError, source_health, test_source, yahoo_news, yahoo_fundamentals, yahoo_symbol_search
 from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding, initialize_manual_holdings_store
 from services.news_intelligence import get_news_intelligence
@@ -65,6 +65,9 @@ def get_portfolio_payload():
   p['provider_class']=resolution.provider_class
   p['snapshot_available']=p.get('snapshot_available', resolution.snapshot_available)
   p['snapshot_timestamp']=p.get('snapshot_timestamp') or resolution.snapshot_timestamp
+  p['is_live']=p.get('is_live', resolution.is_live)
+  p['is_stale']=p.get('is_stale', resolution.is_stale)
+  p['stale_reason']=p.get('stale_reason', resolution.stale_reason)
   if not p.get('exposures'): p['exposures']=compute_exposures(p.get('positions',[]),p.get('total_value',0))
   if 'guardrails' not in p: p['guardrails']=risk_doctor(p.get('positions',[]),macros)
   if 'today_actions' not in p: p['today_actions']=today_actions(p.get('positions',[]),macros)
@@ -74,20 +77,37 @@ def get_portfolio_payload():
   return p
  except Exception as e:
   resolution=resolve_portfolio_provider()
-  demo=portfolio_snapshot()
+  demo={
+   'source': resolution.active_source or 'DISCONNECTED',
+   'mode': resolution.configured_mode,
+   'configured_mode': resolution.configured_mode,
+   'active_source': resolution.active_source or 'DISCONNECTED',
+   'fallback_active': True,
+   'fallback_reason': resolution.fallback_reason or str(e),
+   'provider_class': resolution.provider_class,
+   'snapshot_available': resolution.snapshot_available,
+   'snapshot_timestamp': resolution.snapshot_timestamp,
+   'is_live': resolution.is_live,
+   'is_stale': True,
+   'stale_reason': resolution.stale_reason or str(e),
+   'total_value': 0,
+   'cost_basis': 0,
+   'daily_pnl': 0,
+   'daily_pnl_pct': 0,
+   'unrealized': 0,
+   'unrealized_pct': 0,
+   'cash': 0,
+   'buying_power': 0,
+   'margin_used': 0,
+   'risk_mode': 'DISCONNECTED',
+   'positions': [],
+   'exposures': {'rows': [], 'top_name': None, 'top_pct': 0},
+   'guardrails': [],
+   'today_actions': [],
+   'stress_tests': [],
+   'journal': [],
+  }
   demo['provider_error']=str(e)
-  demo['configured_mode']=resolution.configured_mode
-  demo['mode']=resolution.configured_mode
-  demo['active_source']=resolution.active_source
-  demo['fallback_active']=True
-  demo['fallback_reason']=resolution.fallback_reason or str(e)
-  demo['provider_class']=resolution.provider_class
-  demo['snapshot_available']=resolution.snapshot_available
-  demo['snapshot_timestamp']=resolution.snapshot_timestamp
-  if resolution.configured_mode == 'ibkr-live':
-   demo['source']=resolution.active_source or 'IBKR_LIVE'
-  else:
-   demo['source']='MOCK_FALLBACK'
   if resolution.configured_mode == 'mock':
    return merge_manual_holdings(demo,macros,state_module)
   return demo
@@ -367,6 +387,8 @@ def portfolio_live_positions():
   resolution=resolve_portfolio_provider()
   provider=resolution.provider
   meta = provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {}
+  is_live = bool(resolution.is_live or meta.get('is_live'))
+  is_stale = bool(resolution.is_stale or meta.get('is_stale'))
   return {
    'source': resolution.active_source,
    'mode': resolution.configured_mode,
@@ -377,6 +399,9 @@ def portfolio_live_positions():
    'provider_class': resolution.provider_class,
    'snapshot_available': bool(resolution.snapshot_available or meta),
    'snapshot_timestamp': resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of'),
+   'is_live': is_live,
+   'is_stale': is_stale,
+   'stale_reason': resolution.stale_reason or meta.get('stale_reason'),
    'positions': provider.get_positions()
   }
  except Exception as e:
@@ -398,6 +423,9 @@ def portfolio_live_summary():
   summary['provider_class']=resolution.provider_class
   summary['snapshot_available']=bool(resolution.snapshot_available or meta)
   summary['snapshot_timestamp']=resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of')
+  summary['is_live']=bool(resolution.is_live or meta.get('is_live'))
+  summary['is_stale']=bool(resolution.is_stale or meta.get('is_stale'))
+  summary['stale_reason']=resolution.stale_reason or meta.get('stale_reason')
   return summary
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
@@ -408,6 +436,8 @@ def portfolio_live_trades():
   resolution=resolve_portfolio_provider()
   provider=resolution.provider
   meta = provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {}
+  is_live = bool(resolution.is_live or meta.get('is_live'))
+  is_stale = bool(resolution.is_stale or meta.get('is_stale'))
   return {
    'source': resolution.active_source,
    'mode': resolution.configured_mode,
@@ -418,10 +448,22 @@ def portfolio_live_trades():
    'provider_class': resolution.provider_class,
    'snapshot_available': bool(resolution.snapshot_available or meta),
    'snapshot_timestamp': resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of'),
+   'is_live': is_live,
+   'is_stale': is_stale,
+   'stale_reason': resolution.stale_reason or meta.get('stale_reason'),
    'trades': provider.get_trades()
   }
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
+
+@app.get('/api/portfolio/history')
+def portfolio_history(limit:int=90):
+ history = get_snapshot_history(limit=limit if limit > 0 else None)
+ return {
+  'source':'IBKR_LIVE',
+  'count':len(history),
+  'items':history,
+ }
 
 @app.get('/about')
 def about():
