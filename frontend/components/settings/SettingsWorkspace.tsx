@@ -296,9 +296,9 @@ function enabledState(sourceId: string, settings: any) {
 }
 
 const PROVIDER_MODE_OPTIONS = [
-  { value: 'mock', label: 'Mock' },
-  { value: 'demo', label: 'Demo Samples' },
-  { value: 'ibkr-live', label: 'Live IBKR' },
+  { value: 'mock', label: 'Mock Data', description: 'Simulated portfolio only.' },
+  { value: 'last-update', label: 'Last Update Real Data', description: 'Uses last successful IBKR snapshot. Works offline.' },
+  { value: 'ibkr-live', label: 'Live Data', description: 'Live from IBKR Client Portal Gateway. Requires Gateway open and authenticated.' },
 ]
 
 function providerModeLabel(value: unknown) {
@@ -308,7 +308,7 @@ function providerModeLabel(value: unknown) {
 function providerSourceLabel(value: unknown) {
   const raw = String(value || '').toUpperCase()
   if (raw === 'IBKR_LIVE') return 'Live IBKR'
-  if (raw === 'DEMO_SAMPLE') return 'Demo Samples'
+  if (raw === 'LAST_UPDATE') return 'Last Update'
   if (raw === 'MOCK' || raw === 'MOCK_FALLBACK') return 'Mock'
   return providerModeLabel(value)
 }
@@ -320,6 +320,7 @@ function ibkrStatusMeta(status: any) {
   if (key === 'gateway_down') return { label: 'Gateway Down', tone: 'bad', detail: 'Start Client Portal Gateway locally' }
   if (key === 'fallback') return { label: 'Using Fallback', tone: 'warn', detail: status?.message || 'Fallback portfolio data is active' }
   if (key === 'error') return { label: 'Error', tone: 'bad', detail: status?.message || 'Client Portal Gateway status failed' }
+  if (status?.snapshot_available) return { label: 'Snapshot Ready', tone: 'good', detail: status?.snapshot_timestamp ? `Last updated at ${formatCheckedAt(status.snapshot_timestamp)}` : 'Offline snapshot is available' }
   return { label: 'Degraded', tone: 'warn', detail: status?.message || 'Provider status is degraded' }
 }
 
@@ -376,16 +377,18 @@ function IbkrProviderCard({
         <h3>{hidden ? 'Data Source' : 'Portfolio Data Source'}</h3>
         <div className="ibkr-mode-selector" role="radiogroup" aria-label="Portfolio Data Source">
           {PROVIDER_MODE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={providerMode === option.value}
-              className={`tab${providerMode === option.value ? ' active' : ''}`}
-              onClick={() => onProviderModeChange(option.value)}
-            >
-              {hidden ? 'Source' : option.label}
-            </button>
+            <div key={option.value} className="ibkr-mode-option">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={providerMode === option.value}
+                className={`tab${providerMode === option.value ? ' active' : ''}`}
+                onClick={() => onProviderModeChange(option.value)}
+              >
+                {hidden ? 'Source' : option.label}
+              </button>
+              <small className="muted">{hidden ? mask : option.description}</small>
+            </div>
           ))}
         </div>
       </section>
@@ -397,11 +400,12 @@ function IbkrProviderCard({
         <IbkrFact label="Status" value={meta.label} detail={meta.detail} hidden={hidden} />
         <IbkrFact label="Authenticated" value={boolText(status.ibkr_authenticated)} hidden={hidden} />
         <IbkrFact label="Gateway" value={gatewayLabel} hidden={hidden} />
+        <IbkrFact label="Snapshot" value={status.snapshot_available ? 'Available' : 'Unavailable'} detail={status.snapshot_timestamp ? `Last updated at ${formatCheckedAt(status.snapshot_timestamp)}` : 'Will update after the next successful live fetch'} hidden={hidden} />
       </div>
 
       {status.fallback_active ? (
         <div className="empty-state ibkr-fallback-message">
-          <p>{hidden ? mask : status.message || 'Live IBKR unavailable. Using Demo Samples.'}</p>
+          <p>{hidden ? mask : status.message || 'Live IBKR unavailable. Using offline snapshot or mock fallback.'}</p>
         </div>
       ) : null}
 

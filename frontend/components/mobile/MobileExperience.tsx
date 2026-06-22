@@ -41,6 +41,7 @@ import MobileReorderableSections from '../dashboard/MobileReorderableSections'
 import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
 import CompanyLogo from '../intelligence/CompanyLogo'
 import { preloadStockIntelligence } from '../intelligence/useStockIntelligence'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel } from '../../lib/pia-api'
 import ReorderList from './ReorderList'
 import {
   WorkspaceShell,
@@ -2334,6 +2335,10 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
       <div className="pf-header-main" role="button" tabIndex={0} onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()}>
         <div className="pf-header-nlv">
           <span className="pf-header-label">Portfolio · NLV</span>
+          <div className="pf-header-source-row">
+            <span className="badge">{portfolioSourceBadgeLabel(portfolio.source, portfolio.mode)}</span>
+            <span className="pf-header-source-time">{hidden ? mask : portfolio.snapshot_timestamp ? `Last updated at ${new Date(portfolio.snapshot_timestamp).toLocaleString()}` : 'Live portfolio'}</span>
+          </div>
           <div className="pf-header-hero">{hidden ? mask : money(total)}</div>
           <div className="pf-header-pnl-row">
             <span className={`pf-header-day-pnl ${dayPnl >= 0 ? 'green' : 'red'}`}>
@@ -2959,7 +2964,10 @@ export default function MobileExperience() {
   const [sourceHealth, setSourceHealth] = useState<any[]>([])
 
   const portfolio = dashboard?.portfolio || {}
-  const positions = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
+  const positions = useMemo(
+    () => dedupePortfolioPositions(portfolio.positions || (portfolio.source === 'MOCK' || portfolio.mode === 'mock' ? positionFallback : [])),
+    [portfolio.positions, portfolio.source, portfolio.mode],
+  )
   // Dev/test helper: ?si=NVDA auto-opens SI panel (used by UAT scripts)
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -3343,15 +3351,17 @@ export default function MobileExperience() {
         <WorkspaceShell workspaceId={active} workspace={getWorkspaceDefinition(workspaceConfig.workspaces, active)} hidden={privacyHidden} />
       )}
       {active === 'settings' && (
-        <section className="mobile-section mobile-settings-section">
-          <MobileStatusDock health={sourceHealth} hidden={privacyHidden} />
-          <SettingsPage
-            hidden={privacyHidden}
-            variant="mobile"
-            workspaceConfig={workspaceConfig}
-            onSelectWorkspace={(workspaceId) => setActive(workspaceId)}
-          />
-        </section>
+        <MobileSheet title="Settings" onClose={() => setActive('home')}>
+          <section className="mobile-section mobile-settings-section">
+            <MobileStatusDock health={sourceHealth} hidden={privacyHidden} />
+            <SettingsPage
+              hidden={privacyHidden}
+              variant="mobile"
+              workspaceConfig={workspaceConfig}
+              onSelectWorkspace={(workspaceId) => setActive(workspaceId)}
+            />
+          </section>
+        </MobileSheet>
       )}
       {active === 'about' && <MobileAboutSection hidden={privacyHidden} />}
 

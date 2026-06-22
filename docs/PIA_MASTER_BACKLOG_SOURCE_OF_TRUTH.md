@@ -1,7 +1,7 @@
 # PIA Master Backlog Source Of Truth
 
 Status: Active AI memory engine
-Last updated: 2026-06-09
+Last updated: 2026-06-22
 Branch: `feat/pia-v3-foundation-integration`
 
 This Markdown is the canonical readable operating memory for PIA. The Excel workbook is the PM operational database. Both must stay synchronized after every approved sprint, merge, or implementation.
@@ -22,6 +22,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - Stable checkpoint: Sprint 2B implementation branches merged into integration.
 - Current sprint: Sprint 2C execution and UAT failure remediation.
 - Current status: Hybrid mock intelligence data layer deployed for UI evaluation; design governance and mock-first workflow locked; mobile correction mock pack available for Product Owner review.
+- Current status: IBKR live portfolio modes are synchronized across settings, provider status, portfolio endpoints, and mobile/desktop source badges. Mock, last-update, and live modes are persisted and validated; live snapshots persist locally under `backend/data/snapshots/ibkr/`.
 - Current priorities:
   - Enforce mock-first design governance before any further UI implementation.
   - Interaction stabilization on Home and mobile.
@@ -30,6 +31,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Notification Center refactor for mobile-safe visibility.
   - Performance smoothing for motion/render cost.
   - Mobile correction mock review for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
+  - IBKR live portfolio correctness and 3-mode portfolio selection resolved; validate Product Owner review of the new UAT screenshots at `frontend/uat-screenshots/pia-ibkr-live-007/`.
 
 ## Sprint Summary
 
@@ -84,6 +86,9 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - Reduce motion/render cost.
   - Remove avoidable layout jank.
   - Preserve smooth native-feeling interactions.
+- IBKR live portfolio correctness:
+  - Keep `mock`, `last-update`, and `ibkr-live` mode resolution aligned across settings, provider status, and portfolio endpoints.
+  - Preserve local live snapshots and prevent mock rows from appearing in live or last-update modes.
 
 ## Active Backlog
 
@@ -108,7 +113,8 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - ARTEMIS-AI-V3-RESEARCH-003 Research V2 final implementation — IMPLEMENTED (ARTEMIS, 8657868 + proxy b056bc1) but **Design Lock INVALID** — approved mock `research-approved.png` MISSING; blocked for UAT until asset committed.
   - EPIC-AI-RESEARCH-V2 (IN PROGRESS), EPIC-AI-PROVENANCE (backend complete, frontend pending), EPIC-AI-COMPETITIVE-COMPARISON (backlog — needs real peer provider).
   - Bugs: BUG-HERMES-AI-007-AMD-MATERIAL-NEWS (OPEN P2), BUG-AI-RESEARCH-COMPETITIVE-DATA-MISSING (KNOWN GAP), BUG-AI-RESEARCH-PROVIDER-GAPS (KNOWN GAP).
-  - **GOV-022-RESEARCH-MOCK-MISSING (P0, OPEN):** archive + commit the approved Research mock and add RESEARCH_DESIGN_SPEC.md to validate the Research V2 Design Lock (DEC-AI-RESEARCH-005 reference currently broken).
+- **GOV-022-RESEARCH-MOCK-MISSING (P0, OPEN):** archive + commit the approved Research mock and add RESEARCH_DESIGN_SPEC.md to validate the Research V2 Design Lock (DEC-AI-RESEARCH-005 reference currently broken).
+  - HERMES-IBKR-LIVE-007 - IBKR live portfolio correctness and 3-mode portfolio selection. IMPLEMENTED/VALIDATED (HERMES, feat/pia-v3-foundation-integration): provider modes `mock`, `last-update`, `ibkr-live`; live snapshot persistence to `backend/data/snapshots/ibkr/`; deduped live positions; desktop/mobile source badges updated; UAT screenshots captured under `frontend/uat-screenshots/pia-ibkr-live-007/`.
 - ATHENA-AI-001 AI Intelligence Architecture & Documentation Consolidation. IMPLEMENTED 2026-06-17 (ATHENA): Architecture document created at `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md`. All 9 AI Intelligence subsystems captured: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, Auto Investor. Changelog and UAT Tracking synchronized.
 - EPIC-AI-INTELLIGENCE-ENGINE-001 Explainable Multi-Source Investment Intelligence Engine. IMPLEMENTED 2026-06-17 (HERMES): V1 backend scoring engine added for actionable stock verdict, portfolio-aware recommendation, expected return, conviction, thesis strength, risk, visual state, scenario probabilities, drivers/risks, score breakdown, factors evaluated, confidence notes, debug mode, and cache-backed `/api/intelligence/{symbol}/score`.
 - ATHENA-AI-002 AI Engine — Full Scoring Pipeline. ROADMAP: Rules-based scoring for Momentum, Trend, Sentiment, Institutional, Fair Value, Risk metrics with sub-factor breakdowns. Requires metric score persistence layer (ATHENA-AI-003). Owner: ATHENA.
@@ -243,6 +249,12 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - `/setup` route returned 200.
   - Privacy mode masking preserved in touched mobile and dashboard surfaces.
   - Market Pulse swipe, notification bell sheet, compact scanner controls, and mobile wrapping stabilized in implementation.
+- Latest HERMES-IBKR-LIVE-007 validation, 2026-06-22:
+  - `python -m py_compile backend/services/portfolio_providers.py backend/services/ibkr_service.py backend/services/settings_store.py backend/services/manual_holdings.py backend/main.py` passed.
+  - `npm run build` passed.
+  - `/`, `/mobile`, and `/setup` returned 200.
+  - `GET /api/portfolio/provider/status` resolved to `IBKR_LIVE` for live mode; `mock` and `last-update` persisted correctly after POST mode changes.
+  - UAT screenshots captured under `frontend/uat-screenshots/pia-ibkr-live-007/` for `mock`, `last-update`, and `ibkr-live`.
 - Latest Sprint v0.3.6 validation, 2026-05-28:
   - `npm run build` passed (frontend).
   - All 9 tickers (NVDA, AMD, SOFI, IREN, AVAV, GOOGL, TSLA, CRWV, NBIS) return complete intelligence structure from mock layer.
@@ -261,6 +273,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - Remaining failed UAT:
   - Mobile correction mock pack requires Product Owner review before final UI implementation.
   - Mobile performance lag requires deeper device profiling after first-pass render-cost reduction.
+  - IBKR trade history still depends on Client Portal Gateway session availability; when the trade endpoint is unavailable, live trade fetch degrades to the saved snapshot or an empty list rather than mock data.
 
 ## Agent Task Queue
 
@@ -271,6 +284,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - DONE 2026-05-28: Refine Technical tab into trade-entry decision workflow.
   - DONE 2026-05-28: Move Videos last and rework as media-first research feed.
   - PARTIAL 2026-05-28: Help reduce mobile performance lag.
+  - DONE 2026-06-22: HERMES-IBKR-LIVE-007 portfolio provider correctness, snapshot persistence, and 3-mode mobile/desktop source sync.
 - ATHENA:
   - DONE 2026-05-28: Create Mobile Portfolio Snapshot, Position Full Screen, Workspace Navigation, and Alerts mocks.
   - DONE 2026-05-28: Fix Market Pulse swipe gestures.
@@ -321,6 +335,7 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - DEC-AI-003 (LOCKED): AI Intelligence No Widget Collapse — missing data never collapses the widget; render structure and show missing values as `--`; "Data gathering in progress" full-section replacement forbidden; maintain layout stability.
 - AI Intelligence V2 is the official approved design (PO-approved, 10/10); V1 deprecated. Spec: docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md. All future AI Intelligence work must follow V2.
 - DEC-GOV-004 (LOCKED): Approved Mock Preservation & Design Lock Traceability — every Design Lock must archive the approved mock under `docs/mocks/<feature>/APPROVED_<feature>_v<version>.png` and COMMIT it before implementation starts; record the approved-mock path in the backlog item, UAT ticket, and Design Lock notes. Process: Requirement → UX Mockup → Design Review → Design Lock → SAVE approved mock → COMMIT approved mock → Implementation → UAT. UAT reports must include Approved Mock <path>, Design Lock Commit <id>, Implementation Commit <id>. Non-compliance: implementation started without an archived approved mock is a governance violation and is blocked until the mock is committed. Reason: Analyst Targets drifted because the approved mock was not preserved as a repo source of truth.
+- DEC-PORTFOLIO-MODE-001 (LOCKED): Portfolio source selection is controlled by `data_source.mode` and may be `mock`, `last-update`, or `ibkr-live`. The IBKR integration setting (`ibkr.mode`) is transport-only and must not force portfolio source fallback. Reason: settings UI, provider status endpoint, and portfolio endpoints must report the same source.
 - DEC-AI-CV3 (LOCKED): AI Intelligence Compact V3 design lock principles — (1) no Last Updated; (2) no score badge; (3) no dots/arrows; (4) 3 rows; (5) 4 cards per row; (6) 2.2 visible cards per row; (7) card customization (show/hide, reorder, persisted); (8) semantic card coloring (tone → border/glow/chart stroke). Approved Compact V3 redesign; commits 1b7d426, 3887882.
 - DEC-AI-009 (LOCKED): Shared Intelligence Data Layer — AI Intelligence consumes data exclusively through the Shared Intelligence Context Layer; direct provider access from widgets is prohibited. Consumers: AI Intelligence, Analyst Targets, Company, Financials, News, Videos. Rationale: avoid duplicate fetch logic; consistency; centralized caching + validation.
 - DEC-AI-010 (LOCKED): AI Verdict Separation — AI Verdict (BUY/HOLD/SELL) and Portfolio Recommendation (ADD/HOLD/TRIM/REDUCE/AVOID) are independent. Compact shows AI Verdict only; Expanded may display portfolio recommendation.
@@ -503,6 +518,13 @@ Status: Documentation/governance only.
 - Decisions LOCKED: DEC-AI-RESEARCH-001..007.
 - Epics: EPIC-AI-RESEARCH-V2, EPIC-AI-PROVENANCE, EPIC-AI-COMPETITIVE-COMPARISON. Bugs: AMD material-news regression + 2 known provider gaps.
 - P0 blocker GOV-022-RESEARCH-MOCK-MISSING: approved Research mock absent (research-approved.png; typo/draft variants no longer present) — see Design Asset Validation Report.
+
+### v0.3.30 - IBKR Live Portfolio Modes + Snapshot Persistence
+Date: 2026-06-22
+Status: Implemented and locally validated.
+- Portfolio mode persistence fixed for `mock`, `last-update`, and `ibkr-live`.
+- Live IBKR provider now uses Client Portal Gateway, persists snapshots, and no longer falls back to mock when a real mode is selected.
+- UAT screenshots captured under `frontend/uat-screenshots/pia-ibkr-live-007/`.
 
 ### v0.3.28 - AI Intelligence V2 Governance Refresh (ATHENA-GOV-021)
 Date: 2026-06-22

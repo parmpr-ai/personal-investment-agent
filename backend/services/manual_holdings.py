@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 import sqlite3
 import time
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -14,29 +16,43 @@ ALLOWED_BROKERS = {"IBKR", "Freedom24", "Revolut", "Manual"}
 DB_PATH = Path(os.getenv("MANUAL_HOLDINGS_DB", Path(__file__).resolve().parents[1] / "pia_manual_holdings.sqlite3"))
 _PRICE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 PRICE_CACHE_SECONDS = 300
+_DB_LOCK = threading.RLock()
+_DB_INITIALIZED = False
+
+
+def initialize_manual_holdings_store() -> None:
+    global _DB_INITIALIZED
+    if _DB_INITIALIZED:
+        return
+    with _DB_LOCK:
+        if _DB_INITIALIZED:
+            return
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS manual_holdings (
+                    id TEXT PRIMARY KEY,
+                    ticker TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    asset_type TEXT NOT NULL,
+                    broker TEXT NOT NULL,
+                    quantity REAL NOT NULL,
+                    avg_price REAL NOT NULL,
+                    currency TEXT NOT NULL,
+                    notes TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                )
+                """
+            )
+        _DB_INITIALIZED = True
 
 
 def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    initialize_manual_holdings_store()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS manual_holdings (
-            id TEXT PRIMARY KEY,
-            ticker TEXT NOT NULL,
-            name TEXT NOT NULL,
-            asset_type TEXT NOT NULL,
-            broker TEXT NOT NULL,
-            quantity REAL NOT NULL,
-            avg_price REAL NOT NULL,
-            currency TEXT NOT NULL,
-            notes TEXT NOT NULL DEFAULT '',
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )
-        """
-    )
     return conn
 
 
@@ -147,13 +163,14 @@ def _market_price(ticker: str) -> dict[str, Any]:
     key = ticker.upper()
     cached = _PRICE_CACHE.get(key)
     now = time.time()
-    if cached and now - cached[0] < PRICE_CACHE_SECONDS:
+    cache_seconds = PRICE_CACHE_SECONDS if cached and cached[1].get("price") is not None else 1
+    if cached and now - cached[0] < cache_seconds:
         return cached[1]
     out: dict[str, Any] = {"price": None, "currency": None, "status": "manual_fallback"}
     try:
         from services.connectors import yahoo_fundamentals
 
-        data = yahoo_fundamentals(key)
+        data = yahoo_fundamentals(key, wait_timeout_seconds=0.55)
         out = {
             "price": data.get("price"),
             "currency": data.get("currency"),
@@ -167,9 +184,16 @@ def _market_price(ticker: str) -> dict[str, Any]:
 
 
 def manual_positions(total_before_cash: float = 0) -> list[dict[str, Any]]:
+    holdings = list_manual_holdings()
+    tickers = list(dict.fromkeys(holding["ticker"] for holding in holdings))
+    if tickers:
+        with ThreadPoolExecutor(max_workers=min(8, len(tickers))) as executor:
+            pricing_by_ticker = dict(zip(tickers, executor.map(_market_price, tickers)))
+    else:
+        pricing_by_ticker = {}
     positions = []
-    for holding in list_manual_holdings():
-        pricing = _market_price(holding["ticker"])
+    for holding in holdings:
+        pricing = pricing_by_ticker.get(holding["ticker"], {})
         last = pricing.get("price")
         try:
             last_price = float(last) if last is not None else float(holding["avg_price"])
@@ -185,11 +209,17 @@ def manual_positions(total_before_cash: float = 0) -> list[dict[str, Any]]:
         positions.append(
             {
                 "id": holding["id"],
+                "accountId": f"MANUAL:{holding['broker']}",
+                "account_id": f"MANUAL:{holding['broker']}",
+                "conid": f"manual:{holding['id']}",
+                "contractDesc": holding["name"],
+                "contract_desc": holding["name"],
                 "symbol": symbol,
                 "underlying": symbol,
                 "name": holding["name"],
                 "sec_type": _asset_sec_type(holding["asset_type"]),
                 "asset_type": holding["asset_type"],
+                "assetClass": _asset_sec_type(holding["asset_type"]),
                 "sector": holding["asset_type"],
                 "broker": holding["broker"],
                 "qty": quantity,

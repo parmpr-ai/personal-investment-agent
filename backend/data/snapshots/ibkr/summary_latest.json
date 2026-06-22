@@ -1,0 +1,21 @@
+{
+  "summary": {
+    "source": "IBKR_LIVE",
+    "mode": "ibkr-live",
+    "as_of": "2026-06-22T13:44:32.558361+00:00",
+    "total_value": 76777.98,
+    "cash": -55666.7,
+    "buying_power": 231892.52,
+    "available_funds": 34783.88,
+    "maint_margin_req": 38176.47,
+    "init_margin_req": 41994.11,
+    "excess_liquidity": 38601.52,
+    "gross_position_value": 132496.58,
+    "currency": "EUR",
+    "daily_pnl": 0,
+    "daily_pnl_pct": 0,
+    "unrealized": 39968.38,
+    "unrealized_pct": 4.1,
+    "positions_count": 16
+  }
+}

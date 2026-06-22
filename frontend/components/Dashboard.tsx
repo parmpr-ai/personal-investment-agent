@@ -40,6 +40,7 @@ import DashboardHome from './dashboard/DashboardHome'
 import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
 import CompanyLogo from './intelligence/CompanyLogo'
 import { preloadStockIntelligence } from './intelligence/useStockIntelligence'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel } from '../lib/pia-api'
 import {
   buildWatchlistUniverse,
   resolveWatchlistRows,
@@ -396,7 +397,7 @@ export default function Dashboard() {
     }
   }
 
-  const positions = dashboard?.portfolio?.positions || []
+  const positions = useMemo(() => dedupePortfolioPositions(dashboard?.portfolio?.positions || []), [dashboard?.portfolio?.positions])
   useEffect(() => {
     if (!positions.length) return
     const symbols = positions
@@ -872,6 +873,10 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
     <>
       <div className={showMarginDiscipline ? 'snapshot-grid' : 'snapshot-grid snapshot-grid-main'}>
         <div>
+          <div className="snapshot-source-row">
+            <PiaBadge variant="info">{portfolioSourceBadgeLabel(p.source, p.mode)}</PiaBadge>
+            <span className="muted">{hidden ? mask : p.snapshot_timestamp ? `Last updated at ${new Date(p.snapshot_timestamp).toLocaleString()}` : 'Live source'}</span>
+          </div>
           <div className="hero-value">{hidden ? mask : money(p.total_value)}</div>
           <div className="hero-meta">
             <span className={p.daily_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.daily_pnl)} today</span>

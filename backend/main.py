@@ -57,32 +57,40 @@ def get_portfolio_payload():
   p=provider.get_portfolio()
   configured_mode=resolution.configured_mode
   p['configured_mode']=configured_mode
+  p['mode']=p.get('mode') or configured_mode
   p['active_source']=resolution.active_source
   p['fallback_active']=resolution.fallback_active
   if resolution.fallback_reason:
    p['fallback_reason']=resolution.fallback_reason
   p['provider_class']=resolution.provider_class
-  if resolution.fallback_active and resolution.active_source == 'MOCK':
-   p['source']='MOCK_FALLBACK'
+  p['snapshot_available']=p.get('snapshot_available', resolution.snapshot_available)
+  p['snapshot_timestamp']=p.get('snapshot_timestamp') or resolution.snapshot_timestamp
   if not p.get('exposures'): p['exposures']=compute_exposures(p.get('positions',[]),p.get('total_value',0))
   if 'guardrails' not in p: p['guardrails']=risk_doctor(p.get('positions',[]),macros)
   if 'today_actions' not in p: p['today_actions']=today_actions(p.get('positions',[]),macros)
   if 'stress_tests' not in p: p['stress_tests']=stress_tests(p.get('total_value',0))
-  return merge_manual_holdings(p,macros,state_module)
+  if configured_mode == 'mock':
+   return merge_manual_holdings(p,macros,state_module)
+  return p
  except Exception as e:
   resolution=resolve_portfolio_provider()
   demo=portfolio_snapshot()
   demo['provider_error']=str(e)
   demo['configured_mode']=resolution.configured_mode
+  demo['mode']=resolution.configured_mode
   demo['active_source']=resolution.active_source
   demo['fallback_active']=True
   demo['fallback_reason']=resolution.fallback_reason or str(e)
   demo['provider_class']=resolution.provider_class
+  demo['snapshot_available']=resolution.snapshot_available
+  demo['snapshot_timestamp']=resolution.snapshot_timestamp
   if resolution.configured_mode == 'ibkr-live':
    demo['source']=resolution.active_source or 'IBKR_LIVE'
   else:
    demo['source']='MOCK_FALLBACK'
-  return merge_manual_holdings(demo,macros,state_module)
+  if resolution.configured_mode == 'mock':
+   return merge_manual_holdings(demo,macros,state_module)
+  return demo
 
 def payload():
  p=get_portfolio_payload(); m=macro_snapshot()
@@ -358,12 +366,17 @@ def portfolio_live_positions():
  try:
   resolution=resolve_portfolio_provider()
   provider=resolution.provider
+  meta = provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {}
   return {
    'source': resolution.active_source,
+   'mode': resolution.configured_mode,
    'configured_mode': resolution.configured_mode,
+   'as_of': meta.get('as_of') or meta.get('snapshot_timestamp') or resolution.snapshot_timestamp,
    'fallback_active': resolution.fallback_active,
    'fallback_reason': resolution.fallback_reason,
    'provider_class': resolution.provider_class,
+   'snapshot_available': bool(resolution.snapshot_available or meta),
+   'snapshot_timestamp': resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of'),
    'positions': provider.get_positions()
   }
  except Exception as e:
@@ -373,12 +386,18 @@ def portfolio_live_positions():
 def portfolio_live_summary():
  try:
   resolution=resolve_portfolio_provider()
-  summary=resolution.provider.get_summary()
+  provider=resolution.provider
+  meta = provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {}
+  summary=provider.get_summary()
   summary['configured_mode']=resolution.configured_mode
+  summary['mode']=summary.get('mode') or resolution.configured_mode
   summary['source']=resolution.active_source
+  summary['as_of']=summary.get('as_of') or meta.get('as_of') or meta.get('snapshot_timestamp') or resolution.snapshot_timestamp
   summary['fallback_active']=resolution.fallback_active
   summary['fallback_reason']=resolution.fallback_reason
   summary['provider_class']=resolution.provider_class
+  summary['snapshot_available']=bool(resolution.snapshot_available or meta)
+  summary['snapshot_timestamp']=resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of')
   return summary
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
@@ -387,13 +406,19 @@ def portfolio_live_summary():
 def portfolio_live_trades():
  try:
   resolution=resolve_portfolio_provider()
+  provider=resolution.provider
+  meta = provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {}
   return {
    'source': resolution.active_source,
+   'mode': resolution.configured_mode,
    'configured_mode': resolution.configured_mode,
+   'as_of': meta.get('as_of') or meta.get('snapshot_timestamp') or resolution.snapshot_timestamp,
    'fallback_active': resolution.fallback_active,
    'fallback_reason': resolution.fallback_reason,
    'provider_class': resolution.provider_class,
-   'trades': resolution.provider.get_trades()
+   'snapshot_available': bool(resolution.snapshot_available or meta),
+   'snapshot_timestamp': resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of'),
+   'trades': provider.get_trades()
   }
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))

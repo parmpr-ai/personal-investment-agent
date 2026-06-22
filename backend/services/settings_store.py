@@ -134,7 +134,7 @@ def save_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
     if data_mode == "ibkr-live":
         ibkr["mode"] = "live"
         ibkr["enabled"] = True
-    elif data_mode in {"mock", "demo"}:
+    elif data_mode in {"mock", "demo", "last-update"}:
         ibkr["mode"] = "client_portal_gateway"
     conn = _connect()
     try:
