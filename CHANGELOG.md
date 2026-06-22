@@ -1,5 +1,21 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.34 - IBKR Connectivity Mismatch Hotfix (HERMES-IBKR-CONNECTIVITY-MISMATCH-017)
+
+Date: 2026-06-22
+Status: Implemented and locally validated against an authenticated Gateway.
+
+### Backend
+
+* Fixed false Gateway-offline detection by using IPv4 loopback for the backend transport when the configured host is `localhost`.
+* Added environment-aware Gateway configuration, explicit no-proxy transport, startup configuration logging, and per-request timing logs.
+* Added `/api/debug/ibkr-connectivity` and aligned legacy setup diagnostics with the live provider transport.
+* Confirmed provider resolution returns `IBKR_LIVE`; live quote timestamps and AMD values changed across four 12-second refresh intervals.
+
+### Root cause
+
+* Python's `localhost` request path took about 2.2 seconds on this dual-stack Windows host, exceeding the provider's 2.0-second heartbeat timeout. The same authenticated request via `127.0.0.1` completed in about 0.17 seconds.
+
 ## v0.3.32 - IBKR Live Diagnostic Trace (HERMES-IBKR-LIVE-DIAGNOSTIC-014)
 
 Date: 2026-06-22

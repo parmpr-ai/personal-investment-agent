@@ -549,6 +549,16 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 
 ## CHANGELOG
 
+### v0.3.34 - IBKR Connectivity Mismatch Hotfix
+Date: 2026-06-22
+Status: Implemented and locally validated against an authenticated Client Portal Gateway.
+- Backlog: HERMES-IBKR-CONNECTIVITY-MISMATCH-017 is IMPLEMENTED / LOCAL PASS.
+- Root cause: Python's dual-stack `localhost` path took about 2.2 seconds and exceeded the 2.0-second heartbeat timeout; direct IPv4 loopback completed in about 0.17 seconds.
+- Architecture decision DEC-IBKR-CONNECTIVITY-001: preserve the configured `localhost` URL for user-facing settings, but prefer `127.0.0.1` for the backend Gateway transport unless `IBKR_PREFER_IPV4=false`.
+- UAT: `/api/debug/ibkr-connectivity` returned authenticated/established/connected; provider status returned `IBKR_LIVE`; AMD changed across four reads with advancing quote timestamps and live summary recalculation.
+- Agent task HERMES-IBKR-CONNECTIVITY-MISMATCH-017: startup/request logging, connectivity endpoint, transport correction, frontend proxy, and legacy setup diagnostic alignment complete.
+- Known limitations: Gateway availability still requires an authenticated local session; quote entitlement and latency depend on IBKR market-data permissions; local self-signed TLS verification remains disabled on loopback.
+
 ### v0.3.31 - IBKR Live Source Resolution Hardening
 Date: 2026-06-22
 Status: Implemented and locally validated.

@@ -9,7 +9,7 @@ from services.state import portfolio_snapshot, macro_snapshot, news_items, catal
 from services.trade_engine import scanner_items, opportunity_for
 from services.ws import manager
 from services.settings_store import get_settings, save_settings, initialize_settings_store
-from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES, get_snapshot_history, normalize_positions, get_live_quote_trace, SnapshotPortfolioProvider, IbkrLivePortfolioProvider
+from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES, get_snapshot_history, normalize_positions, get_live_quote_trace, SnapshotPortfolioProvider, IbkrLivePortfolioProvider, log_ibkr_startup_config
 from services.connectors import InstrumentSearchError, source_health, test_source, yahoo_news, yahoo_fundamentals, yahoo_symbol_search
 from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding, initialize_manual_holdings_store
 from services.news_intelligence import get_news_intelligence
@@ -226,6 +226,7 @@ async def stream_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
  initialize_settings_store(); initialize_manual_holdings_store(); initialize_provider_cache()
+ log_ibkr_startup_config()
  stream_task=asyncio.create_task(stream_loop())
  try:
   yield
@@ -276,14 +277,9 @@ def port_reachable(host:str, port:int, timeout:float=0.8)->bool:
 
 def ibkr_authenticated(timeout:float=1.2)->bool:
  try:
-  context=ssl._create_unverified_context()
-  with urllib.request.urlopen('https://localhost:5000/v1/api/iserver/auth/status', timeout=timeout, context=context) as response:
-   if response.status != 200:
-    return False
-   import json
-   data=json.loads(response.read().decode('utf-8'))
-   return bool(data.get('authenticated'))
- except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+  result=IbkrLivePortfolioProvider().get_connectivity_diagnostics(timeout=timeout)
+  return bool((result.get('authStatusResult') or {}).get('authenticated'))
+ except Exception:
   return False
 
 @app.get('/setup/diagnostics')
@@ -876,6 +872,12 @@ def debug_live_status():
   }
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get('/api/debug/ibkr-connectivity')
+def debug_ibkr_connectivity():
+ provider = IbkrLivePortfolioProvider()
+ return provider.get_connectivity_diagnostics()
 
 
 @app.get('/api/debug/live-quotes')

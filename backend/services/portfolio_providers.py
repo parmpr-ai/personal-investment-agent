@@ -9,8 +9,10 @@ Providers:
 Fallback chain: ibkr-live → demo → mock
 """
 import json
+import logging
 import os
 import re
+import socket
 import ssl
 import time
 import threading
@@ -18,6 +20,7 @@ from collections import deque
 from datetime import timedelta
 import urllib.request
 import urllib.error
+import urllib.parse
 from dataclasses import dataclass
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -32,7 +35,7 @@ _SNAPSHOT_SUMMARY_FILE = _SNAPSHOT_DIR / "summary_latest.json"
 _SNAPSHOT_TRADES_FILE = _SNAPSHOT_DIR / "trades_latest.json"
 _SNAPSHOT_META_FILE = _SNAPSHOT_DIR / "meta.json"
 _SNAPSHOT_HISTORY_FILE = _SNAPSHOT_HISTORY_DIR / "history.jsonl"
-_GATEWAY_BASE = "https://localhost:5000/v1/api"
+_DEFAULT_GATEWAY_URL = "https://localhost:5000"
 _PROVIDER_MODES = ("mock", "last-update", "ibkr-live")
 _ACTIVE_SOURCE_MAP = {"mock": "MOCK", "last-update": "LAST_UPDATE", "ibkr-live": "IBKR_LIVE"}
 _MODE_LABELS = {"mock": "Mock Data", "last-update": "Last Update Real Data", "ibkr-live": "Live Data"}
@@ -44,6 +47,70 @@ _LIVE_REFRESH_SECONDS = 12.0
 _SNAPSHOT_LOCK = threading.RLock()
 _LIVE_QUOTE_TRACE_LOCK = threading.RLock()
 _LIVE_QUOTE_TRACE: deque[Dict[str, Any]] = deque(maxlen=500)
+_IBKR_LOGGER = logging.getLogger("uvicorn.error")
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_ibkr_gateway_config() -> Dict[str, Any]:
+    """Resolve the user-facing gateway URL and the backend transport URL."""
+    settings_url = _DEFAULT_GATEWAY_URL
+    try:
+        from services.settings_store import get_settings
+
+        settings_url = str((get_settings().get("ibkr") or {}).get("gateway_url") or settings_url)
+    except Exception:
+        pass
+
+    configured_url = str(os.getenv("IBKR_BASE_URL") or settings_url).strip().rstrip("/")
+    if "://" not in configured_url:
+        configured_url = f"https://{configured_url}"
+    parsed = urllib.parse.urlsplit(configured_url)
+    scheme = parsed.scheme or "https"
+    configured_host = parsed.hostname or "localhost"
+    configured_port = parsed.port or (443 if scheme == "https" else 80)
+    port = int(os.getenv("IBKR_PORT") or configured_port)
+    prefer_ipv4 = _env_bool("IBKR_PREFER_IPV4", True)
+    effective_host = "127.0.0.1" if prefer_ipv4 and configured_host.lower() == "localhost" else configured_host
+    path = parsed.path.rstrip("/")
+    api_path = path if path.endswith("/v1/api") else f"{path}/v1/api"
+    api_path = f"/{api_path.lstrip('/')}"
+    configured_api_url = f"{scheme}://{configured_host}:{port}{api_path}"
+    effective_api_url = f"{scheme}://{effective_host}:{port}{api_path}"
+    ssl_verify = _env_bool("IBKR_SSL_VERIFY", _env_bool("SSL_VERIFY", False))
+    try:
+        timeout_seconds = max(0.2, float(os.getenv("IBKR_TIMEOUT") or 2.0))
+    except ValueError:
+        timeout_seconds = 2.0
+    return {
+        "configured_url": configured_api_url,
+        "effective_url": effective_api_url,
+        "configured_host": configured_host,
+        "effective_host": effective_host,
+        "port": port,
+        "ssl_verify": ssl_verify,
+        "timeout_seconds": timeout_seconds,
+        "prefer_ipv4": prefer_ipv4,
+        "proxy_bypassed": True,
+    }
+
+
+def log_ibkr_startup_config() -> Dict[str, Any]:
+    config = get_ibkr_gateway_config()
+    _IBKR_LOGGER.info(
+        "IBKR startup config IBKR_BASE_URL=%s IBKR_EFFECTIVE_BASE_URL=%s IBKR_PORT=%s SSL_VERIFY=%s TIMEOUT=%ss",
+        config["configured_url"],
+        config["effective_url"],
+        config["port"],
+        config["ssl_verify"],
+        config["timeout_seconds"],
+    )
+    return config
 
 
 def _num(v: Any, d: float = 0.0) -> float:
@@ -773,7 +840,12 @@ class IbkrLivePortfolioProvider:
     _REFRESH_STOP = threading.Event()
 
     def __init__(self) -> None:
-        self._ssl_ctx = ssl._create_unverified_context()
+        self._gateway_config = get_ibkr_gateway_config()
+        self._ssl_ctx = ssl.create_default_context() if self._gateway_config["ssl_verify"] else ssl._create_unverified_context()
+        self._opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            urllib.request.HTTPSHandler(context=self._ssl_ctx),
+        )
         self._account_id: Optional[str] = None
         self.__class__._ensure_refresh_loop(self)
 
@@ -814,11 +886,29 @@ class IbkrLivePortfolioProvider:
                         self._CACHE_BUNDLE["pricesLive"] = False
             self._REFRESH_STOP.wait(self._CACHE_TTL_SECONDS)
 
-    def _get(self, path: str, timeout: float = 5.0) -> Any:
-        url = f"{_GATEWAY_BASE}{path}"
+    def _get(self, path: str, timeout: Optional[float] = None) -> Any:
+        request_timeout = float(timeout if timeout is not None else self._gateway_config["timeout_seconds"])
+        url = f"{self._gateway_config['effective_url']}{path}"
+        parsed = urllib.parse.urlsplit(url)
+        request_path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout, context=self._ssl_ctx) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        started = time.perf_counter()
+        try:
+            with self._opener.open(req, timeout=request_timeout) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+            _IBKR_LOGGER.info(
+                "IBKR request url=%s host=%s port=%s path=%s timeout=%ss elapsed_ms=%s status=ok",
+                url, parsed.hostname, parsed.port, request_path, request_timeout, elapsed_ms,
+            )
+            return payload
+        except Exception as exc:
+            elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+            _IBKR_LOGGER.warning(
+                "IBKR request url=%s host=%s port=%s path=%s timeout=%ss elapsed_ms=%s status=error exception=%s",
+                url, parsed.hostname, parsed.port, request_path, request_timeout, elapsed_ms, str(exc),
+            )
+            raise
 
     def _safe_get(self, path: str, timeout: float = 5.0) -> tuple[Any, Optional[str]]:
         try:
@@ -847,6 +937,48 @@ class IbkrLivePortfolioProvider:
             self._HEARTBEAT_CACHE = deepcopy(payload)
             self._HEARTBEAT_AT = datetime.now(timezone.utc)
         return payload
+
+    def get_connectivity_diagnostics(self, timeout: Optional[float] = None) -> Dict[str, Any]:
+        started = time.perf_counter()
+        request_timeout = float(timeout if timeout is not None else self._gateway_config["timeout_seconds"])
+        auth_result: Dict[str, Any] = {}
+        exception: Optional[str] = None
+        try:
+            result = self._get("/iserver/auth/status", timeout=request_timeout)
+            if isinstance(result, dict):
+                auth_result = {
+                    "authenticated": bool(result.get("authenticated")),
+                    "established": bool(result.get("established")),
+                    "connected": bool(result.get("connected")),
+                    "competing": bool(result.get("competing")),
+                    "message": str(result.get("message") or ""),
+                }
+        except Exception as exc:
+            exception = f"{type(exc).__name__}: {exc}"
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        addresses: List[str] = []
+        try:
+            addresses = sorted({row[4][0] for row in socket.getaddrinfo(self._gateway_config["configured_host"], self._gateway_config["port"])})
+        except OSError:
+            pass
+        proxy_names = sorted(key for key in urllib.request.getproxies() if key.lower() in {"http", "https", "all", "no"})
+        return {
+            "configuredUrl": self._gateway_config["configured_url"],
+            "effectiveUrl": self._gateway_config["effective_url"],
+            "authStatusResult": auth_result,
+            "responseTimeMs": elapsed_ms,
+            "exception": exception,
+            "sslVerification": self._gateway_config["ssl_verify"],
+            "timeoutSeconds": request_timeout,
+            "configuredHost": self._gateway_config["configured_host"],
+            "effectiveHost": self._gateway_config["effective_host"],
+            "port": self._gateway_config["port"],
+            "path": "/v1/api/iserver/auth/status",
+            "preferIpv4Loopback": self._gateway_config["prefer_ipv4"],
+            "resolvedAddresses": addresses,
+            "proxyBypassed": self._gateway_config["proxy_bypassed"],
+            "detectedProxyNames": proxy_names,
+        }
 
     def is_available(self) -> bool:
         return bool(self.get_gateway_heartbeat().get("gateway_open"))
@@ -1921,8 +2053,8 @@ def get_provider_status() -> Dict[str, Any]:
         "fallback_reason": resolution.fallback_reason,
         "fallback_from": provider_mode_label(mode) if fallback_active else None,
         "provider_class": resolution.provider_class,
-        "gateway_url": "https://localhost:5000",
-        "gateway_api": _GATEWAY_BASE,
+        "gateway_url": get_ibkr_gateway_config()["configured_url"],
+        "gateway_api": get_ibkr_gateway_config()["effective_url"],
         "gateway_status": resolution.gateway_status,
         "gateway_error": resolution.gateway_error,
         "ibkr_gateway_reachable": resolution.ibkr_gateway_reachable,
