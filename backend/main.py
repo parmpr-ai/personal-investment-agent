@@ -7,13 +7,18 @@ from pydantic import BaseModel
 from services.state import portfolio_snapshot, macro_snapshot, news_items, catalyst_calendar, WATCHLIST
 from services.trade_engine import scanner_items, opportunity_for
 from services.ws import manager
-from services.settings_store import get_settings, save_settings
+from services.settings_store import get_settings, save_settings, initialize_settings_store
+from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES
 from services.connectors import InstrumentSearchError, source_health, test_source, yahoo_news, yahoo_fundamentals, yahoo_symbol_search
-from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding
+from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding, initialize_manual_holdings_store
 from services.news_intelligence import get_news_intelligence
 from services.stock_intelligence import build_stock_panel_intelligence, get_ticker_news_intelligence
 from services.ai_intelligence import build_ai_intelligence, build_ai_intelligence_test
 from services.ai_intelligence_engine import build_ai_intelligence_score
+from services.ai_intelligence_context import build_ai_intelligence_context, build_ai_intelligence_context_batch, context_score_kwargs
+from services.ai_research import AIResearchResponse, build_ai_research
+from services.performance_timing import AIRequestTimingMiddleware, TimedJSONResponse, time_stage
+from services.provider_cache import initialize_provider_cache
 from services.source_registry import build_source_coverage, build_source_status, build_symbol_inputs
 load_dotenv()
 try:
@@ -44,20 +49,40 @@ TRANSACTIONS=[]
 
 def get_portfolio_payload():
  import services.state as state_module
+ from services.state import compute_exposures, risk_doctor, today_actions, stress_tests
  macros=macro_snapshot()
- if os.getenv('IBKR_ENABLED','false').lower()=='true' and get_ibkr_portfolio:
-  try:
-   p=get_ibkr_portfolio()
-   # enrich live with exposure/risk/trade engine compatible fields
-   from services.state import compute_exposures, risk_doctor, today_actions, stress_tests
-   p['exposures']=compute_exposures(p.get('positions',[]),p.get('total_value',0))
-   p['guardrails']=risk_doctor(p.get('positions',[]),macros)
-   p['today_actions']=today_actions(p.get('positions',[]),macros)
-   p['stress_tests']=stress_tests(p.get('total_value',0))
-   return merge_manual_holdings(p,macros,state_module)
-  except Exception as e:
-   demo=portfolio_snapshot(); demo['source']='DEMO_FALLBACK'; demo['ibkr_error']=str(e); return merge_manual_holdings(demo,macros,state_module)
- return merge_manual_holdings(portfolio_snapshot(),macros,state_module)
+ try:
+  resolution=resolve_portfolio_provider()
+  provider=resolution.provider
+  p=provider.get_portfolio()
+  configured_mode=resolution.configured_mode
+  p['configured_mode']=configured_mode
+  p['active_source']=resolution.active_source
+  p['fallback_active']=resolution.fallback_active
+  if resolution.fallback_reason:
+   p['fallback_reason']=resolution.fallback_reason
+  p['provider_class']=resolution.provider_class
+  if resolution.fallback_active and resolution.active_source == 'MOCK':
+   p['source']='MOCK_FALLBACK'
+  if not p.get('exposures'): p['exposures']=compute_exposures(p.get('positions',[]),p.get('total_value',0))
+  if 'guardrails' not in p: p['guardrails']=risk_doctor(p.get('positions',[]),macros)
+  if 'today_actions' not in p: p['today_actions']=today_actions(p.get('positions',[]),macros)
+  if 'stress_tests' not in p: p['stress_tests']=stress_tests(p.get('total_value',0))
+  return merge_manual_holdings(p,macros,state_module)
+ except Exception as e:
+  resolution=resolve_portfolio_provider()
+  demo=portfolio_snapshot()
+  demo['provider_error']=str(e)
+  demo['configured_mode']=resolution.configured_mode
+  demo['active_source']=resolution.active_source
+  demo['fallback_active']=True
+  demo['fallback_reason']=resolution.fallback_reason or str(e)
+  demo['provider_class']=resolution.provider_class
+  if resolution.configured_mode == 'ibkr-live':
+   demo['source']=resolution.active_source or 'IBKR_LIVE'
+  else:
+   demo['source']='MOCK_FALLBACK'
+  return merge_manual_holdings(demo,macros,state_module)
 
 def payload():
  p=get_portfolio_payload(); m=macro_snapshot()
@@ -65,14 +90,21 @@ def payload():
 
 async def stream_loop():
  while True:
-  await manager.broadcast(payload())
+  snapshot=await asyncio.to_thread(payload)
+  await manager.broadcast(snapshot)
   await asyncio.sleep(1.5)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
- asyncio.create_task(stream_loop()); yield
+ initialize_settings_store(); initialize_manual_holdings_store(); initialize_provider_cache()
+ stream_task=asyncio.create_task(stream_loop())
+ try:
+  yield
+ finally:
+  stream_task.cancel()
 
-app=FastAPI(title='Personal Investment Agent v5.6', lifespan=lifespan)
+app=FastAPI(title='Personal Investment Agent v5.6', lifespan=lifespan, default_response_class=TimedJSONResponse)
+app.add_middleware(AIRequestTimingMiddleware)
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 
 @app.get('/health')
@@ -200,6 +232,14 @@ def intelligence_sources_status():
 def intelligence_sources_coverage():
  settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot()
  return build_source_coverage(settings, portfolio=p, macro=macro, calendar=catalyst_calendar(), provider_status=_intelligence_provider_status())
+@app.get('/api/intelligence/context/test')
+def intelligence_context_test(symbols:str='AAPL,NVDA,AMD,TSM,PLTR', refresh:bool=False, debug:bool=False, contract:str='context'):
+ cleaned=[s.strip() for s in symbols.split(',') if s.strip()]
+ settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot(); calendar=catalyst_calendar()
+ batch=build_ai_intelligence_context_batch(cleaned, settings=settings, portfolio=p, macro=macro, calendar=calendar, watchlist=WATCHLIST, provider_status=_intelligence_provider_status(), refresh=refresh, debug=debug)
+ if contract.lower()=='frontend':
+  return {'type':'AIIntelligenceFrontendPayloadBatch','schemaVersion':batch.get('schemaVersion'),'symbols':batch.get('symbols'),'count':batch.get('count'),'payloads':batch.get('frontendPayloads'),'performance':batch.get('performance'),'missingDataReport':batch.get('missingDataReport')}
+ return batch
 @app.get('/api/intelligence/{symbol}/inputs')
 def intelligence_symbol_inputs(symbol:str):
  t=symbol.upper().split()[0]; settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot(); calendar=catalyst_calendar()
@@ -208,17 +248,37 @@ def intelligence_symbol_inputs(symbol:str):
  watch=opportunity_for(wl,macro) if wl else None
  news_bundle=get_ticker_news_intelligence(t)
  return build_symbol_inputs(t, settings, portfolio=p, position=pos, watch=watch, macro=macro, calendar=calendar, fundamentals=yahoo_fundamentals(t), news=(yahoo_news(t) or [n for n in news_items() if n.get('ticker')==t]), news_intelligence=news_bundle, provider_status=_intelligence_provider_status())
+@app.get('/api/intelligence/{symbol}/context')
+def intelligence_symbol_context(symbol:str, refresh:bool=False, debug:bool=False, contract:str='context'):
+ t=symbol.upper().split()[0]; settings=get_settings()
+ with time_stage('Portfolio Provider'):
+  p=get_portfolio_payload(); portfolio_status=_intelligence_provider_status()
+ with time_stage('Watchlists Provider'): watchlist_payload=WATCHLIST
+ macro=macro_snapshot(); calendar=catalyst_calendar()
+ with time_stage('Context Provider Load'):
+  context=build_ai_intelligence_context(t, settings=settings, portfolio=p, macro=macro, calendar=calendar, watchlist=watchlist_payload, provider_status=portfolio_status, refresh=refresh, debug=debug)
+ if contract.lower()=='frontend':
+  payload=context.get('frontendPayload') or {}
+  return {**payload,'contextPerformance':context.get('performance'),'missingDataReport':context.get('missingDataReport')}
+ return context
+@app.get('/api/intelligence/{symbol}/research', response_model=AIResearchResponse)
+def intelligence_symbol_research(symbol:str, refresh:bool=False, debug:bool=False):
+ t=symbol.upper().split()[0]; settings=get_settings()
+ with time_stage('Portfolio Provider'):
+  p=get_portfolio_payload(); portfolio_status=_intelligence_provider_status()
+ with time_stage('Watchlists Provider'): watchlist_payload=WATCHLIST
+ macro=macro_snapshot(); calendar=catalyst_calendar()
+ return build_ai_research(t, settings=settings, portfolio=p, macro=macro, calendar=calendar, watchlist=watchlist_payload, provider_status=portfolio_status, refresh=refresh, debug=debug)
 def _score_provider_status(portfolio_payload:dict):
  return {'configured_mode':portfolio_payload.get('configured_mode'),'active_source':portfolio_payload.get('active_source') or portfolio_payload.get('source'),'fallback_active':portfolio_payload.get('fallback_active'),'status':'connected' if portfolio_payload.get('active_source')=='IBKR_LIVE' else ('fallback' if portfolio_payload.get('fallback_active') else 'connected')}
 @app.get('/api/intelligence/{symbol}/score')
-def intelligence_symbol_score(symbol:str, strategy:str='long_term', debug:bool=False):
- t=symbol.upper().split()[0]; settings=get_settings(); p=portfolio_snapshot(); macro=macro_snapshot(); calendar=catalyst_calendar()
- p['configured_mode']=settings.get('data_source',{}).get('mode','mock'); p['active_source']=p.get('source','DEMO'); p['fallback_active']=False
- pos=next((x for x in p.get('positions',[]) if x.get('symbol','').split()[0].upper()==t or x.get('underlying','').upper()==t),None)
- wl=next((x for x in WATCHLIST if x['symbol']==t),None)
- watch=opportunity_for(wl,macro) if wl else None
- local_news=[n for n in news_items() if n.get('ticker')==t]
- return build_ai_intelligence_score(t, settings=settings, portfolio=p, position=pos, watch=watch, macro=macro, calendar=calendar, news=local_news, news_intelligence={'is_demo':False,'items':local_news}, provider_status=_score_provider_status(p), strategy=strategy, debug=debug)
+def intelligence_symbol_score(symbol:str, strategy:str='long_term', debug:bool=False, refresh:bool=False):
+ t=symbol.upper().split()[0]; settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot(); calendar=catalyst_calendar()
+ context=build_ai_intelligence_context(t, settings=settings, portfolio=p, macro=macro, calendar=calendar, watchlist=WATCHLIST, provider_status=_intelligence_provider_status(), refresh=refresh, debug=False)
+ score=build_ai_intelligence_score(t, settings=settings, **context_score_kwargs(context), strategy=strategy, debug=debug, refresh=refresh)
+ if debug:
+  score.setdefault('debug',{})['aiIntelligenceContext']={'schemaVersion':context.get('schemaVersion'),'coverage':context.get('coverage'),'missingDataReport':context.get('missingDataReport'),'performance':context.get('performance')}
+ return score
 @app.get('/watchlist')
 def watchlist(): return [opportunity_for(w,macro_snapshot()) for w in WATCHLIST]
 @app.get('/stock/{ticker}')
@@ -272,6 +332,71 @@ def integrations_test(source:str):
 @app.get('/source-health')
 def source_health_endpoint():
  return source_health(get_settings())
+
+# ── Portfolio Provider Routes ──────────────────────────────────────────────────
+
+class DataSourceModeRequest(BaseModel):
+ mode: str
+
+@app.get('/api/portfolio/provider/status')
+def portfolio_provider_status():
+ return get_provider_status()
+
+@app.get('/api/portfolio/provider/mode')
+def portfolio_provider_mode():
+ return {'mode': get_data_source_mode()}
+
+@app.post('/api/portfolio/provider/mode')
+def portfolio_provider_mode_set(req: DataSourceModeRequest):
+ if req.mode not in _PROVIDER_MODES:
+  raise HTTPException(status_code=400, detail=f"Invalid mode '{req.mode}'. Must be one of: {', '.join(_PROVIDER_MODES)}")
+ mode=set_data_source_mode(req.mode)
+ return {'ok': True, 'mode': mode, 'status': get_provider_status()}
+
+@app.get('/api/portfolio/live/positions')
+def portfolio_live_positions():
+ try:
+  resolution=resolve_portfolio_provider()
+  provider=resolution.provider
+  return {
+   'source': resolution.active_source,
+   'configured_mode': resolution.configured_mode,
+   'fallback_active': resolution.fallback_active,
+   'fallback_reason': resolution.fallback_reason,
+   'provider_class': resolution.provider_class,
+   'positions': provider.get_positions()
+  }
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
+
+@app.get('/api/portfolio/live/summary')
+def portfolio_live_summary():
+ try:
+  resolution=resolve_portfolio_provider()
+  summary=resolution.provider.get_summary()
+  summary['configured_mode']=resolution.configured_mode
+  summary['source']=resolution.active_source
+  summary['fallback_active']=resolution.fallback_active
+  summary['fallback_reason']=resolution.fallback_reason
+  summary['provider_class']=resolution.provider_class
+  return summary
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
+
+@app.get('/api/portfolio/live/trades')
+def portfolio_live_trades():
+ try:
+  resolution=resolve_portfolio_provider()
+  return {
+   'source': resolution.active_source,
+   'configured_mode': resolution.configured_mode,
+   'fallback_active': resolution.fallback_active,
+   'fallback_reason': resolution.fallback_reason,
+   'provider_class': resolution.provider_class,
+   'trades': resolution.provider.get_trades()
+  }
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
 
 @app.get('/about')
 def about():

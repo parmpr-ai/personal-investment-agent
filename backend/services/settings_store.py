@@ -1,10 +1,15 @@
 import json
 import sqlite3
+import threading
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = BASE_DIR / "pia_settings.sqlite3"
+_LOCK = threading.RLock()
+_INITIALIZED = False
+_SETTINGS_CACHE: Dict[str, Any] | None = None
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "enableDiscordSignals": False,
@@ -18,12 +23,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     },
     "ibkr": {
         "enabled": True,
-        "host": "127.0.0.1",
-        "port": 4001,
-        "client_id": 21,
-        "mode": "live",
-        "read_only": True,
-        "documentation": "Open IB Gateway/TWS, enable API socket clients, set read-only API, set trusted IP 127.0.0.1, then test connection.",
+        "gateway_url": "https://localhost:5000",
+        "mode": "client_portal_gateway",
+        "documentation": "Connect through IBKR Client Portal Gateway running locally on your computer.",
     },
     "yahoo": {
         "enabled": True,
@@ -62,6 +64,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "chat_id": "",
         "documentation": "Create a Telegram bot with BotFather, paste token and chat id, then use Send Test Alert.",
     },
+    "data_source": {
+        "mode": "mock",
+        "documentation": "Portfolio data source. 'mock': built-in demo data. 'demo': IBKR sample JSON files. 'ibkr-live': live IBKR Client Portal Gateway.",
+    },
     "discord_advisor": {
         "enabled": False,
         "mode": "manual_first",
@@ -82,27 +88,54 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
 }
 
 
+def initialize_settings_store() -> None:
+    global _INITIALIZED
+    if _INITIALIZED:
+        return
+    with _LOCK:
+        if _INITIALIZED:
+            return
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        _INITIALIZED = True
+
+
 def _connect():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-    return conn
+    initialize_settings_store()
+    return sqlite3.connect(DB_PATH)
 
 
 def get_settings() -> Dict[str, Any]:
+    global _SETTINGS_CACHE
+    with _LOCK:
+        if _SETTINGS_CACHE is not None:
+            return deepcopy(_SETTINGS_CACHE)
     conn = _connect()
     try:
         row = conn.execute("SELECT value FROM settings WHERE key='integrations'").fetchone()
         if not row:
-            save_settings(DEFAULT_SETTINGS)
-            return json.loads(json.dumps(DEFAULT_SETTINGS))
-        data = json.loads(row[0])
-        return deep_merge(json.loads(json.dumps(DEFAULT_SETTINGS)), data)
+            data = deepcopy(DEFAULT_SETTINGS)
+        else:
+            data = deep_merge(deepcopy(DEFAULT_SETTINGS), json.loads(row[0]))
     finally:
         conn.close()
+    if not row:
+        save_settings(data)
+    with _LOCK:
+        _SETTINGS_CACHE = deepcopy(data)
+    return deepcopy(data)
 
 
 def save_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
-    merged = deep_merge(json.loads(json.dumps(DEFAULT_SETTINGS)), settings)
+    global _SETTINGS_CACHE
+    merged = deep_merge(deepcopy(DEFAULT_SETTINGS), settings)
+    data_mode = str((merged.get("data_source") or {}).get("mode") or "").lower()
+    ibkr = merged.setdefault("ibkr", {})
+    if data_mode == "ibkr-live":
+        ibkr["mode"] = "live"
+        ibkr["enabled"] = True
+    elif data_mode in {"mock", "demo"}:
+        ibkr["mode"] = "client_portal_gateway"
     conn = _connect()
     try:
         conn.execute(
@@ -110,6 +143,8 @@ def save_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
             (json.dumps(merged, ensure_ascii=False),),
         )
         conn.commit()
+        with _LOCK:
+            _SETTINGS_CACHE = deepcopy(merged)
         return merged
     finally:
         conn.close()
