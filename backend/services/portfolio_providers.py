@@ -12,6 +12,7 @@ import json
 import os
 import re
 import ssl
+import time
 import threading
 from datetime import timedelta
 import urllib.request
@@ -47,6 +48,13 @@ def _num(v: Any, d: float = 0.0) -> float:
         return float(v) if v not in (None, "") else d
     except Exception:
         return d
+
+
+def _maybe_num(v: Any) -> Optional[float]:
+    try:
+        return float(v) if v not in (None, "") else None
+    except Exception:
+        return None
 
 
 def provider_mode_label(mode: str) -> str:
@@ -222,6 +230,16 @@ def _position_multiplier(position: Dict[str, Any]) -> float:
     if str(_position_asset_class(position)).upper() == "OPT":
         return _num(position.get("multiplier") or 100, 100)
     return _num(position.get("multiplier") or 1, 1)
+
+
+def _position_quote_refresh_age(refresh_at: Optional[str]) -> Optional[float]:
+    if not refresh_at:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(refresh_at).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    return max(0.0, (datetime.now(timezone.utc) - dt).total_seconds())
 
 
 def _is_snapshot_stale(meta_payload: Dict[str, Any], threshold_seconds: float = _SNAPSHOT_STALE_AFTER_SECONDS) -> bool:
@@ -711,10 +729,20 @@ class IbkrLivePortfolioProvider:
     _CACHE_AT: Optional[datetime] = None
     _CACHE_ERROR: Optional[str] = None
     _CACHE_TTL_SECONDS = _LIVE_REFRESH_SECONDS
+    _HEARTBEAT_LOCK = threading.RLock()
+    _HEARTBEAT_CACHE: Optional[Dict[str, Any]] = None
+    _HEARTBEAT_AT: Optional[datetime] = None
+    _HEARTBEAT_TTL_SECONDS = 4.0
+    _QUOTE_FIELDS = "31,7059,84,85,86,87,88"
+    _QUOTE_BATCH_SIZE = 25
+    _REFRESH_THREAD_LOCK = threading.RLock()
+    _REFRESH_THREAD: Optional[threading.Thread] = None
+    _REFRESH_STOP = threading.Event()
 
     def __init__(self) -> None:
         self._ssl_ctx = ssl._create_unverified_context()
         self._account_id: Optional[str] = None
+        self.__class__._ensure_refresh_loop(self)
 
     @classmethod
     def invalidate_cache(cls) -> None:
@@ -722,6 +750,36 @@ class IbkrLivePortfolioProvider:
             cls._CACHE_BUNDLE = None
             cls._CACHE_AT = None
             cls._CACHE_ERROR = None
+
+    @classmethod
+    def _ensure_refresh_loop(cls, instance: Optional["IbkrLivePortfolioProvider"] = None) -> None:
+        with cls._REFRESH_THREAD_LOCK:
+            if cls._REFRESH_THREAD and cls._REFRESH_THREAD.is_alive():
+                return
+            if instance is None:
+                return
+
+            def _run() -> None:
+                instance._refresh_loop()
+
+            cls._REFRESH_STOP.clear()
+            cls._REFRESH_THREAD = threading.Thread(target=_run, daemon=True, name="IbkrLivePortfolioRefresh")
+            cls._REFRESH_THREAD.start()
+
+    def _refresh_loop(self) -> None:
+        while not self._REFRESH_STOP.is_set():
+            try:
+                if self.get_gateway_heartbeat().get("gateway_open"):
+                    self._fetch_live_bundle()
+            except Exception as exc:
+                with self._CACHE_LOCK:
+                    if self._CACHE_BUNDLE:
+                        self._CACHE_BUNDLE["is_stale"] = True
+                        self._CACHE_BUNDLE["stale_reason"] = str(exc)
+                        self._CACHE_BUNDLE["fallback_active"] = True
+                        self._CACHE_BUNDLE["fallback_reason"] = str(exc)
+                        self._CACHE_BUNDLE["pricesLive"] = False
+            self._REFRESH_STOP.wait(self._CACHE_TTL_SECONDS)
 
     def _get(self, path: str, timeout: float = 5.0) -> Any:
         url = f"{_GATEWAY_BASE}{path}"
@@ -736,17 +794,26 @@ class IbkrLivePortfolioProvider:
             return None, str(exc)
 
     def get_gateway_heartbeat(self) -> Dict[str, Any]:
+        with self._HEARTBEAT_LOCK:
+            if self._HEARTBEAT_CACHE and self._HEARTBEAT_AT:
+                age = (datetime.now(timezone.utc) - self._HEARTBEAT_AT).total_seconds()
+                if age <= self._HEARTBEAT_TTL_SECONDS:
+                    return deepcopy(self._HEARTBEAT_CACHE)
         auth, auth_error = self._safe_get("/iserver/auth/status", timeout=2.0)
         reachable = auth_error is None and isinstance(auth, dict)
         authenticated = bool(auth.get("authenticated")) if isinstance(auth, dict) else False
         status = "connected" if reachable and authenticated else ("unauthenticated" if reachable else "gateway_down")
-        return {
+        payload = {
             "gateway_open": bool(reachable and authenticated),
             "gateway_status": status,
             "gateway_error": auth_error,
             "ibkr_authenticated": authenticated,
             "auth_status": auth if isinstance(auth, dict) else {},
         }
+        with self._HEARTBEAT_LOCK:
+            self._HEARTBEAT_CACHE = deepcopy(payload)
+            self._HEARTBEAT_AT = datetime.now(timezone.utc)
+        return payload
 
     def is_available(self) -> bool:
         return bool(self.get_gateway_heartbeat().get("gateway_open"))
@@ -773,6 +840,183 @@ class IbkrLivePortfolioProvider:
             pass
         return None
 
+    @staticmethod
+    def _chunk(values: List[str], size: int) -> List[List[str]]:
+        return [values[idx: idx + size] for idx in range(0, len(values), max(1, size))]
+
+    @staticmethod
+    def _quote_entry_is_populated(entry: Any) -> bool:
+        if not isinstance(entry, dict):
+            return False
+        for key in ("31", "last", "lastPrice", "mktPrice", "marketPrice", "84", "86"):
+            value = entry.get(key)
+            if value not in (None, ""):
+                return True
+        return False
+
+    def _fetch_market_quotes(self, conids: List[str]) -> Dict[str, Dict[str, Any]]:
+        conid_list = [str(conid).strip() for conid in conids if str(conid).strip()]
+        if not conid_list:
+            return {}
+        quote_map: Dict[str, Dict[str, Any]] = {}
+        refresh_at = datetime.now(timezone.utc).isoformat()
+        for batch in self._chunk(conid_list, self._QUOTE_BATCH_SIZE):
+            query = f"/iserver/marketdata/snapshot?conids={','.join(batch)}&fields={self._QUOTE_FIELDS}"
+            raw_quotes = self._get(query, timeout=2.5)
+            if not isinstance(raw_quotes, list):
+                raw_quotes = []
+            if raw_quotes and not any(self._quote_entry_is_populated(entry) for entry in raw_quotes):
+                time.sleep(0.1)
+                raw_quotes = self._get(f"/iserver/marketdata/snapshot?conids={','.join(batch)}", timeout=2.5)
+                if not isinstance(raw_quotes, list):
+                    raw_quotes = []
+            for entry in raw_quotes:
+                if not isinstance(entry, dict):
+                    continue
+                conid = str(entry.get("conid") or entry.get("conidEx") or entry.get("conId") or "").strip()
+                if not conid:
+                    continue
+                quote_map[conid] = {
+                    "conid": conid,
+                    "last": _maybe_num(entry.get("31") or entry.get("last") or entry.get("lastPrice") or entry.get("mktPrice")),
+                    "bid": _maybe_num(entry.get("84") or entry.get("bid")),
+                    "ask": _maybe_num(entry.get("86") or entry.get("ask")),
+                    "previous_close": _maybe_num(entry.get("85") or entry.get("previousClose") or entry.get("prevClose") or entry.get("close")),
+                    "volume": _maybe_num(entry.get("87") or entry.get("volume")),
+                    "bid_size": _maybe_num(entry.get("88") or entry.get("bidSize")),
+                    "quoteLastRefresh": refresh_at,
+                    "quoteSource": "IBKR_MARKETDATA_SNAPSHOT",
+                    "quoteStale": False,
+                    "quoteStaleReason": None,
+                    "raw": entry,
+                }
+        return quote_map
+
+    def _fetch_partitioned_pnl(self) -> Optional[Dict[str, Any]]:
+        try:
+            raw = self._get("/iserver/account/pnl/partitioned", timeout=2.0)
+        except Exception:
+            return None
+        if isinstance(raw, list):
+            raw = raw[0] if raw else {}
+        if not isinstance(raw, dict):
+            return None
+        for key in ("dpl", "dailyPnL", "dailyPnl", "dayPnL", "dayPnl"):
+            daily = _maybe_num(raw.get(key))
+            if daily is not None:
+                return {
+                    "daily_pnl": daily,
+                    "daily_pnl_pct": _maybe_num(raw.get("dpnlpct") or raw.get("dailyPnLPct") or raw.get("daily_pnl_pct")),
+                    "unrealized": _maybe_num(raw.get("upl") or raw.get("unrealizedPnL") or raw.get("unrealized_pnl")),
+                    "net_liquidation": _maybe_num(raw.get("nl") or raw.get("netLiquidation") or raw.get("netliquidation")),
+                    "market_value": _maybe_num(raw.get("mv") or raw.get("marketValue") or raw.get("market_value")),
+                }
+        return None
+
+    def _position_quote_key(self, position: Dict[str, Any]) -> tuple[str, str, str, str, str]:
+        return _position_key(position)
+
+    def _overlay_live_quotes(
+        self,
+        positions: List[Dict[str, Any]],
+        quote_map: Dict[str, Dict[str, Any]],
+        previous_positions: Optional[List[Dict[str, Any]]] = None,
+    ) -> tuple[List[Dict[str, Any]], bool, bool, Optional[str], Optional[str]]:
+        previous_lookup = {_position_key(position): position for position in previous_positions or [] if isinstance(position, dict)}
+        refreshed_at = datetime.now(timezone.utc).isoformat()
+        quote_refreshes = []
+        prices_live = True
+        any_quote_refresh = False
+        fallback_reason = None
+        merged_positions: List[Dict[str, Any]] = []
+        for position in positions:
+            raw_conid = str(position.get("conid") or "").strip()
+            quote = quote_map.get(raw_conid) if raw_conid else None
+            previous = previous_lookup.get(self._position_quote_key(position))
+            merged = dict(position)
+            has_fresh_quote = bool(quote and quote.get("last") is not None)
+            if has_fresh_quote:
+                any_quote_refresh = True
+                quote_last_refresh = quote.get("quoteLastRefresh") or refreshed_at
+                last_price = _num(quote.get("last"))
+                prev_close = quote.get("previous_close")
+                if prev_close is None:
+                    prev_close = _maybe_num(merged.get("previousClose") or merged.get("prevClose") or merged.get("closePrice"))
+                multiplier = _num(merged.get("multiplier") or _position_multiplier(merged), _position_multiplier(merged))
+                qty = _num(merged.get("qty") or merged.get("quantity") or merged.get("position"))
+                market_value = round(last_price * qty * multiplier, 2) if qty else _num(merged.get("market_value"))
+                cost_basis = _num(merged.get("cost_basis") or merged.get("costBasis"))
+                unrealized = round(market_value - cost_basis, 2) if cost_basis or market_value else _num(merged.get("unrealized"))
+                merged.update(
+                    {
+                        "last": round(last_price, 4),
+                        "previousClose": round(prev_close, 4) if prev_close is not None else merged.get("previousClose"),
+                        "prevClose": round(prev_close, 4) if prev_close is not None else merged.get("prevClose"),
+                        "day_change": round(last_price - prev_close, 2) if prev_close is not None else _num(merged.get("day_change")),
+                        "day_change_pct": round(((last_price - prev_close) / prev_close) * 100, 2) if prev_close else _num(merged.get("day_change_pct")),
+                        "market_value": round(market_value, 2) if market_value is not None else merged.get("market_value"),
+                        "unrealized": round(unrealized, 2) if unrealized is not None else merged.get("unrealized"),
+                        "unrealized_pct": round(unrealized / cost_basis * 100, 2) if cost_basis else _num(merged.get("unrealized_pct")),
+                        "quoteLastRefresh": quote_last_refresh,
+                        "quoteAgeSeconds": 0,
+                        "quoteSource": quote.get("quoteSource") or "IBKR_MARKETDATA_SNAPSHOT",
+                        "quoteStale": False,
+                        "quoteStaleReason": None,
+                    }
+                )
+                quote_refreshes.append(quote_last_refresh)
+            else:
+                prices_live = False
+                fallback_source = None
+                stale_reason = None
+                if previous:
+                    fallback_source = previous.get("quoteSource") or previous.get("quote_source") or "PREVIOUS_LIVE_SNAPSHOT"
+                    stale_reason = "IBKR market data snapshot unavailable; reused previous live quote."
+                else:
+                    fallback_source = "POSITION_ENDPOINT"
+                    stale_reason = "IBKR market data snapshot unavailable; using position endpoint price."
+                if previous:
+                    for key in (
+                        "last",
+                        "previousClose",
+                        "prevClose",
+                        "day_change",
+                        "day_change_pct",
+                        "market_value",
+                        "unrealized",
+                        "unrealized_pct",
+                        "quoteLastRefresh",
+                        "quoteSource",
+                    ):
+                        if previous.get(key) not in (None, ""):
+                            merged[key] = previous.get(key)
+                if merged.get("quoteLastRefresh"):
+                    merged["quoteAgeSeconds"] = _position_quote_refresh_age(str(merged.get("quoteLastRefresh")))
+                else:
+                    merged["quoteAgeSeconds"] = None
+                merged["quoteLastRefresh"] = merged.get("quoteLastRefresh") or (previous.get("quoteLastRefresh") if previous else None)
+                merged["quoteSource"] = fallback_source
+                merged["quoteStale"] = True
+                merged["quoteStaleReason"] = stale_reason
+                if merged.get("last") is not None:
+                    qty = _num(merged.get("qty") or merged.get("quantity") or merged.get("position"))
+                    multiplier = _num(merged.get("multiplier") or _position_multiplier(merged), _position_multiplier(merged))
+                    cost_basis = _num(merged.get("cost_basis") or merged.get("costBasis"))
+                    market_value = _num(merged.get("market_value"))
+                    if qty and market_value == 0 and merged.get("last") is not None:
+                        merged["market_value"] = round(_num(merged.get("last")) * qty * multiplier, 2)
+                    if cost_basis:
+                        merged["unrealized"] = round(_num(merged.get("market_value")) - cost_basis, 2)
+                        merged["unrealized_pct"] = round(_num(merged.get("unrealized")) / cost_basis * 100, 2)
+                if merged.get("quoteLastRefresh"):
+                    quote_refreshes.append(str(merged.get("quoteLastRefresh")))
+                fallback_reason = fallback_reason or stale_reason
+            merged_positions.append(merged)
+        if not quote_refreshes:
+            prices_live = False
+        prices_last_refresh = max(quote_refreshes) if quote_refreshes else None
+        return merged_positions if merged_positions else positions, prices_live, any_quote_refresh, prices_last_refresh, fallback_reason
+
     def _fetch_live_bundle(self) -> Dict[str, Any]:
         heartbeat = self.get_gateway_heartbeat()
         if not heartbeat.get("gateway_open"):
@@ -780,22 +1024,40 @@ class IbkrLivePortfolioProvider:
         account_id = self._get_account_id()
         if not account_id:
             raise RuntimeError("IBKR: could not resolve account ID")
-        raw_positions = self._get(f"/portfolio/{account_id}/positions/0", timeout=8.0)
+        previous_bundle = self._get_cached_bundle()
+        if not previous_bundle and _snapshot_available():
+            snapshot_bundle = _load_snapshot_bundle()
+            snapshot_positions = snapshot_bundle.get("positions_payload", {}).get("positions") if isinstance(snapshot_bundle.get("positions_payload"), dict) else []
+            snapshot_summary = snapshot_bundle.get("summary_payload", {}).get("summary") if isinstance(snapshot_bundle.get("summary_payload"), dict) else {}
+            if isinstance(snapshot_positions, list) or isinstance(snapshot_summary, dict):
+                previous_bundle = {
+                    "positions": snapshot_positions or [],
+                    "summary": snapshot_summary or {},
+                }
+        raw_positions = self._get(f"/portfolio/{account_id}/positions/0", timeout=4.0)
         if not isinstance(raw_positions, list):
             raw_positions = []
-        raw_summary = self._get(f"/portfolio/{account_id}/summary", timeout=8.0)
+        raw_summary = self._get(f"/portfolio/{account_id}/summary", timeout=4.0)
         raw_trades: List[Dict[str, Any]] = []
         try:
-            fetched_trades = self._get("/iserver/account/trades", timeout=8.0)
+            fetched_trades = self._get("/iserver/account/trades", timeout=3.0)
             if isinstance(fetched_trades, list):
                 raw_trades = fetched_trades
         except Exception:
             raw_trades = []
         positions = self._normalize_live_positions(raw_positions, account_id)
-        summary = self._normalize_live_summary(raw_summary, positions)
+        quote_map = self._fetch_market_quotes([str(p.get("conid") or "").strip() for p in positions if str(p.get("conid") or "").strip()])
+        previous_positions = []
+        if previous_bundle and isinstance(previous_bundle.get("positions"), list):
+            previous_positions = previous_bundle.get("positions") or []
+        positions, prices_live, has_quote_refresh, prices_last_refresh, quote_fallback_reason = self._overlay_live_quotes(positions, quote_map, previous_positions)
+        pnl = self._fetch_partitioned_pnl()
+        positions_last_refresh = datetime.now(timezone.utc).isoformat()
+        summary = self._normalize_live_summary(raw_summary, positions, pnl=pnl, prices_live=prices_live, prices_last_refresh=prices_last_refresh, positions_last_refresh=positions_last_refresh)
         trades = self._normalize_live_trades(raw_trades, account_id)
         as_of = datetime.now(timezone.utc).isoformat()
         next_refresh = (datetime.now(timezone.utc) + timedelta(seconds=self._CACHE_TTL_SECONDS)).isoformat()
+        summary_last_refresh = as_of
         bundle = {
             "source": "IBKR_LIVE",
             "mode": "ibkr-live",
@@ -810,13 +1072,20 @@ class IbkrLivePortfolioProvider:
             "refreshed_at": as_of,
             "lastRefresh": as_of,
             "nextRefresh": next_refresh,
-            "isLiveUpdating": True,
-            "positions_refreshed_at": as_of,
-            "summary_refreshed_at": as_of,
+            "pricesLive": bool(prices_live),
+            "pricesLastRefresh": prices_last_refresh or as_of,
+            "pricesAgeSeconds": _position_quote_refresh_age(prices_last_refresh) if prices_last_refresh else None,
+            "isLiveUpdating": bool(prices_live),
+            "positions_refreshed_at": positions_last_refresh,
+            "positionsLastRefresh": positions_last_refresh,
+            "summary_refreshed_at": summary_last_refresh,
+            "summaryLastRefresh": summary_last_refresh,
             "trades_refreshed_at": as_of if trades else None,
             "is_live": True,
             "is_stale": False,
-            "stale_reason": None,
+            "stale_reason": quote_fallback_reason,
+            "quotes_stale": not prices_live,
+            "quotes_stale_reason": quote_fallback_reason,
         }
         self._persist_live_snapshot(bundle)
         with self._CACHE_LOCK:
@@ -838,19 +1107,88 @@ class IbkrLivePortfolioProvider:
         cached = self._get_cached_bundle()
         if cached:
             return cached
-        try:
-            return self._fetch_live_bundle()
-        except Exception as exc:
-            cached = self._get_cached_bundle()
-            if cached:
-                cached["is_stale"] = True
-                cached["stale_reason"] = str(exc)
-                cached["fallback_active"] = True
-                cached["fallback_reason"] = str(exc)
-                cached["source"] = "IBKR_LIVE"
-                cached["mode"] = "ibkr-live"
-                return cached
-            raise
+        heartbeat = self.get_gateway_heartbeat()
+        if _snapshot_available():
+            snapshot = SnapshotPortfolioProvider()
+            bundle = snapshot._load_bundle()
+            as_of = bundle.get("summary", {}).get("as_of") or bundle.get("meta", {}).get("snapshot_timestamp") or datetime.now(timezone.utc).isoformat()
+            return {
+                "source": "IBKR_LIVE",
+                "mode": "ibkr-live",
+                "as_of": as_of,
+                "account_id": bundle.get("meta", {}).get("account_id"),
+                "positions": bundle.get("positions", []),
+                "summary": bundle.get("summary", {}),
+                "trades": bundle.get("trades", []),
+                "snapshot_timestamp": bundle.get("meta", {}).get("snapshot_timestamp") or bundle.get("meta", {}).get("as_of"),
+                "snapshot_available": True,
+                "heartbeat": heartbeat,
+                "refreshed_at": as_of,
+                "lastRefresh": as_of,
+                "nextRefresh": None,
+                "pricesLive": False,
+                "pricesLastRefresh": bundle.get("meta", {}).get("pricesLastRefresh") or bundle.get("meta", {}).get("lastRefresh") or bundle.get("meta", {}).get("snapshot_timestamp"),
+                "pricesAgeSeconds": bundle.get("meta", {}).get("pricesAgeSeconds"),
+                "isLiveUpdating": False,
+                "positions_refreshed_at": bundle.get("meta", {}).get("positionsLastRefresh") or bundle.get("meta", {}).get("positions_refreshed_at"),
+                "positionsLastRefresh": bundle.get("meta", {}).get("positionsLastRefresh") or bundle.get("meta", {}).get("positions_refreshed_at"),
+                "summary_refreshed_at": bundle.get("meta", {}).get("summaryLastRefresh") or bundle.get("meta", {}).get("summary_refreshed_at"),
+                "summaryLastRefresh": bundle.get("meta", {}).get("summaryLastRefresh") or bundle.get("meta", {}).get("summary_refreshed_at"),
+                "trades_refreshed_at": bundle.get("meta", {}).get("trades_refreshed_at"),
+                "is_live": bool(heartbeat.get("gateway_open")),
+                "is_stale": True,
+                "stale_reason": "Live cache warming; using last saved snapshot.",
+                "fallback_active": True,
+                "fallback_reason": "Live cache warming; using last saved snapshot.",
+                "quotes_stale": True,
+                "quotes_stale_reason": "Live cache warming; using last saved snapshot.",
+            }
+        return {
+            "source": "DISCONNECTED",
+            "mode": "disconnected",
+            "as_of": None,
+            "snapshot_available": False,
+            "snapshot_timestamp": None,
+            "lastRefresh": None,
+            "nextRefresh": None,
+            "isLiveUpdating": False,
+            "pricesLive": False,
+            "pricesLastRefresh": None,
+            "pricesAgeSeconds": None,
+            "positionsLastRefresh": None,
+            "summaryLastRefresh": None,
+            "is_live": False,
+            "is_stale": True,
+            "stale_reason": "Gateway offline and no saved snapshot is available.",
+            "fallback_active": False,
+            "fallback_reason": "Gateway offline and no saved snapshot is available.",
+            "positions": [],
+            "summary": {
+                "source": "DISCONNECTED",
+                "mode": "disconnected",
+                "as_of": None,
+                "total_value": 0,
+                "cash": 0,
+                "buying_power": 0,
+                "unrealized": 0,
+                "unrealized_pct": 0,
+                "daily_pnl": None,
+                "daily_pnl_pct": None,
+                "currency": "USD",
+                "snapshot_available": False,
+                "snapshot_timestamp": None,
+                "net_liquidation": 0,
+                "is_live": False,
+                "is_stale": True,
+                "stale_reason": "Gateway offline and no saved snapshot is available.",
+                "pricesLive": False,
+                "pricesLastRefresh": None,
+                "pricesAgeSeconds": None,
+                "positionsLastRefresh": None,
+                "summaryLastRefresh": None,
+            },
+            "trades": [],
+        }
 
     def get_runtime_status(self) -> Dict[str, Any]:
         heartbeat = self.get_gateway_heartbeat()
@@ -864,6 +1202,11 @@ class IbkrLivePortfolioProvider:
         last_refresh = None
         next_refresh = None
         is_live_updating = False
+        prices_live = False
+        prices_last_refresh = None
+        prices_age_seconds = None
+        positions_last_refresh = None
+        summary_last_refresh = None
         if not is_live:
             if snapshot_available:
                 is_stale = _is_snapshot_stale(snapshot_meta) if snapshot_meta else False
@@ -877,6 +1220,11 @@ class IbkrLivePortfolioProvider:
             last_refresh = cached.get("lastRefresh") or cached.get("refreshed_at") or cached.get("as_of")
             next_refresh = cached.get("nextRefresh")
             is_live_updating = bool(cached.get("isLiveUpdating", False)) and not is_stale and is_live
+            prices_live = bool(cached.get("pricesLive"))
+            prices_last_refresh = cached.get("pricesLastRefresh")
+            prices_age_seconds = cached.get("pricesAgeSeconds")
+            positions_last_refresh = cached.get("positionsLastRefresh") or cached.get("positions_refreshed_at")
+            summary_last_refresh = cached.get("summaryLastRefresh") or cached.get("summary_refreshed_at")
         elif snapshot_meta:
             last_refresh = snapshot_meta.get("snapshot_timestamp") or snapshot_meta.get("as_of")
         return {
@@ -894,6 +1242,11 @@ class IbkrLivePortfolioProvider:
             "lastRefresh": last_refresh,
             "nextRefresh": next_refresh,
             "isLiveUpdating": is_live_updating,
+            "pricesLive": prices_live,
+            "pricesLastRefresh": prices_last_refresh,
+            "pricesAgeSeconds": prices_age_seconds,
+            "positionsLastRefresh": positions_last_refresh,
+            "summaryLastRefresh": summary_last_refresh,
         }
 
     def _normalize_live_positions(self, raw_positions: List[Dict[str, Any]], account_id: str) -> List[Dict[str, Any]]:
@@ -945,6 +1298,8 @@ class IbkrLivePortfolioProvider:
                 "unrealized": round(unr, 2),
                 "realized": round(real, 2),
                 "unrealized_pct": round(unr / cost_basis * 100, 2) if cost_basis else 0,
+                "previousClose": round(prev_close, 4),
+                "prevClose": round(prev_close, 4),
                 "risk": 90 if is_opt else 70,
                 "brand": "#3B82F6",
                 "accent": "#60A5FA",
@@ -955,29 +1310,46 @@ class IbkrLivePortfolioProvider:
                 "ai_view": "Live IBKR position",
                 "currency": p.get("currency", "USD"),
                 "multiplier": multiplier,
+                "quoteLastRefresh": None,
+                "quoteAgeSeconds": None,
+                "quoteSource": "POSITION_ENDPOINT",
+                "quoteStale": True,
+                "quoteStaleReason": "Awaiting market data snapshot.",
                 "lastRefresh": datetime.now(timezone.utc).isoformat(),
             })
         return [row for row in _aggregate_positions(normalized) if _num(row.get("qty")) != 0 or _num(row.get("market_value")) != 0]
 
-    def _normalize_live_summary(self, raw_summary: Any, positions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _normalize_live_summary(
+        self,
+        raw_summary: Any,
+        positions: List[Dict[str, Any]],
+        pnl: Optional[Dict[str, Any]] = None,
+        prices_live: bool = False,
+        prices_last_refresh: Optional[str] = None,
+        positions_last_refresh: Optional[str] = None,
+    ) -> Dict[str, Any]:
         raw = raw_summary if isinstance(raw_summary, dict) else {}
 
         def _amt(key: str) -> float:
             node = raw.get(key, {})
             return _num(node.get("amount") if isinstance(node, dict) else node)
 
-        def _field(*names: str) -> float:
+        def _field(*names: str) -> Optional[float]:
             for name in names:
+                if name not in raw:
+                    continue
                 value = raw.get(name)
                 if isinstance(value, dict):
                     value = value.get("amount", value.get("value", value.get("amountValue")))
                 if value not in (None, ""):
-                    return _num(value)
-            return 0.0
+                    return _maybe_num(value)
+            return None
 
-        total_value = _amt("netliquidation")
+        total_market_value = sum(_num(p.get("market_value")) for p in positions)
+        cash = _amt("totalcashvalue")
+        total_value = round(cash + total_market_value, 2) if positions else _amt("netliquidation")
         if not total_value:
-            total_value = sum(_num(p.get("market_value")) for p in positions)
+            total_value = _amt("netliquidation") or total_market_value
         currency = "USD"
         for key in ("netliquidation", "availablefunds", "buyingpower"):
             node = raw.get(key, {})
@@ -986,19 +1358,24 @@ class IbkrLivePortfolioProvider:
                 break
         total_cb = sum(_num(p.get("cost_basis")) for p in positions)
         total_unr = sum(_num(p.get("unrealized")) for p in positions)
-        daily_pnl = _field("dailyPnl", "dailyPnL", "dayPnl", "dayPnL", "pnl", "daily_pnl", "dailyProfitLoss")
-        if not daily_pnl:
-            daily_pnl = _field("unrealizedPnl", "unrealized_pnl", "unrealizedPnL")
-        prev_net_liq = _field("previousNetLiquidation", "prevNetLiquidation", "priorNetLiquidation")
-        daily_pnl_pct = _field("dailyPnlPct", "dailyPnLPct", "dayPnlPct", "dayPnLPct", "pnlPct", "daily_pnl_pct")
-        if not daily_pnl_pct and prev_net_liq:
-            daily_pnl_pct = round((daily_pnl / prev_net_liq) * 100, 2) if prev_net_liq else 0
+        daily_pnl = None
+        daily_pnl_pct = None
+        if pnl:
+            daily_pnl = pnl.get("daily_pnl")
+            daily_pnl_pct = pnl.get("daily_pnl_pct")
+        if daily_pnl is None:
+            field_pnl = _field("dailyPnl", "dailyPnL", "dayPnl", "dayPnL", "pnl", "daily_pnl", "dailyProfitLoss")
+            daily_pnl = field_pnl
+        if daily_pnl_pct is None and daily_pnl is not None:
+            prev_net_liq = _field("previousNetLiquidation", "prevNetLiquidation", "priorNetLiquidation")
+            if prev_net_liq:
+                daily_pnl_pct = round((daily_pnl / prev_net_liq) * 100, 2)
         return {
             "source": "IBKR_LIVE",
             "mode": "ibkr-live",
             "as_of": datetime.now(timezone.utc).isoformat(),
             "total_value": round(total_value, 2),
-            "cash": round(_amt("totalcashvalue"), 2),
+            "cash": round(cash, 2),
             "buying_power": round(_amt("buyingpower"), 2),
             "available_funds": round(_amt("availablefunds"), 2),
             "maint_margin_req": round(_amt("maintmarginreq"), 2),
@@ -1007,14 +1384,19 @@ class IbkrLivePortfolioProvider:
             "gross_position_value": round(_amt("grosspositionvalue"), 2),
             "net_liquidation": round(total_value, 2),
             "currency": currency,
-            "daily_pnl": round(daily_pnl, 2),
-            "daily_pnl_pct": round(daily_pnl_pct, 2),
+            "daily_pnl": round(daily_pnl, 2) if daily_pnl is not None else None,
+            "daily_pnl_pct": round(daily_pnl_pct, 2) if daily_pnl_pct is not None else None,
             "unrealized": round(total_unr, 2),
             "unrealized_pct": round(total_unr / total_cb * 100, 2) if total_cb else 0,
             "positions_count": len(positions),
             "lastRefresh": datetime.now(timezone.utc).isoformat(),
             "nextRefresh": (datetime.now(timezone.utc) + timedelta(seconds=self._CACHE_TTL_SECONDS)).isoformat(),
-            "isLiveUpdating": True,
+            "isLiveUpdating": bool(prices_live),
+            "pricesLive": bool(prices_live),
+            "pricesLastRefresh": prices_last_refresh,
+            "pricesAgeSeconds": _position_quote_refresh_age(prices_last_refresh) if prices_last_refresh else None,
+            "positionsLastRefresh": positions_last_refresh,
+            "summaryLastRefresh": datetime.now(timezone.utc).isoformat(),
         }
 
     def _normalize_live_trades(self, raw_trades: List[Dict[str, Any]], account_id: str) -> List[Dict[str, Any]]:
@@ -1047,12 +1429,22 @@ class IbkrLivePortfolioProvider:
             "as_of": bundle.get("as_of"),
             "account_id": bundle.get("account_id"),
             "positions": bundle.get("positions", []),
+            "pricesLive": bundle.get("pricesLive"),
+            "pricesLastRefresh": bundle.get("pricesLastRefresh"),
+            "pricesAgeSeconds": bundle.get("pricesAgeSeconds"),
+            "positionsLastRefresh": bundle.get("positionsLastRefresh") or bundle.get("positions_refreshed_at"),
+            "summaryLastRefresh": bundle.get("summaryLastRefresh") or bundle.get("summary_refreshed_at"),
         }
         summary_payload = {
             **(bundle.get("summary") or {}),
             "source": bundle.get("source", "IBKR_LIVE"),
             "mode": bundle.get("mode", "ibkr-live"),
             "as_of": bundle.get("as_of"),
+            "pricesLive": bundle.get("pricesLive"),
+            "pricesLastRefresh": bundle.get("pricesLastRefresh"),
+            "pricesAgeSeconds": bundle.get("pricesAgeSeconds"),
+            "positionsLastRefresh": bundle.get("positionsLastRefresh") or bundle.get("positions_refreshed_at"),
+            "summaryLastRefresh": bundle.get("summaryLastRefresh") or bundle.get("summary_refreshed_at"),
         }
         trades_payload = {
             "source": bundle.get("source", "IBKR_LIVE"),
@@ -1073,8 +1465,13 @@ class IbkrLivePortfolioProvider:
             "is_live": bundle.get("is_live", True),
             "is_stale": bundle.get("is_stale", False),
             "stale_reason": bundle.get("stale_reason"),
+            "pricesLive": bundle.get("pricesLive"),
+            "pricesLastRefresh": bundle.get("pricesLastRefresh"),
+            "pricesAgeSeconds": bundle.get("pricesAgeSeconds"),
             "positions_refreshed_at": bundle.get("positions_refreshed_at"),
+            "positionsLastRefresh": bundle.get("positionsLastRefresh") or bundle.get("positions_refreshed_at"),
             "summary_refreshed_at": bundle.get("summary_refreshed_at"),
+            "summaryLastRefresh": bundle.get("summaryLastRefresh") or bundle.get("summary_refreshed_at"),
             "trades_refreshed_at": bundle.get("trades_refreshed_at"),
             "lastRefresh": bundle.get("lastRefresh") or bundle.get("refreshed_at") or bundle.get("as_of"),
             "nextRefresh": bundle.get("nextRefresh"),
@@ -1093,6 +1490,8 @@ class IbkrLivePortfolioProvider:
                 "cash": round(cash, 2),
                 "unrealized": round(unrealized, 2),
                 "net_liquidation": round(net_liquidation, 2),
+                "pricesLive": bundle.get("pricesLive"),
+                "pricesLastRefresh": bundle.get("pricesLastRefresh"),
             }
         )
 
@@ -1126,13 +1525,18 @@ class IbkrLivePortfolioProvider:
             "lastRefresh": bundle.get("lastRefresh") or bundle.get("refreshed_at") or bundle.get("as_of"),
             "nextRefresh": bundle.get("nextRefresh"),
             "isLiveUpdating": bundle.get("isLiveUpdating", True),
+            "pricesLive": bundle.get("pricesLive"),
+            "pricesLastRefresh": bundle.get("pricesLastRefresh"),
+            "pricesAgeSeconds": bundle.get("pricesAgeSeconds"),
+            "positionsLastRefresh": bundle.get("positionsLastRefresh") or bundle.get("positions_refreshed_at"),
+            "summaryLastRefresh": bundle.get("summaryLastRefresh") or bundle.get("summary_refreshed_at"),
             "is_live": bundle.get("is_live", True),
             "is_stale": bundle.get("is_stale", False),
             "stale_reason": bundle.get("stale_reason"),
             "total_value": round(total_value, 2),
             "cost_basis": round(total_cb, 2),
-            "daily_pnl": summary.get("daily_pnl", 0),
-            "daily_pnl_pct": summary.get("daily_pnl_pct", 0),
+            "daily_pnl": summary.get("daily_pnl"),
+            "daily_pnl_pct": summary.get("daily_pnl_pct"),
             "unrealized": round(total_unr, 2),
             "unrealized_pct": round(total_unr / total_cb * 100, 2) if total_cb else 0,
             "cash": summary.get("cash", 0),
@@ -1163,6 +1567,11 @@ class IbkrLivePortfolioProvider:
                 "lastRefresh": bundle.get("lastRefresh") or bundle.get("refreshed_at") or bundle.get("as_of"),
                 "nextRefresh": bundle.get("nextRefresh"),
                 "isLiveUpdating": bundle.get("isLiveUpdating", True),
+                "pricesLive": bundle.get("pricesLive"),
+                "pricesLastRefresh": bundle.get("pricesLastRefresh"),
+                "pricesAgeSeconds": bundle.get("pricesAgeSeconds"),
+                "positionsLastRefresh": bundle.get("positionsLastRefresh") or bundle.get("positions_refreshed_at"),
+                "summaryLastRefresh": bundle.get("summaryLastRefresh") or bundle.get("summary_refreshed_at"),
             }
         )
         return meta
@@ -1328,14 +1737,14 @@ def resolve_portfolio_provider() -> ProviderResolution:
     if mode == "ibkr-live":
         live = IbkrLivePortfolioProvider()
         heartbeat = live.get_gateway_heartbeat()
-        diagnostics = _diagnose_live_provider(live) if heartbeat.get("gateway_open") else {
+        diagnostics = {
             "gateway_status": heartbeat.get("gateway_status", "gateway_down"),
             "gateway_error": heartbeat.get("gateway_error"),
             "ibkr_gateway_reachable": bool(heartbeat.get("gateway_open")),
             "ibkr_authenticated": bool(heartbeat.get("ibkr_authenticated")),
-            "accounts_available": False,
-            "positions_available": False,
-            "trades_available": False,
+            "accounts_available": None,
+            "positions_available": None,
+            "trades_available": None,
         }
         if heartbeat.get("gateway_open"):
             live_meta = live.get_snapshot_meta() if hasattr(live, "get_snapshot_meta") else {}
@@ -1411,10 +1820,14 @@ def get_provider_status() -> Dict[str, Any]:
     resolution = resolve_portfolio_provider()
     provider_meta: Dict[str, Any] = {}
     try:
-        if hasattr(resolution.provider, "get_snapshot_meta"):
+        if hasattr(resolution.provider, "get_summary"):
+            raw_meta = resolution.provider.get_summary() or {}
+        elif hasattr(resolution.provider, "get_runtime_status"):
+            raw_meta = resolution.provider.get_runtime_status() or {}
+        elif hasattr(resolution.provider, "get_snapshot_meta"):
             raw_meta = resolution.provider.get_snapshot_meta() or {}
-            if isinstance(raw_meta, dict):
-                provider_meta = raw_meta
+        if isinstance(raw_meta, dict):
+            provider_meta = raw_meta
     except Exception:
         provider_meta = {}
     mode = resolution.configured_mode
@@ -1423,7 +1836,10 @@ def get_provider_status() -> Dict[str, Any]:
     if mode == "ibkr-live":
         if resolution.is_live:
             status = "LIVE"
-            message = "Live IBKR Client Portal Gateway is available."
+            if provider_meta.get("pricesLive", True):
+                message = "Live IBKR Client Portal Gateway is available."
+            else:
+                message = "IBKR Gateway is connected, but live market quotes are stale or unavailable."
         elif snapshot_available:
             status = "LAST_UPDATE"
             message = resolution.fallback_reason or "Using saved IBKR snapshot."
@@ -1468,5 +1884,10 @@ def get_provider_status() -> Dict[str, Any]:
         "lastRefresh": provider_meta.get("lastRefresh") or provider_meta.get("refreshed_at") or resolution.snapshot_timestamp,
         "nextRefresh": provider_meta.get("nextRefresh"),
         "isLiveUpdating": bool(provider_meta.get("isLiveUpdating")) if provider_meta else bool(resolution.is_live),
+        "pricesLive": provider_meta.get("pricesLive"),
+        "pricesLastRefresh": provider_meta.get("pricesLastRefresh"),
+        "pricesAgeSeconds": provider_meta.get("pricesAgeSeconds"),
+        "positionsLastRefresh": provider_meta.get("positionsLastRefresh") or provider_meta.get("positions_refreshed_at"),
+        "summaryLastRefresh": provider_meta.get("summaryLastRefresh") or provider_meta.get("summary_refreshed_at"),
         "mock_available": True,
     }

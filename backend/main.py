@@ -75,6 +75,11 @@ def get_portfolio_payload():
   p['is_live']=bool(resolution.is_live)
   p['is_stale']=bool(resolution.is_stale or p.get('is_stale'))
   p['stale_reason']=resolution.stale_reason or p.get('stale_reason')
+  p['pricesLive']=bool(p.get('pricesLive', False))
+  p['pricesLastRefresh']=p.get('pricesLastRefresh')
+  p['pricesAgeSeconds']=p.get('pricesAgeSeconds')
+  p['positionsLastRefresh']=p.get('positionsLastRefresh') or p.get('positions_refreshed_at')
+  p['summaryLastRefresh']=p.get('summaryLastRefresh') or p.get('summary_refreshed_at')
   p['lastRefresh']=p.get('lastRefresh') or p.get('refreshed_at') or resolution.snapshot_timestamp
   p['nextRefresh']=p.get('nextRefresh')
   p['isLiveUpdating']=p.get('isLiveUpdating', bool(resolution.is_live))
@@ -104,6 +109,11 @@ def get_portfolio_payload():
    'lastRefresh': resolution.snapshot_timestamp,
    'nextRefresh': None,
    'isLiveUpdating': False,
+   'pricesLive': False,
+   'pricesLastRefresh': None,
+   'pricesAgeSeconds': None,
+   'positionsLastRefresh': None,
+   'summaryLastRefresh': None,
    'total_value': 0,
    'cost_basis': 0,
    'daily_pnl': 0,
@@ -409,7 +419,8 @@ def portfolio_live_positions():
  try:
   resolution=resolve_portfolio_provider()
   provider=resolution.provider
-  meta = provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {}
+  portfolio_meta = provider.get_portfolio() if hasattr(provider, 'get_portfolio') else {}
+  meta = portfolio_meta if isinstance(portfolio_meta, dict) else {}
   is_live = bool(resolution.is_live or meta.get('is_live'))
   is_stale = bool(resolution.is_stale or meta.get('is_stale'))
   return {
@@ -420,15 +431,20 @@ def portfolio_live_positions():
    'lastRefresh': meta.get('lastRefresh') or meta.get('refreshed_at') or meta.get('as_of') or resolution.snapshot_timestamp,
    'nextRefresh': meta.get('nextRefresh'),
    'isLiveUpdating': meta.get('isLiveUpdating', bool(resolution.is_live)),
+   'pricesLive': bool(meta.get('pricesLive', False)),
+   'pricesLastRefresh': meta.get('pricesLastRefresh'),
+   'pricesAgeSeconds': meta.get('pricesAgeSeconds'),
+   'positionsLastRefresh': meta.get('positionsLastRefresh') or meta.get('positions_refreshed_at'),
+   'summaryLastRefresh': meta.get('summaryLastRefresh') or meta.get('summary_refreshed_at'),
    'fallback_active': resolution.fallback_active,
    'fallback_reason': resolution.fallback_reason,
    'provider_class': resolution.provider_class,
    'snapshot_available': bool(resolution.snapshot_available or meta),
    'snapshot_timestamp': resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of'),
-  'is_live': bool(resolution.is_live),
-  'is_stale': bool(resolution.is_stale or meta.get('is_stale')),
+   'is_live': bool(resolution.is_live),
+   'is_stale': bool(resolution.is_stale or meta.get('is_stale')),
    'stale_reason': resolution.stale_reason or meta.get('stale_reason'),
-   'positions': provider.get_positions()
+   'positions': meta.get('positions') if isinstance(meta.get('positions'), list) else provider.get_positions()
   }
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
@@ -438,7 +454,7 @@ def portfolio_live_summary():
  try:
   resolution=resolve_portfolio_provider()
   provider=resolution.provider
-  meta = provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {}
+  meta = provider.get_runtime_status() if hasattr(provider, 'get_runtime_status') else (provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {})
   summary=provider.get_summary()
   summary['configured_mode']=resolution.configured_mode
   summary['mode']=summary.get('mode') or resolution.configured_mode
@@ -447,6 +463,12 @@ def portfolio_live_summary():
   summary['lastRefresh']=summary.get('lastRefresh') or meta.get('lastRefresh') or meta.get('refreshed_at') or meta.get('as_of') or resolution.snapshot_timestamp
   summary['nextRefresh']=summary.get('nextRefresh') or meta.get('nextRefresh')
   summary['isLiveUpdating']=summary.get('isLiveUpdating', meta.get('isLiveUpdating', bool(resolution.is_live)))
+  summary['pricesLive']=bool(summary.get('pricesLive', meta.get('pricesLive', False)))
+  summary['pricesLastRefresh']=summary.get('pricesLastRefresh') or meta.get('pricesLastRefresh')
+  if summary.get('pricesAgeSeconds') is None:
+   summary['pricesAgeSeconds']=meta.get('pricesAgeSeconds')
+  summary['positionsLastRefresh']=summary.get('positionsLastRefresh') or meta.get('positionsLastRefresh') or meta.get('positions_refreshed_at')
+  summary['summaryLastRefresh']=summary.get('summaryLastRefresh') or meta.get('summaryLastRefresh') or meta.get('summary_refreshed_at')
   summary['fallback_active']=resolution.fallback_active
   summary['fallback_reason']=resolution.fallback_reason
   summary['provider_class']=resolution.provider_class
@@ -464,7 +486,8 @@ def portfolio_live_trades():
  try:
   resolution=resolve_portfolio_provider()
   provider=resolution.provider
-  meta = provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {}
+  portfolio_meta = provider.get_portfolio() if hasattr(provider, 'get_portfolio') else {}
+  meta = portfolio_meta if isinstance(portfolio_meta, dict) else {}
   is_live = bool(resolution.is_live or meta.get('is_live'))
   is_stale = bool(resolution.is_stale or meta.get('is_stale'))
   return {
@@ -475,6 +498,11 @@ def portfolio_live_trades():
    'lastRefresh': meta.get('lastRefresh') or meta.get('refreshed_at') or meta.get('as_of') or resolution.snapshot_timestamp,
    'nextRefresh': meta.get('nextRefresh'),
    'isLiveUpdating': meta.get('isLiveUpdating', bool(resolution.is_live)),
+   'pricesLive': bool(meta.get('pricesLive', False)),
+   'pricesLastRefresh': meta.get('pricesLastRefresh'),
+   'pricesAgeSeconds': meta.get('pricesAgeSeconds'),
+   'positionsLastRefresh': meta.get('positionsLastRefresh') or meta.get('positions_refreshed_at'),
+   'summaryLastRefresh': meta.get('summaryLastRefresh') or meta.get('summary_refreshed_at'),
    'fallback_active': resolution.fallback_active,
    'fallback_reason': resolution.fallback_reason,
    'provider_class': resolution.provider_class,
