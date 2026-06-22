@@ -463,3 +463,23 @@ Structure scaffolded under docs/mocks/<feature>/{APPROVED,WORKING,UAT} for ai-in
 * Backlog: HERMES-AI-007 (Parallel Context Hydration P2), CR-HERMES-006-01 (Contract Versioning P3).
 * Release blockers: CR-AI-011 visual parity · real endpoint wiring · final UAT.
 * New trackers: docs/PROJECT_STATUS.md, docs/ROADMAP.md, docs/RELEASE_NOTES_DRAFT.md. Mirrored in MASTER_BACKLOG .md/.xlsx (Architecture Decisions, Backlog, CHANGELOG) + CHANGELOG.md v0.3.28 + AI_INTELLIGENCE_ARCHITECTURE.md §1c.
+
+
+
+---
+
+## 2026-06-22 AI Intelligence V3 — Research Documentation (ATHENA-GOV-022)
+
+* V3 splits into: A) Overview/Compact/Expanded hero (locked; CR-AI-V3-UI-001 CLOSED 89bad3a), B) Research Tab V2 (implemented ARTEMIS-AI-V3-RESEARCH-003 8657868+b056bc1 but Design Lock INVALID), C) Backend Research V1+Provenance (HERMES-AI-V3-002/003 COMPLETE, contract ready).
+* Backend: HERMES-AI-V3-001 gap analysis, HERMES-AI-V3-002 endpoint V1 (thesis-only; p50 9.93/p95 11.86ms), HERMES-AI-V3-003 provenance + real-data (schema V3.0; p50 12.12/p95 17.29ms). Endpoint GET /api/intelligence/{symbol}/research.
+* Decisions LOCKED: DEC-AI-RESEARCH-001 (thesis-only), -002 (Overview/Portfolio/Research ownership split), -003 (no dummy data), -004 (real-peer-only comparison), -005 (approved mock = research-approved.png — ASSET MISSING), -006 (accordion down=collapsed/up=expanded), -007 (research customization locked).
+* Epics: EPIC-AI-RESEARCH-V2 (in progress), EPIC-AI-PROVENANCE (backend done, FE pending), EPIC-AI-COMPETITIVE-COMPARISON (backlog). Bugs: BUG-HERMES-AI-007-AMD-MATERIAL-NEWS, BUG-AI-RESEARCH-COMPETITIVE-DATA-MISSING, BUG-AI-RESEARCH-PROVIDER-GAPS.
+* **P0 BLOCKER GOV-022-RESEARCH-MOCK-MISSING:** research-approved.png absent (typo research-aproved.png + drafts no longer present, never committed). DEC-AI-RESEARCH-005 reference broken; Research V2 Design Lock invalid per DESIGN-LOCK-002 until approved image + RESEARCH_DESIGN_SPEC.md committed.
+
+### Continuation — next actions (AI Intelligence V3)
+
+1. **[P0] Remediate GOV-022-RESEARCH-MOCK-MISSING:** obtain + commit the approved Research mock at `docs/mocks/ai-intelligence/APPROVED/research-approved.png` (correct spelling) and author `RESEARCH_DESIGN_SPEC.md`; then DEC-AI-RESEARCH-005 reference resolves and the Design Lock becomes valid.
+2. **Capture Research V2 UAT screenshots:** 390px Research tab, Customize Research drawer, expanded Investment Thesis, Data Source & Details provenance drawer; log a UAT entry and PASS decision.
+3. **Wire real endpoint** end-to-end (frontend consuming HERMES-AI-V3-003.0 contract); verify <1s load.
+4. **Close ARTEMIS-AI-V3-RESEARCH-003** once #1–#3 done.
+5. **Provider roadmap:** peer-selection provider (Competitive Comparison) + financials/TAM/guidance/ownership/fund-sentiment/DCF providers to replace placeholders.

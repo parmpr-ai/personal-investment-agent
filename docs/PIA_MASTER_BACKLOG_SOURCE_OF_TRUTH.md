@@ -100,6 +100,15 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
   - HERMES-AI-007 Parallel Context Hydration — BACKLOG P2 (cold 1.9–2.8s → target <1.5s).
   - CR-HERMES-006-01 Contract Versioning (schemaVersion/contractVersion in frontendPayload) — BACKLOG P3.
   - Decisions: DEC-AI-009/010/011 LOCKED. Design tracker: AI_INTELLIGENCE_COMPACT_V2_DESIGN_SPEC.md (stub — see DESIGN-LOCK-002).
+- EPIC AI Intelligence V3 — Research / Provenance — 2026-06-22 (ATHENA-GOV-022). Backend Research contract COMPLETE; frontend Research V2 implemented but Design Lock INVALID (approved mock missing).
+  - HERMES-AI-V3-001 Research Backend Gap Analysis — COMPLETED (HERMES): coverage matrix (9 sections), data-source mapping, proposed contract, provider gaps, thesis-only constraint. Artifact: docs/HERMES-AI-V3-001_RESEARCH_BACKEND_GAP_ANALYSIS.md.
+  - HERMES-AI-V3-002 Research Endpoint V1 — COMPLETED (HERMES): backend/services/ai_research.py + GET /api/intelligence/{symbol}/research; thesis-only; null/status placeholders. Perf p50 9.93ms / p95 11.86ms.
+  - HERMES-AI-V3-003 Research Provenance & Real Data Upgrade — COMPLETED (HERMES): schema V3.0, ResearchMetric + section provenance, competitiveComparison shouldRender=false when no provider, auditable null placeholders. Perf p50 12.12ms / p95 17.29ms (< 500/1000ms requirement).
+  - CR-AI-V3-UI-001 Overview/Compact/Expanded Hero corrections — CLOSED (ARTEMIS, 89bad3a): C1–C3, E1–E7, S1–S2 (removed case badge, hero sizing/alignment, risk label, Section Header Standard V1, 390/360 breakpoints).
+  - ARTEMIS-AI-V3-RESEARCH-003 Research V2 final implementation — IMPLEMENTED (ARTEMIS, 8657868 + proxy b056bc1) but **Design Lock INVALID** — approved mock `research-approved.png` MISSING; blocked for UAT until asset committed.
+  - EPIC-AI-RESEARCH-V2 (IN PROGRESS), EPIC-AI-PROVENANCE (backend complete, frontend pending), EPIC-AI-COMPETITIVE-COMPARISON (backlog — needs real peer provider).
+  - Bugs: BUG-HERMES-AI-007-AMD-MATERIAL-NEWS (OPEN P2), BUG-AI-RESEARCH-COMPETITIVE-DATA-MISSING (KNOWN GAP), BUG-AI-RESEARCH-PROVIDER-GAPS (KNOWN GAP).
+  - **GOV-022-RESEARCH-MOCK-MISSING (P0, OPEN):** archive + commit the approved Research mock and add RESEARCH_DESIGN_SPEC.md to validate the Research V2 Design Lock (DEC-AI-RESEARCH-005 reference currently broken).
 - ATHENA-AI-001 AI Intelligence Architecture & Documentation Consolidation. IMPLEMENTED 2026-06-17 (ATHENA): Architecture document created at `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md`. All 9 AI Intelligence subsystems captured: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, Auto Investor. Changelog and UAT Tracking synchronized.
 - EPIC-AI-INTELLIGENCE-ENGINE-001 Explainable Multi-Source Investment Intelligence Engine. IMPLEMENTED 2026-06-17 (HERMES): V1 backend scoring engine added for actionable stock verdict, portfolio-aware recommendation, expected return, conviction, thesis strength, risk, visual state, scenario probabilities, drivers/risks, score breakdown, factors evaluated, confidence notes, debug mode, and cache-backed `/api/intelligence/{symbol}/score`.
 - ATHENA-AI-002 AI Engine — Full Scoring Pipeline. ROADMAP: Rules-based scoring for Momentum, Trend, Sentiment, Institutional, Fair Value, Risk metrics with sub-factor breakdowns. Requires metric score persistence layer (ATHENA-AI-003). Owner: ATHENA.
@@ -316,6 +325,13 @@ PIA is a premium, mobile-first investment command platform. It should feel insti
 - DEC-AI-009 (LOCKED): Shared Intelligence Data Layer — AI Intelligence consumes data exclusively through the Shared Intelligence Context Layer; direct provider access from widgets is prohibited. Consumers: AI Intelligence, Analyst Targets, Company, Financials, News, Videos. Rationale: avoid duplicate fetch logic; consistency; centralized caching + validation.
 - DEC-AI-010 (LOCKED): AI Verdict Separation — AI Verdict (BUY/HOLD/SELL) and Portfolio Recommendation (ADD/HOLD/TRIM/REDUCE/AVOID) are independent. Compact shows AI Verdict only; Expanded may display portfolio recommendation.
 - DEC-AI-011 (LOCKED): Hero System Standardization — all AI Intelligence states use shared hero assets (Neon Wireframe SVG, lattice geometry, institutional/premium). Rejected: solid-fill, mascot, cartoon, emoji. Compact and Expanded must use identical hero assets.
+- DEC-AI-RESEARCH-001 (LOCKED): Research tab is thesis-only — must not show Buy/Hold/Sell recommendation logic.
+- DEC-AI-RESEARCH-002 (LOCKED): Ownership split — Overview owns verdict/action; Portfolio owns position action; Research owns thesis/deep analysis.
+- DEC-AI-RESEARCH-003 (LOCKED): No dummy data — missing provider data shown as missing/partial or hidden.
+- DEC-AI-RESEARCH-004 (LOCKED): Competitive Comparison only renders with real backend-supported peer data (no hardcoded/dummy/fallback peers; shouldRender=false otherwise).
+- DEC-AI-RESEARCH-005 (LOCKED — ASSET MISSING): Research V2 approved mock is `docs/mocks/ai-intelligence/APPROVED/research-approved.png` (implementation source of truth). ⚠️ The referenced asset is currently MISSING from the repo; the reference is broken and the Design Lock Package is INVALID per DESIGN-LOCK-002 until the approved image is committed. Tracked by GOV-022-RESEARCH-MOCK-MISSING (P0).
+- DEC-AI-RESEARCH-006 (LOCKED): Accordion arrows — collapsed = down, expanded = up (down encourages expansion).
+- DEC-AI-RESEARCH-007 (LOCKED): Research customization — show/hide sections, drag reorder, text size S/M/L/XL, default expanded state, persist preferences.
 
 ## PM Operating Model
 
@@ -478,6 +494,15 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.29 - AI Intelligence V3 Research Documentation (ATHENA-GOV-022)
+Date: 2026-06-22
+Status: Documentation/governance only.
+- Backend COMPLETE: HERMES-AI-V3-001 (gap analysis), HERMES-AI-V3-002 (Research Endpoint V1, thesis-only, p50 9.93/p95 11.86ms), HERMES-AI-V3-003 (provenance + real-data upgrade, schema V3.0, p50 12.12/p95 17.29ms).
+- CR-AI-V3-UI-001 CLOSED (89bad3a). ARTEMIS-AI-V3-RESEARCH-003 IMPLEMENTED (8657868) but Design Lock INVALID (approved mock missing).
+- Decisions LOCKED: DEC-AI-RESEARCH-001..007.
+- Epics: EPIC-AI-RESEARCH-V2, EPIC-AI-PROVENANCE, EPIC-AI-COMPETITIVE-COMPARISON. Bugs: AMD material-news regression + 2 known provider gaps.
+- P0 blocker GOV-022-RESEARCH-MOCK-MISSING: approved Research mock absent (research-approved.png; typo/draft variants no longer present) — see Design Asset Validation Report.
 
 ### v0.3.28 - AI Intelligence V2 Governance Refresh (ATHENA-GOV-021)
 Date: 2026-06-22

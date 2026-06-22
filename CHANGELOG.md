@@ -1,5 +1,29 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.29 - AI Intelligence V3 Research Documentation (ATHENA-GOV-022)
+
+Date: 2026-06-22
+Status: Documentation/governance only — no code.
+
+### Backend Research contract (HERMES) — COMPLETE
+
+* **HERMES-AI-V3-001** Research Backend Gap Analysis: coverage matrix for all 9 Research sections, data-source mapping, proposed `GET /api/intelligence/{symbol}/research` contract, provider gaps, thesis-only constraint.
+* **HERMES-AI-V3-002** Research Endpoint V1: `backend/services/ai_research.py` + endpoint; thesis-only (no Buy/Hold/Sell, no portfolio action); explicit null/status placeholders. Perf p50 9.93ms / p95 11.86ms.
+* **HERMES-AI-V3-003** Provenance & Real Data Upgrade: schema V3.0, `ResearchMetric` provenance wrapper + section-level provenance, `competitiveComparison` returns `shouldRender:false` when no peer provider (no dummy peers), auditable null placeholders for missing financials/TAM/guidance/ownership/fund-sentiment/DCF. Perf p50 12.12ms / p95 17.29ms (well under 500/1000ms).
+
+### Frontend (ARTEMIS)
+
+* **CR-AI-V3-UI-001** CLOSED (89bad3a): Overview/Compact/Expanded hero corrections — removed BULL/BEAR/EVEN case badge, hero sizing/alignment, risk-label shortening, Section Header Standard V1, 390/360 breakpoints.
+* **ARTEMIS-AI-V3-RESEARCH-003** Research V2 tab IMPLEMENTED (8657868 + proxy b056bc1) — but **Design Lock INVALID**: the approved mock is missing.
+
+### Decisions LOCKED
+
+* DEC-AI-RESEARCH-001..007 (thesis-only; ownership split; no dummy data; real-peer-only comparison; approved-mock source of truth; accordion arrow direction; locked customization).
+
+### Blockers
+
+* **GOV-022-RESEARCH-MOCK-MISSING (P0):** `docs/mocks/ai-intelligence/APPROVED/research-approved.png` is absent (typo `research-aproved.png` and pre-approved drafts no longer present). DEC-AI-RESEARCH-005 reference is broken; Research V2 Design Lock invalid until the approved image + a Research design spec are committed.
+
 ## v0.3.28 - AI Intelligence V2 Governance Refresh (ATHENA-GOV-021)
 
 Date: 2026-06-22

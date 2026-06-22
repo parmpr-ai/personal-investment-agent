@@ -17,3 +17,15 @@ Highlights:
 - Contract-locked frontend integration (HERMES-AI-006).
 
 Status: Release Candidate — pending CR-AI-011 visual parity, real endpoint wiring, and final UAT.
+
+## AI Intelligence V3 — Research / Provenance (in progress)
+
+Highlights:
+- Institutional Research tab (thesis-only) backed by `GET /api/intelligence/{symbol}/research`.
+- Data provenance & trust layer — per-metric and per-section source/freshness/confidence; no dummy data (missing data shown as missing or hidden).
+- Competitive Comparison renders only with real peer data (hidden otherwise).
+- Configurable research: show/hide, reorder, text size S/M/L/XL, default expanded state, persisted.
+
+Release impact:
+- Backend Research contract is COMPLETE and within performance budget (p50 ≤12ms / p95 ≤18ms).
+- **Not release-ready:** Research V2 frontend Design Lock is INVALID — the approved mock is missing (GOV-022-RESEARCH-MOCK-MISSING, P0). UAT screenshots not yet captured. Provider gaps (peers, financials, TAM, guidance, ownership, fund sentiment, DCF) remain placeholders.

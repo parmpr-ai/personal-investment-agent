@@ -154,6 +154,39 @@ AI Intelligence V2 design locked (APPROVED). Spec under `docs/mocks/ai-intellige
 
 ---
 
+## 1d. AI Intelligence V3 — Research / Provenance (ATHENA-GOV-022)
+
+AI Intelligence V3 splits into three tracks:
+- **A. Overview / Compact / Expanded Hero** — design locked; ARTEMIS UI corrections CR closed (CR-AI-V3-UI-001, commit 89bad3a).
+- **B. Research Tab V2** — final mock "approved" + design locked per decision, **but the approved asset is missing** (see Design Lock status below). Implementation delivered (ARTEMIS-AI-V3-RESEARCH-003, 8657868) pending asset remediation + UAT.
+- **C. Backend Research V1 + Provenance** — HERMES-AI-V3-002 and HERMES-AI-V3-003 COMPLETE; contract ready for frontend consumption.
+
+### Backend Research contract
+- Endpoint: `GET /api/intelligence/{symbol}/research` (`backend/services/ai_research.py`). Contract `HERMES-AI-V3-003.0`.
+- **Thesis-only** (DEC-AI-RESEARCH-001): no Buy/Hold/Sell, no portfolio action. Ownership split per DEC-AI-RESEARCH-002 (Overview=verdict, Portfolio=position action, Research=thesis/deep analysis).
+- **Provenance** (EPIC-AI-PROVENANCE): `ResearchMetric` wrapper (value, unit, source, lastUpdated, refreshFrequency, confidence, isEstimated, isPlaceholder, calculationMethod) + section-level provenance (dataType, sources, freshness, confidence, calculationMethod, providerStatus).
+- **No dummy data** (DEC-AI-RESEARCH-003): missing financials/TAM/guidance/ownership/fund-sentiment/DCF become auditable null/status placeholders.
+- **Competitive Comparison** (DEC-AI-RESEARCH-004): returns `status:missing`, `shouldRender:false` when no real peer provider — no hardcoded/dummy/fallback peers.
+- Performance: V2 p50 9.93ms / p95 11.86ms; V3 p50 12.12ms / p95 17.29ms — well under the 500ms/1000ms budget.
+
+### Research tab (frontend) design
+- 11 locked sections: Research Summary, Investment Thesis, Financial Health, Growth Engine, Moat Analysis, Valuation, Institutional Thesis, Competitive Comparison, Risk Analysis, Bull vs Bear Debate, Earnings Breakdown (conditional).
+- Customization (DEC-AI-RESEARCH-007): show/hide, drag reorder, text size S/M/L/XL, default expanded state, persisted.
+- Accordion arrows (DEC-AI-RESEARCH-006): collapsed = down, expanded = up.
+- Conditional sections hidden when `shouldRender:false` (Competitive Comparison, Earnings Breakdown).
+
+### Design Lock status (⚠️ BLOCKER)
+- DEC-AI-RESEARCH-005 names `docs/mocks/ai-intelligence/APPROVED/research-approved.png` as the implementation source of truth.
+- **The asset is MISSING** — neither `research-approved.png` nor the typo `research-aproved.png` nor prior pre-approved drafts exist in the repo (they were never committed). The Design Lock Package for Research V2 is **INVALID** per DESIGN-LOCK-002.
+- Remediation tracked as **GOV-022-RESEARCH-MOCK-MISSING (P0)**: commit the approved image + a Research design spec before UAT/closure.
+
+### Known gaps / bugs
+- BUG-AI-RESEARCH-COMPETITIVE-DATA-MISSING (peer provider absent — section correctly hidden).
+- BUG-AI-RESEARCH-PROVIDER-GAPS (normalized financials, TAM/segment, revenue-vs-estimate, guidance, ownership trends, fund sentiment, DCF — placeholders).
+- BUG-HERMES-AI-007-AMD-MATERIAL-NEWS (V2.5 validator AMD regression; does not block Research endpoint).
+
+---
+
 ## 2. AI Engine
 
 ### Status
