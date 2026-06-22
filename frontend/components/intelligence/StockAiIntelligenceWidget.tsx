@@ -20,6 +20,7 @@ import { mask } from '../../lib/pia-api'
 import AIHero from './AIHero'
 import type { CaseType as HeroCaseType } from './AIHero'
 import StockAiResearchTab from './StockAiResearchTab'
+import AiIntelligenceCompactV3 from './AiIntelligenceCompactV3'
 
 const EMPTY = '--'
 const METRIC_EMPTY = 'Not enough data available to calculate this metric.'
@@ -2153,15 +2154,34 @@ export default function StockAiIntelligenceWidget({
   const companyName = source?.fundamentals?.name ?? source?.name ?? (typeof source?.company === 'string' ? source.company : source?.company?.name) ?? ''
   const companySymbol = (ticker || source?.ticker || source?.symbol || fc?.symbol || '').split(' ')[0].toUpperCase()
 
+  // V3 compact extra props (derived from fc / existing scope variables)
+  const v3BullProb: number = fc?.scenarioOutlook?.bull?.probability ??
+    (v2Verdict === 'BUY' ? 72 : v2Verdict === 'SELL' ? 28 : 52)
+  const v3AcData  = fc?.analystConsensus
+  const v3AcBuyPct: number | null  = v3AcData?.analystBuyPct   ?? v3AcData?.analyst_buy_pct  ?? null
+  const v3AcCount: number | null   = v3AcData?.analystCount     ?? null
+  const v3AcVerdict: string        = v3AcData?.consensusVerdict ?? v3AcData?.consensus_verdict ?? '--'
+  const v3CatName: string          = (fc?.catalysts?.[0]?.name) ?? 'Earnings'
+  const v3FitScore: number | null  = fc?.portfolioFit?.portfolioFitScore ??
+    (composite != null ? Math.round((composite + (100 - (risk ?? 50))) / 2) : null)
+
   return (
     <section className={`sai sai-cr-si-026 sai-cr-si-027 sentiment-${view.toLowerCase()}`} aria-label="AI Intelligence">
-      <AiCompactV2
+      <AiIntelligenceCompactV3
         verdictState={v2VerdictState}
         composite={v2Composite}
         risk={v2Risk}
         upside={v2Upside}
-        topReason={v2TopReason}
-        keyDrivers={v2KeyDrivers}
+        fitScore={v3FitScore}
+        momentumScore={momentum}
+        trendScore={trend}
+        sentimentScore={sentimentScore}
+        institutional={institutional}
+        acBuyPct={v3AcBuyPct}
+        acCount={v3AcCount}
+        acVerdict={v3AcVerdict}
+        bullProb={v3BullProb}
+        nextCatName={v3CatName}
         hidden={hidden}
         onTap={() => setIsExpandedV2(true)}
       />
