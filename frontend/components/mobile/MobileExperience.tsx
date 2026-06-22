@@ -41,7 +41,7 @@ import MobileReorderableSections from '../dashboard/MobileReorderableSections'
 import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
 import CompanyLogo from '../intelligence/CompanyLogo'
 import { preloadStockIntelligence } from '../intelligence/useStockIntelligence'
-import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolveAssetClass } from '../../lib/pia-api'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolveAssetClass, resolvePositionKey } from '../../lib/pia-api'
 import ReorderList from './ReorderList'
 import {
   WorkspaceShell,
@@ -3068,7 +3068,7 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
   const sortArrow = <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span>
 
   function rowKey(position: any, i: number): string {
-    return String(position.conid || `${position.symbol}-${position.asset_class || 'STK'}-${i}`)
+    return resolvePositionKey(position, i)
   }
 
   function renderTickerCell(position: any): ReactNode {

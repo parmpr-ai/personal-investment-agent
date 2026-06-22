@@ -40,7 +40,7 @@ import DashboardHome from './dashboard/DashboardHome'
 import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
 import CompanyLogo from './intelligence/CompanyLogo'
 import { preloadStockIntelligence } from './intelligence/useStockIntelligence'
-import { dedupePortfolioPositions, portfolioSourceBadgeLabel } from '../lib/pia-api'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePositionKey } from '../lib/pia-api'
 import {
   buildWatchlistUniverse,
   resolveWatchlistRows,
@@ -1076,11 +1076,11 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
 function PositionCards({ rows, hidden, setSelected, grid = '3x3' }: any) {
   return (
     <div className={`position-cards position-cards-${grid}`}>
-      {rows.map((p: any) => {
+      {rows.map((p: any, i: number) => {
         const last = lastPriceValue(p)
         return (
           <PiaCard
-            key={p.symbol}
+            key={resolvePositionKey(p, i)}
             className={`position-card${p.brand ? ' accented' : ''}`}
             style={p.brand ? ({ '--pos-brand': p.brand } as React.CSSProperties) : undefined}
           >
@@ -1171,8 +1171,8 @@ function PositionsTable({ rows, hidden, setSelected, sort, direction, onColSort 
           </tr>
         </thead>
         <tbody>
-          {rows.map((p: any) => (
-            <tr key={p.symbol} onClick={() => setSelected(p)}>
+          {rows.map((p: any, i: number) => (
+            <tr key={resolvePositionKey(p, i)} onClick={() => setSelected(p)}>
               <td>
                 <div className="row-symbol">
                   <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
@@ -1388,8 +1388,8 @@ function WatchlistTable({ rows, columns, hidden, setSelected, onRemove }: any) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((p: any) => (
-            <tr key={p.symbol} onClick={() => setSelected(p)}>
+          {rows.map((p: any, i: number) => (
+            <tr key={resolvePositionKey(p, i)} onClick={() => setSelected(p)}>
               {columns.instrument && <td>
                 <div className="row-symbol">
                   <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
@@ -1424,13 +1424,13 @@ function WatchlistTable({ rows, columns, hidden, setSelected, onRemove }: any) {
 function WatchlistCards({ rows, hidden, setSelected, onRemove }: any) {
   return (
     <div className="position-cards">
-      {rows.map((p: any) => {
+      {rows.map((p: any, i: number) => {
         const change = Number(p.day_change_pct || 0)
         const dayPnl = Number(p.day_pnl || 0)
         const last = lastPriceValue(p)
         return (
           <PiaCard
-            key={p.symbol}
+            key={resolvePositionKey(p, i)}
             className={`position-card watchlist-position-card${p.brand ? ' accented' : ''}`}
             style={p.brand ? ({ '--pos-brand': p.brand } as React.CSSProperties) : undefined}
           >

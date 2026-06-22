@@ -113,6 +113,17 @@ export function portfolioSourceBadgeLabel(source: unknown, mode?: unknown) {
   return 'MOCK'
 }
 
+export function resolvePositionKey(position: any, index: number): string {
+  const source = String(position.source || position.broker || '')
+  const acctId = String(position.accountId || position.account_id || position.account || '')
+  const conid = String(position.conid || position.conId || position.con_id || '')
+  const assetClass = String(position.assetClass || position.asset_class || position.sec_type || 'STK').toUpperCase()
+  const contractDesc = String(position.contractDesc || position.contract_desc || '')
+  const symbol = String(position.symbol || position.ticker || '')
+  const currency = String(position.currency || '')
+  return `position:${source}:${acctId}:${conid}:${assetClass}:${contractDesc}:${symbol}:${currency}:${index}`
+}
+
 export function resolveAssetClass(p: any): 'stock' | 'option' | 'crypto' {
   const raw = String(p.asset_class || p.assetClass || p.sec_type || p.asset_type || '').trim().toUpperCase()
   const sym = String(p.symbol || p.ticker || '')
