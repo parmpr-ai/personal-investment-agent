@@ -1,4 +1,4 @@
-import os, asyncio, csv, io, shutil, socket, ssl, subprocess, urllib.request, urllib.error
+import os, asyncio, csv, io, shutil, socket, ssl, subprocess, time, urllib.request, urllib.error
 from typing import Optional
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -19,7 +19,7 @@ from services.ai_intelligence_engine import build_ai_intelligence_score
 from services.ai_intelligence_context import build_ai_intelligence_context, build_ai_intelligence_context_batch, context_score_kwargs
 from services.ai_research import AIResearchResponse, build_ai_research
 from services.performance_timing import AIRequestTimingMiddleware, TimedJSONResponse, time_stage
-from services.provider_cache import initialize_provider_cache
+from services.provider_cache import cached_provider_call, initialize_provider_cache
 from services.source_registry import build_source_coverage, build_source_status, build_symbol_inputs
 load_dotenv()
 try:
@@ -53,6 +53,43 @@ class ManualHoldingRequest(BaseModel):
 
 THESIS_STORE={}
 TRANSACTIONS=[]
+FRONTEND_CONTRACT_SCHEMA_VERSION='ARTEMIS-AI-007.0'
+
+_ROUTE_CACHE_TTL_SECONDS = {
+ "dashboard": 8,
+ "stock": 10,
+ "context": 10,
+ "context_batch": 10,
+ "provider_status": 2,
+ "fundamentals": 12,
+ "news": 12,
+}
+
+
+def _route_source_status(name:str, status:str, latency_ms:float, *, fallback_used:bool=False, error:str|None=None, detail:str|None=None):
+ safe_error = None
+ if error:
+  safe_error = str(error)
+  if len(safe_error) > 220:
+   safe_error = safe_error[:217] + "..."
+ return {
+  "name": name,
+  "status": status,
+  "latencyMs": round(float(latency_ms), 1),
+  "fallbackUsed": bool(fallback_used),
+  "error": safe_error,
+  "detail": detail,
+ }
+
+
+def _route_cache(namespace:str, key:str, ttl_seconds:int, loader, fallback, wait_timeout_seconds:float, refresh:bool=False):
+ return cached_provider_call(namespace, key, ttl_seconds, loader, wait_timeout_seconds=wait_timeout_seconds, fallback=fallback, refresh=refresh)
+
+
+def _quick_portfolio_payload():
+ p=portfolio_snapshot()
+ p['positions']=normalize_positions(p.get('positions',[]))
+ return p
 
 def get_portfolio_payload():
  import services.state as state_module
@@ -257,7 +294,11 @@ def manual_holdings_delete(holding_id:str):
  if not delete_manual_holding(holding_id): raise HTTPException(status_code=404, detail='Manual holding not found')
  return {'ok':True,'id':holding_id}
 @app.get('/dashboard')
-def dashboard(): return payload()
+def dashboard():
+ def loader():
+  return _build_dashboard_payload()
+ fallback=_build_dashboard_partial('Dashboard data is still warming up.')
+ return _route_cache('route', 'dashboard', _ROUTE_CACHE_TTL_SECONDS['dashboard'], loader, fallback, wait_timeout_seconds=0.8)
 @app.get('/macros')
 def macros(): return macro_snapshot()
 @app.get('/news')
@@ -265,15 +306,47 @@ def news(): return news_items()
 @app.get('/news-intelligence')
 def news_intelligence(): return get_news_intelligence()
 @app.get('/news/{ticker}')
-def ticker_news(ticker:str): return yahoo_news(ticker.upper()) or [n for n in news_items() if n.get('ticker')==ticker.upper()]
+def ticker_news(ticker:str):
+ symbol=ticker.upper()
+ def loader():
+  start=time.perf_counter()
+  items=yahoo_news(symbol)
+  return {
+   'ticker': symbol,
+   'status': 'ok' if items else 'missing',
+   'items': items or [n for n in news_items() if n.get('ticker')==symbol],
+   'sourceStatus': {
+    'news': _route_source_status('news', 'ok' if items else 'missing', (time.perf_counter()-start)*1000, fallback_used=not bool(items)),
+   },
+  }
+ fallback={'ticker': symbol, 'status': 'partial', 'items': [n for n in news_items() if n.get('ticker')==symbol], 'sourceStatus': {'news': _route_source_status('news', 'timeout', 0, fallback_used=True, detail='Yahoo news timed out.')}}
+ return _route_cache('route', f'news:{symbol}', _ROUTE_CACHE_TTL_SECONDS['news'], loader, fallback, wait_timeout_seconds=0.6)
 @app.get('/fundamentals/{ticker}')
-def fundamentals(ticker:str): return yahoo_fundamentals(ticker.upper())
+def fundamentals(ticker:str):
+ symbol=ticker.upper()
+ def loader():
+  start=time.perf_counter()
+  data=yahoo_fundamentals(symbol, wait_timeout_seconds=0.75)
+  return {
+   **data,
+   'status': data.get('status') or 'ok',
+   'sourceStatus': {
+    'fundamentals': _route_source_status('fundamentals', str(data.get('status') or 'ok'), (time.perf_counter()-start)*1000, fallback_used=data.get('status') not in {'ok','partial'}, detail=data.get('source')),
+   },
+  }
+ fallback={'ticker': symbol, 'status': 'partial', 'source': 'cache', 'sourceStatus': {'fundamentals': _route_source_status('fundamentals', 'timeout', 0, fallback_used=True, detail='Yahoo fundamentals timed out.')}}
+ return _route_cache('route', f'fundamentals:{symbol}', _ROUTE_CACHE_TTL_SECONDS['fundamentals'], loader, fallback, wait_timeout_seconds=0.6)
 @app.get('/ai-intelligence/test')
 def ai_intelligence_test(symbols:str='NVDA,AMD,SOFI,NBIS', refresh:bool=False):
  return build_ai_intelligence_test([s.strip() for s in symbols.split(',') if s.strip()], refresh=refresh)
 @app.get('/ai-intelligence/{symbol}')
 def ai_intelligence(symbol:str, refresh:bool=False):
- return build_ai_intelligence(symbol, refresh=refresh)
+ def loader():
+  start=time.perf_counter()
+  data=build_ai_intelligence(symbol, refresh=refresh)
+  return {**data, 'status': data.get('status') or 'ok', 'performanceMs': round((time.perf_counter()-start)*1000, 1)}
+ fallback={'symbol': symbol.upper().split()[0], 'status': 'partial', 'sourceStatus': {'aiIntelligence': _route_source_status('aiIntelligence', 'timeout', 0, fallback_used=True, detail='AI intelligence timed out.')}}
+ return _route_cache('route', f'ai:{symbol.upper().split()[0]}', 10, loader, fallback, wait_timeout_seconds=0.8)
 @app.get('/scanner')
 def scanner():
  p=get_portfolio_payload(); return scanner_items(p.get('positions',[]),macro_snapshot(),WATCHLIST)
@@ -285,6 +358,195 @@ def _intelligence_provider_status():
   return provider_status()
  except Exception as e:
   return {'status':'missing','message':f'Portfolio provider status unavailable: {e}'}
+
+
+def _build_dashboard_payload():
+ t0=time.perf_counter()
+ portfolio_start=time.perf_counter()
+ portfolio=get_portfolio_payload()
+ portfolio_ms=(time.perf_counter()-portfolio_start)*1000
+ macro_start=time.perf_counter()
+ macro=macro_snapshot()
+ macro_ms=(time.perf_counter()-macro_start)*1000
+ news_start=time.perf_counter()
+ news=news_items()
+ news_ms=(time.perf_counter()-news_start)*1000
+ scanner_start=time.perf_counter()
+ scanner=scanner_items(portfolio.get('positions',[]),macro,WATCHLIST)
+ scanner_ms=(time.perf_counter()-scanner_start)*1000
+ calendar_start=time.perf_counter()
+ calendar=catalyst_calendar()
+ calendar_ms=(time.perf_counter()-calendar_start)*1000
+ watchlist_start=time.perf_counter()
+ watch=[opportunity_for(w,macro) for w in WATCHLIST]
+ watchlist_ms=(time.perf_counter()-watchlist_start)*1000
+ return {
+  'type':'dashboard_update',
+  'status':'ok',
+  'portfolio':portfolio,
+  'macros':macro,
+  'news':news,
+  'scanner':scanner,
+  'calendar':calendar,
+  'watchlist':watch,
+  'sourceStatus':{
+   'portfolio': _route_source_status('portfolio', 'ok', portfolio_ms, fallback_used=False),
+   'macro': _route_source_status('macro', 'ok', macro_ms, fallback_used=False),
+   'news': _route_source_status('news', 'ok', news_ms, fallback_used=False),
+   'scanner': _route_source_status('scanner', 'ok', scanner_ms, fallback_used=False),
+   'calendar': _route_source_status('calendar', 'ok', calendar_ms, fallback_used=False),
+   'watchlist': _route_source_status('watchlist', 'ok', watchlist_ms, fallback_used=False),
+  },
+  'performanceMs': round((time.perf_counter()-t0)*1000, 1),
+ }
+
+
+def _build_dashboard_partial(reason:str):
+ portfolio=_quick_portfolio_payload()
+ macro=macro_snapshot()
+ news=news_items()
+ scanner=scanner_items(portfolio.get('positions',[]),macro,WATCHLIST)
+ calendar=catalyst_calendar()
+ watch=[opportunity_for(w,macro) for w in WATCHLIST]
+ return {
+  'type':'dashboard_update',
+  'status':'partial',
+  'portfolio':portfolio,
+  'macros':macro,
+  'news':news,
+  'scanner':scanner,
+  'calendar':calendar,
+  'watchlist':watch,
+  'sourceStatus':{
+   'portfolio': _route_source_status('portfolio', 'stale', 0, fallback_used=True, detail=reason),
+   'macro': _route_source_status('macro', 'ok', 0, fallback_used=False),
+   'news': _route_source_status('news', 'ok', 0, fallback_used=False),
+   'scanner': _route_source_status('scanner', 'ok', 0, fallback_used=False),
+   'calendar': _route_source_status('calendar', 'ok', 0, fallback_used=False),
+   'watchlist': _route_source_status('watchlist', 'ok', 0, fallback_used=False),
+  },
+  'staleReason': reason,
+  'performanceMs': 0,
+ }
+
+
+def _build_stock_payload(t:str):
+ portfolio_start=time.perf_counter()
+ portfolio=get_portfolio_payload()
+ portfolio_ms=(time.perf_counter()-portfolio_start)*1000
+ pos=next((x for x in portfolio.get('positions',[]) if x.get('symbol','').split()[0].upper()==t or x.get('underlying','').upper()==t),None)
+ wl=next((x for x in WATCHLIST if x['symbol']==t),None)
+ macro_start=time.perf_counter()
+ macro=macro_snapshot()
+ macro_ms=(time.perf_counter()-macro_start)*1000
+ calendar_start=time.perf_counter()
+ calendar=catalyst_calendar()
+ calendar_ms=(time.perf_counter()-calendar_start)*1000
+ news_intel_start=time.perf_counter()
+ news_intel=get_ticker_news_intelligence(t)
+ news_intel_ms=(time.perf_counter()-news_intel_start)*1000
+ fundamentals_start=time.perf_counter()
+ fundamentals=yahoo_fundamentals(t, wait_timeout_seconds=0.65)
+ fundamentals_ms=(time.perf_counter()-fundamentals_start)*1000
+ forecast={'bull':'Momentum + positive catalysts continue','base':'Range trade until news confirms thesis','bear':'Macro/yields or thesis deterioration pressures multiple'}
+ intel_start=time.perf_counter()
+ intel=build_stock_panel_intelligence(t,pos,opportunity_for(wl,macro) if wl else None,macro,forecast,news_intel,calendar)
+ intel_ms=(time.perf_counter()-intel_start)*1000
+ news_items_value=(news_intel.get('items') or [n for n in news_items() if n.get('ticker')==t])
+ return {
+  'ticker':t,
+  'status':'ok',
+  'position':pos,
+  'watch':opportunity_for(wl,macro) if wl else None,
+  'news':news_items_value,
+  'news_intelligence':news_intel,
+  'intelligence':intel,
+  'thesis':THESIS_STORE.get(t,[]),
+  'fundamentals':fundamentals,
+  'forecast':forecast,
+  'sourceStatus':{
+   'portfolio': _route_source_status('portfolio', 'ok', portfolio_ms, fallback_used=False),
+   'macro': _route_source_status('macro', 'ok', macro_ms, fallback_used=False),
+   'calendar': _route_source_status('calendar', 'ok', calendar_ms, fallback_used=False),
+   'news': _route_source_status('news', 'ok', news_intel_ms, fallback_used=False if not news_intel.get('unavailable') else True, detail=news_intel.get('digest')),
+   'fundamentals': _route_source_status('fundamentals', str(fundamentals.get('status') or 'ok'), fundamentals_ms, fallback_used=fundamentals.get('status') not in {'ok','partial'}, detail=fundamentals.get('source')),
+   'intelligence': _route_source_status('intelligence', 'ok', intel_ms, fallback_used=False),
+  },
+  'performanceMs': round(portfolio_ms + macro_ms + calendar_ms + news_intel_ms + fundamentals_ms + intel_ms, 1),
+ }
+
+
+def _build_stock_partial(t:str, reason:str):
+ portfolio=_quick_portfolio_payload()
+ pos=next((x for x in portfolio.get('positions',[]) if x.get('symbol','').split()[0].upper()==t or x.get('underlying','').upper()==t),None)
+ macro=macro_snapshot()
+ calendar=catalyst_calendar()
+ wl=next((x for x in WATCHLIST if x['symbol']==t),None)
+ forecast={'bull':'Momentum + positive catalysts continue','base':'Range trade until news confirms thesis','bear':'Macro/yields or thesis deterioration pressures multiple'}
+ news_intel={'is_demo':False,'unavailable':True,'digest':f'Live news temporarily unavailable for {t}.','items':[]}
+ fundamentals={'ticker':t,'status':'partial','source':'cache','price':None,'currency':'USD'}
+ return {
+  'ticker':t,
+  'status':'partial',
+  'position':pos,
+  'watch':opportunity_for(wl,macro) if wl else None,
+  'news': [n for n in news_items() if n.get('ticker')==t],
+  'news_intelligence': news_intel,
+  'intelligence': build_stock_panel_intelligence(t,pos,opportunity_for(wl,macro) if wl else None,macro,forecast,news_intel,calendar),
+  'thesis': THESIS_STORE.get(t,[]),
+  'fundamentals': fundamentals,
+  'forecast': forecast,
+  'sourceStatus':{
+   'portfolio': _route_source_status('portfolio', 'stale', 0, fallback_used=True, detail=reason),
+   'news': _route_source_status('news', 'timeout', 0, fallback_used=True, detail=reason),
+   'fundamentals': _route_source_status('fundamentals', 'timeout', 0, fallback_used=True, detail=reason),
+   'intelligence': _route_source_status('intelligence', 'ok', 0, fallback_used=False),
+  },
+  'staleReason': reason,
+  'performanceMs': 0,
+ }
+
+
+def _build_context_payload(t:str, refresh:bool=False, debug:bool=False):
+ settings=get_settings()
+ portfolio_start=time.perf_counter()
+ p=get_portfolio_payload()
+ portfolio_status=_intelligence_provider_status()
+ portfolio_ms=(time.perf_counter()-portfolio_start)*1000
+ watchlist_payload=WATCHLIST
+ macro=macro_snapshot()
+ calendar=catalyst_calendar()
+ context_start=time.perf_counter()
+ context=build_ai_intelligence_context(t, settings=settings, portfolio=p, macro=macro, calendar=calendar, watchlist=watchlist_payload, provider_status=portfolio_status, refresh=refresh, debug=debug)
+ context_ms=(time.perf_counter()-context_start)*1000
+ payload=context.get('frontendPayload') or {}
+ if debug or context.get('missingDataReport'):
+  payload = {**payload, 'contextPerformance': context.get('performance'), 'missingDataReport': context.get('missingDataReport')}
+ payload.setdefault('status', 'ok')
+ payload.setdefault('sourceStatus', context.get('sourceStatus') or {})
+ payload['sourceStatus']['portfolio'] = _route_source_status('portfolio', 'ok', portfolio_ms, fallback_used=False)
+ payload['sourceStatus']['context'] = _route_source_status('context', 'ok', context_ms, fallback_used=False)
+ payload['sourceStatus']['provider'] = portfolio_status
+ payload['performanceMs'] = round(portfolio_ms + context_ms, 1)
+ return payload
+
+
+def _build_context_partial(t:str, reason:str):
+ portfolio_status=_intelligence_provider_status()
+ return {
+  'symbol': t,
+  'schemaVersion': FRONTEND_CONTRACT_SCHEMA_VERSION,
+  'status': 'partial',
+  'sourceStatus': {
+   'portfolio': _route_source_status('portfolio', 'stale', 0, fallback_used=True, detail=reason),
+   'context': _route_source_status('context', 'timeout', 0, fallback_used=True, detail=reason),
+   'provider': portfolio_status,
+  },
+  'contextPerformance': {'status': 'partial', 'timingMs': 0},
+  'missingDataReport': {'status': 'partial', 'reason': reason},
+  'staleReason': reason,
+  'performanceMs': 0,
+ }
 @app.get('/api/intelligence/sources/status')
 def intelligence_sources_status():
  settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot()
@@ -296,32 +558,35 @@ def intelligence_sources_coverage():
 @app.get('/api/intelligence/context/test')
 def intelligence_context_test(symbols:str='AAPL,NVDA,AMD,TSM,PLTR', refresh:bool=False, debug:bool=False, contract:str='context'):
  cleaned=[s.strip() for s in symbols.split(',') if s.strip()]
- settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot(); calendar=catalyst_calendar()
- batch=build_ai_intelligence_context_batch(cleaned, settings=settings, portfolio=p, macro=macro, calendar=calendar, watchlist=WATCHLIST, provider_status=_intelligence_provider_status(), refresh=refresh, debug=debug)
- if contract.lower()=='frontend':
-  return {'type':'AIIntelligenceFrontendPayloadBatch','schemaVersion':batch.get('schemaVersion'),'symbols':batch.get('symbols'),'count':batch.get('count'),'payloads':batch.get('frontendPayloads'),'performance':batch.get('performance'),'missingDataReport':batch.get('missingDataReport')}
- return batch
+ def loader():
+  settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot(); calendar=catalyst_calendar()
+  batch=build_ai_intelligence_context_batch(cleaned, settings=settings, portfolio=p, macro=macro, calendar=calendar, watchlist=WATCHLIST, provider_status=_intelligence_provider_status(), refresh=refresh, debug=debug)
+  if contract.lower()=='frontend':
+   return {'type':'AIIntelligenceFrontendPayloadBatch','schemaVersion':batch.get('schemaVersion'),'symbols':batch.get('symbols'),'count':batch.get('count'),'payloads':batch.get('frontendPayloads'),'performance':batch.get('performance'),'missingDataReport':batch.get('missingDataReport'),'status':'ok'}
+  return batch
+ fallback={'type':'AIIntelligenceFrontendPayloadBatch','schemaVersion':'ARTEMIS-AI-007.0','symbols':cleaned,'count':len(cleaned),'payloads':{symbol: {'symbol': symbol, 'status': 'partial', 'sourceStatus': {'context': _route_source_status('context', 'timeout', 0, fallback_used=True, detail='AI context batch timed out.')}} for symbol in cleaned},'performance':{'status':'partial'},'missingDataReport':{'status':'partial','reason':'AI context batch timed out.'},'status':'partial'}
+ return _route_cache('route', f'ctx-batch:{contract}:{",".join(cleaned)}', _ROUTE_CACHE_TTL_SECONDS['context_batch'], loader, fallback, wait_timeout_seconds=1.5)
 @app.get('/api/intelligence/{symbol}/inputs')
 def intelligence_symbol_inputs(symbol:str):
- t=symbol.upper().split()[0]; settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot(); calendar=catalyst_calendar()
- pos=next((x for x in p.get('positions',[]) if x.get('symbol','').split()[0].upper()==t or x.get('underlying','').upper()==t),None)
- wl=next((x for x in WATCHLIST if x['symbol']==t),None)
- watch=opportunity_for(wl,macro) if wl else None
- news_bundle=get_ticker_news_intelligence(t)
- return build_symbol_inputs(t, settings, portfolio=p, position=pos, watch=watch, macro=macro, calendar=calendar, fundamentals=yahoo_fundamentals(t), news=(yahoo_news(t) or [n for n in news_items() if n.get('ticker')==t]), news_intelligence=news_bundle, provider_status=_intelligence_provider_status())
+ t=symbol.upper().split()[0]
+ def loader():
+  settings=get_settings(); p=get_portfolio_payload(); macro=macro_snapshot(); calendar=catalyst_calendar()
+  pos=next((x for x in p.get('positions',[]) if x.get('symbol','').split()[0].upper()==t or x.get('underlying','').upper()==t),None)
+  wl=next((x for x in WATCHLIST if x['symbol']==t),None)
+  watch=opportunity_for(wl,macro) if wl else None
+  news_bundle=get_ticker_news_intelligence(t)
+  fundamentals_data=yahoo_fundamentals(t, wait_timeout_seconds=0.55)
+  news_data=news_bundle.get('items') or [n for n in news_items() if n.get('ticker')==t]
+  return build_symbol_inputs(t, settings, portfolio=p, position=pos, watch=watch, macro=macro, calendar=calendar, fundamentals=fundamentals_data, news=news_data, news_intelligence=news_bundle, provider_status=_intelligence_provider_status())
+ fallback={'symbol': t, 'status': 'partial', 'sourceStatus': {'inputs': _route_source_status('inputs', 'timeout', 0, fallback_used=True, detail='Symbol inputs timed out.')}}
+ return _route_cache('route', f'inputs:{t}', 10, loader, fallback, wait_timeout_seconds=0.9)
 @app.get('/api/intelligence/{symbol}/context')
 def intelligence_symbol_context(symbol:str, refresh:bool=False, debug:bool=False, contract:str='context'):
- t=symbol.upper().split()[0]; settings=get_settings()
- with time_stage('Portfolio Provider'):
-  p=get_portfolio_payload(); portfolio_status=_intelligence_provider_status()
- with time_stage('Watchlists Provider'): watchlist_payload=WATCHLIST
- macro=macro_snapshot(); calendar=catalyst_calendar()
- with time_stage('Context Provider Load'):
-  context=build_ai_intelligence_context(t, settings=settings, portfolio=p, macro=macro, calendar=calendar, watchlist=watchlist_payload, provider_status=portfolio_status, refresh=refresh, debug=debug)
- if contract.lower()=='frontend':
-  payload=context.get('frontendPayload') or {}
-  return {**payload,'contextPerformance':context.get('performance'),'missingDataReport':context.get('missingDataReport')}
- return context
+ t=symbol.upper().split()[0]
+ def loader():
+  return _build_context_payload(t, refresh=refresh, debug=debug) if contract.lower()=='frontend' else build_ai_intelligence_context(t, settings=get_settings(), portfolio=get_portfolio_payload(), macro=macro_snapshot(), calendar=catalyst_calendar(), watchlist=WATCHLIST, provider_status=_intelligence_provider_status(), refresh=refresh, debug=debug)
+ fallback=_build_context_partial(t, 'AI context payload timed out.')
+ return _route_cache('route', f'ctx:{contract}:{t}', _ROUTE_CACHE_TTL_SECONDS['context'], loader, fallback, wait_timeout_seconds=1.1)
 @app.get('/api/intelligence/{symbol}/research', response_model=AIResearchResponse)
 def intelligence_symbol_research(symbol:str, refresh:bool=False, debug:bool=False):
  t=symbol.upper().split()[0]; settings=get_settings()
@@ -344,11 +609,11 @@ def intelligence_symbol_score(symbol:str, strategy:str='long_term', debug:bool=F
 def watchlist(): return [opportunity_for(w,macro_snapshot()) for w in WATCHLIST]
 @app.get('/stock/{ticker}')
 def stock(ticker:str):
- t=ticker.upper().split()[0]; p=get_portfolio_payload(); pos=next((x for x in p.get('positions',[]) if x.get('symbol','').split()[0].upper()==t or x.get('underlying','').upper()==t),None)
- wl=next((x for x in WATCHLIST if x['symbol']==t),None)
- macro=macro_snapshot(); calendar=catalyst_calendar(); news_intel=get_ticker_news_intelligence(t)
- forecast={'bull':'Momentum + positive catalysts continue','base':'Range trade until news confirms thesis','bear':'Macro/yields or thesis deterioration pressures multiple'}
- return {'ticker':t,'position':pos,'watch':opportunity_for(wl,macro) if wl else None,'news':(yahoo_news(t) or [n for n in news_items() if n.get('ticker')==t]),'news_intelligence':news_intel,'intelligence':build_stock_panel_intelligence(t,pos,opportunity_for(wl,macro) if wl else None,macro,forecast,news_intel,calendar),'thesis':THESIS_STORE.get(t,[]),'fundamentals':yahoo_fundamentals(t),'forecast':forecast}
+ t=ticker.upper().split()[0]
+ def loader():
+  return _build_stock_payload(t)
+ fallback=_build_stock_partial(t, 'Stock panel timed out or upstream provider was slow.')
+ return _route_cache('route', f'stock:{t}', _ROUTE_CACHE_TTL_SECONDS['stock'], loader, fallback, wait_timeout_seconds=0.9)
 @app.post('/thesis')
 def save_thesis(req:ThesisRequest):
  THESIS_STORE.setdefault(req.ticker.upper(),[]).append({'title':req.title,'summary':req.summary,'full_text':req.full_text})
@@ -401,7 +666,25 @@ class DataSourceModeRequest(BaseModel):
 
 @app.get('/api/portfolio/provider/status')
 def portfolio_provider_status():
- return get_provider_status()
+ def loader():
+  start=time.perf_counter()
+  status=get_provider_status()
+  status['sourceStatus']={
+   'provider': _route_source_status('provider', str(status.get('status') or 'unknown').lower(), (time.perf_counter()-start)*1000, fallback_used=False),
+  }
+  status['routeStatus']='ok'
+  return status
+ fallback={
+  'status': 'partial',
+  'message': 'Provider status warming up.',
+  'configured_mode': get_data_source_mode(),
+  'active_source': 'DISCONNECTED',
+  'fallback_active': True,
+  'fallback_reason': 'Provider status request timed out.',
+  'provider_class': 'Unknown',
+  'sourceStatus': {'provider': _route_source_status('provider', 'timeout', 0, fallback_used=True, detail='Provider status request timed out.')},
+ }
+ return _route_cache('route', 'provider-status', _ROUTE_CACHE_TTL_SECONDS['provider_status'], loader, fallback, wait_timeout_seconds=0.25)
 
 @app.get('/api/portfolio/provider/mode')
 def portfolio_provider_mode():

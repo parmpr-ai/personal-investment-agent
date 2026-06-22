@@ -25,15 +25,20 @@ export async function GET(request: NextRequest) {
       { status: response.status },
     )
   } catch (error: any) {
+    const isTimeout = error?.name === 'AbortError' || String(error).includes('abort')
     return NextResponse.json(
       {
-        detail: `AI Intelligence context proxy could not reach backend at ${backendUrl}.`,
+        status: 'partial',
+        detail: isTimeout
+          ? `AI context batch is loading cached data from backend at ${backendUrl}.`
+          : `AI Intelligence context proxy could not reach backend at ${backendUrl}.`,
         error: error?.message || String(error),
         request_url: backendUrl,
-        response_status: 0,
+        response_status: 200,
         body_sample: null,
+        backendTimeout: isTimeout,
       },
-      { status: 502 },
+      { status: 200 },
     )
   }
 }

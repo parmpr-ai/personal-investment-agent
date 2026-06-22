@@ -1,5 +1,22 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.31 - Backend Timeout Hotfix (HERMES-BACKEND-TIMEOUT-HOTFIX-013)
+
+Date: 2026-06-22
+Status: Implemented and locally validated.
+
+### Backend
+
+* Added hard route budgets and cache-first fallbacks for stock, dashboard, AI context, and provider status flows.
+* Route responses now carry `sourceStatus` metadata with `status`, `latencyMs`, `fallbackUsed`, and `error`.
+* Stock and dashboard now return partial 200 responses instead of waiting for upstream provider stalls.
+* AI context frontend contract now returns a partial response within the proxy budget when the backend is still loading.
+
+### Frontend
+
+* Reduced frontend API proxy timeouts so user-facing routes fail fast into partial responses instead of 12s+ stalls.
+* Proxy handlers now return partial 200 responses on timeout for stock, dashboard, and AI context routes.
+
 ## v0.3.29 - AI Intelligence V3 Research Documentation (ATHENA-GOV-022)
 
 Date: 2026-06-22

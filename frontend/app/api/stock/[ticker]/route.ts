@@ -17,15 +17,20 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       { status: response.status },
     )
   } catch (error: any) {
+    const isTimeout = error?.name === 'AbortError' || String(error).includes('abort')
     return NextResponse.json(
       {
-        detail: `Stock Intelligence proxy could not reach backend at ${backendUrl}.`,
+        status: 'partial',
+        detail: isTimeout
+          ? `Stock data is still loading from backend at ${backendUrl}.`
+          : `Stock Intelligence proxy could not reach backend at ${backendUrl}.`,
         error: error?.message || String(error),
         request_url: backendUrl,
-        response_status: 0,
+        response_status: 200,
         body_sample: null,
+        backendTimeout: isTimeout,
       },
-      { status: 502 },
+      { status: 200 },
     )
   }
 }
