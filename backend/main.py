@@ -65,9 +65,12 @@ def get_portfolio_payload():
   p['provider_class']=resolution.provider_class
   p['snapshot_available']=p.get('snapshot_available', resolution.snapshot_available)
   p['snapshot_timestamp']=p.get('snapshot_timestamp') or resolution.snapshot_timestamp
-  p['is_live']=p.get('is_live', resolution.is_live)
-  p['is_stale']=p.get('is_stale', resolution.is_stale)
-  p['stale_reason']=p.get('stale_reason', resolution.stale_reason)
+  p['is_live']=bool(resolution.is_live)
+  p['is_stale']=bool(resolution.is_stale or p.get('is_stale'))
+  p['stale_reason']=resolution.stale_reason or p.get('stale_reason')
+  p['lastRefresh']=p.get('lastRefresh') or p.get('refreshed_at') or resolution.snapshot_timestamp
+  p['nextRefresh']=p.get('nextRefresh')
+  p['isLiveUpdating']=p.get('isLiveUpdating', bool(resolution.is_live))
   p['positions']=normalize_positions(p.get('positions',[]))
   if not p.get('exposures'): p['exposures']=compute_exposures(p.get('positions',[]),p.get('total_value',0))
   if 'guardrails' not in p: p['guardrails']=risk_doctor(p.get('positions',[]),macros)
@@ -91,6 +94,9 @@ def get_portfolio_payload():
    'is_live': resolution.is_live,
    'is_stale': True,
    'stale_reason': resolution.stale_reason or str(e),
+   'lastRefresh': resolution.snapshot_timestamp,
+   'nextRefresh': None,
+   'isLiveUpdating': False,
    'total_value': 0,
    'cost_basis': 0,
    'daily_pnl': 0,
@@ -136,6 +142,14 @@ async def lifespan(app: FastAPI):
 app=FastAPI(title='Personal Investment Agent v5.6', lifespan=lifespan, default_response_class=TimedJSONResponse)
 app.add_middleware(AIRequestTimingMiddleware)
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+
+@app.middleware("http")
+async def no_store_portfolio_cache(request, call_next):
+ response = await call_next(request)
+ if request.url.path.startswith(('/api/portfolio', '/portfolio', '/dashboard')):
+  response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+  response.headers['Pragma'] = 'no-cache'
+ return response
 
 @app.get('/health')
 def health():
@@ -396,13 +410,16 @@ def portfolio_live_positions():
    'mode': resolution.configured_mode,
    'configured_mode': resolution.configured_mode,
    'as_of': meta.get('as_of') or meta.get('snapshot_timestamp') or resolution.snapshot_timestamp,
+   'lastRefresh': meta.get('lastRefresh') or meta.get('refreshed_at') or meta.get('as_of') or resolution.snapshot_timestamp,
+   'nextRefresh': meta.get('nextRefresh'),
+   'isLiveUpdating': meta.get('isLiveUpdating', bool(resolution.is_live)),
    'fallback_active': resolution.fallback_active,
    'fallback_reason': resolution.fallback_reason,
    'provider_class': resolution.provider_class,
    'snapshot_available': bool(resolution.snapshot_available or meta),
    'snapshot_timestamp': resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of'),
-   'is_live': is_live,
-   'is_stale': is_stale,
+  'is_live': bool(resolution.is_live),
+  'is_stale': bool(resolution.is_stale or meta.get('is_stale')),
    'stale_reason': resolution.stale_reason or meta.get('stale_reason'),
    'positions': provider.get_positions()
   }
@@ -420,12 +437,15 @@ def portfolio_live_summary():
   summary['mode']=summary.get('mode') or resolution.configured_mode
   summary['source']=resolution.active_source
   summary['as_of']=summary.get('as_of') or meta.get('as_of') or meta.get('snapshot_timestamp') or resolution.snapshot_timestamp
+  summary['lastRefresh']=summary.get('lastRefresh') or meta.get('lastRefresh') or meta.get('refreshed_at') or meta.get('as_of') or resolution.snapshot_timestamp
+  summary['nextRefresh']=summary.get('nextRefresh') or meta.get('nextRefresh')
+  summary['isLiveUpdating']=summary.get('isLiveUpdating', meta.get('isLiveUpdating', bool(resolution.is_live)))
   summary['fallback_active']=resolution.fallback_active
   summary['fallback_reason']=resolution.fallback_reason
   summary['provider_class']=resolution.provider_class
   summary['snapshot_available']=bool(resolution.snapshot_available or meta)
   summary['snapshot_timestamp']=resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of')
-  summary['is_live']=bool(resolution.is_live or meta.get('is_live'))
+  summary['is_live']=bool(resolution.is_live)
   summary['is_stale']=bool(resolution.is_stale or meta.get('is_stale'))
   summary['stale_reason']=resolution.stale_reason or meta.get('stale_reason')
   return summary
@@ -445,13 +465,16 @@ def portfolio_live_trades():
    'mode': resolution.configured_mode,
    'configured_mode': resolution.configured_mode,
    'as_of': meta.get('as_of') or meta.get('snapshot_timestamp') or resolution.snapshot_timestamp,
+   'lastRefresh': meta.get('lastRefresh') or meta.get('refreshed_at') or meta.get('as_of') or resolution.snapshot_timestamp,
+   'nextRefresh': meta.get('nextRefresh'),
+   'isLiveUpdating': meta.get('isLiveUpdating', bool(resolution.is_live)),
    'fallback_active': resolution.fallback_active,
    'fallback_reason': resolution.fallback_reason,
    'provider_class': resolution.provider_class,
    'snapshot_available': bool(resolution.snapshot_available or meta),
    'snapshot_timestamp': resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of'),
-   'is_live': is_live,
-   'is_stale': is_stale,
+  'is_live': bool(resolution.is_live),
+  'is_stale': bool(resolution.is_stale or meta.get('is_stale')),
    'stale_reason': resolution.stale_reason or meta.get('stale_reason'),
    'trades': provider.get_trades()
   }

@@ -13,6 +13,7 @@ import os
 import re
 import ssl
 import threading
+from datetime import timedelta
 import urllib.request
 import urllib.error
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ _SOURCE_LABELS = {"MOCK": "Mock", "MOCK_FALLBACK": "Mock", "LAST_UPDATE": "Last 
 _LIVE_MODE_ALIASES = {"live", "ibkr-live"}
 _LAST_UPDATE_MODE_ALIASES = {"demo", "demo-samples", "sample", "snapshot", "last-update"}
 _SNAPSHOT_STALE_AFTER_SECONDS = 15 * 60
+_LIVE_REFRESH_SECONDS = 12.0
 _SNAPSHOT_LOCK = threading.RLock()
 
 
@@ -251,7 +253,7 @@ def _option_metadata(contract_desc: str, fallback_symbol: str = "") -> Dict[str,
             expiration = expiry
     else:
         text_match = re.search(
-            r"(?P<underlying>[A-Z0-9.\-]+)\s+(?P<month>[A-Z]{3})\s*(?P<year>\d{4})\s+(?P<strike>\d+(?:\.\d+)?)(?:\s*)?(?P<cp>[CP])",
+            r"(?P<underlying>[A-Z0-9.\-]+)\s+(?P<month>[A-Z]{3})\s*(?P<year>\d{4}|\d{2})\s+(?P<strike>\d+(?:\.\d+)?)(?:\s*)?(?P<cp>[CP])",
             normalized,
         )
         if text_match:
@@ -275,7 +277,11 @@ def _option_metadata(contract_desc: str, fallback_symbol: str = "") -> Dict[str,
                 }
                 month = month_map.get(text_match.group("month"))
                 if month:
-                    expiration = f"{int(text_match.group('year')):04d}-{month:02d}"
+                    year = text_match.group("year")
+                    year_value = int(year)
+                    if len(year) == 2:
+                        year_value += 2000 if year_value < 70 else 1900
+                    expiration = f"{year_value:04d}-{month:02d}"
             except Exception:
                 pass
     return {
@@ -288,15 +294,21 @@ def _option_metadata(contract_desc: str, fallback_symbol: str = "") -> Dict[str,
 
 def _classify_asset_class(raw: Any, contract_desc: str = "", symbol: str = "") -> str:
     value = str(raw or "").upper().strip()
-    if value in {"OPT", "STK", "CRYPTO"}:
-        return value
     desc = f"{contract_desc} {symbol}".upper()
+    if value in {"OPT", "OPTION", "OPTIONS"}:
+        return "OPT"
+    if value == "CRYPTO":
+        return "CRYPTO"
+    if re.search(r"\b\d{6,8}[CP]\b", desc) or re.search(r"\b[A-Z0-9.\-]+\s+[A-Z]{3}\s*\d{2,4}\s+\d+(?:\.\d+)?\s*[CP]\b", desc):
+        return "OPT"
     if any(token in desc for token in ("CASH", "CURRENCY", "FX")):
         return "CASH"
-    if any(token in desc for token in ("BTC", "ETH", "XRP", "SOL", "DOGE", "CRYPTO")) or value == "CRYPTO":
+    if any(token in desc for token in ("BTC", "ETH", "XRP", "SOL", "DOGE", "CRYPTO")):
         return "CRYPTO"
-    if value in {"OPTION", "OPTIONS"}:
-        return "OPT"
+    if value == "STK":
+        return "STK"
+    if value == "ETF":
+        return "STK"
     return "STK"
 
 
@@ -698,11 +710,18 @@ class IbkrLivePortfolioProvider:
     _CACHE_BUNDLE: Optional[Dict[str, Any]] = None
     _CACHE_AT: Optional[datetime] = None
     _CACHE_ERROR: Optional[str] = None
-    _CACHE_TTL_SECONDS = 45.0
+    _CACHE_TTL_SECONDS = _LIVE_REFRESH_SECONDS
 
     def __init__(self) -> None:
         self._ssl_ctx = ssl._create_unverified_context()
         self._account_id: Optional[str] = None
+
+    @classmethod
+    def invalidate_cache(cls) -> None:
+        with cls._CACHE_LOCK:
+            cls._CACHE_BUNDLE = None
+            cls._CACHE_AT = None
+            cls._CACHE_ERROR = None
 
     def _get(self, path: str, timeout: float = 5.0) -> Any:
         url = f"{_GATEWAY_BASE}{path}"
@@ -776,6 +795,7 @@ class IbkrLivePortfolioProvider:
         summary = self._normalize_live_summary(raw_summary, positions)
         trades = self._normalize_live_trades(raw_trades, account_id)
         as_of = datetime.now(timezone.utc).isoformat()
+        next_refresh = (datetime.now(timezone.utc) + timedelta(seconds=self._CACHE_TTL_SECONDS)).isoformat()
         bundle = {
             "source": "IBKR_LIVE",
             "mode": "ibkr-live",
@@ -788,6 +808,9 @@ class IbkrLivePortfolioProvider:
             "snapshot_available": True,
             "heartbeat": heartbeat,
             "refreshed_at": as_of,
+            "lastRefresh": as_of,
+            "nextRefresh": next_refresh,
+            "isLiveUpdating": True,
             "positions_refreshed_at": as_of,
             "summary_refreshed_at": as_of,
             "trades_refreshed_at": as_of if trades else None,
@@ -838,6 +861,9 @@ class IbkrLivePortfolioProvider:
         is_live = bool(heartbeat.get("gateway_open"))
         is_stale = False
         stale_reason = None
+        last_refresh = None
+        next_refresh = None
+        is_live_updating = False
         if not is_live:
             if snapshot_available:
                 is_stale = _is_snapshot_stale(snapshot_meta) if snapshot_meta else False
@@ -847,6 +873,12 @@ class IbkrLivePortfolioProvider:
         elif cached and cached.get("is_stale"):
             is_stale = True
             stale_reason = cached.get("stale_reason") or "Live cache is stale."
+        if cached:
+            last_refresh = cached.get("lastRefresh") or cached.get("refreshed_at") or cached.get("as_of")
+            next_refresh = cached.get("nextRefresh")
+            is_live_updating = bool(cached.get("isLiveUpdating", False)) and not is_stale and is_live
+        elif snapshot_meta:
+            last_refresh = snapshot_meta.get("snapshot_timestamp") or snapshot_meta.get("as_of")
         return {
             "gateway_open": bool(heartbeat.get("gateway_open")),
             "gateway_status": heartbeat.get("gateway_status"),
@@ -859,6 +891,9 @@ class IbkrLivePortfolioProvider:
             "snapshot_timestamp": snapshot_timestamp,
             "provider_class": self.__class__.__name__,
             "active_source": "IBKR_LIVE" if is_live else ("LAST_UPDATE" if snapshot_available else "DISCONNECTED"),
+            "lastRefresh": last_refresh,
+            "nextRefresh": next_refresh,
+            "isLiveUpdating": is_live_updating,
         }
 
     def _normalize_live_positions(self, raw_positions: List[Dict[str, Any]], account_id: str) -> List[Dict[str, Any]]:
@@ -875,6 +910,9 @@ class IbkrLivePortfolioProvider:
             unr = _num(p.get("unrealizedPnl") or p.get("unrealPnl"))
             real = _num(p.get("realizedPnl") or p.get("realPnl"))
             last = _num(p.get("mktPrice") or p.get("lastPrice"))
+            prev_close = _num(p.get("closePrice") or p.get("prevClose") or p.get("previousClose"))
+            day_change = _num(p.get("changeDay") or p.get("dayChange") or p.get("change") or (last - prev_close if prev_close and last else 0))
+            day_change_pct = _num(p.get("pctChangeDay") or p.get("changePercentDay") or p.get("dayChangePct") or ((day_change / prev_close) * 100 if prev_close else 0))
             base_sym = re.split(r"\s+", sym)[0] if is_opt and sym else sym
             option_meta = _option_metadata(contract_desc, fallback_symbol=base_sym or sym)
             multiplier = _num(p.get("multiplier") or (100 if is_opt else 1), 100 if is_opt else 1)
@@ -900,8 +938,8 @@ class IbkrLivePortfolioProvider:
                 "avg_price": round(avg_price, 4),
                 "avg_cost": round(avg_cost, 4),
                 "last": round(last, 4),
-                "day_change_pct": _num(p.get("pctChangeDay") or p.get("changePercentDay")),
-                "day_change": _num(p.get("changeDay") or p.get("change")),
+                "day_change_pct": round(day_change_pct, 2),
+                "day_change": round(day_change, 2),
                 "market_value": round(mv, 2),
                 "cost_basis": cost_basis,
                 "unrealized": round(unr, 2),
@@ -917,6 +955,7 @@ class IbkrLivePortfolioProvider:
                 "ai_view": "Live IBKR position",
                 "currency": p.get("currency", "USD"),
                 "multiplier": multiplier,
+                "lastRefresh": datetime.now(timezone.utc).isoformat(),
             })
         return [row for row in _aggregate_positions(normalized) if _num(row.get("qty")) != 0 or _num(row.get("market_value")) != 0]
 
@@ -926,6 +965,15 @@ class IbkrLivePortfolioProvider:
         def _amt(key: str) -> float:
             node = raw.get(key, {})
             return _num(node.get("amount") if isinstance(node, dict) else node)
+
+        def _field(*names: str) -> float:
+            for name in names:
+                value = raw.get(name)
+                if isinstance(value, dict):
+                    value = value.get("amount", value.get("value", value.get("amountValue")))
+                if value not in (None, ""):
+                    return _num(value)
+            return 0.0
 
         total_value = _amt("netliquidation")
         if not total_value:
@@ -938,6 +986,13 @@ class IbkrLivePortfolioProvider:
                 break
         total_cb = sum(_num(p.get("cost_basis")) for p in positions)
         total_unr = sum(_num(p.get("unrealized")) for p in positions)
+        daily_pnl = _field("dailyPnl", "dailyPnL", "dayPnl", "dayPnL", "pnl", "daily_pnl", "dailyProfitLoss")
+        if not daily_pnl:
+            daily_pnl = _field("unrealizedPnl", "unrealized_pnl", "unrealizedPnL")
+        prev_net_liq = _field("previousNetLiquidation", "prevNetLiquidation", "priorNetLiquidation")
+        daily_pnl_pct = _field("dailyPnlPct", "dailyPnLPct", "dayPnlPct", "dayPnLPct", "pnlPct", "daily_pnl_pct")
+        if not daily_pnl_pct and prev_net_liq:
+            daily_pnl_pct = round((daily_pnl / prev_net_liq) * 100, 2) if prev_net_liq else 0
         return {
             "source": "IBKR_LIVE",
             "mode": "ibkr-live",
@@ -952,11 +1007,14 @@ class IbkrLivePortfolioProvider:
             "gross_position_value": round(_amt("grosspositionvalue"), 2),
             "net_liquidation": round(total_value, 2),
             "currency": currency,
-            "daily_pnl": 0,
-            "daily_pnl_pct": 0,
+            "daily_pnl": round(daily_pnl, 2),
+            "daily_pnl_pct": round(daily_pnl_pct, 2),
             "unrealized": round(total_unr, 2),
             "unrealized_pct": round(total_unr / total_cb * 100, 2) if total_cb else 0,
             "positions_count": len(positions),
+            "lastRefresh": datetime.now(timezone.utc).isoformat(),
+            "nextRefresh": (datetime.now(timezone.utc) + timedelta(seconds=self._CACHE_TTL_SECONDS)).isoformat(),
+            "isLiveUpdating": True,
         }
 
     def _normalize_live_trades(self, raw_trades: List[Dict[str, Any]], account_id: str) -> List[Dict[str, Any]]:
@@ -1018,6 +1076,9 @@ class IbkrLivePortfolioProvider:
             "positions_refreshed_at": bundle.get("positions_refreshed_at"),
             "summary_refreshed_at": bundle.get("summary_refreshed_at"),
             "trades_refreshed_at": bundle.get("trades_refreshed_at"),
+            "lastRefresh": bundle.get("lastRefresh") or bundle.get("refreshed_at") or bundle.get("as_of"),
+            "nextRefresh": bundle.get("nextRefresh"),
+            "isLiveUpdating": bundle.get("isLiveUpdating", True),
         }
         _save_snapshot_bundle({
             "positions_payload": positions_payload,
@@ -1062,6 +1123,9 @@ class IbkrLivePortfolioProvider:
             "as_of": bundle["as_of"],
             "snapshot_available": True,
             "snapshot_timestamp": bundle["snapshot_timestamp"],
+            "lastRefresh": bundle.get("lastRefresh") or bundle.get("refreshed_at") or bundle.get("as_of"),
+            "nextRefresh": bundle.get("nextRefresh"),
+            "isLiveUpdating": bundle.get("isLiveUpdating", True),
             "is_live": bundle.get("is_live", True),
             "is_stale": bundle.get("is_stale", False),
             "stale_reason": bundle.get("stale_reason"),
@@ -1096,6 +1160,9 @@ class IbkrLivePortfolioProvider:
                 "is_stale": bundle.get("is_stale", False),
                 "stale_reason": bundle.get("stale_reason"),
                 "provider_class": self.__class__.__name__,
+                "lastRefresh": bundle.get("lastRefresh") or bundle.get("refreshed_at") or bundle.get("as_of"),
+                "nextRefresh": bundle.get("nextRefresh"),
+                "isLiveUpdating": bundle.get("isLiveUpdating", True),
             }
         )
         return meta
@@ -1139,6 +1206,7 @@ def set_data_source_mode(mode: str) -> str:
     settings.setdefault("data_source", {})["mode"] = mode
     settings.setdefault("ibkr", {})["mode"] = "live" if mode == "ibkr-live" else "client_portal_gateway"
     save_settings(settings)
+    IbkrLivePortfolioProvider.invalidate_cache()
     return mode
 
 
@@ -1158,7 +1226,7 @@ def _diagnose_live_provider(provider: IbkrLivePortfolioProvider) -> Dict[str, An
     try:
         auth = provider.get_auth_status()
         gateway_error = auth.get("error")
-        gateway_reachable = "authenticated" in auth and not gateway_error
+        gateway_reachable = isinstance(auth, dict) and not gateway_error
         ibkr_authenticated = bool(auth.get("authenticated"))
         if not gateway_reachable:
             gateway_status = "gateway_down"
@@ -1341,6 +1409,14 @@ def get_active_provider():
 def get_provider_status() -> Dict[str, Any]:
     """Return provider status info for API consumers."""
     resolution = resolve_portfolio_provider()
+    provider_meta: Dict[str, Any] = {}
+    try:
+        if hasattr(resolution.provider, "get_snapshot_meta"):
+            raw_meta = resolution.provider.get_snapshot_meta() or {}
+            if isinstance(raw_meta, dict):
+                provider_meta = raw_meta
+    except Exception:
+        provider_meta = {}
     mode = resolution.configured_mode
     snapshot_available = bool(resolution.snapshot_available)
     fallback_active = bool(resolution.fallback_active)
@@ -1389,5 +1465,8 @@ def get_provider_status() -> Dict[str, Any]:
         "is_live": resolution.is_live,
         "is_stale": resolution.is_stale,
         "stale_reason": resolution.stale_reason,
+        "lastRefresh": provider_meta.get("lastRefresh") or provider_meta.get("refreshed_at") or resolution.snapshot_timestamp,
+        "nextRefresh": provider_meta.get("nextRefresh"),
+        "isLiveUpdating": bool(provider_meta.get("isLiveUpdating")) if provider_meta else bool(resolution.is_live),
         "mock_available": True,
     }

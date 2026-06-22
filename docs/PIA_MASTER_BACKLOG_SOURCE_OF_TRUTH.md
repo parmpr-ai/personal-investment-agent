@@ -284,6 +284,13 @@ Developers may stop only for:
   - `GET /api/portfolio/live/positions` returned deduped rows with option metadata; the SOFI option row exposed underlying, expiration, strike, call_put, multiplier, and contractDesc.
   - `GET /api/portfolio/history` returned the new history contract with an empty list because the local IBKR Gateway is offline and no fresh live refresh occurred in this environment.
   - Live gateway validation remains pending on a machine with an authenticated Client Portal Gateway.
+- Latest HERMES-IBKR-HOTFIX-010 validation, 2026-06-22:
+  - `python -m py_compile backend/services/portfolio_providers.py backend/services/settings_store.py backend/main.py backend/services/manual_holdings.py backend/services/ibkr_service.py` passed.
+  - Live provider cache TTL reduced to 12 seconds and invalidated on mode changes so `/dashboard` and `/api/portfolio/*` cannot keep serving a frozen live bundle after a mode switch.
+  - Option classification now prefers contract text over raw `secType`, which fixes SOFI option rows rendering as stocks when IBKR reports mixed metadata.
+  - Live payloads now expose `lastRefresh`, `nextRefresh`, and `isLiveUpdating`, and the API sends `Cache-Control: no-store` for portfolio routes to avoid browser caching stale mode/status responses.
+  - UAT screenshots captured under `frontend/uat-screenshots/ibkr-hotfix-010/` for `provider-status.png`, `live-positions.png`, `mobile-home.png`, and `setup.png`.
+  - Live gateway validation remains pending in this environment because the local Client Portal Gateway is offline.
 - Latest Sprint v0.3.6 validation, 2026-05-28:
   - `npm run build` passed (frontend).
   - All 9 tickers (NVDA, AMD, SOFI, IREN, AVAV, GOOGL, TSLA, CRWV, NBIS) return complete intelligence structure from mock layer.
@@ -316,6 +323,7 @@ Developers may stop only for:
   - DONE 2026-06-22: HERMES-IBKR-LIVE-007 portfolio provider correctness, snapshot persistence, and 3-mode mobile/desktop source sync.
   - DONE 2026-06-22: HERMES-IBKR-UAT-009 live source resolution hardening, snapshot history, duplicate detection, and option normalization.
   - DONE 2026-06-22: HERMES-PORTFOLIO-ASSETCLASS-001 assetClass normalization and manual holdings schema expansion.
+  - DONE 2026-06-22: HERMES-IBKR-HOTFIX-010 live refresh cadence, contract-first option classification, mode cache invalidation, and stale status hardening.
 - ATHENA:
   - DONE 2026-05-28: Create Mobile Portfolio Snapshot, Position Full Screen, Workspace Navigation, and Alerts mocks.
   - DONE 2026-05-28: Fix Market Pulse swipe gestures.
@@ -558,6 +566,14 @@ Status: Implemented and locally validated.
 - Option text like `SOFI Jun 2027 22C` now normalizes to `assetClass=OPT`, `underlying=SOFI`, `expiry=2027-06`, `strike=22`, `callPut=C`.
 - Crypto symbols such as `BTC`, `ETH`, and `XRP` normalize to `assetClass=CRYPTO`.
 - Validation: backend compile plus API payload smoke checks confirmed `assetClass`, `expiry`, and option metadata are present on portfolio rows.
+
+### v0.3.33 - IBKR Live Refresh + Classification Hotfix
+Date: 2026-06-22
+Status: Implemented and locally validated.
+- HERMES-IBKR-HOTFIX-010 shortens the live provider cache window, invalidates cached live bundles on mode changes, and advertises `lastRefresh`, `nextRefresh`, and `isLiveUpdating` so the UI can see active refresh state.
+- Contract-first classification now recognises option rows even when IBKR reports them with stock-like metadata, which prevents SOFI option rows from leaking into the Stocks view.
+- Portfolio routes now emit no-store cache headers to stop stale browser responses from masking mode changes or live refreshes.
+- Validation: backend compile passed; live-gateway-specific UAT remains pending because the local Client Portal Gateway is offline here.
 
 ### v0.3.29 - AI Intelligence V3 Research Documentation (ATHENA-GOV-022)
 Date: 2026-06-22

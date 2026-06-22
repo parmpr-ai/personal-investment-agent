@@ -129,6 +129,18 @@ def get_settings() -> Dict[str, Any]:
 def save_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
     global _SETTINGS_CACHE
     merged = deep_merge(deepcopy(DEFAULT_SETTINGS), settings)
+    previous_mode = ""
+    conn_prev = _connect()
+    try:
+        row = conn_prev.execute("SELECT value FROM settings WHERE key='integrations'").fetchone()
+        if row:
+            try:
+                previous = json.loads(row[0])
+                previous_mode = str((previous.get("data_source") or {}).get("mode") or "").lower()
+            except Exception:
+                previous_mode = ""
+    finally:
+        conn_prev.close()
     data_mode = str((merged.get("data_source") or {}).get("mode") or "").lower()
     ibkr = merged.setdefault("ibkr", {})
     if data_mode == "ibkr-live" or str(ibkr.get("mode") or "").lower() == "live":
@@ -146,6 +158,13 @@ def save_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
         conn.commit()
         with _LOCK:
             _SETTINGS_CACHE = deepcopy(merged)
+        if previous_mode != data_mode:
+            try:
+                from services.portfolio_providers import IbkrLivePortfolioProvider
+
+                IbkrLivePortfolioProvider.invalidate_cache()
+            except Exception:
+                pass
         return merged
     finally:
         conn.close()
