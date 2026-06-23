@@ -53,9 +53,19 @@ def portfolio_snapshot():
 def risk_doctor(positions,macro):
  out=[]
  for p in positions:
-  if p.get('portfolio_pct',0)>25: out.append({"level":"danger","title":f"{p['symbol']} concentration","text":f"{p['portfolio_pct']}% of portfolio. Trim/avoid margin adds if VIX rises or SKEW >160."})
-  if p.get('risk',0)>85: out.append({"level":"warning","title":f"{p['symbol']} high risk","text":"Use smaller sizing and define invalidation."})
- if macro['us10y']>4.4: out.append({"level":"warning","title":"Yields pressure growth","text":"AI/high-beta exposure is more fragile while 10Y remains elevated."})
+  portfolio_pct = p.get('portfolio_pct')
+  risk = p.get('risk')
+  try:
+   portfolio_pct_val = float(portfolio_pct) if portfolio_pct is not None else 0.0
+  except Exception:
+   portfolio_pct_val = 0.0
+  try:
+   risk_val = float(risk) if risk is not None else None
+  except Exception:
+   risk_val = None
+  if portfolio_pct_val>25: out.append({"level":"danger","title":f"{p['symbol']} concentration","text":f"{portfolio_pct_val}% of portfolio. Trim/avoid margin adds if VIX rises or SKEW >160."})
+  if risk_val is not None and risk_val>85: out.append({"level":"warning","title":f"{p['symbol']} high risk","text":"Use smaller sizing and define invalidation."})
+ if float(macro.get('us10y', 0) or 0)>4.4: out.append({"level":"warning","title":"Yields pressure growth","text":"AI/high-beta exposure is more fragile while 10Y remains elevated."})
  return out
 
 def today_actions(positions,macro):

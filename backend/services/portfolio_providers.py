@@ -646,6 +646,36 @@ def _apply_position_metric_provenance(row: Dict[str, Any]) -> Dict[str, Any]:
     row["scores_are_placeholders"] = momentum_score is None or risk_score is None
     row["score_status"] = "missing" if momentum_score is None or risk_score is None else "available"
     row["metrics_source"] = "AI_INTELLIGENCE_CACHE" if (momentum_score is not None or risk_score is not None) else "missing"
+    quote_provider = str(row.get("quoteSource") or row.get("source") or "missing")
+    metric_fields = {
+        "last": (row.get("last"), quote_provider),
+        "avg_cost": (row.get("avg_cost"), str(row.get("pricing_source") or row.get("pricing_status") or quote_provider)),
+        "market_value": (row.get("market_value"), quote_provider),
+        "day_change": (row.get("day_change"), quote_provider),
+        "day_pnl": (row.get("day_pnl"), quote_provider),
+        "day_pnl_pct": (row.get("day_change_pct"), quote_provider),
+        "unrealized": (row.get("unrealized"), quote_provider),
+        "unrealized_pct": (row.get("unrealized_pct"), quote_provider),
+        "risk": (row.get("risk"), str(row.get("risk_source") or "missing")),
+        "momentum": (row.get("momentum_score"), str(row.get("momentum_source") or "missing")),
+        "news_score": (row.get("news_score"), str(row.get("news_score_source") or "missing")),
+    }
+    metric_states: Dict[str, Dict[str, Any]] = {}
+    missing_metrics: List[Dict[str, Any]] = []
+    for field, (value, provider) in metric_fields.items():
+        is_missing = value is None or value == ""
+        state = {
+            "value": value if not is_missing else None,
+            "isMissing": is_missing,
+            "provider": provider if not is_missing else "missing",
+            "availabilityPct": 100 if not is_missing else 0,
+        }
+        if is_missing:
+            state["reason"] = "Value unavailable from provider."
+            missing_metrics.append({"field": field, "provider": provider, "reason": state["reason"]})
+        metric_states[field] = state
+    row["metricStates"] = metric_states
+    row["missingMetrics"] = missing_metrics
     return row
 
 

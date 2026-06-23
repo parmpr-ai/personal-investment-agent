@@ -187,6 +187,26 @@ Notes:
 
 ---
 
+### HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 ??? Research data and live contract hardening
+
+Status: PASS WITH CR
+Owner: HERMES
+Date: 2026-06-23
+Approved Mock: N/A (backend + contract correction)
+Design Lock Commit: N/A
+Implementation Commit: 4a15052
+
+Build: PASS
+
+Notes:
+- Research payloads now return explicit section missing states, provenance, and confidence for AMD and NBIS.
+- Live portfolio positions now expose `metricStates` and `missingMetrics` for blank fields.
+- Null-safe risk handling prevents live route crashes when `risk` is unavailable.
+- Fresh backend validation confirmed `/api/intelligence/AMD/research` and `/api/intelligence/NBIS/research` return full payloads.
+- Live portfolio route now returns data instead of failing on null-risk guardrails.
+
+---
+
 ### CR-PS-021 — Position Summary Expanded V3 Alignment
 
 Status: PASS (32/32 UAT checks)

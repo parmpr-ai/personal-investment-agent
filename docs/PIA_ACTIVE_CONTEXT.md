@@ -35,6 +35,7 @@ Stabilization Sprint / Mobile UAT
 * Home Dashboard refinement
 
 * Live IBKR position metrics mapping and score provenance cleanup
+* Research data and live contract hardening for AMD/NBIS and portfolio contracts
 
 
 

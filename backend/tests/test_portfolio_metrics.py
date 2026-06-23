@@ -9,6 +9,8 @@ from services.portfolio_providers import (
     _derive_day_metrics,
     _ibkr_price,
 )
+from services.ai_research import build_ai_research
+from services.state import risk_doctor
 
 
 class PortfolioMetricsTests(unittest.TestCase):
@@ -148,6 +150,60 @@ class PortfolioMetricsTests(unittest.TestCase):
         self.assertTrue(row["momentum_is_placeholder"])
         self.assertIsNone(row["news_score"])
         self.assertTrue(row["news_score_is_placeholder"])
+
+    def test_live_positions_expose_explicit_metric_states(self) -> None:
+        provider = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
+        with patch("services.portfolio_providers._cached_ai_technical_snapshot", return_value={}):
+            rows = provider._normalize_live_positions(
+                [
+                    {
+                        "accountId": "DU123",
+                        "conid": "202",
+                        "symbol": "SOFI",
+                        "contractDesc": "SOFI",
+                        "assetClass": "STK",
+                        "position": 10,
+                        "mktPrice": 11.0,
+                        "closePrice": 10.0,
+                        "mktValue": 110.0,
+                        "unrealizedPnl": 10.0,
+                        "currency": "USD",
+                    }
+                ],
+                "DU123",
+            )
+        row = rows[0]
+        self.assertIn("metricStates", row)
+        self.assertIn("missingMetrics", row)
+        self.assertIn("last", row["metricStates"])
+        self.assertFalse(row["metricStates"]["last"]["isMissing"])
+        self.assertTrue(row["metricStates"]["risk"]["isMissing"])
+
+    def test_risk_doctor_is_null_safe(self) -> None:
+        findings = risk_doctor([{"symbol": "AMD", "portfolio_pct": 12.0, "risk": None}], {"us10y": 4.2})
+        self.assertEqual(findings, [])
+
+    def test_research_payload_has_expected_sections_and_explicit_missing_states(self) -> None:
+        payload = build_ai_research("AMD", settings={}, portfolio={}, macro={}, calendar=[], watchlist=[], provider_status={}, refresh=False, debug=True)
+        research = payload["research"]
+        expected = {
+            "investmentThesis",
+            "financialHealth",
+            "growthEngine",
+            "moatAnalysis",
+            "valuation",
+            "institutionalThesis",
+            "competitiveComparison",
+            "riskAnalysis",
+            "bullBearDebate",
+            "earningsBreakdown",
+        }
+        self.assertEqual(set(research.keys()), expected)
+        self.assertEqual(research["competitiveComparison"]["status"], "missing")
+        self.assertFalse(research["competitiveComparison"]["shouldRender"])
+        self.assertTrue(research["financialHealth"]["missingData"])
+        self.assertTrue(research["financialHealth"]["metrics"]["revenue"]["isPlaceholder"])
+        self.assertIsNone(research["financialHealth"]["metrics"]["revenue"]["value"])
 
     def test_summary_aggregates_daily_pnl_from_positions(self) -> None:
         provider = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)

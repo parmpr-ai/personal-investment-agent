@@ -1,5 +1,24 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.38 - Research Data and Live Contract Hardening (HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040)
+
+Date: 2026-06-23
+Status: Implemented and locally validated; live-gateway UAT pending in this workspace.
+
+### Backend
+
+* `/api/intelligence/{symbol}/research` now returns explicit missing sections, explicit provenance, and section-level confidence instead of empty objects or omitted fields.
+* Live portfolio positions now expose `metricStates` and `missingMetrics` so blank portfolio values are explicit contract data.
+* Null-safe portfolio risk handling no longer crashes live routes when risk is unavailable.
+* Stock hero contracts continue to prefer the live portfolio quote cache when live data is active.
+
+### Validation
+
+* `python -m py_compile` passed for `backend/main.py`, `backend/services/*.py`, and `backend/tests/*.py`.
+* `python -m unittest discover -s tests -p 'test_*.py'` passed with 12 tests.
+* Fresh backend validation showed `/api/intelligence/AMD/research` and `/api/intelligence/NBIS/research` returning full payloads with explicit missing states.
+* Fresh backend validation showed live portfolio routes returning explicit metric state metadata instead of crashing on null risk values.
+
 ## v0.3.37 - Live Position Metrics Mapping (HERMES-LIVE-POSITION-METRICS-MAPPING-036)
 
 Date: 2026-06-23

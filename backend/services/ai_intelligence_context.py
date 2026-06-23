@@ -1110,6 +1110,14 @@ def _source_status_map(source_contexts: dict[str, dict[str, Any]]) -> dict[str, 
     }
 
 
+def _last_updated(source_contexts: dict[str, dict[str, Any]], source_ids: list[str]) -> str | None:
+    for source_id in source_ids:
+        updated_at = _source_status_map(source_contexts).get(source_id, {}).get("updatedAt")
+        if updated_at:
+            return str(updated_at)
+    return None
+
+
 def _score_level(value: float | None) -> str:
     if value is None:
         return "unknown"
