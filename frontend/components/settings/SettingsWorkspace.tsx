@@ -10,7 +10,6 @@ import {
   Globe2,
   Hash,
   MessageSquare,
-  Trash2,
   Wallet,
 } from 'lucide-react'
 import GlowCard from '../ui/GlowCard'
@@ -326,6 +325,112 @@ function ibkrStatusMeta(status: any) {
 
 function boolText(value: unknown) {
   return value ? 'Yes' : 'No'
+}
+
+const DS_MODE_OPTIONS = [
+  { value: 'mock', label: 'Mock', desc: 'Simulated portfolio.' },
+  { value: 'last-update', label: 'Last Update', desc: 'Last IBKR snapshot. Works offline.' },
+  { value: 'ibkr-live', label: 'Live IBKR', desc: 'Requires Gateway open and authenticated.' },
+] as const
+
+function dsStatus(mode: string, result: any, checking: boolean): { label: string; tone: string; detail: string } {
+  if (checking) return { label: 'Checking...', tone: 'warn', detail: 'Testing IBKR Gateway connection...' }
+  if (mode === 'mock') return { label: 'Mock Mode', tone: 'neutral', detail: 'Portfolio uses simulated data.' }
+  if (mode === 'last-update') {
+    const ts = result?.snapshot_timestamp
+    return result?.snapshot_available
+      ? { label: 'Last Update Available', tone: 'good', detail: ts ? `Last updated ${formatCheckedAt(ts)}` : 'Snapshot available.' }
+      : { label: 'No Snapshot', tone: 'bad', detail: 'No offline snapshot. Fetch live data first.' }
+  }
+  if (mode === 'ibkr-live') {
+    const s = result?.status
+    if (s === 'connected') return { label: 'Live Connected', tone: 'good', detail: result?.message || 'IBKR Gateway connected.' }
+    if (s === 'unauthenticated') return { label: 'Login Required', tone: 'warn', detail: 'Open Gateway at https://localhost:5000 and login.' }
+    return { label: 'Gateway Not Connected', tone: 'bad', detail: 'Start IBKR Client Portal Gateway and login.' }
+  }
+  return { label: 'Unknown', tone: 'neutral', detail: '' }
+}
+
+function PortfolioDataSourceCard({ hidden, onModeChange }: { hidden?: boolean; onModeChange?: () => void }) {
+  const [mode, setMode] = useState('mock')
+  const [checking, setChecking] = useState(false)
+  const [checkResult, setCheckResult] = useState<any>(null)
+  const [saveError, setSaveError] = useState('')
+
+  useEffect(() => {
+    Promise.allSettled([
+      fetchJson('/api/portfolio/provider/mode'),
+      fetchJson('/api/portfolio/provider/status'),
+    ]).then(([modeRes, statusRes]) => {
+      if (modeRes.status === 'fulfilled' && modeRes.value?.mode) setMode(modeRes.value.mode)
+      if (statusRes.status === 'fulfilled') setCheckResult(statusRes.value)
+    })
+  }, [])
+
+  async function selectMode(next: string) {
+    setSaveError('')
+    setMode(next)
+    try {
+      const result = await fetchJson('/api/portfolio/provider/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: next }),
+      })
+      if (result?.mode) setMode(result.mode)
+      onModeChange?.()
+      if (next === 'ibkr-live') {
+        setChecking(true)
+        const status = await fetchJson('/api/portfolio/provider/status').catch(() => ({ status: 'error', message: 'Gateway check failed.' }))
+        setCheckResult(status)
+        setChecking(false)
+      } else {
+        setCheckResult(result?.status || null)
+      }
+    } catch (err: any) {
+      setSaveError(safeMessage(err?.detail, 'Unable to switch data source.'))
+    }
+  }
+
+  async function testGateway() {
+    setChecking(true)
+    const result = await fetchJson('/api/portfolio/provider/status').catch(() => ({ status: 'error', message: 'Gateway check failed.' }))
+    setCheckResult(result)
+    setChecking(false)
+  }
+
+  const { label, tone, detail } = dsStatus(mode, checkResult, checking)
+
+  return (
+    <div className="ds-card">
+      <div className="ds-card-header">
+        <span className="ds-card-title">{hidden ? 'Data Source' : 'Portfolio Data Source'}</span>
+        <span className={`ds-status-pill ds-pill-${tone}`}>{hidden ? 'Status' : label}</span>
+      </div>
+      <div className="ds-mode-row" role="radiogroup" aria-label="Portfolio Data Source">
+        {DS_MODE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={mode === opt.value}
+            className={`ds-mode-btn${mode === opt.value ? ' active' : ''}`}
+            onClick={() => selectMode(opt.value)}
+            disabled={checking}
+          >
+            {hidden ? 'Source' : opt.label}
+          </button>
+        ))}
+      </div>
+      {!hidden && detail && <p className={`ds-detail ds-detail-${tone}`}>{detail}</p>}
+      {mode === 'ibkr-live' && checkResult?.status !== 'connected' && !checking && !hidden && (
+        <div className="ds-gateway-actions">
+          <button className="tab" type="button" onClick={testGateway}>Test Gateway</button>
+          <a className="tab" href="https://localhost:5000" target="_blank" rel="noreferrer">Open Gateway</a>
+        </div>
+      )}
+      {saveError && <p className="ds-error">{saveError}</p>}
+    </div>
+  )
 }
 
 function IbkrFact({ label, value, detail, hidden }: { label: string; value: string; detail?: string; hidden?: boolean }) {
@@ -919,7 +1024,7 @@ function qaGroupList(value: unknown) {
   return Array.isArray(value) && value.length ? (value as NonNullable<ReleaseQaPayload['groups']>) : releaseFallbackQa.groups || []
 }
 
-const settingsTabs = ['General', 'Workspace', 'Manual Holdings', 'Integrations', 'Notifications', 'System', 'About'] as const
+const settingsTabs = ['General', 'Workspace', 'Integrations', 'Notifications', 'System', 'About'] as const
 
 function GeneralSettings({ hidden }: { hidden?: boolean }) {
   return (
@@ -1003,90 +1108,6 @@ function WorkspaceSettings({
           </GlowCard>
         </div>
       )}
-    </div>
-  )
-}
-
-function ManualHoldingsSettings({ hidden }: { hidden?: boolean }) {
-  const [holdings, setHoldings] = useState<any[]>([])
-  const [status, setStatus] = useState('')
-
-  const refresh = () => fetchJson('/manual-holdings').then(setHoldings).catch(() => setStatus('Manual holdings API is unavailable.'))
-
-  useEffect(() => {
-    refresh()
-  }, [])
-
-  async function removeHolding(id: string) {
-    const result = await fetchJson(`/manual-holdings/${id}`, { method: 'DELETE' }).catch((error) => {
-      setStatus(safeMessage(error?.detail, 'Unable to delete manual holding.'))
-      return null
-    })
-    if (!result) return
-    setStatus('Manual holding deleted.')
-    refresh()
-  }
-
-  return (
-    <div className="manual-holdings">
-      <GlowCard>
-        <SectionHeader
-          title={hidden ? 'Manual Assets' : 'Manual Holdings'}
-          subtitle={hidden ? 'Review external positions.' : 'Manual holding creation now starts from Portfolio options.'}
-        />
-        <div className="empty-state">
-          <p>{hidden ? 'Use Portfolio options to add holdings.' : 'Use Portfolio -> three-dot menu -> Add Manual Holding to search and select an instrument before saving.'}</p>
-        </div>
-        {status && <p className="muted">{status}</p>}
-      </GlowCard>
-      <GlowCard>
-        <SectionHeader
-          title={hidden ? 'External Assets' : 'Tracked Manual Holdings'}
-          subtitle={hidden ? `${holdings.length} items` : `${holdings.length} holdings merged into portfolio totals when present`}
-        />
-        <div className="table-wrap">
-          <table className="manual-table">
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th>Broker</th>
-                <th>Type</th>
-                <th>Qty</th>
-                <th>Avg</th>
-                <th>Currency</th>
-                <th>Notes</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {holdings.map((holding) => (
-                <tr key={holding.id}>
-                  <td>
-                    <b>{hidden ? mask : holding.ticker}</b>
-                    <div className="muted">{hidden ? 'Workspace item' : holding.name}</div>
-                  </td>
-                  <td>{hidden ? mask : holding.broker}</td>
-                  <td>
-                    <span className="badge">{hidden ? mask : holding.asset_type}</span>
-                  </td>
-                  <td>{hidden ? mask : holding.quantity}</td>
-                  <td>{hidden ? mask : money(holding.avg_price)}</td>
-                  <td>{hidden ? mask : holding.currency}</td>
-                  <td>{hidden ? mask : holding.notes || '-'}</td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="icon-tab danger" type="button" onClick={() => removeHolding(holding.id)} aria-label={`Delete ${holding.ticker}`}>
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!holdings.length && <div className="empty-state">No manual holdings yet.</div>}
-        </div>
-      </GlowCard>
     </div>
   )
 }
@@ -1280,7 +1301,6 @@ function SettingsTabPanels({
 }) {
   if (tab === 'General') return <GeneralSettings hidden={hidden} />
   if (tab === 'Workspace') return <WorkspaceSettings hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} />
-  if (tab === 'Manual Holdings') return <ManualHoldingsSettings hidden={hidden} />
   if (tab === 'Integrations') return <IntegrationsSettings hidden={hidden} variant={variant} />
   if (tab === 'Notifications') return <NotificationsSettings />
   if (tab === 'System') return <SystemSettings hidden={hidden} variant={variant} />
@@ -1292,11 +1312,13 @@ export default function SettingsPage({
   variant = 'desktop',
   workspaceConfig: providedWorkspaceConfig,
   onSelectWorkspace,
+  onModeChange,
 }: {
   hidden?: boolean
   variant?: SettingsVariant
   workspaceConfig?: WorkspaceConfig
   onSelectWorkspace?: (workspaceId: WorkspaceId) => void
+  onModeChange?: () => void
 }) {
   const localWorkspaceConfig = useWorkspaceConfig()
   const workspaceConfig = providedWorkspaceConfig || localWorkspaceConfig
@@ -1317,6 +1339,7 @@ export default function SettingsPage({
   if (variant === 'mobile') {
     return (
       <div className="mobile-settings-workspace">
+        <PortfolioDataSourceCard hidden={hidden} onModeChange={onModeChange} />
         {tabs}
         <div className="mobile-settings-body">{panels}</div>
       </div>

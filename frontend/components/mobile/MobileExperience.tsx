@@ -3597,6 +3597,7 @@ export default function MobileExperience() {
               variant="mobile"
               workspaceConfig={workspaceConfig}
               onSelectWorkspace={(workspaceId) => setActive(workspaceId)}
+              onModeChange={() => refreshDashboard()}
             />
           </section>
         </MobileSheet>

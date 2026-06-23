@@ -2414,3 +2414,19 @@ th.col-sorted .sort-arrow{font-size:10px;margin-left:3px}
 .mf-callput-btn.active{background:rgba(52,211,153,.18);border-color:#34d399;color:#6ee7b7}
 /* backend offline banner */
 .mobile-backend-offline{background:rgba(239,68,68,.12);border-bottom:1px solid rgba(239,68,68,.3);color:#fca5a5;font-size:11px;font-weight:600;letter-spacing:.04em;padding:7px 16px;text-align:center;flex-shrink:0}
+.ds-card{background:rgba(15,23,42,.7);border:1px solid rgba(96,165,250,.22);border-radius:16px;padding:14px 14px 12px;margin:0 0 14px;display:grid;gap:10px}
+.ds-card-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ds-card-title{color:#eef4fb;font-size:13px;font-weight:700;letter-spacing:.01em}
+.ds-status-pill{font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;flex-shrink:0}
+.ds-pill-good{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:#86efac}
+.ds-pill-warn{background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.3);color:#fde68a}
+.ds-pill-bad{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#fca5a5}
+.ds-pill-neutral{background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.2);color:#94a3b8}
+.ds-mode-row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.ds-mode-btn{padding:8px 4px;background:rgba(255,255,255,.05);border:1px solid rgba(148,163,184,.15);border-radius:10px;color:rgba(255,255,255,.5);font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,color .15s,border-color .15s;text-align:center}
+.ds-mode-btn.active{background:rgba(96,165,250,.18);border-color:#60a5fa;color:#93c5fd}
+.ds-mode-btn:disabled{opacity:.5;cursor:not-allowed}
+.ds-detail{margin:0;font-size:11px;color:var(--muted);line-height:1.4}
+.ds-detail-good{color:#86efac}.ds-detail-warn{color:#fde68a}.ds-detail-bad{color:#fca5a5}
+.ds-gateway-actions{display:flex;gap:8px;flex-wrap:wrap}.ds-gateway-actions .tab{text-decoration:none;font-size:12px}
+.ds-error{margin:0;font-size:11px;color:#fca5a5}
