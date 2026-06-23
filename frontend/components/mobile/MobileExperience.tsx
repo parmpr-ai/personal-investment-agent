@@ -450,10 +450,12 @@ function mobileStatusLabel(status: any) {
   return 'Standby'
 }
 
-function MobileStatusDock({ health, hidden }: { health: any[]; hidden: boolean }) {
+function MobileStatusDock({ health, hidden, portfolioSource }: { health: any[]; hidden: boolean; portfolioSource?: string }) {
   const bySource = (name: string) => health.find((item: any) => item.source === name)
+  // When portfolio is definitively live, IBKR is connected regardless of health-check cache
+  const ibkrLive = portfolioSource === 'IBKR_LIVE'
   const rows = [
-    { name: 'IBKR', icon: Wallet, status: bySource('IBKR') },
+    { name: 'IBKR', icon: Wallet, status: ibkrLive ? { status: 'healthy', data_received: true } : bySource('IBKR') },
     { name: 'Yahoo', icon: Globe2, status: bySource('Yahoo Finance') },
     { name: 'Feeds', icon: Database, status: bySource('RSS') },
   ]
@@ -3578,7 +3580,7 @@ export default function MobileExperience() {
       {active === 'settings' && (
         <MobileSheet title="Settings" onClose={() => setActive('home')}>
           <section className="mobile-section mobile-settings-section">
-            <MobileStatusDock health={sourceHealth} hidden={privacyHidden} />
+            <MobileStatusDock health={sourceHealth} hidden={privacyHidden} portfolioSource={dashboard?.portfolio?.source} />
             <SettingsPage
               hidden={privacyHidden}
               variant="mobile"

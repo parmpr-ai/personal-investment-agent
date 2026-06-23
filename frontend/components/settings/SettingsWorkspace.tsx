@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   BarChart3,
@@ -404,9 +404,12 @@ function PortfolioDataSourceCard({
     return () => stopTfaPoll()
   }, [stopTfaPoll])
 
-  // When portfolioSource becomes IBKR_LIVE (pushed from dashboard), stop pending poll
+  // When portfolioSource becomes IBKR_LIVE (pushed from dashboard), stop pending poll and sync status
   useEffect(() => {
-    if (portfolioSource === 'IBKR_LIVE') stopTfaPoll()
+    if (portfolioSource === 'IBKR_LIVE') {
+      stopTfaPoll()
+      fetchJson('/api/portfolio/provider/status').then(setCheckResult).catch(() => {})
+    }
   }, [portfolioSource, stopTfaPoll])
 
   const startTfaPoll = useCallback(() => {
@@ -468,9 +471,27 @@ function PortfolioDataSourceCard({
     if (st !== 'LIVE' && gw !== 'connected' && mode === 'ibkr-live') startTfaPoll()
   }
 
-  const { label, tone, detail } = dsStatus(mode, checkResult, checking, portfolioSource)
-  const isLiveConnected = tone === 'good' && mode === 'ibkr-live'
-  const isTfaPending = Boolean(tfaPollRef.current) && !isLiveConnected
+  // Before the provider/mode fetch resolves (mode='mock'), infer from dashboard source to avoid a
+  // misleading "Mock Mode" flash when the user is actually in ibkr-live.
+  const displayMode = useMemo(() => {
+    if (mode !== 'mock') return mode
+    if (portfolioSource === 'IBKR_LIVE') return 'ibkr-live'
+    if (portfolioSource === 'LAST_UPDATE') return 'last-update'
+    return mode
+  }, [mode, portfolioSource])
+
+  if (typeof window !== 'undefined') {
+    console.debug('[Settings IBKR]', {
+      settingsMode: mode, displayMode,
+      dashboardSource: portfolioSource,
+      providerStatus: checkResult?.status,
+      gatewayConnected: checkResult?.gateway_status === 'connected',
+    })
+  }
+
+  const { label, tone, detail } = dsStatus(displayMode, checkResult, checking, portfolioSource)
+  const isLiveConnected = tone === 'good' && displayMode === 'ibkr-live'
+  const isTfaPending = Boolean(tfaPollRef.current) && !isLiveConnected && displayMode === 'ibkr-live'
 
   return (
     <div className="ds-card">
@@ -529,13 +550,18 @@ function IbkrProviderCard({
   onProviderTest,
   providerTesting,
   providerTestResult,
+  portfolioSource,
 }: any) {
   const status = providerTestResult || providerStatus || {}
-  const meta = ibkrStatusMeta(status)
+  const isPortfolioLive = portfolioSource === 'IBKR_LIVE'
+  // When the dashboard confirms IBKR_LIVE, use that as authoritative override
+  const meta = isPortfolioLive
+    ? { label: 'Live', tone: 'good', detail: 'IBKR live data confirmed by dashboard.' }
+    : ibkrStatusMeta(status)
   const configuredMode = status.configured_mode || providerMode || 'mock'
-  const activeSource = status.active_source || ''
+  const activeSource = isPortfolioLive ? 'IBKR_LIVE' : (status.active_source || '')
   const gatewayStatus = status.gateway_status ? ibkrStatusMeta({ status: status.gateway_status }) : null
-  const gatewayLabel = status.gateway_status === 'not_applicable' ? 'Not Required' : gatewayStatus?.label || meta.label
+  const gatewayLabel = isPortfolioLive ? 'Connected' : (status.gateway_status === 'not_applicable' ? 'Not Required' : gatewayStatus?.label || meta.label)
 
   return (
     <div className="integration-card ibkr-provider-card">
@@ -762,7 +788,7 @@ function IntegrationPreview({ sourceId, status, settings, hidden }: any) {
   )
 }
 
-function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop' }: { compact?: boolean; hidden?: boolean; variant?: SettingsVariant }) {
+function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop', portfolioSource }: { compact?: boolean; hidden?: boolean; variant?: SettingsVariant; portfolioSource?: string }) {
   const [settings, setSettings] = useState<any>(() => mergeIntegrationSettings(null))
   const [health, setHealth] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -798,6 +824,13 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
   useEffect(() => {
     refreshIntegrations()
   }, [refreshIntegrations])
+
+  // Sync provider status when dashboard portfolio source changes (no separate polling needed)
+  useEffect(() => {
+    if (portfolioSource) {
+      fetchJson('/api/portfolio/provider/status').then(setProviderStatus).catch(() => {})
+    }
+  }, [portfolioSource])
 
   function update(section: string, key: string, value: any) {
     setSettings((s: any) => ({ ...s, [section]: { ...(s?.[section] || {}), [key]: value } }))
@@ -905,6 +938,7 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
             onProviderTest={testProviderStatus}
             providerTesting={providerTesting}
             providerTestResult={providerTestResult}
+            portfolioSource={portfolioSource}
           >
             {active.fields(settings, update)}
           </IntegrationCard>
@@ -949,6 +983,7 @@ function IntegrationCard({
   onProviderTest,
   providerTesting,
   providerTestResult,
+  portfolioSource,
 }: any) {
   if (sourceId === 'ibkr') {
     return (
@@ -961,6 +996,7 @@ function IntegrationCard({
         onProviderTest={onProviderTest}
         providerTesting={providerTesting}
         providerTestResult={providerTestResult}
+        portfolioSource={portfolioSource}
       />
     )
   }
@@ -1187,10 +1223,10 @@ function WorkspaceSettings({
   )
 }
 
-function IntegrationsSettings({ hidden, variant }: { hidden?: boolean; variant?: SettingsVariant }) {
+function IntegrationsSettings({ hidden, variant, portfolioSource }: { hidden?: boolean; variant?: SettingsVariant; portfolioSource?: string }) {
   return (
     <div>
-      <IntegrationCenter compact hidden={hidden} variant={variant} />
+      <IntegrationCenter compact hidden={hidden} variant={variant} portfolioSource={portfolioSource} />
     </div>
   )
 }
@@ -1367,16 +1403,18 @@ function SettingsTabPanels({
   variant,
   workspaceConfig,
   onSelectWorkspace,
+  portfolioSource,
 }: {
   tab: (typeof settingsTabs)[number]
   hidden?: boolean
   variant: SettingsVariant
   workspaceConfig: WorkspaceConfig
   onSelectWorkspace?: (workspaceId: WorkspaceId) => void
+  portfolioSource?: string
 }) {
   if (tab === 'General') return <GeneralSettings hidden={hidden} />
   if (tab === 'Workspace') return <WorkspaceSettings hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} />
-  if (tab === 'Integrations') return <IntegrationsSettings hidden={hidden} variant={variant} />
+  if (tab === 'Integrations') return <IntegrationsSettings hidden={hidden} variant={variant} portfolioSource={portfolioSource} />
   if (tab === 'Notifications') return <NotificationsSettings />
   if (tab === 'System') return <SystemSettings hidden={hidden} variant={variant} />
   return <SettingsAbout hidden={hidden} />
@@ -1411,7 +1449,7 @@ export default function SettingsPage({
     </div>
   )
 
-  const panels = <SettingsTabPanels tab={tab} hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} />
+  const panels = <SettingsTabPanels tab={tab} hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} portfolioSource={portfolioSource} />
 
   if (variant === 'mobile') {
     return (
