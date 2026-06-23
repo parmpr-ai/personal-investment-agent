@@ -48,6 +48,23 @@ Notes:
 - Dev-only remount / loading-toggle diagnostics added for MobileExperience and portfolio table/card views.
 - PO UAT evidence is still pending in this workspace.
 
+### HERMES-LIVE-POSITION-METRICS-038
+
+Status: PENDING
+Owner: HERMES
+Date: 2026-06-23
+Approved Mock: N/A
+Design Lock Commit: N/A
+Implementation Commit: pending commit in this branch
+
+Build: PASS (`python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/tests/test_portfolio_metrics.py`, `python -m unittest tests.test_portfolio_metrics`)
+
+Notes:
+- Live position finalization now recomputes day P/L, day %, unrealized, and unrealized % from validated quote inputs and preserves nullable outputs when inputs are missing.
+- Portfolio summary now sums live position day P/L values and exposes calculation provenance in the debug live-quotes payload.
+- Backend regression tests cover stock, option, mixed portfolio, nullable-input, and summary aggregation cases.
+- Live Gateway UAT evidence is still pending in this workspace.
+
 ### AI Intelligence Compact V3 — ARTEMIS-AI-COMPACT-REDESIGN-001 / CR-AI-COMPACT-REDESIGN-002 / -003
 
 Status: PENDING (PASS decision)

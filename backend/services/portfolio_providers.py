@@ -407,6 +407,150 @@ def _derive_day_metrics(
     }
 
 
+def _build_position_calculation_provenance(
+    row: Dict[str, Any],
+    day_metrics: Dict[str, Optional[float]],
+    *,
+    live_quote_used: bool,
+) -> Dict[str, Any]:
+    quantity = _maybe_num(row.get("qty") or row.get("quantity") or row.get("position"))
+    multiplier = _maybe_num(row.get("multiplier") or _position_multiplier(row))
+    last = _maybe_num(row.get("last"))
+    previous_close = _maybe_num(row.get("previousClose") or row.get("prevClose") or row.get("closePrice") or row.get("close"))
+    market_value = _maybe_num(row.get("market_value"))
+    cost_basis = _maybe_num(row.get("cost_basis") or row.get("costBasis"))
+    previous_market_value = day_metrics.get("previous_market_value")
+
+    final_day_change = _maybe_num(row.get("day_change"))
+    final_day_change_pct = _maybe_num(row.get("day_change_pct"))
+    final_day_pnl = _maybe_num(row.get("day_pnl"))
+    final_day_pnl_pct = _maybe_num(row.get("day_pnl_pct"))
+    final_unrealized = _maybe_num(row.get("unrealized"))
+    final_unrealized_pct = _maybe_num(row.get("unrealized_pct"))
+    unrealized = final_unrealized
+    unrealized_pct = final_unrealized_pct
+    if market_value is not None and cost_basis not in (None, 0):
+        unrealized = round(market_value - cost_basis, 2)
+        unrealized_pct = round((unrealized / cost_basis) * 100, 2)
+
+    def _metric_payload(name: str, formula: str, value: Optional[float], inputs: Dict[str, Any], source: str) -> Dict[str, Any]:
+        payload = {
+            "name": name,
+            "formula": formula,
+            "value": value,
+            "inputs": inputs,
+            "source": source,
+            "isDerived": value is not None,
+        }
+        return payload
+
+    has_live_inputs = last is not None and previous_close not in (None, 0) and quantity not in (None, 0)
+    return {
+        "liveQuoteUsed": bool(live_quote_used),
+        "hasLiveInputs": bool(has_live_inputs),
+        "inputs": {
+            "last": last,
+            "previousClose": previous_close,
+            "quantity": quantity,
+            "multiplier": multiplier,
+            "marketValue": market_value,
+            "costBasis": cost_basis,
+            "previousMarketValue": previous_market_value,
+        },
+        "day_change": _metric_payload(
+            "day_change",
+            "last - previousClose",
+            final_day_change if final_day_change is not None else day_metrics.get("day_change"),
+            {"last": last, "previousClose": previous_close},
+            "derived" if final_day_change is not None else "missing",
+        ),
+        "day_change_pct": _metric_payload(
+            "day_change_pct",
+            "((last - previousClose) / previousClose) * 100",
+            final_day_change_pct if final_day_change_pct is not None else day_metrics.get("day_change_pct"),
+            {"last": last, "previousClose": previous_close},
+            "derived" if final_day_change_pct is not None else "missing",
+        ),
+        "day_pnl": _metric_payload(
+            "day_pnl",
+            "(last - previousClose) * quantity * multiplier",
+            final_day_pnl if final_day_pnl is not None else day_metrics.get("day_pnl"),
+            {"last": last, "previousClose": previous_close, "quantity": quantity, "multiplier": multiplier},
+            "derived" if final_day_pnl is not None else "missing",
+        ),
+        "day_pnl_pct": _metric_payload(
+            "day_pnl_pct",
+            "day_pnl / previous_market_value * 100",
+            final_day_pnl_pct if final_day_pnl_pct is not None else day_metrics.get("day_pnl_pct"),
+            {"day_pnl": final_day_pnl if final_day_pnl is not None else day_metrics.get("day_pnl"), "previousMarketValue": previous_market_value},
+            "derived" if final_day_pnl_pct is not None else "missing",
+        ),
+        "unrealized": _metric_payload(
+            "unrealized",
+            "market_value - cost_basis",
+            unrealized,
+            {"marketValue": market_value, "costBasis": cost_basis},
+            "derived" if market_value is not None and cost_basis not in (None, 0) else "missing",
+        ),
+        "unrealized_pct": _metric_payload(
+            "unrealized_pct",
+            "unrealized / cost_basis * 100",
+            unrealized_pct,
+            {"unrealized": unrealized, "costBasis": cost_basis},
+            "derived" if unrealized_pct is not None else "missing",
+        ),
+    }
+
+
+def _finalize_position_metrics(row: Dict[str, Any]) -> Dict[str, Any]:
+    quantity = _maybe_num(row.get("qty") or row.get("quantity") or row.get("position"))
+    multiplier = _maybe_num(row.get("multiplier") or _position_multiplier(row))
+    last = _maybe_num(row.get("last"))
+    previous_close = _maybe_num(row.get("previousClose") or row.get("prevClose") or row.get("closePrice") or row.get("close"))
+    quote_source = str(row.get("quoteSource") or row.get("source") or "").upper()
+    live_quote_used = bool(row.get("quoteLastRefresh")) or quote_source in {
+        "IBKR_MARKETDATA_SNAPSHOT",
+        "PREVIOUS_LIVE_SNAPSHOT",
+        "CACHE",
+        "LIVE",
+        "IBKR_LIVE",
+    }
+    day_metrics = _derive_day_metrics(
+        last=last,
+        previous_close=previous_close,
+        quantity=quantity,
+        multiplier=multiplier,
+        official_day_change=_maybe_num(row.get("day_change")),
+        official_day_change_pct=_maybe_num(row.get("day_change_pct")),
+    )
+    if day_metrics["day_change"] is not None:
+        row["day_change"] = day_metrics["day_change"]
+    if day_metrics["day_change_pct"] is not None:
+        row["day_change_pct"] = day_metrics["day_change_pct"]
+    if day_metrics["day_pnl"] is not None:
+        row["day_pnl"] = day_metrics["day_pnl"]
+    elif live_quote_used and _maybe_num(row.get("day_pnl")) == 0:
+        row["day_pnl"] = None
+    if day_metrics["day_pnl_pct"] is not None:
+        row["day_pnl_pct"] = day_metrics["day_pnl_pct"]
+    elif live_quote_used and _maybe_num(row.get("day_pnl_pct")) == 0:
+        row["day_pnl_pct"] = None
+    if day_metrics.get("previous_market_value") is not None:
+        row["previous_market_value"] = day_metrics["previous_market_value"]
+
+    market_value = _maybe_num(row.get("market_value"))
+    cost_basis = _maybe_num(row.get("cost_basis") or row.get("costBasis"))
+    if market_value is not None and cost_basis not in (None, 0):
+        row["unrealized"] = round(market_value - cost_basis, 2)
+        row["unrealized_pct"] = round((row["unrealized"] / cost_basis) * 100, 2)
+    elif live_quote_used and _maybe_num(row.get("unrealized_pct")) == 0 and cost_basis in (None, 0):
+        row["unrealized_pct"] = None
+
+    row["previous_market_value"] = day_metrics.get("previous_market_value")
+    row["calculationProvenance"] = _build_position_calculation_provenance(row, day_metrics, live_quote_used=live_quote_used)
+    return row
+
+
 def get_live_quote_trace(limit: Optional[int] = None) -> List[Dict[str, Any]]:
     with _LIVE_QUOTE_TRACE_LOCK:
         rows = list(_LIVE_QUOTE_TRACE)
@@ -525,7 +669,7 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not cost_basis and qty:
             avg_price = _num(raw.get("avg_price") or raw.get("avgPrice") or raw.get("averageCost"))
             cost_basis = round(qty * avg_price * multiplier, 2)
-        day_pnl = _num(raw.get("day_pnl"))
+        day_pnl = _maybe_num(raw.get("day_pnl"))
         if current is None:
             grouped[key] = {
                 **raw,
@@ -546,7 +690,9 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "unrealized": round(unrealized, 2),
                 "realized": round(realized, 2),
                 "cost_basis": round(cost_basis, 2),
-                "day_pnl": round(day_pnl, 2),
+                "day_pnl": round(day_pnl, 2) if day_pnl is not None else None,
+                "day_pnl_pct": _maybe_num(raw.get("day_pnl_pct")),
+                "previous_market_value": _maybe_num(raw.get("previous_market_value")),
                 "_weighted_avg_sum": round(_num(raw.get("avg_price")) * qty * multiplier if raw.get("avg_price") is not None else cost_basis, 6),
                 "_weighted_last_sum": round(_num(raw.get("last")) * qty if raw.get("last") is not None else market_value, 6),
                 "_weighted_qty": qty * multiplier if qty else multiplier,
@@ -558,7 +704,21 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         current["unrealized"] = round(_num(current.get("unrealized")) + unrealized, 2)
         current["realized"] = round(_num(current.get("realized")) + realized, 2)
         current["cost_basis"] = round(_num(current.get("cost_basis")) + cost_basis, 2)
-        current["day_pnl"] = round(_num(current.get("day_pnl")) + day_pnl, 2)
+        current_day_pnl = _maybe_num(current.get("day_pnl"))
+        if day_pnl is not None and current_day_pnl is not None:
+            current["day_pnl"] = round(current_day_pnl + day_pnl, 2)
+        elif day_pnl is not None:
+            current["day_pnl"] = round(day_pnl, 2)
+        elif current_day_pnl is not None:
+            current["day_pnl"] = round(current_day_pnl, 2)
+        current_day_pnl_pct = _maybe_num(current.get("day_pnl_pct"))
+        incoming_day_pnl_pct = _maybe_num(raw.get("day_pnl_pct"))
+        if incoming_day_pnl_pct is not None and current_day_pnl_pct is not None:
+            current["day_pnl_pct"] = round(current_day_pnl_pct + incoming_day_pnl_pct, 2)
+        elif incoming_day_pnl_pct is not None:
+            current["day_pnl_pct"] = round(incoming_day_pnl_pct, 2)
+        elif current_day_pnl_pct is not None:
+            current["day_pnl_pct"] = round(current_day_pnl_pct, 2)
         current["_weighted_avg_sum"] = round(_num(current.get("_weighted_avg_sum")) + (_num(raw.get("avg_price")) * qty * multiplier if raw.get("avg_price") is not None else cost_basis), 6)
         current["_weighted_last_sum"] = round(_num(current.get("_weighted_last_sum")) + (_num(raw.get("last")) * qty if raw.get("last") is not None else market_value), 6)
         current["_weighted_qty"] = round(_num(current.get("_weighted_qty")) + (qty * multiplier if qty else multiplier), 6)
@@ -607,6 +767,7 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         else:
             row.setdefault("multiplier", _num(row.get("multiplier") or 1, 1))
         row["portfolio_pct"] = _num(row.get("portfolio_pct"))
+        row = _finalize_position_metrics(row)
         row = _apply_position_metric_provenance(row)
         aggregated.append(row)
     return aggregated
@@ -653,7 +814,7 @@ def _apply_position_metric_provenance(row: Dict[str, Any]) -> Dict[str, Any]:
         "market_value": (row.get("market_value"), quote_provider),
         "day_change": (row.get("day_change"), quote_provider),
         "day_pnl": (row.get("day_pnl"), quote_provider),
-        "day_pnl_pct": (row.get("day_change_pct"), quote_provider),
+        "day_pnl_pct": (row.get("day_pnl_pct"), quote_provider),
         "unrealized": (row.get("unrealized"), quote_provider),
         "unrealized_pct": (row.get("unrealized_pct"), quote_provider),
         "risk": (row.get("risk"), str(row.get("risk_source") or "missing")),
@@ -674,6 +835,12 @@ def _apply_position_metric_provenance(row: Dict[str, Any]) -> Dict[str, Any]:
             state["reason"] = "Value unavailable from provider."
             missing_metrics.append({"field": field, "provider": provider, "reason": state["reason"]})
         metric_states[field] = state
+    if row.get("calculationProvenance"):
+        metric_states["day_change"]["calculationProvenance"] = row["calculationProvenance"].get("day_change")
+        metric_states["day_pnl"]["calculationProvenance"] = row["calculationProvenance"].get("day_pnl")
+        metric_states["day_pnl_pct"]["calculationProvenance"] = row["calculationProvenance"].get("day_pnl_pct")
+        metric_states["unrealized"]["calculationProvenance"] = row["calculationProvenance"].get("unrealized")
+        metric_states["unrealized_pct"]["calculationProvenance"] = row["calculationProvenance"].get("unrealized_pct")
     row["metricStates"] = metric_states
     row["missingMetrics"] = missing_metrics
     return row
@@ -1772,20 +1939,30 @@ class IbkrLivePortfolioProvider:
             if isinstance(node, dict) and node.get("currency"):
                 currency = node["currency"]
                 break
-        total_cb = sum(_num(p.get("cost_basis")) for p in positions)
-        total_unr = sum(_num(p.get("unrealized")) for p in positions)
-        total_daily_pnl = sum(_num(p.get("day_pnl")) for p in positions if p.get("day_pnl") is not None)
+        total_cb_values = [_maybe_num(p.get("cost_basis")) for p in positions if p.get("cost_basis") is not None]
+        total_unr_values = [_maybe_num(p.get("unrealized")) for p in positions if p.get("unrealized") is not None]
+        total_daily_pnl_values = [_maybe_num(p.get("day_pnl")) for p in positions if p.get("day_pnl") is not None]
+        total_previous_market_value_values = [_maybe_num(p.get("previous_market_value")) for p in positions if p.get("previous_market_value") is not None]
+        total_cb = round(sum(total_cb_values), 2) if total_cb_values else None
+        total_unr = round(sum(total_unr_values), 2) if total_unr_values else None
+        total_daily_pnl = round(sum(total_daily_pnl_values), 2) if total_daily_pnl_values else None
+        total_previous_market_value = round(sum(total_previous_market_value_values), 2) if total_previous_market_value_values else None
         daily_pnl = None
         daily_pnl_pct = None
+        daily_pnl_source = None
         if pnl:
             daily_pnl = pnl.get("daily_pnl")
             daily_pnl_pct = pnl.get("daily_pnl_pct")
-        if daily_pnl is None:
+            daily_pnl_source = "pnl_endpoint"
+        if positions:
+            daily_pnl = total_daily_pnl
+            daily_pnl_source = "positions"
+        elif daily_pnl is None:
             field_pnl = _field("dailyPnl", "dailyPnL", "dayPnl", "dayPnL", "pnl", "daily_pnl", "dailyProfitLoss")
-            daily_pnl = field_pnl if field_pnl is not None else (round(total_daily_pnl, 2) if positions else None)
+            daily_pnl = field_pnl
+            daily_pnl_source = "summary_field" if field_pnl is not None else "missing"
         if daily_pnl_pct is None and daily_pnl is not None:
-            prev_net_liq = _field("previousNetLiquidation", "prevNetLiquidation", "priorNetLiquidation")
-            previous_portfolio_value = prev_net_liq
+            previous_portfolio_value = total_previous_market_value if total_previous_market_value not in (None, 0) else _field("previousNetLiquidation", "prevNetLiquidation", "priorNetLiquidation")
             if previous_portfolio_value in (None, 0) and total_value is not None and daily_pnl is not None:
                 previous_portfolio_value = total_value - daily_pnl
             if previous_portfolio_value not in (None, 0):
@@ -1806,8 +1983,8 @@ class IbkrLivePortfolioProvider:
             "currency": currency,
             "daily_pnl": round(daily_pnl, 2) if daily_pnl is not None else None,
             "daily_pnl_pct": round(daily_pnl_pct, 2) if daily_pnl_pct is not None else None,
-            "unrealized": round(total_unr, 2),
-            "unrealized_pct": round(total_unr / total_cb * 100, 2) if total_cb else 0,
+            "unrealized": round(total_unr, 2) if total_unr is not None else None,
+            "unrealized_pct": round(total_unr / total_cb * 100, 2) if total_cb not in (None, 0) and total_unr is not None else None,
             "positions_count": len(positions),
             "lastRefresh": datetime.now(timezone.utc).isoformat(),
             "nextRefresh": (datetime.now(timezone.utc) + timedelta(seconds=self._CACHE_TTL_SECONDS)).isoformat(),
@@ -1817,6 +1994,30 @@ class IbkrLivePortfolioProvider:
             "pricesAgeSeconds": _position_quote_refresh_age(prices_last_refresh) if prices_last_refresh else None,
             "positionsLastRefresh": positions_last_refresh,
             "summaryLastRefresh": datetime.now(timezone.utc).isoformat(),
+            "calculationProvenance": {
+                "daily_pnl": {
+                    "formula": "sum(position.day_pnl)",
+                    "value": round(daily_pnl, 2) if daily_pnl is not None else None,
+                    "source": daily_pnl_source or ("positions" if positions else "summary_field"),
+                    "position_count": len(positions),
+                    "pnl_endpoint_value": _maybe_num(pnl.get("daily_pnl")) if pnl else None,
+                },
+                "daily_pnl_pct": {
+                    "formula": "daily_pnl / previous_portfolio_value * 100",
+                    "value": round(daily_pnl_pct, 2) if daily_pnl_pct is not None else None,
+                    "previous_portfolio_value": total_previous_market_value if total_previous_market_value not in (None, 0) else _field("previousNetLiquidation", "prevNetLiquidation", "priorNetLiquidation"),
+                },
+                "unrealized": {
+                    "formula": "sum(position.unrealized)",
+                    "value": round(total_unr, 2) if total_unr is not None else None,
+                    "source": "positions",
+                },
+                "unrealized_pct": {
+                    "formula": "unrealized / cost_basis * 100",
+                    "value": round(total_unr / total_cb * 100, 2) if total_cb not in (None, 0) and total_unr is not None else None,
+                    "source": "positions",
+                },
+            },
         }
 
     def _normalize_live_trades(self, raw_trades: List[Dict[str, Any]], account_id: str) -> List[Dict[str, Any]]:

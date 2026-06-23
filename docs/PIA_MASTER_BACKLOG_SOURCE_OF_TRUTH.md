@@ -56,6 +56,7 @@ Developers may stop only for:
 - HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 restores explicit research section missing states, hardens live quote / metric contracts, and prevents null risk guards from crashing live portfolio routes.
 - HERMES-MOBILE-LIVE-REFRESH-BLINK-041 stabilizes mobile live refresh by preserving dashboard and portfolio identity across polls, memoizing the portfolio view shell, and preventing mock fallback flashes during live updates. Build passed; PO UAT pending.
 - HERMES-LIVE-QUOTES-037 ties the stock hero and AI context consumers to the live dashboard quote seed, so held symbols follow the same live quote source as the position table and debug live-quotes contract.
+- HERMES-LIVE-POSITION-METRICS-038 recalculates live day P/L, day %, and unrealized from validated quote inputs, removes fake zero fallbacks, and emits calculation provenance in position, summary, and debug payloads.
 
 ## Sprint Summary
 
@@ -295,6 +296,12 @@ Developers may stop only for:
   - `python -m unittest discover -s tests -p 'test_*.py'` passed with 9 tests.
   - Direct local endpoint checks showed `/api/portfolio/provider/status`, `/api/portfolio/live/positions`, and `/api/portfolio/live/summary` still falling back to `LAST_UPDATE` in this environment because the long-lived Gateway-connected process is unavailable here.
   - `stock` and AI-context code paths now read from the live portfolio quote cache when the live provider is active; placeholder momentum/risk/news scores are suppressed in code and covered by backend regression tests.
+- Latest HERMES-LIVE-POSITION-METRICS-038 validation, 2026-06-23:
+  - `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/tests/test_portfolio_metrics.py` passed.
+  - `python -m unittest tests.test_portfolio_metrics` passed with 15 tests.
+  - Backend regression coverage now verifies stock, option, mixed-portfolio, nullable-input, and summary aggregation behavior without fake zero daily P/L.
+  - `/api/debug/live-quotes` now surfaces day P/L, unrealized, and calculation provenance for direct inspection.
+  - Live gateway validation remains pending in this workspace because the long-lived authenticated Client Portal Gateway process is offline here.
 - Latest HERMES-IBKR-HOTFIX-010 validation, 2026-06-22:
   - `python -m py_compile backend/services/portfolio_providers.py backend/services/settings_store.py backend/main.py backend/services/manual_holdings.py backend/services/ibkr_service.py` passed.
   - Live provider cache TTL reduced to 12 seconds and invalidated on mode changes so `/dashboard` and `/api/portfolio/*` cannot keep serving a frozen live bundle after a mode switch.
@@ -580,6 +587,15 @@ Status: Implemented and build-validated; Product Owner mobile UAT pending.
 - Diagnostics: dev-only mount / unmount logging added for `MobileExperience`, `MobilePortfolioTable`, and `PositionCards`, plus a loading-toggle trace after the first dashboard load.
 - Validation: `npm run build` passed in `frontend/`.
 - Known limitation: PO UAT evidence is still pending in this workspace.
+
+### v0.3.40 - Live Position Metric Recalculation and Provenance
+Date: 2026-06-23
+Status: Implemented and locally validated; Product Owner live-Gateway UAT pending.
+- Backlog: HERMES-LIVE-POSITION-METRICS-038 is IMPLEMENTED / LOCAL PASS.
+- Backend: live position finalization now recalculates day_change, day_change_pct, day_pnl, day_pnl_pct, unrealized, and unrealized_pct from live quote inputs when available; nullable inputs stay nullable instead of collapsing to fake zero values.
+- Backend: portfolio summary now derives daily_pnl from the summed positions and exposes calculationProvenance on positions, summary, and `/api/debug/live-quotes`.
+- Validation: `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/tests/test_portfolio_metrics.py` and `python -m unittest tests.test_portfolio_metrics` passed.
+- Known limitation: live Gateway endpoint validation remains pending in this workspace because the long-lived authenticated Client Portal Gateway process is offline here.
 
 ### v0.3.39 - Live Quote Propagation Alignment
 Date: 2026-06-23

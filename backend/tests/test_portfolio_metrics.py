@@ -82,6 +82,60 @@ class PortfolioMetricsTests(unittest.TestCase):
         self.assertEqual(row["day_pnl"], 15.0)
         self.assertEqual(row["market_value"], 165.0)
 
+    def test_aggregate_positions_recomputes_live_day_pnl_from_quotes(self) -> None:
+        rows = [
+            {
+                "accountId": "DU123",
+                "conid": "202",
+                "assetClass": "STK",
+                "contractDesc": "AMD",
+                "currency": "USD",
+                "symbol": "AMD",
+                "qty": 10,
+                "previousClose": 100.0,
+                "last": 120.0,
+                "market_value": 1200.0,
+                "cost_basis": 1000.0,
+                "day_pnl": 0.0,
+                "day_change": 20.0,
+                "day_change_pct": 20.0,
+                "quoteLastRefresh": "2026-06-23T12:00:00+00:00",
+                "quoteSource": "IBKR_MARKETDATA_SNAPSHOT",
+            }
+        ]
+        aggregated = _aggregate_positions(rows)
+        row = aggregated[0]
+        self.assertEqual(row["day_pnl"], 200.0)
+        self.assertEqual(row["day_pnl_pct"], 20.0)
+        self.assertEqual(row["unrealized"], 200.0)
+        self.assertEqual(row["unrealized_pct"], 20.0)
+        self.assertIn("calculationProvenance", row)
+        self.assertEqual(row["calculationProvenance"]["day_pnl"]["value"], 200.0)
+        self.assertEqual(row["calculationProvenance"]["day_pnl"]["source"], "derived")
+
+    def test_aggregate_positions_does_not_emit_fake_zero_day_pnl_when_inputs_missing(self) -> None:
+        rows = [
+            {
+                "accountId": "DU123",
+                "conid": "303",
+                "assetClass": "STK",
+                "contractDesc": "NBIS",
+                "currency": "USD",
+                "symbol": "NBIS",
+                "qty": 10,
+                "last": 120.0,
+                "day_pnl": 0.0,
+                "quoteLastRefresh": "2026-06-23T12:00:00+00:00",
+                "quoteSource": "IBKR_MARKETDATA_SNAPSHOT",
+            }
+        ]
+        aggregated = _aggregate_positions(rows)
+        row = aggregated[0]
+        self.assertIsNone(row["day_pnl"])
+        self.assertIsNone(row["day_pnl_pct"])
+        self.assertIn("calculationProvenance", row)
+        self.assertIsNone(row["calculationProvenance"]["day_pnl"]["value"])
+
     def test_live_positions_use_cached_ai_scores_and_placeholders(self) -> None:
         provider = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
         with patch("services.portfolio_providers._cached_ai_technical_snapshot", return_value={
@@ -208,15 +262,31 @@ class PortfolioMetricsTests(unittest.TestCase):
     def test_summary_aggregates_daily_pnl_from_positions(self) -> None:
         provider = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
         summary = provider._normalize_live_summary(
-            raw_summary={},
+            raw_summary={"daily_pnl": 0.0, "daily_pnl_pct": 0.0},
             positions=[
-                {"market_value": 100.0, "day_pnl": 5.0, "cost_basis": 90.0, "unrealized": 10.0},
-                {"market_value": 200.0, "day_pnl": -2.0, "cost_basis": 150.0, "unrealized": 50.0},
+                {"market_value": 100.0, "day_pnl": 5.0, "previous_market_value": 95.0, "cost_basis": 90.0, "unrealized": 10.0},
+                {"market_value": 200.0, "day_pnl": -2.0, "previous_market_value": 198.0, "cost_basis": 150.0, "unrealized": 50.0},
             ],
             pnl=None,
         )
         self.assertEqual(summary["daily_pnl"], 3.0)
-        self.assertAlmostEqual(summary["daily_pnl_pct"], 1.01, places=2)
+        self.assertAlmostEqual(summary["daily_pnl_pct"], 1.02, places=2)
+        self.assertIn("calculationProvenance", summary)
+        self.assertEqual(summary["calculationProvenance"]["daily_pnl"]["source"], "positions")
+
+    def test_summary_leaves_day_pnl_null_when_position_inputs_missing(self) -> None:
+        provider = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
+        summary = provider._normalize_live_summary(
+            raw_summary={},
+            positions=[
+                {"market_value": 100.0, "day_pnl": None, "cost_basis": None, "unrealized": None},
+            ],
+            pnl=None,
+        )
+        self.assertIsNone(summary["daily_pnl"])
+        self.assertIsNone(summary["daily_pnl_pct"])
+        self.assertIsNone(summary["unrealized"])
+        self.assertIsNone(summary["unrealized_pct"])
 
 
 if __name__ == "__main__":
