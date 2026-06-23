@@ -127,6 +127,24 @@ def _maybe_num(v: Any) -> Optional[float]:
         return None
 
 
+# IBKR Client Portal field 31 (last price) may carry a single-letter prefix:
+#   C = Close  H = Halted  O = Open  B = Bid  A = Ask  E = Extended  N = No data
+# Strip it so _maybe_num can parse the numeric part.
+_IBKR_PRICE_PREFIX_CHARS = frozenset("CHOBAENRchobaenr")
+
+def _ibkr_price(v: Any) -> Optional[float]:
+    """Parse an IBKR price field, stripping any leading status prefix."""
+    if v is None or v == "":
+        return None
+    s = str(v).strip()
+    if s and s[0] in _IBKR_PRICE_PREFIX_CHARS:
+        s = s[1:]
+    try:
+        return float(s) if s else None
+    except (ValueError, TypeError):
+        return None
+
+
 def provider_mode_label(mode: str) -> str:
     return _MODE_LABELS.get(mode, mode or "Mock")
 
@@ -1041,14 +1059,22 @@ class IbkrLivePortfolioProvider:
                 conid = str(entry.get("conid") or entry.get("conidEx") or entry.get("conId") or "").strip()
                 if not conid:
                     continue
-                symbol = str(entry.get("symbol") or entry.get("ticker") or entry.get("55") or "").strip().upper()
+                symbol = str(entry.get("55") or entry.get("symbol") or entry.get("ticker") or "").strip().upper()
                 quote_last_refresh = refresh_at
+                # IBKR field 85 = Ask, field 86 = Close/PrevClose (not the reverse).
+                # Field 31 may carry a prefix (C=close, H=halted, etc.) — strip it.
+                raw_last = entry.get("31") or entry.get("last") or entry.get("lastPrice") or entry.get("mktPrice")
+                last_val = _ibkr_price(raw_last)
+                # Track whether IBKR reported a closing price (C prefix) vs a live trade
+                price_prefix = str(raw_last)[0].upper() if raw_last and str(raw_last)[0].upper() in _IBKR_PRICE_PREFIX_CHARS else None
                 quote_map[conid] = {
                     "conid": conid,
-                    "last": _maybe_num(entry.get("31") or entry.get("last") or entry.get("lastPrice") or entry.get("mktPrice")),
+                    "symbol": symbol,
+                    "last": last_val,
+                    "pricePrefix": price_prefix,
                     "bid": _maybe_num(entry.get("84") or entry.get("bid")),
-                    "ask": _maybe_num(entry.get("86") or entry.get("ask")),
-                    "previous_close": _maybe_num(entry.get("85") or entry.get("previousClose") or entry.get("prevClose") or entry.get("close")),
+                    "ask": _maybe_num(entry.get("85") or entry.get("ask")),
+                    "previous_close": _maybe_num(entry.get("86") or entry.get("previousClose") or entry.get("prevClose") or entry.get("close")),
                     "volume": _maybe_num(entry.get("87") or entry.get("volume")),
                     "bid_size": _maybe_num(entry.get("88") or entry.get("bidSize")),
                     "quoteLastRefresh": quote_last_refresh,
