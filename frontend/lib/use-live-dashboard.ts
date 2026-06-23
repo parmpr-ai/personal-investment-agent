@@ -19,6 +19,39 @@ function dashboardIsStale(data: any) {
   return Number.isFinite(responseAt) && Number.isFinite(quoteAt) && responseAt - quoteAt > DASHBOARD_CACHE_TTL_MS
 }
 
+function isPlainObject(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function stabilizeValue(prev: any, next: any): any {
+  if (Object.is(prev, next)) return prev
+  if (Array.isArray(prev) && Array.isArray(next)) {
+    if (prev.length !== next.length) {
+      return next.map((item, index) => stabilizeValue(prev[index], item))
+    }
+    let changed = false
+    const merged = next.map((item, index) => {
+      const value = stabilizeValue(prev[index], item)
+      if (value !== prev[index]) changed = true
+      return value
+    })
+    return changed ? merged : prev
+  }
+  if (isPlainObject(prev) && isPlainObject(next)) {
+    const keys = new Set([...Object.keys(prev), ...Object.keys(next)])
+    let changed = false
+    const merged: Record<string, any> = {}
+    for (const key of keys) {
+      const value = stabilizeValue(prev[key], next[key])
+      merged[key] = value
+      if (value !== prev[key] || !Object.prototype.hasOwnProperty.call(prev, key)) changed = true
+    }
+    if (!changed && Object.keys(prev).length === Object.keys(next).length) return prev
+    return merged
+  }
+  return next
+}
+
 async function requestDashboard() {
   const response = await fetch(apiUrl('/dashboard'), { cache: 'no-store' })
   const data = await response.json().catch(() => ({}))
@@ -35,7 +68,7 @@ export function useLiveDashboard() {
 
   const commitDashboard = useCallback((data: any) => {
     if (!activeRef.current || !data || typeof data !== 'object') return
-    setDashboard(data)
+    setDashboard((current) => stabilizeValue(current, data))
     setBackendStatus('ok')
   }, [])
 

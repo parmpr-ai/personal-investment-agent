@@ -48,12 +48,13 @@ Developers may stop only for:
   - Stock workspace expansion around Technical, Company, News, Videos, and Analyst Targets. Analyst Targets V2 completed for HERMES scope.
   - Notification Center refactor for mobile-safe visibility.
   - Performance smoothing for motion/render cost.
-  - Mobile correction mock review for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
-  - IBKR live portfolio correctness and 3-mode portfolio selection resolved; validate Product Owner review of the new UAT screenshots at `frontend/uat-screenshots/pia-ibkr-live-007/`.
-  - HERMES-IBKR-UAT-009 hardens live status evaluation, duplicate detection, option normalization, and snapshot history. Offline validation confirms no mock leakage when live mode falls back to last-update.
-  - HERMES-PORTFOLIO-ASSETCLASS-001 extends the portfolio model with explicit `assetClass` normalization for stock, option, and crypto across mock, snapshot, live, and manual positions.
-  - HERMES-LIVE-POSITION-METRICS-MAPPING-036 removes fake day metric / score defaults from live stock surfaces, preserves AI-risk provenance, and aligns stock hero quote reads with the live portfolio quote cache.
-  - HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 restores explicit research section missing states, hardens live quote / metric contracts, and prevents null risk guards from crashing live portfolio routes.
+- Mobile correction mock review for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
+- IBKR live portfolio correctness and 3-mode portfolio selection resolved; validate Product Owner review of the new UAT screenshots at `frontend/uat-screenshots/pia-ibkr-live-007/`.
+- HERMES-IBKR-UAT-009 hardens live status evaluation, duplicate detection, option normalization, and snapshot history. Offline validation confirms no mock leakage when live mode falls back to last-update.
+- HERMES-PORTFOLIO-ASSETCLASS-001 extends the portfolio model with explicit `assetClass` normalization for stock, option, and crypto across mock, snapshot, live, and manual positions.
+- HERMES-LIVE-POSITION-METRICS-MAPPING-036 removes fake day metric / score defaults from live stock surfaces, preserves AI-risk provenance, and aligns stock hero quote reads with the live portfolio quote cache.
+- HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 restores explicit research section missing states, hardens live quote / metric contracts, and prevents null risk guards from crashing live portfolio routes.
+- HERMES-MOBILE-LIVE-REFRESH-BLINK-041 stabilizes mobile live refresh by preserving dashboard and portfolio identity across polls, memoizing the portfolio view shell, and preventing mock fallback flashes during live updates. Build passed; PO UAT pending.
 
 ## Sprint Summary
 
@@ -569,6 +570,15 @@ Status: Implemented and locally validated; Product Owner real-device UAT pending
 - UAT: Mobile/Desktop rendered `$202.00` from a second socket frame; stale/polling sequence rendered `$100 -> $200 -> $300`; reconnect created a second socket; TFA poll transitioned in 2248 ms.
 - Evidence: `frontend/uat-screenshots/hermes-live-refresh-fix-025/` and `docs/HERMES-LIVE-REFRESH-FIX-025.md`.
 - Known limitation: Gateway was unavailable during final 2026-06-23 UAT, so changing-value UI evidence used controlled contract frames; live provider correctness was validated separately in task 017.
+
+### v0.3.38 - Mobile Live Refresh Blink Stabilization
+Date: 2026-06-23
+Status: Implemented and build-validated; Product Owner mobile UAT pending.
+- Backlog: HERMES-MOBILE-LIVE-REFRESH-BLINK-041 is IMPLEMENTED / BUILD PASS.
+- Frontend: `useLiveDashboard` now stabilizes nested dashboard data across polls, mobile home sections are memoized, and portfolio live mode preserves the last non-empty live rows so mock fallback data does not flash during refresh.
+- Diagnostics: dev-only mount / unmount logging added for `MobileExperience`, `MobilePortfolioTable`, and `PositionCards`, plus a loading-toggle trace after the first dashboard load.
+- Validation: `npm run build` passed in `frontend/`.
+- Known limitation: PO UAT evidence is still pending in this workspace.
 
 ### v0.3.37 - Live Position Metrics Mapping
 Date: 2026-06-23

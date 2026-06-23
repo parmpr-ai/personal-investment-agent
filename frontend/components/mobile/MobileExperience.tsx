@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent, ReactNode } from 'react'
 import {
   AlertTriangle,
@@ -1268,6 +1268,13 @@ function PositionCard({
 }
 
 function PositionCards({ rows, onSelect, hidden = false, fields, order, tf, grid = '1x1' }: { rows: any[]; onSelect: (position: any) => void; hidden?: boolean; fields: Set<CardFieldKey>; order: CardFieldKey[]; tf: SparkTf; grid?: PortfolioCardGrid }) {
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[PIA] PositionCards mounted')
+      return () => console.debug('[PIA] PositionCards unmounted')
+    }
+    return undefined
+  }, [])
   const positions = rows.length ? rows : positionFallback
   return (
     <SwipeRail
@@ -1290,6 +1297,19 @@ function PositionCards({ rows, onSelect, hidden = false, fields, order, tf, grid
     />
   )
 }
+
+const MemoPositionCards = memo(PositionCards, (prev, next) => {
+  if (prev.hidden !== next.hidden) return false
+  if (prev.fields !== next.fields) return false
+  if (prev.order !== next.order) return false
+  if (prev.tf !== next.tf) return false
+  if (prev.grid !== next.grid) return false
+  if (prev.rows.length !== next.rows.length) return false
+  for (let i = 0; i < prev.rows.length; i += 1) {
+    if (prev.rows[i] !== next.rows[i]) return false
+  }
+  return true
+})
 
 const WL_COL_DEFS: { key: string; label: string }[] = [
   { key: 'instrument',  label: 'INSTRUMENT' },
@@ -2930,6 +2950,13 @@ function AddManualHoldingSheet({
 function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, sparkTf, advancedDefs }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean; visibleCols: Set<ColKey>; colOrder: ColKey[]; sparkTf: SparkTf; advancedDefs: AdvancedColDef[] }) {
   const [sort, setSort] = useState<TableSortKey>('weight')
   const [dir, setDir] = useState<'desc' | 'asc'>('desc')
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[PIA] MobilePortfolioTable mounted')
+      return () => console.debug('[PIA] MobilePortfolioTable unmounted')
+    }
+    return undefined
+  }, [])
 
   function toggleSort(col: TableSortKey) {
     if (sort === col) setDir((d) => (d === 'desc' ? 'asc' : 'desc'))
@@ -3145,6 +3172,19 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
   )
 }
 
+const MemoMobilePortfolioTable = memo(MobilePortfolioTable, (prev, next) => {
+  if (prev.hidden !== next.hidden) return false
+  if (prev.visibleCols !== next.visibleCols) return false
+  if (prev.colOrder !== next.colOrder) return false
+  if (prev.sparkTf !== next.sparkTf) return false
+  if (prev.advancedDefs !== next.advancedDefs) return false
+  if (prev.rows.length !== next.rows.length) return false
+  for (let i = 0; i < prev.rows.length; i += 1) {
+    if (prev.rows[i] !== next.rows[i]) return false
+  }
+  return true
+})
+
 // Contextual header titles keyed by active workspace/view. Short, mobile-first
 // labels per PIA-UX-018; falls back to the workspace registry title otherwise.
 const HEADER_TITLE_OVERRIDES: Record<string, string> = {
@@ -3182,12 +3222,47 @@ export default function MobileExperience() {
   const [rescanning, setRescanning] = useState(false)
   const [rescanStatus, setRescanStatus] = useState('')
   const [sourceHealth, setSourceHealth] = useState<any[]>([])
+  const hasSeenDashboardRef = useRef(false)
+  const prevHasDashboardRef = useRef(false)
+  const lastLivePositionsRef = useRef<any[] | null>(null)
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[PIA] MobileExperience mounted')
+      return () => console.debug('[PIA] MobileExperience unmounted')
+    }
+    return undefined
+  }, [])
 
   const portfolio = dashboard?.portfolio || {}
   const positions = useMemo(
-    () => dedupePortfolioPositions(portfolio.positions || (portfolio.source === 'MOCK' || portfolio.mode === 'mock' ? positionFallback : [])),
+    () => {
+      const next = dedupePortfolioPositions(portfolio.positions || [])
+      const liveMode =
+        portfolio.source === 'IBKR_LIVE' ||
+        portfolio.mode === 'ibkr-live' ||
+        portfolio.source === 'LAST_UPDATE' ||
+        portfolio.mode === 'last-update'
+      if (liveMode) {
+        if (next.length) {
+          lastLivePositionsRef.current = next
+          return next
+        }
+        if (lastLivePositionsRef.current?.length) return lastLivePositionsRef.current
+      }
+      if (next.length) return next
+      return portfolio.source === 'MOCK' || portfolio.mode === 'mock' ? positionFallback : []
+    },
     [portfolio.positions, portfolio.source, portfolio.mode],
   )
+  useEffect(() => {
+    const hasDashboard = Boolean(dashboard)
+    if (hasDashboard) hasSeenDashboardRef.current = true
+    if (process.env.NODE_ENV !== 'production' && hasSeenDashboardRef.current && prevHasDashboardRef.current !== hasDashboard) {
+      console.debug('[PIA] MobileExperience loading state toggled after initial load', { hasDashboard })
+    }
+    prevHasDashboardRef.current = hasDashboard
+  }, [dashboard])
   // Dev/test helper: ?si=NVDA auto-opens SI panel (used by UAT scripts)
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -3221,6 +3296,14 @@ export default function MobileExperience() {
   const advancedFieldDefs = useMemo(() => discoverAdvancedFields(positions), [positions])
   const scanner = dashboard?.scanner || scannerFallback
   const privacyHidden = mounted && hidden
+  const homeSections = useMemo(() => ({
+    'market-pulse': <MarketPulse items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />,
+    'portfolio-insights': <PortfolioInsights portfolio={portfolio} positions={positions} hidden={privacyHidden} />,
+    'urgent-alerts': <UrgentAlerts portfolio={portfolio} />,
+    'daily-brief': <DailyBrief portfolio={portfolio} />,
+    'scanner-setups': <ScannerSetups scanner={scanner} onSelect={setSelected} hidden={privacyHidden} />,
+    'watchlist-movers': <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} hidden={privacyHidden} />,
+  }), [dashboard?.macros?.market_strip, portfolio, positions, privacyHidden, scanner])
   const searchUniverse = useMemo(() => {
     const watchlist = dashboard?.watchlist || []
     const bySymbol = new Map<string, any>()
@@ -3408,14 +3491,7 @@ export default function MobileExperience() {
           onMoveUp={moveHomeSectionUp}
           onMoveDown={moveHomeSectionDown}
           onReset={resetHomeSections}
-          sections={{
-            'market-pulse': <MarketPulse items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />,
-            'portfolio-insights': <PortfolioInsights portfolio={portfolio} positions={positions} hidden={privacyHidden} />,
-            'urgent-alerts': <UrgentAlerts portfolio={portfolio} />,
-            'daily-brief': <DailyBrief portfolio={portfolio} />,
-            'scanner-setups': <ScannerSetups scanner={scanner} onSelect={setSelected} hidden={privacyHidden} />,
-            'watchlist-movers': <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} hidden={privacyHidden} />,
-          }}
+          sections={homeSections}
         />
       )}
 
@@ -3560,8 +3636,8 @@ export default function MobileExperience() {
 
             </div>
             {portfolioView === 'table'
-              ? <MobilePortfolioTable rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} advancedDefs={advancedFieldDefs} />
-              : <PositionCards rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} order={cardOrder} tf={sparkTf} grid={portfolioGridFromView(portfolioView)} />
+              ? <MemoMobilePortfolioTable rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} advancedDefs={advancedFieldDefs} />
+              : <MemoPositionCards rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} order={cardOrder} tf={sparkTf} grid={portfolioGridFromView(portfolioView)} />
             }
           </div>
         </>

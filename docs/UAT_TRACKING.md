@@ -16,6 +16,22 @@ Format per entry:
 
 ## UAT Log
 
+### HERMES-MOBILE-LIVE-REFRESH-BLINK-041
+
+Status: PENDING
+Owner: HERMES
+Date: 2026-06-23
+Approved Mock: N/A
+Design Lock Commit: N/A
+Implementation Commit: pending commit in this branch
+
+Build: PASS (`npm run build`)
+
+Notes:
+- Mobile live dashboard updates now preserve component identity across polls and keep the last non-empty live portfolio rows to avoid mock fallback flashes.
+- Dev-only remount / loading-toggle diagnostics added for MobileExperience and portfolio table/card views.
+- PO UAT evidence is still pending in this workspace.
+
 ### AI Intelligence Compact V3 — ARTEMIS-AI-COMPACT-REDESIGN-001 / CR-AI-COMPACT-REDESIGN-002 / -003
 
 Status: PENDING (PASS decision)
