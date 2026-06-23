@@ -249,16 +249,31 @@ def _market_price(ticker: str) -> dict[str, Any]:
     cache_seconds = PRICE_CACHE_SECONDS if cached and cached[1].get("price") is not None else 1
     if cached and now - cached[0] < cache_seconds:
         return cached[1]
-    out: dict[str, Any] = {"price": None, "currency": None, "status": "manual_fallback"}
+    out: dict[str, Any] = {
+        "price": None,
+        "currency": None,
+        "status": "manual_fallback",
+        "quote_source": "STALE",
+        "quote_timestamp": None,
+        "quote_age_seconds": None,
+        "is_live_quote": False,
+    }
     try:
-        from services.connectors import yahoo_fundamentals
+        from services.price_providers import get_yahoo_live_quote
 
-        data = yahoo_fundamentals(key, wait_timeout_seconds=0.55)
+        quote = get_yahoo_live_quote(key, wait_timeout_seconds=0.55)
         out = {
-            "price": data.get("price"),
-            "currency": data.get("currency"),
-            "status": data.get("status") or "manual_fallback",
-            "source": data.get("source"),
+            "price": quote.get("last"),
+            "currency": quote.get("currency"),
+            "status": "ok" if quote.get("last") is not None else "manual_fallback",
+            "source": "YAHOO",
+            "quote_source": quote.get("priceSource") or quote.get("quoteSource") or "STALE",
+            "quote_timestamp": quote.get("quoteTimestamp"),
+            "quote_age_seconds": quote.get("quoteAgeSeconds"),
+            "is_live_quote": bool(quote.get("isLiveQuote")),
+            "previous_close": quote.get("previousClose"),
+            "day_change": quote.get("dayChange"),
+            "day_change_pct": quote.get("dayChangePercent"),
         }
     except Exception as exc:
         out["error"] = str(exc)
@@ -340,6 +355,12 @@ def manual_positions(total_before_cash: float = 0) -> list[dict[str, Any]]:
                 "notes": holding["notes"],
                 "pricing_status": pricing.get("status", "manual_fallback"),
                 "pricing_source": pricing.get("source", "manual"),
+                "quoteSource": pricing.get("quote_source") or "STALE",
+                "quoteLastRefresh": pricing.get("quote_timestamp"),
+                "quoteAgeSeconds": pricing.get("quote_age_seconds"),
+                "isLiveQuote": bool(pricing.get("is_live_quote")),
+                "positionSource": "MANUAL_HOLDINGS",
+                "priceSource": pricing.get("quote_source") or "STALE",
                 "manual": True,
             }
         )

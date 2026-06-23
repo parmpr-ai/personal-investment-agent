@@ -42,6 +42,7 @@ import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
 import CompanyLogo from '../intelligence/CompanyLogo'
 import { preloadStockIntelligence } from '../intelligence/useStockIntelligence'
 import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolveAssetClass, resolvePositionKey } from '../../lib/pia-api'
+import { useCurrency } from '../../lib/use-currency'
 import { useLiveDashboard } from '../../lib/use-live-dashboard'
 import ReorderList from './ReorderList'
 import {
@@ -883,12 +884,15 @@ function MarketPulse({ items, hidden = false }: { items: any[]; hidden?: boolean
 
 function PortfolioInsights({ portfolio, positions, hidden }: { portfolio: any; positions: any[]; hidden?: boolean }) {
   const top = positions[0] || positionFallback[0]
+  const { currency, toggle: toggleCurrency, fmt } = useCurrency(Number(portfolio.fxRate || 0.87))
   const insights = [
     {
       title: 'Net Worth',
-      value: hidden ? mask : money(portfolio.total_value || 0),
-      text: hidden ? mask : `${money(portfolio.daily_pnl || 0)} today`,
+      value: hidden ? mask : fmt(portfolio.total_value || 0),
+      text: hidden ? mask : `${fmt(portfolio.daily_pnl || 0)} today`,
       type: 'spark',
+      currency,
+      onToggle: toggleCurrency,
     },
     {
       title: 'Exposure Leader',
@@ -913,7 +917,18 @@ function PortfolioInsights({ portfolio, positions, hidden }: { portfolio: any; p
       items={insights}
       render={(item: any) => (
         <article className="mobile-visual-card mobile-insight-card">
-          <span>{item.title}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <span>{item.title}</span>
+            {item.type === 'spark' && item.onToggle && (
+              <button
+                type="button"
+                className={`cur-chip cur-chip-mobile${item.currency === 'EUR' ? ' eur' : ''}`}
+                onClick={(e) => { e.stopPropagation(); item.onToggle() }}
+              >
+                {item.currency === 'USD' ? '$ USD' : '€ EUR'}
+              </button>
+            )}
+          </div>
           <strong>{item.value}</strong>
           <small>{item.text}</small>
           {item.type === 'spark' && <Sparkline tone="good" />}
@@ -3241,8 +3256,11 @@ export default function MobileExperience() {
       const liveMode =
         portfolio.source === 'IBKR_LIVE' ||
         portfolio.mode === 'ibkr-live' ||
+        String(portfolio.source || '').includes('HYBRID') ||
+        String(portfolio.mode || '').includes('HYBRID') ||
         portfolio.source === 'LAST_UPDATE' ||
-        portfolio.mode === 'last-update'
+        portfolio.mode === 'last-update' ||
+        portfolio.source === 'MANUAL_HOLDINGS_LIVE_QUOTES'
       if (liveMode) {
         if (next.length) {
           lastLivePositionsRef.current = next

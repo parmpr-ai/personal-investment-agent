@@ -39,6 +39,7 @@ Stabilization Sprint / Mobile UAT
 * Mobile live refresh blink stabilization so live polling updates values in place without full-screen remounts
 * Live quote propagation alignment so hero, AI context, and position table follow the same live dashboard seed
 * Live position metric recalculation so day P/L, day %, and unrealized stay derived from live quote inputs with provenance
+* Live price provider fallback so portfolios keep updating with Yahoo Finance quotes when IBKR is disconnected while preserving the latest IBKR positions snapshot
 
 
 

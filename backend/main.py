@@ -206,33 +206,47 @@ def get_portfolio_payload():
   configured_mode=resolution.configured_mode
   p['configured_mode']=configured_mode
   p['mode']=p.get('mode') or configured_mode
-  p['active_source']=resolution.active_source
-  p['fallback_active']=resolution.fallback_active
-  if resolution.fallback_reason:
-   p['fallback_reason']=resolution.fallback_reason
   p['provider_class']=resolution.provider_class
   p['snapshot_available']=p.get('snapshot_available', resolution.snapshot_available)
   p['snapshot_timestamp']=p.get('snapshot_timestamp') or resolution.snapshot_timestamp
-  p['is_live']=bool(resolution.is_live)
-  p['is_stale']=bool(resolution.is_stale or p.get('is_stale'))
-  p['stale_reason']=resolution.stale_reason or p.get('stale_reason')
+  p['nextRefresh']=p.get('nextRefresh')
+  p['positions']=normalize_positions(p.get('positions',[]))
+  if configured_mode == 'mock':
+   p['source']='MOCK'
+   p['active_source']='MOCK'
+   p['portfolioMode']='MOCK'
+   p['positionsSource']='MOCK'
+   p['priceSource']='MOCK'
+   p['activePriceProvider']='MOCK'
+   p['activePositionProvider']='MOCK'
+   p['isLivePositions']=False
+   p['isLivePricing']=False
+   p['isHybrid']=False
+   p['fallback_active']=False
+   p['fallback_reason']=None
+   p['is_live']=False
+   p['is_stale']=False
+   p['stale_reason']=None
+   p=merge_manual_holdings(p,macros,state_module)
+  else:
+   helper = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
+   p = helper._normalize_portfolio_after_price_overlay(p, resolution=resolution)
+  p['positions']=normalize_positions(p.get('positions',[]))
   p['pricesLive']=bool(p.get('pricesLive', False))
   p['pricesLastRefresh']=p.get('pricesLastRefresh')
   p['pricesAgeSeconds']=p.get('pricesAgeSeconds')
   p['positionsLastRefresh']=p.get('positionsLastRefresh') or p.get('positions_refreshed_at')
   p['summaryLastRefresh']=p.get('summaryLastRefresh') or p.get('summary_refreshed_at')
-  p['lastRefresh']=p.get('lastRefresh') or p.get('refreshed_at') or resolution.snapshot_timestamp
-  p['nextRefresh']=p.get('nextRefresh')
-  p['isLiveUpdating']=p.get('isLiveUpdating', bool(resolution.is_live))
-  p['positions']=normalize_positions(p.get('positions',[]))
+  p['lastRefresh']=p.get('lastRefresh') or p.get('refreshed_at') or p.get('summaryLastRefresh') or resolution.snapshot_timestamp
+  p['isLiveUpdating']=p.get('isLiveUpdating', bool(p.get('isLivePricing', False) or resolution.is_live))
   if not p.get('exposures'): p['exposures']=compute_exposures(p.get('positions',[]),p.get('total_value',0))
   if 'guardrails' not in p: p['guardrails']=risk_doctor(p.get('positions',[]),macros)
   if 'today_actions' not in p: p['today_actions']=today_actions(p.get('positions',[]),macros)
   if 'stress_tests' not in p: p['stress_tests']=stress_tests(p.get('total_value',0))
   p['baseCurrency']=p.get('currency','USD')
   p['fxRate']=get_fx_rate('USD','EUR')
-  if configured_mode == 'mock':
-   return merge_manual_holdings(p,macros,state_module)
+  if p.get('portfolioMode') == 'IBKR_LIVE' and not p.get('fallback_active'):
+   p['is_live']=True
   return p
  except Exception as e:
   resolution=resolve_portfolio_provider()
@@ -241,6 +255,14 @@ def get_portfolio_payload():
    'mode': resolution.configured_mode,
    'configured_mode': resolution.configured_mode,
    'active_source': resolution.active_source or 'DISCONNECTED',
+   'portfolioMode': 'LAST_UPDATE_ONLY' if resolution.snapshot_available else 'DISCONNECTED',
+   'positionsSource': 'IBKR_LAST_UPDATE' if resolution.snapshot_available else 'DISCONNECTED',
+   'priceSource': 'STALE',
+   'activePriceProvider': 'STALE',
+   'activePositionProvider': 'IBKR_LAST_UPDATE' if resolution.snapshot_available else 'DISCONNECTED',
+   'isLivePositions': False,
+   'isLivePricing': False,
+   'isHybrid': False,
    'fallback_active': True,
    'fallback_reason': resolution.fallback_reason or str(e),
    'provider_class': resolution.provider_class,
@@ -254,8 +276,10 @@ def get_portfolio_payload():
    'isLiveUpdating': False,
    'pricesLive': False,
    'pricesLastRefresh': None,
+   'lastPriceTimestamp': None,
    'pricesAgeSeconds': None,
    'positionsLastRefresh': None,
+   'lastPositionsTimestamp': resolution.snapshot_timestamp,
    'summaryLastRefresh': None,
    'total_value': 0,
    'cost_basis': 0,
@@ -448,7 +472,8 @@ def ai_intelligence_test(symbols:str='NVDA,AMD,SOFI,NBIS', refresh:bool=False):
 def ai_intelligence(symbol:str, refresh:bool=False):
  live_refresh=False
  try:
-  live_refresh=bool(resolve_portfolio_provider().is_live)
+  provider_status=get_provider_status()
+  live_refresh=bool(provider_status.get('isLivePricing') or provider_status.get('is_live'))
  except Exception:
   live_refresh=False
  def loader():
@@ -558,6 +583,43 @@ def _build_stock_payload(t:str):
  fundamentals_start=time.perf_counter()
  fundamentals=yahoo_fundamentals(t, wait_timeout_seconds=0.65)
  fundamentals_ms=(time.perf_counter()-fundamentals_start)*1000
+ try:
+  from services.price_providers import get_yahoo_live_quote
+
+  live_quote = get_yahoo_live_quote(t, wait_timeout_seconds=0.55)
+ except Exception:
+  live_quote = {}
+ if isinstance(live_quote, dict) and live_quote.get('last') is not None:
+  fundamentals = {
+   **fundamentals,
+   'price': live_quote.get('last'),
+   'regularMarketPrice': live_quote.get('last'),
+   'last': live_quote.get('last'),
+   'prev_close': live_quote.get('previousClose'),
+   'regularMarketPreviousClose': live_quote.get('previousClose'),
+   'day_change': live_quote.get('dayChange'),
+   'day_change_pct': live_quote.get('dayChangePercent'),
+   'quoteSource': live_quote.get('priceSource'),
+   'quoteLastRefresh': live_quote.get('quoteTimestamp'),
+   'quoteAgeSeconds': live_quote.get('quoteAgeSeconds'),
+   'isLiveQuote': live_quote.get('isLiveQuote'),
+  }
+  if not pos or pos.get('quoteStale') or pos.get('priceSource') == 'STALE':
+   pos = {
+    **(pos or {}),
+    'last': live_quote.get('last'),
+    'previousClose': live_quote.get('previousClose'),
+    'prevClose': live_quote.get('previousClose'),
+    'day_change': live_quote.get('dayChange'),
+    'day_change_pct': live_quote.get('dayChangePercent'),
+    'quoteSource': live_quote.get('priceSource'),
+    'priceSource': live_quote.get('priceSource'),
+    'quoteLastRefresh': live_quote.get('quoteTimestamp'),
+    'quoteAgeSeconds': live_quote.get('quoteAgeSeconds'),
+    'isLiveQuote': live_quote.get('isLiveQuote'),
+    'quoteStale': False,
+    'quoteStaleReason': None,
+   }
  forecast={'bull':'Momentum + positive catalysts continue','base':'Range trade until news confirms thesis','bear':'Macro/yields or thesis deterioration pressures multiple'}
  intel_start=time.perf_counter()
  intel=build_stock_panel_intelligence(t,pos,opportunity_for(wl,macro) if wl else None,macro,forecast,news_intel,calendar)
@@ -695,7 +757,8 @@ def intelligence_symbol_context(symbol:str, refresh:bool=False, debug:bool=False
  t=symbol.upper().split()[0]
  live_refresh=False
  try:
-  live_refresh=bool(resolve_portfolio_provider().is_live)
+  provider_status=get_provider_status()
+  live_refresh=bool(provider_status.get('isLivePricing') or provider_status.get('is_live'))
  except Exception:
   live_refresh=False
  def loader():
@@ -727,7 +790,8 @@ def stock(ticker:str):
  t=ticker.upper().split()[0]
  live_refresh=False
  try:
-  live_refresh=bool(resolve_portfolio_provider().is_live)
+  provider_status=get_provider_status()
+  live_refresh=bool(provider_status.get('isLivePricing') or provider_status.get('is_live') or provider_status.get('portfolioMode')=='IBKR_LIVE')
  except Exception:
   live_refresh=False
  def loader():
@@ -810,9 +874,22 @@ def portfolio_provider_status():
   'fallback_active': True,
   'fallback_reason': 'Provider status request timed out.',
   'provider_class': 'Unknown',
+  'portfolioMode': 'LAST_UPDATE_ONLY',
+  'positionsSource': 'DISCONNECTED',
+  'priceSource': 'STALE',
+  'activePriceProvider': 'STALE',
+  'activePositionProvider': 'DISCONNECTED',
+  'isLivePositions': False,
+  'isLivePricing': False,
+  'isHybrid': False,
+  'lastPositionsTimestamp': None,
+  'lastPriceTimestamp': None,
+  'pricesLastRefresh': None,
+  'positionsLastRefresh': None,
+  'summaryLastRefresh': None,
   'sourceStatus': {'provider': _route_source_status('provider', 'timeout', 0, fallback_used=True, detail='Provider status request timed out.')},
  }
- result=_route_cache('route', 'provider-status', _ROUTE_CACHE_TTL_SECONDS['provider_status'], loader, fallback, wait_timeout_seconds=0.25)
+ result=_route_cache('route', 'provider-status', _ROUTE_CACHE_TTL_SECONDS['provider_status'], loader, fallback, wait_timeout_seconds=0.8)
  return _stamp_ui_refresh_response(result, '/api/portfolio/provider/status')
 
 @app.get('/api/portfolio/provider/mode')
@@ -829,34 +906,35 @@ def portfolio_provider_mode_set(req: DataSourceModeRequest):
 @app.get('/api/portfolio/live/positions')
 def portfolio_live_positions():
  try:
-  resolution=resolve_portfolio_provider()
-  provider=resolution.provider
-  portfolio_meta = provider.get_portfolio() if hasattr(provider, 'get_portfolio') else {}
-  meta = portfolio_meta if isinstance(portfolio_meta, dict) else {}
-  is_live = bool(resolution.is_live or meta.get('is_live'))
-  is_stale = bool(resolution.is_stale or meta.get('is_stale'))
+  portfolio = get_portfolio_payload()
   return _stamp_ui_refresh_response({
-   'source': resolution.active_source,
-   'mode': resolution.configured_mode,
-   'configured_mode': resolution.configured_mode,
-   'as_of': meta.get('as_of') or meta.get('snapshot_timestamp') or resolution.snapshot_timestamp,
-   'lastRefresh': meta.get('lastRefresh') or meta.get('refreshed_at') or meta.get('as_of') or resolution.snapshot_timestamp,
-   'nextRefresh': meta.get('nextRefresh'),
-   'isLiveUpdating': meta.get('isLiveUpdating', bool(resolution.is_live)),
-   'pricesLive': bool(meta.get('pricesLive', False)),
-   'pricesLastRefresh': meta.get('pricesLastRefresh'),
-   'pricesAgeSeconds': meta.get('pricesAgeSeconds'),
-   'positionsLastRefresh': meta.get('positionsLastRefresh') or meta.get('positions_refreshed_at'),
-   'summaryLastRefresh': meta.get('summaryLastRefresh') or meta.get('summary_refreshed_at'),
-   'fallback_active': resolution.fallback_active,
-   'fallback_reason': resolution.fallback_reason,
-   'provider_class': resolution.provider_class,
-   'snapshot_available': bool(resolution.snapshot_available or meta),
-   'snapshot_timestamp': resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of'),
-   'is_live': bool(resolution.is_live),
-   'is_stale': bool(resolution.is_stale or meta.get('is_stale')),
-   'stale_reason': resolution.stale_reason or meta.get('stale_reason'),
-   'positions': meta.get('positions') if isinstance(meta.get('positions'), list) else provider.get_positions()
+   'source': portfolio.get('source'),
+   'active_source': portfolio.get('active_source'),
+   'portfolioMode': portfolio.get('portfolioMode'),
+   'positionsSource': portfolio.get('positionsSource'),
+   'priceSource': portfolio.get('priceSource'),
+   'activePriceProvider': portfolio.get('activePriceProvider'),
+   'activePositionProvider': portfolio.get('activePositionProvider'),
+   'mode': portfolio.get('mode'),
+   'configured_mode': portfolio.get('configured_mode'),
+   'as_of': portfolio.get('as_of') or portfolio.get('snapshot_timestamp'),
+   'lastRefresh': portfolio.get('lastRefresh') or portfolio.get('summaryLastRefresh') or portfolio.get('as_of') or portfolio.get('snapshot_timestamp'),
+   'nextRefresh': portfolio.get('nextRefresh'),
+   'isLiveUpdating': portfolio.get('isLiveUpdating'),
+   'pricesLive': bool(portfolio.get('isLivePricing') or portfolio.get('pricesLive', False)),
+   'pricesLastRefresh': portfolio.get('pricesLastRefresh'),
+   'pricesAgeSeconds': portfolio.get('pricesAgeSeconds'),
+   'positionsLastRefresh': portfolio.get('positionsLastRefresh') or portfolio.get('lastPositionsTimestamp'),
+   'summaryLastRefresh': portfolio.get('summaryLastRefresh'),
+   'fallback_active': portfolio.get('fallback_active'),
+   'fallback_reason': portfolio.get('fallback_reason'),
+   'provider_class': portfolio.get('provider_class'),
+   'snapshot_available': portfolio.get('snapshot_available'),
+   'snapshot_timestamp': portfolio.get('snapshot_timestamp'),
+   'is_live': portfolio.get('is_live'),
+   'is_stale': portfolio.get('is_stale'),
+   'stale_reason': portfolio.get('stale_reason'),
+   'positions': portfolio.get('positions') if isinstance(portfolio.get('positions'), list) else []
   }, '/api/portfolio/live/positions')
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
@@ -864,31 +942,35 @@ def portfolio_live_positions():
 @app.get('/api/portfolio/live/summary')
 def portfolio_live_summary():
  try:
-  resolution=resolve_portfolio_provider()
-  provider=resolution.provider
-  meta = provider.get_runtime_status() if hasattr(provider, 'get_runtime_status') else (provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {})
-  summary=provider.get_summary()
-  summary['configured_mode']=resolution.configured_mode
-  summary['mode']=summary.get('mode') or resolution.configured_mode
-  summary['source']=resolution.active_source
-  summary['as_of']=summary.get('as_of') or meta.get('as_of') or meta.get('snapshot_timestamp') or resolution.snapshot_timestamp
-  summary['lastRefresh']=summary.get('lastRefresh') or meta.get('lastRefresh') or meta.get('refreshed_at') or meta.get('as_of') or resolution.snapshot_timestamp
-  summary['nextRefresh']=summary.get('nextRefresh') or meta.get('nextRefresh')
-  summary['isLiveUpdating']=summary.get('isLiveUpdating', meta.get('isLiveUpdating', bool(resolution.is_live)))
-  summary['pricesLive']=bool(summary.get('pricesLive', meta.get('pricesLive', False)))
-  summary['pricesLastRefresh']=summary.get('pricesLastRefresh') or meta.get('pricesLastRefresh')
+  portfolio = get_portfolio_payload()
+  summary = dict(portfolio.get('summary') or {})
+  summary['configured_mode']=portfolio.get('configured_mode')
+  summary['mode']=summary.get('mode') or portfolio.get('portfolioMode') or portfolio.get('mode')
+  summary['source']=portfolio.get('source')
+  summary['active_source']=portfolio.get('active_source')
+  summary['portfolioMode']=portfolio.get('portfolioMode')
+  summary['positionsSource']=portfolio.get('positionsSource')
+  summary['priceSource']=portfolio.get('priceSource')
+  summary['activePriceProvider']=portfolio.get('activePriceProvider')
+  summary['activePositionProvider']=portfolio.get('activePositionProvider')
+  summary['as_of']=summary.get('as_of') or portfolio.get('as_of') or portfolio.get('snapshot_timestamp')
+  summary['lastRefresh']=summary.get('lastRefresh') or portfolio.get('lastRefresh') or summary.get('as_of') or portfolio.get('snapshot_timestamp')
+  summary['nextRefresh']=summary.get('nextRefresh') or portfolio.get('nextRefresh')
+  summary['isLiveUpdating']=summary.get('isLiveUpdating', portfolio.get('isLiveUpdating'))
+  summary['pricesLive']=bool(summary.get('pricesLive', portfolio.get('pricesLive', portfolio.get('isLivePricing', False))))
+  summary['pricesLastRefresh']=summary.get('pricesLastRefresh') or portfolio.get('pricesLastRefresh') or portfolio.get('lastPriceTimestamp')
   if summary.get('pricesAgeSeconds') is None:
-   summary['pricesAgeSeconds']=meta.get('pricesAgeSeconds')
-  summary['positionsLastRefresh']=summary.get('positionsLastRefresh') or meta.get('positionsLastRefresh') or meta.get('positions_refreshed_at')
-  summary['summaryLastRefresh']=summary.get('summaryLastRefresh') or meta.get('summaryLastRefresh') or meta.get('summary_refreshed_at')
-  summary['fallback_active']=resolution.fallback_active
-  summary['fallback_reason']=resolution.fallback_reason
-  summary['provider_class']=resolution.provider_class
-  summary['snapshot_available']=bool(resolution.snapshot_available or meta)
-  summary['snapshot_timestamp']=resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of')
-  summary['is_live']=bool(resolution.is_live)
-  summary['is_stale']=bool(resolution.is_stale or meta.get('is_stale'))
-  summary['stale_reason']=resolution.stale_reason or meta.get('stale_reason')
+   summary['pricesAgeSeconds']=portfolio.get('pricesAgeSeconds')
+  summary['positionsLastRefresh']=summary.get('positionsLastRefresh') or portfolio.get('positionsLastRefresh') or portfolio.get('lastPositionsTimestamp')
+  summary['summaryLastRefresh']=summary.get('summaryLastRefresh') or portfolio.get('summaryLastRefresh')
+  summary['fallback_active']=portfolio.get('fallback_active')
+  summary['fallback_reason']=portfolio.get('fallback_reason')
+  summary['provider_class']=portfolio.get('provider_class')
+  summary['snapshot_available']=portfolio.get('snapshot_available')
+  summary['snapshot_timestamp']=portfolio.get('snapshot_timestamp') or portfolio.get('lastPositionsTimestamp')
+  summary['is_live']=portfolio.get('is_live')
+  summary['is_stale']=portfolio.get('is_stale')
+  summary['stale_reason']=portfolio.get('stale_reason')
   return _stamp_ui_refresh_response(summary, '/api/portfolio/live/summary')
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
@@ -896,33 +978,36 @@ def portfolio_live_summary():
 @app.get('/api/portfolio/live/trades')
 def portfolio_live_trades():
  try:
+  portfolio = get_portfolio_payload()
   resolution=resolve_portfolio_provider()
   provider=resolution.provider
-  portfolio_meta = provider.get_portfolio() if hasattr(provider, 'get_portfolio') else {}
-  meta = portfolio_meta if isinstance(portfolio_meta, dict) else {}
-  is_live = bool(resolution.is_live or meta.get('is_live'))
-  is_stale = bool(resolution.is_stale or meta.get('is_stale'))
   return _stamp_ui_refresh_response({
-   'source': resolution.active_source,
-   'mode': resolution.configured_mode,
-   'configured_mode': resolution.configured_mode,
-   'as_of': meta.get('as_of') or meta.get('snapshot_timestamp') or resolution.snapshot_timestamp,
-   'lastRefresh': meta.get('lastRefresh') or meta.get('refreshed_at') or meta.get('as_of') or resolution.snapshot_timestamp,
-   'nextRefresh': meta.get('nextRefresh'),
-   'isLiveUpdating': meta.get('isLiveUpdating', bool(resolution.is_live)),
-   'pricesLive': bool(meta.get('pricesLive', False)),
-   'pricesLastRefresh': meta.get('pricesLastRefresh'),
-   'pricesAgeSeconds': meta.get('pricesAgeSeconds'),
-   'positionsLastRefresh': meta.get('positionsLastRefresh') or meta.get('positions_refreshed_at'),
-   'summaryLastRefresh': meta.get('summaryLastRefresh') or meta.get('summary_refreshed_at'),
-   'fallback_active': resolution.fallback_active,
-   'fallback_reason': resolution.fallback_reason,
-   'provider_class': resolution.provider_class,
-   'snapshot_available': bool(resolution.snapshot_available or meta),
-   'snapshot_timestamp': resolution.snapshot_timestamp or meta.get('snapshot_timestamp') or meta.get('as_of'),
-  'is_live': bool(resolution.is_live),
-  'is_stale': bool(resolution.is_stale or meta.get('is_stale')),
-   'stale_reason': resolution.stale_reason or meta.get('stale_reason'),
+   'source': portfolio.get('source'),
+   'active_source': portfolio.get('active_source'),
+   'portfolioMode': portfolio.get('portfolioMode'),
+   'positionsSource': portfolio.get('positionsSource'),
+   'priceSource': portfolio.get('priceSource'),
+   'activePriceProvider': portfolio.get('activePriceProvider'),
+   'activePositionProvider': portfolio.get('activePositionProvider'),
+   'mode': portfolio.get('mode'),
+   'configured_mode': portfolio.get('configured_mode'),
+   'as_of': portfolio.get('as_of') or portfolio.get('snapshot_timestamp'),
+   'lastRefresh': portfolio.get('lastRefresh') or portfolio.get('summaryLastRefresh') or portfolio.get('as_of') or portfolio.get('snapshot_timestamp'),
+   'nextRefresh': portfolio.get('nextRefresh'),
+   'isLiveUpdating': portfolio.get('isLiveUpdating'),
+   'pricesLive': bool(portfolio.get('isLivePricing') or portfolio.get('pricesLive', False)),
+   'pricesLastRefresh': portfolio.get('pricesLastRefresh'),
+   'pricesAgeSeconds': portfolio.get('pricesAgeSeconds'),
+   'positionsLastRefresh': portfolio.get('positionsLastRefresh') or portfolio.get('lastPositionsTimestamp'),
+   'summaryLastRefresh': portfolio.get('summaryLastRefresh'),
+   'fallback_active': portfolio.get('fallback_active'),
+   'fallback_reason': portfolio.get('fallback_reason'),
+   'provider_class': portfolio.get('provider_class'),
+   'snapshot_available': portfolio.get('snapshot_available'),
+   'snapshot_timestamp': portfolio.get('snapshot_timestamp'),
+  'is_live': portfolio.get('is_live'),
+  'is_stale': portfolio.get('is_stale'),
+   'stale_reason': portfolio.get('stale_reason'),
    'trades': provider.get_trades()
   }, '/api/portfolio/live/trades')
  except Exception as e:
@@ -936,11 +1021,11 @@ def debug_live_status():
   quote_trace = get_live_quote_trace(limit=20)
   last_quote_received = quote_trace[0] if quote_trace else None
   active_source = str(provider_status.get('active_source') or '').upper()
-  market_data_subscribed = bool(active_source == 'IBKR_LIVE' and provider_status.get('pricesLive'))
-  account_connected = bool(provider_status.get('accounts_available') or provider_status.get('positions_available'))
+  market_data_subscribed = bool(provider_status.get('isLivePricing') or provider_status.get('priceSource') in {'IBKR_LIVE', 'YAHOO_LIVE', 'YAHOO_DELAYED', 'FALLBACK_PROVIDER'})
+  account_connected = bool(provider_status.get('accounts_available') or provider_status.get('positions_available') or provider_status.get('isLivePositions'))
   gateway_connected = bool(provider_status.get('ibkr_gateway_reachable') and provider_status.get('ibkr_authenticated'))
-  positions_live = bool(provider_status.get('is_live'))
-  prices_live = bool(provider_status.get('is_live') and provider_status.get('pricesLive'))
+  positions_live = bool(provider_status.get('isLivePositions') or provider_status.get('activePositionProvider') == 'IBKR_LIVE')
+  prices_live = bool(provider_status.get('isLivePricing') or provider_status.get('pricesLive'))
   return {
    'gatewayConnected': gateway_connected,
    'accountConnected': account_connected,
@@ -953,6 +1038,11 @@ def debug_live_status():
    'portfolioStatus': {
     'source': provider_status.get('active_source'),
     'mode': provider_status.get('configured_mode'),
+    'portfolioMode': provider_status.get('portfolioMode'),
+    'positionsSource': provider_status.get('positionsSource'),
+    'priceSource': provider_status.get('priceSource'),
+    'activePriceProvider': provider_status.get('activePriceProvider'),
+    'activePositionProvider': provider_status.get('activePositionProvider'),
     'is_live': provider_status.get('is_live'),
     'is_stale': provider_status.get('is_stale'),
     'pricesLive': provider_status.get('pricesLive'),
@@ -963,6 +1053,54 @@ def debug_live_status():
    'cacheLayers': _cache_layers_debug(),
    'providerTrace': quote_trace[:10],
    'providerClass': provider_status.get('provider_class'),
+  }
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
+
+@app.get('/api/price-providers/status')
+def price_providers_status():
+ try:
+  portfolio = get_portfolio_payload()
+  from services.price_providers import get_price_provider_status
+
+  yahoo_status = get_price_provider_status(portfolio.get('positions', []) or [])
+  ibkr = {
+   'available': bool(portfolio.get('is_live')),
+   'authenticated': bool(portfolio.get('portfolioMode') == 'IBKR_LIVE'),
+   'pricesLive': bool(portfolio.get('priceSource') == 'IBKR_LIVE'),
+   'positionsLive': bool(portfolio.get('positionsSource') == 'IBKR_LIVE'),
+   'gatewayConnected': bool(portfolio.get('portfolioMode') == 'IBKR_LIVE'),
+   'gatewayStatus': portfolio.get('portfolioMode') or 'DISCONNECTED',
+   'fallbackActive': bool(portfolio.get('fallback_active')),
+   'fallbackReason': portfolio.get('fallback_reason'),
+  }
+  price_source = portfolio.get('priceSource') or 'STALE'
+  active_price_provider = portfolio.get('activePriceProvider') or ('IBKR' if price_source == 'IBKR_LIVE' else ('YAHOO' if price_source in {'YAHOO_LIVE', 'YAHOO_DELAYED', 'FALLBACK_PROVIDER'} else 'STALE'))
+  active_position_provider = portfolio.get('activePositionProvider') or portfolio.get('positionsSource') or 'DISCONNECTED'
+  portfolio_mode = portfolio.get('portfolioMode') or 'LAST_UPDATE_ONLY'
+  return {
+   'ibkr': ibkr,
+   'yahoo': yahoo_status.get('yahoo') or {},
+   'activePriceProvider': active_price_provider,
+   'activePositionProvider': active_position_provider,
+   'portfolioMode': portfolio_mode,
+   'isLivePricing': bool(portfolio.get('isLivePricing')),
+   'isLivePositions': bool(portfolio.get('isLivePositions')),
+   'isHybrid': bool(portfolio.get('isHybrid')),
+   'source': portfolio.get('source'),
+   'active_source': portfolio.get('active_source'),
+   'positionsSource': portfolio.get('positionsSource'),
+   'priceSource': price_source,
+   'lastPositionsTimestamp': portfolio.get('lastPositionsTimestamp'),
+   'lastPriceTimestamp': portfolio.get('lastPriceTimestamp'),
+   'snapshot_available': portfolio.get('snapshot_available'),
+   'snapshot_timestamp': portfolio.get('snapshot_timestamp'),
+   'fallbackActive': portfolio.get('fallback_active'),
+   'fallbackReason': portfolio.get('fallback_reason'),
+   'pricesLastRefresh': portfolio.get('pricesLastRefresh'),
+   'positionsLastRefresh': portfolio.get('positionsLastRefresh'),
+   'summaryLastRefresh': portfolio.get('summaryLastRefresh'),
+   'portfolio': portfolio,
   }
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
@@ -1010,12 +1148,10 @@ def debug_ui_refresh_status():
 @app.get('/api/debug/live-quotes')
 def debug_live_quotes():
  try:
+  portfolio = get_portfolio_payload()
   provider_status = portfolio_provider_status()
-  active_source = str(provider_status.get('active_source') or '').upper()
-  provider = IbkrLivePortfolioProvider() if active_source == 'IBKR_LIVE' else SnapshotPortfolioProvider()
-  positions = provider.get_positions() if hasattr(provider, 'get_positions') else []
-  meta = provider.get_snapshot_meta() if hasattr(provider, 'get_snapshot_meta') else {}
-  positions = _select_debug_positions({'positions': positions}, list(_DEBUG_QUOTE_SYMBOLS))
+  active_source = str(provider_status.get('active_source') or portfolio.get('active_source') or '').upper()
+  positions = _select_debug_positions({'positions': portfolio.get('positions', [])}, list(_DEBUG_QUOTE_SYMBOLS))
   quote_trace = get_live_quote_trace(limit=50)
   trace_lookup = {}
   for row in quote_trace:
@@ -1034,9 +1170,9 @@ def debug_live_quotes():
     age_seconds = trace.get('ageSeconds')
     source = trace.get('source') or source
    elif pos:
-    timestamp = pos.get('quoteLastRefresh') or pos.get('lastRefresh') or meta.get('lastRefresh')
+    timestamp = pos.get('quoteLastRefresh') or pos.get('lastRefresh') or portfolio.get('lastRefresh')
     age_seconds = pos.get('quoteAgeSeconds')
-    source = _quote_source_label(type('Resolution', (), {'active_source': active_source, 'snapshot_available': bool(provider_status.get('snapshot_available'))}), meta, pos)
+    source = pos.get('priceSource') or pos.get('quoteSource') or _quote_source_label(type('Resolution', (), {'active_source': active_source, 'snapshot_available': bool(provider_status.get('snapshot_available'))}), portfolio, pos)
    output.append({
     'symbol': symbol,
     'conid': pos.get('conid') if pos else None,
@@ -1049,7 +1185,7 @@ def debug_live_quotes():
     'ageSeconds': age_seconds,
     'source': source,
     'quoteTimestamp': timestamp,
-    'serverTimestamp': trace.get('serverTimestamp') if trace else meta.get('lastRefresh') or meta.get('snapshot_timestamp'),
+    'serverTimestamp': trace.get('serverTimestamp') if trace else portfolio.get('lastRefresh') or portfolio.get('snapshot_timestamp'),
     'calculationProvenance': pos.get('calculationProvenance') if pos else None,
    })
   quote_timestamps = [row.get('quoteTimestamp') for row in output if row.get('quoteTimestamp')]
@@ -1062,15 +1198,15 @@ def debug_live_quotes():
   return {
    'source': active_source,
    'gatewayConnected': bool(provider_status.get('ibkr_gateway_reachable') and provider_status.get('ibkr_authenticated')),
-   'accountConnected': bool(provider_status.get('accounts_available') or provider_status.get('positions_available')),
-   'marketDataSubscribed': bool(provider_status.get('is_live') and (provider_status.get('pricesLive') or meta.get('pricesLive'))),
-   'pricesLive': bool(provider_status.get('is_live') and (provider_status.get('pricesLive') or meta.get('pricesLive'))),
-   'positionsLive': bool(provider_status.get('is_live')),
+   'accountConnected': bool(provider_status.get('accounts_available') or provider_status.get('positions_available') or portfolio.get('isLivePositions')),
+   'marketDataSubscribed': bool(provider_status.get('isLivePricing') or portfolio.get('priceSource') in {'IBKR_LIVE', 'YAHOO_LIVE', 'YAHOO_DELAYED', 'FALLBACK_PROVIDER'}),
+   'pricesLive': bool(provider_status.get('isLivePricing') or portfolio.get('pricesLive') or portfolio.get('isLivePricing')),
+   'positionsLive': bool(provider_status.get('isLivePositions') or portfolio.get('isLivePositions')),
    'quotesReceived': sum(1 for row in output if row.get('quoteTimestamp')),
    'lastQuoteTimestamp': latest_quote_timestamp,
    'symbols': [row.get('symbol') for row in output if row.get('symbol')],
    'lastQuoteReceived': output[0] if output else None,
-   'quoteAgeSeconds': provider_status.get('pricesAgeSeconds') or meta.get('pricesAgeSeconds'),
+   'quoteAgeSeconds': provider_status.get('pricesAgeSeconds') or portfolio.get('pricesAgeSeconds'),
    'quotes': output,
    'providerTrace': quote_trace[:20],
    'cacheLayers': _cache_layers_debug(),

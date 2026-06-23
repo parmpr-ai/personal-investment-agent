@@ -1,5 +1,23 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.39 - Live Price Provider Fallback (HERMES-PRICE-PROVIDER-FALLBACK-044)
+
+Date: 2026-06-23
+Status: Implemented and locally validated; live-gateway UAT pending in this workspace.
+
+### Backend
+
+* When IBKR is disconnected, portfolio positions now keep the latest saved IBKR snapshot while Yahoo Finance fallback quotes continue to refresh prices, day P/L, unrealized, and total value.
+* Portfolio payloads now distinguish `IBKR_LIVE`, `IBKR_LAST_UPDATE`, `HYBRID_LAST_POSITIONS_LIVE_QUOTES`, and `MANUAL_HOLDINGS_LIVE_QUOTES` so the UI can tell live IBKR from hybrid fallback pricing.
+* The fallback provider exposes `GET /api/price-providers/status` and the portfolio/debug contracts now report `portfolioMode`, `positionsSource`, `priceSource`, and fallback provenance fields.
+
+### Validation
+
+* `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/services/price_providers.py backend/services/manual_holdings.py backend/tests/test_price_provider_fallback.py` passed.
+* `python -m unittest discover -s tests -p 'test_*.py'` passed with 19 tests.
+* `npm run build` passed in `frontend/`.
+* Local backend tests confirm live IBKR stays live, snapshot mode falls back to Yahoo prices, and manual holdings use the live price provider helper.
+
 ## v0.3.38 - Research Data and Live Contract Hardening (HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040)
 
 Date: 2026-06-23

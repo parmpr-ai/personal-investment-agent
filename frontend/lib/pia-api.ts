@@ -102,8 +102,12 @@ export function dedupePortfolioPositions(rows: any[] = []) {
 export function portfolioSourceBadgeLabel(source: unknown, mode?: unknown) {
   const raw = String(source || mode || '').toUpperCase()
   if (raw === 'IBKR_LIVE') return 'IBKR LIVE'
+  if (raw === 'HYBRID_LAST_POSITIONS_LIVE_QUOTES') return 'HYBRID LIVE'
+  if (raw === 'MANUAL_HOLDINGS_LIVE_QUOTES') return 'MANUAL LIVE'
+  if (raw === 'LAST_UPDATE_ONLY') return 'LAST UPDATE'
   if (raw === 'LAST_UPDATE') return 'LAST UPDATE'
   if (raw === 'MOCK' || raw === 'MOCK_FALLBACK') return 'MOCK'
+  if (raw === 'STALE') return 'STALE'
   if (String(mode || '').toLowerCase() === 'last-update') return 'LAST UPDATE'
   if (String(mode || '').toLowerCase() === 'ibkr-live') return 'IBKR LIVE'
   return 'MOCK'

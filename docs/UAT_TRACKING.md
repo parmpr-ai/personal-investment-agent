@@ -16,6 +16,22 @@ Format per entry:
 
 ## UAT Log
 
+### HERMES-PRICE-PROVIDER-FALLBACK-044
+
+Status: PENDING
+Owner: HERMES
+Date: 2026-06-23
+Approved Mock: N/A
+Design Lock Commit: N/A
+Implementation Commit: pending commit in this branch
+
+Build: PASS (`python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/services/price_providers.py backend/services/manual_holdings.py backend/tests/test_price_provider_fallback.py`, `python -m unittest discover -s tests -p 'test_*.py'`, `npm run build`)
+
+Notes:
+- Added Yahoo Finance fallback pricing so portfolios keep updating when IBKR is unavailable.
+- Portfolio contracts now expose hybrid fallback source metadata instead of freezing on stale LAST_UPDATE values.
+- PO UAT validation against a live authenticated Gateway is still pending in this workspace.
+
 ### HERMES-LIVE-QUOTES-037
 
 Status: PENDING

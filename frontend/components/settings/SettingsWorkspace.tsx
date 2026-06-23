@@ -307,7 +307,11 @@ function providerModeLabel(value: unknown) {
 function providerSourceLabel(value: unknown) {
   const raw = String(value || '').toUpperCase()
   if (raw === 'IBKR_LIVE') return 'Live IBKR'
+  if (raw === 'HYBRID_LAST_POSITIONS_LIVE_QUOTES') return 'Hybrid Live Quotes'
+  if (raw === 'MANUAL_HOLDINGS_LIVE_QUOTES') return 'Manual Live Quotes'
+  if (raw === 'LAST_UPDATE_ONLY') return 'Last Update'
   if (raw === 'LAST_UPDATE') return 'Last Update'
+  if (raw === 'STALE') return 'Stale'
   if (raw === 'MOCK' || raw === 'MOCK_FALLBACK') return 'Mock'
   return providerModeLabel(value)
 }
@@ -319,6 +323,7 @@ function normalizePortfolioProviderState(status: any, portfolioSource?: string) 
   const statusCode = String(status?.status || '').toUpperCase()
   const fallbackActive = Boolean(status?.fallback_active)
   const snapshotAvailable = Boolean(status?.snapshot_available)
+  const isHybrid = activeSource.includes('HYBRID') || Boolean(status?.isHybrid) || String(status?.portfolioMode || '').includes('HYBRID')
   const isLive = activeSource === 'IBKR_LIVE' || statusCode === 'LIVE' || Boolean(status?.is_live)
   const isLastUpdate = activeSource === 'LAST_UPDATE' || statusCode === 'LAST_UPDATE'
   const isDisconnected = activeSource === 'DISCONNECTED' || statusCode === 'DISCONNECTED' || gatewayStatus === 'gateway_down'
@@ -332,6 +337,7 @@ function normalizePortfolioProviderState(status: any, portfolioSource?: string) 
     statusCode,
     fallbackActive,
     snapshotAvailable,
+    isHybrid,
     isLive,
     isLastUpdate,
     isDisconnected,
@@ -344,6 +350,8 @@ function normalizePortfolioProviderState(status: any, portfolioSource?: string) 
 function ibkrStatusMeta(status: any) {
   const state = normalizePortfolioProviderState(status)
   if (state.connected) return { label: 'Live Connected', tone: 'good', detail: status?.message || 'IBKR Client Portal Gateway is connected and live.' }
+  if (state.isHybrid && Boolean(status?.isLivePricing ?? status?.pricesLive)) return { label: 'Hybrid Live Quotes', tone: 'good', detail: status?.message || 'Last known IBKR positions are priced from live fallback quotes.' }
+  if (state.isHybrid) return { label: 'Hybrid Mode', tone: 'warn', detail: status?.message || 'Last known IBKR positions are available, but live pricing is degraded.' }
   if (state.isLastUpdate || state.snapshotAvailable) return { label: 'Last Update Available', tone: 'good', detail: status?.snapshot_timestamp ? `Last updated at ${formatCheckedAt(status.snapshot_timestamp)}` : 'Offline snapshot is available.' }
   if (state.gatewayStatus === 'unauthenticated') return { label: 'Login Required', tone: 'warn', detail: 'Open the gateway and complete IBKR login.' }
   if (state.fallbackActive) return { label: 'Using Fallback', tone: 'warn', detail: status?.message || 'Fallback portfolio data is active.' }

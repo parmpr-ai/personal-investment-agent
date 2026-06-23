@@ -40,7 +40,7 @@ Developers may stop only for:
 - Stable checkpoint: Sprint 2B implementation branches merged into integration.
 - Current sprint: Sprint 2C execution and UAT failure remediation.
 - Current status: Hybrid mock intelligence data layer deployed for UI evaluation; design governance and mock-first workflow locked; mobile correction mock pack available for Product Owner review.
-- Current status: IBKR live portfolio modes are synchronized across settings, provider status, portfolio endpoints, and mobile/desktop source badges. Mock, last-update, and live modes are persisted and validated; live snapshots persist locally under `backend/data/snapshots/ibkr/`, with history persisted under `backend/data/snapshots/ibkr/history/` and strict last-update/disconnected reporting when the gateway is offline.
+- Current status: IBKR live portfolio modes are synchronized across settings, provider status, portfolio endpoints, and mobile/desktop source badges. Mock, last-update, and live modes are persisted and validated; live snapshots persist locally under `backend/data/snapshots/ibkr/`, with history persisted under `backend/data/snapshots/ibkr/history/`, strict last-update/disconnected reporting when the gateway is offline, and live quote fallback now keeps the last known IBKR positions while refreshing prices from Yahoo Finance when IBKR is unavailable.
 - Current priorities:
   - Enforce mock-first design governance before any further UI implementation.
   - Interaction stabilization on Home and mobile.
@@ -114,6 +114,7 @@ Developers may stop only for:
 - IBKR live portfolio correctness:
   - Keep `mock`, `last-update`, and `ibkr-live` mode resolution aligned across settings, provider status, and portfolio endpoints.
   - Preserve local live snapshots and prevent mock rows from appearing in live or last-update modes.
+  - When IBKR disconnects, keep the latest IBKR positions snapshot but continue live or near-live pricing through the fallback provider so the portfolio does not freeze on stale values.
 
 ## Active Backlog
 
@@ -142,6 +143,7 @@ Developers may stop only for:
   - HERMES-IBKR-LIVE-007 - IBKR live portfolio correctness and 3-mode portfolio selection. IMPLEMENTED/VALIDATED (HERMES, feat/pia-v3-foundation-integration): provider modes `mock`, `last-update`, `ibkr-live`; live snapshot persistence to `backend/data/snapshots/ibkr/`; deduped live positions; desktop/mobile source badges updated; UAT screenshots captured under `frontend/uat-screenshots/pia-ibkr-live-007/`.
   - HERMES-IBKR-UAT-009 - IBKR live data correctness, source switching, option handling, snapshot history, and status reporting. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): strict LIVE / LAST_UPDATE / DISCONNECTED reporting, no silent mock fallback, option normalization, duplicate SOFI/options dedupe, `backend/data/snapshots/ibkr/history/` history log, `/api/portfolio/history`, and shared source fields across provider/status/portfolio routes. Live gateway validation remains pending because the local Client Portal Gateway is offline in this environment.
   - HERMES-LIVE-POSITION-METRICS-MAPPING-036 - live position metrics and provenance hardening. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): day change / day P&L / day P&L% now derive from validated quote fields, momentum and risk are sourced from cached AI intelligence when available and otherwise marked missing, news score stays null until real scoring exists, and stock hero / AI context prefer the live portfolio quote cache.
+  - HERMES-PRICE-PROVIDER-FALLBACK-044 - live price provider fallback when IBKR disconnects. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): last-known IBKR positions now persist while Yahoo Finance fallback prices recalculate market value, day P/L, unrealized, and portfolio totals; portfolio contracts now expose `portfolioMode`, `positionsSource`, `priceSource`, `isHybrid`, and fallback provenance so the UI can distinguish IBKR live vs hybrid live pricing.
   - HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 - research data and live contract hardening. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): `/api/intelligence/{symbol}/research` returns explicit missing sections/provenance, live portfolio positions expose metricStates / missingMetrics for blank values, and null-safe risk handling prevents live route crashes.
 - ATHENA-AI-001 AI Intelligence Architecture & Documentation Consolidation. IMPLEMENTED 2026-06-17 (ATHENA): Architecture document created at `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md`. All 9 AI Intelligence subsystems captured: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, Auto Investor. Changelog and UAT Tracking synchronized.
 - EPIC-AI-INTELLIGENCE-ENGINE-001 Explainable Multi-Source Investment Intelligence Engine. IMPLEMENTED 2026-06-17 (HERMES): V1 backend scoring engine added for actionable stock verdict, portfolio-aware recommendation, expected return, conviction, thesis strength, risk, visual state, scenario probabilities, drivers/risks, score breakdown, factors evaluated, confidence notes, debug mode, and cache-backed `/api/intelligence/{symbol}/score`.
@@ -302,6 +304,12 @@ Developers may stop only for:
   - Backend regression coverage now verifies stock, option, mixed-portfolio, nullable-input, and summary aggregation behavior without fake zero daily P/L.
   - `/api/debug/live-quotes` now surfaces day P/L, unrealized, and calculation provenance for direct inspection.
   - Live gateway validation remains pending in this workspace because the long-lived authenticated Client Portal Gateway process is offline here.
+- Latest HERMES-PRICE-PROVIDER-FALLBACK-044 validation, 2026-06-23:
+  - `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/services/price_providers.py backend/services/manual_holdings.py backend/tests/test_price_provider_fallback.py` passed.
+  - `python -m unittest discover -s tests -p 'test_*.py'` passed with 19 tests.
+  - `npm run build` passed in `frontend/`.
+  - Portfolio contracts now report hybrid fallback state when IBKR is unavailable and Yahoo fallback quotes are active, instead of freezing the portfolio on stale LAST_UPDATE values.
+  - Live Gateway UAT remains pending in this workspace because the authenticated Client Portal Gateway process is not available here.
 - Latest HERMES-IBKR-HOTFIX-010 validation, 2026-06-22:
   - `python -m py_compile backend/services/portfolio_providers.py backend/services/settings_store.py backend/main.py backend/services/manual_holdings.py backend/services/ibkr_service.py` passed.
   - Live provider cache TTL reduced to 12 seconds and invalidated on mode changes so `/dashboard` and `/api/portfolio/*` cannot keep serving a frozen live bundle after a mode switch.

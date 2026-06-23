@@ -27,6 +27,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from services.price_providers import get_price_provider_status as _quote_provider_status
+from services.price_providers import get_yahoo_live_quotes
+
 _DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "ibkr-live"
 _SNAPSHOT_DIR = Path(__file__).resolve().parents[1] / "data" / "snapshots" / "ibkr"
 _SNAPSHOT_HISTORY_DIR = _SNAPSHOT_DIR / "history"
@@ -39,7 +42,16 @@ _DEFAULT_GATEWAY_URL = "https://localhost:5000"
 _PROVIDER_MODES = ("mock", "last-update", "ibkr-live")
 _ACTIVE_SOURCE_MAP = {"mock": "MOCK", "last-update": "LAST_UPDATE", "ibkr-live": "IBKR_LIVE"}
 _MODE_LABELS = {"mock": "Mock Data", "last-update": "Last Update Real Data", "ibkr-live": "Live Data"}
-_SOURCE_LABELS = {"MOCK": "Mock", "MOCK_FALLBACK": "Mock", "LAST_UPDATE": "Last Update", "IBKR_LIVE": "IBKR Live"}
+_SOURCE_LABELS = {
+    "MOCK": "Mock",
+    "MOCK_FALLBACK": "Mock",
+    "LAST_UPDATE": "Last Update",
+    "IBKR_LIVE": "IBKR Live",
+    "IBKR_LAST_UPDATE": "IBKR Last Update",
+    "HYBRID_LAST_POSITIONS_LIVE_QUOTES": "Hybrid Live Quotes",
+    "MANUAL_HOLDINGS_LIVE_QUOTES": "Manual Live Quotes",
+    "DISCONNECTED": "Disconnected",
+}
 _LIVE_MODE_ALIASES = {"live", "ibkr-live"}
 _LAST_UPDATE_MODE_ALIASES = {"demo", "demo-samples", "sample", "snapshot", "last-update"}
 _SNAPSHOT_STALE_AFTER_SECONDS = 15 * 60
@@ -1399,7 +1411,9 @@ class IbkrLivePortfolioProvider:
                     "volume": _maybe_num(entry.get("87") or entry.get("volume")),
                     "bid_size": _maybe_num(entry.get("88") or entry.get("bidSize")),
                     "quoteLastRefresh": quote_last_refresh,
-                    "quoteSource": "IBKR_MARKETDATA_SNAPSHOT",
+                    "quoteSource": "IBKR_LIVE",
+                    "priceSource": "IBKR_LIVE",
+                    "quoteTransport": "IBKR_MARKETDATA_SNAPSHOT",
                     "quoteStale": False,
                     "quoteStaleReason": None,
                     "raw": entry,
@@ -1491,7 +1505,9 @@ class IbkrLivePortfolioProvider:
                         "unrealized_pct": round(unrealized / cost_basis * 100, 2) if cost_basis else _num(merged.get("unrealized_pct")),
                         "quoteLastRefresh": quote_last_refresh,
                         "quoteAgeSeconds": 0,
-                        "quoteSource": quote.get("quoteSource") or "IBKR_MARKETDATA_SNAPSHOT",
+                        "quoteSource": quote.get("quoteSource") or quote.get("priceSource") or "IBKR_LIVE",
+                        "priceSource": quote.get("priceSource") or quote.get("quoteSource") or "IBKR_LIVE",
+                        "quoteTransport": quote.get("quoteTransport") or "IBKR_MARKETDATA_SNAPSHOT",
                         "quoteStale": False,
                         "quoteStaleReason": None,
                     }
@@ -1568,6 +1584,382 @@ class IbkrLivePortfolioProvider:
             prices_live = False
         prices_last_refresh = max(quote_refreshes) if quote_refreshes else None
         return merged_positions if merged_positions else positions, prices_live, any_quote_refresh, prices_last_refresh, fallback_reason
+
+    def _apply_yahoo_price_fallback(
+        self,
+        positions: List[Dict[str, Any]],
+        *,
+        prefer_live_ibkr: bool,
+        resolution_source: str,
+        snapshot_available: bool,
+    ) -> tuple[List[Dict[str, Any]], bool, Optional[str], Optional[str], List[str]]:
+        """Overlay Yahoo Finance quotes for eligible positions when IBKR quotes are stale or unavailable."""
+        if not positions:
+            return positions, False, None, None, []
+
+        eligible_positions: List[Dict[str, Any]] = []
+        symbols: List[str] = []
+        for position in positions:
+            asset_class = str(position.get("assetClass") or position.get("sec_type") or "").upper()
+            if asset_class not in {"STK", "ETF", "CRYPTO"}:
+                continue
+            symbol = str(position.get("symbol") or position.get("underlying") or "").strip().upper().split()[0]
+            if not symbol:
+                continue
+            eligible_positions.append(position)
+            symbols.append(symbol)
+
+        symbols = list(dict.fromkeys(symbols))
+        if not symbols:
+            return positions, False, None, None, []
+
+        quote_bundle = get_yahoo_live_quotes(symbols, wait_timeout_seconds=0.9)
+        quote_map = quote_bundle.get("quotes") if isinstance(quote_bundle, dict) else {}
+        if not isinstance(quote_map, dict):
+            quote_map = {}
+
+        refreshed_at = datetime.now(timezone.utc).isoformat()
+        prices_live = bool(quote_bundle.get("pricesLive"))
+        quote_refreshes: List[str] = []
+        used_fallback = False
+        fallback_reason = None
+        overlay_sources: List[str] = []
+        merged_positions: List[Dict[str, Any]] = []
+
+        for position in positions:
+            merged = dict(position)
+            asset_class = str(merged.get("assetClass") or merged.get("sec_type") or "").upper()
+            symbol = str(merged.get("symbol") or merged.get("underlying") or "").strip().upper().split()[0]
+            position_source = str(merged.get("positionSource") or merged.get("source") or "").upper()
+            if not position_source:
+                if merged.get("manual"):
+                    position_source = "MANUAL_HOLDINGS"
+                elif resolution_source == "IBKR_LIVE" and prefer_live_ibkr:
+                    position_source = "IBKR_LIVE"
+                elif snapshot_available:
+                    position_source = "IBKR_LAST_UPDATE"
+                else:
+                    position_source = "MOCK"
+            merged["positionSource"] = position_source
+
+            quote = quote_map.get(symbol) if symbol else None
+            if asset_class in {"STK", "ETF", "CRYPTO"} and quote and quote.get("last") is not None:
+                used_fallback = True
+                quote_source = str(quote.get("priceSource") or quote.get("quoteSource") or "YAHOO_LIVE").upper()
+                quote_last_refresh = quote.get("quoteTimestamp") or refreshed_at
+                last_price = _num(quote.get("last"))
+                prev_close = _maybe_num(quote.get("previousClose"))
+                qty = _num(merged.get("qty") or merged.get("quantity") or merged.get("position"))
+                multiplier = _num(merged.get("multiplier") or _position_multiplier(merged), _position_multiplier(merged))
+                cost_basis = _num(merged.get("cost_basis") or merged.get("costBasis"))
+                market_value = round(last_price * qty * multiplier, 2) if qty else _num(merged.get("market_value"))
+                if market_value is None:
+                    market_value = round(last_price, 4) if last_price is not None else _num(merged.get("market_value"))
+                day_metrics = _derive_day_metrics(
+                    last=last_price,
+                    previous_close=prev_close,
+                    quantity=qty,
+                    multiplier=multiplier,
+                    official_day_change=_maybe_num(merged.get("day_change")),
+                    official_day_change_pct=_maybe_num(merged.get("day_change_pct")),
+                )
+                unrealized = None
+                unrealized_pct = None
+                if market_value is not None and cost_basis not in (None, 0):
+                    unrealized = round(market_value - cost_basis, 2)
+                    unrealized_pct = round((unrealized / cost_basis) * 100, 2)
+                merged.update(
+                    {
+                        "last": round(last_price, 4) if last_price is not None else merged.get("last"),
+                        "previousClose": round(prev_close, 4) if prev_close is not None else merged.get("previousClose"),
+                        "prevClose": round(prev_close, 4) if prev_close is not None else merged.get("prevClose"),
+                        "day_change": day_metrics["day_change"],
+                        "day_change_pct": day_metrics["day_change_pct"],
+                        "day_pnl": day_metrics["day_pnl"],
+                        "day_pnl_pct": day_metrics["day_pnl_pct"],
+                        "market_value": round(market_value, 2) if market_value is not None else merged.get("market_value"),
+                        "unrealized": round(unrealized, 2) if unrealized is not None else merged.get("unrealized"),
+                        "unrealized_pct": unrealized_pct if unrealized_pct is not None else merged.get("unrealized_pct"),
+                        "quoteLastRefresh": quote_last_refresh,
+                        "quoteAgeSeconds": quote.get("quoteAgeSeconds"),
+                        "quoteSource": quote_source,
+                        "priceSource": quote_source,
+                        "quoteStale": False,
+                        "quoteStaleReason": None,
+                        "isLiveQuote": bool(quote.get("isLiveQuote", True)),
+                    }
+                )
+                quote_refreshes.append(str(quote_last_refresh))
+                overlay_sources.append(quote_source)
+                _record_live_quote_trace(
+                    symbol=symbol,
+                    conid=str(merged.get("conid") or ""),
+                    source="LIVE" if quote_source != "STALE" else "CACHE",
+                    quote_timestamp=str(quote_last_refresh),
+                    server_timestamp=refreshed_at,
+                    age_seconds=quote.get("quoteAgeSeconds"),
+                )
+            else:
+                stale_reason = None
+                if asset_class in {"STK", "ETF", "CRYPTO"}:
+                    stale_reason = "Yahoo fallback quote unavailable for this symbol."
+                elif asset_class == "OPT":
+                    stale_reason = "Fallback quote provider does not price this option contract."
+                if merged.get("quoteLastRefresh"):
+                    quote_refreshes.append(str(merged.get("quoteLastRefresh")))
+                if stale_reason and not merged.get("quoteStaleReason"):
+                    merged["quoteStaleReason"] = stale_reason
+                if not merged.get("quoteSource"):
+                    merged["quoteSource"] = "STALE"
+                if not merged.get("priceSource"):
+                    merged["priceSource"] = "STALE"
+                merged["quoteStale"] = bool(merged.get("quoteStale", True))
+                if merged.get("priceSource") == "STALE":
+                    fallback_reason = fallback_reason or stale_reason
+            merged_positions.append(merged)
+
+        if quote_bundle.get("available") and quote_refreshes:
+            prices_live = True
+        if overlay_sources and resolution_source == "IBKR_LIVE":
+            fallback_reason = "IBKR quotes stale; using Yahoo Finance fallback prices for eligible positions."
+        elif overlay_sources and resolution_source != "IBKR_LIVE":
+            fallback_reason = "Using Yahoo Finance fallback prices for last-known IBKR positions."
+        elif not overlay_sources and resolution_source == "IBKR_LIVE" and not prefer_live_ibkr:
+            fallback_reason = fallback_reason or "IBKR quote snapshot stale; using Yahoo Finance fallback prices."
+
+        return merged_positions, bool(prices_live), fallback_reason, quote_bundle.get("lastQuoteTimestamp"), overlay_sources
+
+    @staticmethod
+    def _portfolio_source_fields(
+        *,
+        portfolio_mode: str,
+        positions_source: str,
+        price_source: str,
+        positions_last_refresh: Optional[str],
+        prices_last_refresh: Optional[str],
+        snapshot_timestamp: Optional[str],
+        fallback_active: bool,
+        fallback_reason: Optional[str],
+    ) -> Dict[str, Any]:
+        active_source = portfolio_mode
+        active_price_provider = "IBKR" if price_source == "IBKR_LIVE" else ("YAHOO" if price_source in {"YAHOO_LIVE", "YAHOO_DELAYED", "FALLBACK_PROVIDER"} else "STALE")
+        is_live_positions = positions_source == "IBKR_LIVE"
+        is_live_pricing = price_source != "STALE"
+        is_hybrid = portfolio_mode in {"HYBRID_LAST_POSITIONS_LIVE_QUOTES", "MANUAL_HOLDINGS_LIVE_QUOTES"} or (positions_source != "IBKR_LIVE" and is_live_pricing)
+        return {
+            "source": active_source,
+            "active_source": active_source,
+            "portfolioMode": portfolio_mode,
+            "positionsSource": positions_source,
+            "priceSource": price_source,
+            "activePriceProvider": active_price_provider,
+            "activePositionProvider": positions_source,
+            "isLivePositions": is_live_positions,
+            "isLivePricing": is_live_pricing,
+            "isHybrid": is_hybrid,
+            "positionsLastRefresh": positions_last_refresh,
+            "lastPositionsTimestamp": positions_last_refresh or snapshot_timestamp,
+            "pricesLastRefresh": prices_last_refresh,
+            "lastPriceTimestamp": prices_last_refresh,
+            "snapshot_timestamp": snapshot_timestamp,
+            "fallback_active": fallback_active,
+            "fallback_reason": fallback_reason,
+        }
+
+    def _normalize_portfolio_after_price_overlay(
+        self,
+        portfolio: Dict[str, Any],
+        *,
+        resolution: ProviderResolution,
+    ) -> Dict[str, Any]:
+        payload = deepcopy(portfolio or {})
+        positions = normalize_positions(payload.get("positions", []))
+        payload["positions"] = positions
+        snapshot_timestamp = payload.get("snapshot_timestamp") or resolution.snapshot_timestamp or payload.get("as_of")
+        positions_source = "MOCK"
+        if resolution.configured_mode == "ibkr-live":
+            positions_source = "IBKR_LIVE" if resolution.is_live and resolution.active_source == "IBKR_LIVE" else ("IBKR_LAST_UPDATE" if resolution.snapshot_available else "DISCONNECTED")
+        elif resolution.configured_mode == "last-update":
+            positions_source = "IBKR_LAST_UPDATE" if resolution.snapshot_available else "DISCONNECTED"
+        elif resolution.configured_mode == "mock":
+            positions_source = "MOCK"
+
+        price_source = "IBKR_LIVE" if resolution.is_live and payload.get("pricesLive") else "STALE"
+        portfolio_mode = "IBKR_LIVE" if positions_source == "IBKR_LIVE" else ("LAST_UPDATE_ONLY" if positions_source == "IBKR_LAST_UPDATE" else "MOCK")
+        fallback_active = bool(resolution.fallback_active or positions_source == "IBKR_LAST_UPDATE" or price_source != "IBKR_LIVE")
+        fallback_reason = resolution.fallback_reason
+        prices_live = bool(payload.get("pricesLive"))
+        prices_last_refresh = payload.get("pricesLastRefresh")
+        quote_sources: List[str] = []
+
+        if positions:
+            use_price_fallback = (
+                resolution.configured_mode == "ibkr-live"
+                and (not resolution.is_live or not prices_live or any(bool(p.get("quoteStale")) for p in positions))
+            ) or resolution.configured_mode == "last-update"
+
+            if use_price_fallback:
+                positions, prices_live, fallback_reason, fallback_prices_last_refresh, overlay_sources = self._apply_yahoo_price_fallback(
+                    positions,
+                    prefer_live_ibkr=bool(resolution.is_live),
+                    resolution_source=resolution.active_source,
+                    snapshot_available=bool(resolution.snapshot_available),
+                )
+                prices_last_refresh = fallback_prices_last_refresh or prices_last_refresh
+                if overlay_sources:
+                    quote_sources.extend(overlay_sources)
+                    portfolio_mode = "HYBRID_LAST_POSITIONS_LIVE_QUOTES" if positions_source != "MOCK" else "MANUAL_HOLDINGS_LIVE_QUOTES"
+                    fallback_active = True
+                    if not fallback_reason:
+                        fallback_reason = "Using Yahoo Finance fallback prices."
+            else:
+                quote_sources.extend([str(p.get("priceSource") or p.get("quoteSource") or "STALE").upper() for p in positions if p.get("priceSource") or p.get("quoteSource")])
+
+        quote_sources = [src for src in quote_sources if src]
+        if resolution.configured_mode == "ibkr-live" and resolution.is_live and not fallback_active:
+            normalized_sources: List[str] = []
+            for pos in positions:
+                current_source = str(pos.get("priceSource") or pos.get("quoteSource") or "").upper()
+                if current_source in {"IBKR_MARKETDATA_SNAPSHOT", "IBKR_MARKETDATA", "POSITION_ENDPOINT", "CACHE"} or not current_source:
+                    pos["quoteSource"] = "IBKR_LIVE"
+                    pos["priceSource"] = "IBKR_LIVE"
+                    pos["quoteStale"] = False
+                    pos["quoteStaleReason"] = None
+                    normalized_sources.append("IBKR_LIVE")
+                elif current_source:
+                    normalized_sources.append(current_source)
+            quote_sources = normalized_sources or quote_sources
+        if quote_sources:
+            unique_sources = set(quote_sources)
+            if len(unique_sources) == 1:
+                price_source = next(iter(unique_sources))
+            elif "YAHOO_LIVE" in unique_sources or "YAHOO_DELAYED" in unique_sources:
+                price_source = "FALLBACK_PROVIDER"
+            elif "IBKR_LIVE" in unique_sources:
+                price_source = "FALLBACK_PROVIDER"
+            else:
+                price_source = "STALE"
+
+        if portfolio_mode == "IBKR_LIVE" and resolution.is_live and not fallback_active:
+            active_source = "IBKR_LIVE"
+        else:
+            active_source = portfolio_mode
+
+        total_market_value = round(sum(_num(p.get("market_value")) for p in positions), 2)
+        cash = _num(payload.get("cash") or payload.get("summary", {}).get("cash") if isinstance(payload.get("summary"), dict) else payload.get("cash"))
+        total_value = round(total_market_value + cash, 2) if positions or cash else _num(payload.get("total_value") or payload.get("summary", {}).get("total_value") if isinstance(payload.get("summary"), dict) else payload.get("total_value"))
+        cost_basis = round(sum(_num(p.get("cost_basis") or p.get("costBasis")) for p in positions), 2)
+        unrealized = round(sum(_num(p.get("unrealized")) for p in positions), 2)
+        day_pnls = [_maybe_num(p.get("day_pnl")) for p in positions if _maybe_num(p.get("day_pnl")) is not None]
+        daily_pnl = round(sum(day_pnls), 2) if day_pnls else None
+        previous_market_values = [_maybe_num(p.get("previous_market_value")) for p in positions if _maybe_num(p.get("previous_market_value")) is not None]
+        previous_portfolio_value = round(sum(previous_market_values), 2) if previous_market_values else None
+        daily_pnl_pct = None
+        if daily_pnl is not None and previous_portfolio_value not in (None, 0):
+            daily_pnl_pct = round((daily_pnl / previous_portfolio_value) * 100, 2)
+        elif payload.get("daily_pnl_pct") is not None and portfolio_mode == "IBKR_LIVE":
+            daily_pnl_pct = _maybe_num(payload.get("daily_pnl_pct"))
+        summary_last_refresh = datetime.now(timezone.utc).isoformat()
+        prices_last_refresh = prices_last_refresh or summary_last_refresh
+        positions_last_refresh = payload.get("positionsLastRefresh") or payload.get("positions_refreshed_at") or snapshot_timestamp or summary_last_refresh
+        summary = dict(payload.get("summary") or {})
+        summary.update(
+            {
+                "source": active_source,
+                "mode": portfolio_mode,
+                "configured_mode": resolution.configured_mode,
+            }
+        )
+        payload.update(
+            {
+                **self._portfolio_source_fields(
+                    portfolio_mode=portfolio_mode,
+                    positions_source=positions_source,
+                    price_source=price_source,
+                    positions_last_refresh=positions_last_refresh,
+                    prices_last_refresh=prices_last_refresh,
+                    snapshot_timestamp=snapshot_timestamp,
+                    fallback_active=fallback_active,
+                    fallback_reason=fallback_reason,
+                ),
+                "positions": positions,
+                "total_value": total_value,
+                "cash": round(cash, 2),
+                "buying_power": _num(payload.get("buying_power") or payload.get("summary", {}).get("buying_power") if isinstance(payload.get("summary"), dict) else payload.get("buying_power")),
+                "cost_basis": round(cost_basis, 2),
+                "unrealized": round(unrealized, 2),
+                "unrealized_pct": round(unrealized / cost_basis * 100, 2) if cost_basis not in (None, 0) else payload.get("unrealized_pct"),
+                "daily_pnl": daily_pnl,
+                "daily_pnl_pct": daily_pnl_pct,
+                "net_liquidation": round(total_value, 2),
+                "portfolioMode": portfolio_mode,
+                "positionsSource": positions_source,
+                "priceSource": price_source,
+                "activePriceProvider": "IBKR" if price_source == "IBKR_LIVE" else ("YAHOO" if price_source in {"YAHOO_LIVE", "YAHOO_DELAYED", "FALLBACK_PROVIDER"} else "STALE"),
+                "activePositionProvider": positions_source,
+                "isLivePositions": positions_source == "IBKR_LIVE",
+                "isLivePricing": price_source != "STALE",
+                "isHybrid": portfolio_mode in {"HYBRID_LAST_POSITIONS_LIVE_QUOTES", "MANUAL_HOLDINGS_LIVE_QUOTES"},
+                "lastPositionsTimestamp": positions_last_refresh,
+                "lastPriceTimestamp": prices_last_refresh,
+                "pricesLive": price_source != "STALE",
+                "pricesAgeSeconds": _position_quote_refresh_age(prices_last_refresh) if prices_last_refresh else None,
+                "pricesLastRefresh": prices_last_refresh,
+                "positionsLastRefresh": positions_last_refresh,
+                "summaryLastRefresh": summary_last_refresh,
+                "lastRefresh": summary_last_refresh,
+                "as_of": summary_last_refresh,
+                "active_source": active_source,
+                "source": active_source,
+                "fallback_active": fallback_active,
+                "fallback_reason": fallback_reason,
+                "is_live": portfolio_mode == "IBKR_LIVE",
+                "is_stale": portfolio_mode == "LAST_UPDATE_ONLY",
+                "stale_reason": fallback_reason if portfolio_mode != "IBKR_LIVE" else None,
+            }
+        )
+
+        summary.update(
+            {
+                "source": active_source,
+                "mode": portfolio_mode,
+                "portfolioMode": portfolio_mode,
+                "positionsSource": positions_source,
+                "priceSource": price_source,
+                "activePriceProvider": payload["activePriceProvider"],
+                "activePositionProvider": positions_source,
+                "isLivePositions": positions_source == "IBKR_LIVE",
+                "isLivePricing": price_source != "STALE",
+                "isHybrid": portfolio_mode in {"HYBRID_LAST_POSITIONS_LIVE_QUOTES", "MANUAL_HOLDINGS_LIVE_QUOTES"},
+                "lastPositionsTimestamp": positions_last_refresh,
+                "lastPriceTimestamp": prices_last_refresh,
+                "pricesLive": price_source != "STALE",
+                "pricesAgeSeconds": _position_quote_refresh_age(prices_last_refresh) if prices_last_refresh else None,
+                "pricesLastRefresh": prices_last_refresh,
+                "positionsLastRefresh": positions_last_refresh,
+                "summaryLastRefresh": summary_last_refresh,
+                "lastRefresh": summary_last_refresh,
+                "as_of": summary_last_refresh,
+                "snapshot_available": bool(resolution.snapshot_available or positions),
+                "snapshot_timestamp": snapshot_timestamp,
+                "fallback_active": fallback_active,
+                "fallback_reason": fallback_reason,
+                "is_live": portfolio_mode == "IBKR_LIVE",
+                "is_stale": portfolio_mode == "LAST_UPDATE_ONLY",
+                "stale_reason": fallback_reason if portfolio_mode != "IBKR_LIVE" else None,
+                "total_value": total_value,
+                "cash": round(cash, 2),
+                "buying_power": _num(summary.get("buying_power") or payload.get("buying_power")),
+                "unrealized": round(unrealized, 2),
+                "unrealized_pct": round(unrealized / cost_basis * 100, 2) if cost_basis not in (None, 0) else summary.get("unrealized_pct"),
+                "daily_pnl": daily_pnl,
+                "daily_pnl_pct": daily_pnl_pct,
+                "net_liquidation": round(total_value, 2),
+                "positions_count": len(positions),
+            }
+        )
+        payload["summary"] = summary
+        return payload
 
     def _fetch_live_bundle(self) -> Dict[str, Any]:
         heartbeat = self.get_gateway_heartbeat()
@@ -2444,51 +2836,55 @@ def get_provider_status() -> Dict[str, Any]:
     resolution = resolve_portfolio_provider()
     provider_meta: Dict[str, Any] = {}
     try:
-        if hasattr(resolution.provider, "get_summary"):
-            raw_meta = resolution.provider.get_summary() or {}
-        elif hasattr(resolution.provider, "get_runtime_status"):
-            raw_meta = resolution.provider.get_runtime_status() or {}
-        elif hasattr(resolution.provider, "get_snapshot_meta"):
-            raw_meta = resolution.provider.get_snapshot_meta() or {}
-        if isinstance(raw_meta, dict):
-            provider_meta = raw_meta
+        portfolio_payload: Dict[str, Any] = {}
+        raw_portfolio: Dict[str, Any] = {}
+        if hasattr(resolution.provider, "get_portfolio"):
+            raw_portfolio = resolution.provider.get_portfolio() or {}
+        elif hasattr(resolution.provider, "get_summary"):
+            raw_portfolio = {"summary": resolution.provider.get_summary() or {}}
+        helper = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
+        if isinstance(raw_portfolio, dict):
+            if resolution.configured_mode == "mock":
+                provider_meta = dict(raw_portfolio.get("summary") or raw_portfolio)
+            else:
+                portfolio_payload = helper._normalize_portfolio_after_price_overlay(raw_portfolio, resolution=resolution)
+                provider_meta = dict(portfolio_payload.get("summary") or portfolio_payload)
     except Exception:
         provider_meta = {}
     mode = resolution.configured_mode
     snapshot_available = bool(resolution.snapshot_available)
     fallback_active = bool(resolution.fallback_active)
-    if mode == "ibkr-live":
-        if resolution.is_live:
-            status = "LIVE"
-            if provider_meta.get("pricesLive", True):
-                message = "Live IBKR Client Portal Gateway is available."
-            else:
-                message = "IBKR Gateway is connected, but live market quotes are stale or unavailable."
-        elif snapshot_available:
-            status = "LAST_UPDATE"
-            message = resolution.fallback_reason or "Using saved IBKR snapshot."
-        else:
-            status = "DISCONNECTED"
-            message = resolution.fallback_reason or "Client Portal Gateway is unavailable and no saved snapshot exists."
-    elif mode == "last-update":
-        if snapshot_available:
-            status = "LAST_UPDATE"
-            message = "Using saved IBKR snapshot."
-        else:
-            status = "DISCONNECTED"
-            message = resolution.fallback_reason or "No saved IBKR snapshot exists."
-    else:
+    portfolio_mode = provider_meta.get("portfolioMode") or provider_meta.get("mode") or mode.upper()
+    if portfolio_mode == "IBKR_LIVE" and provider_meta.get("isLivePricing", True):
+        status = "LIVE"
+        message = "Live IBKR Client Portal Gateway is available."
+    elif portfolio_mode == "IBKR_LIVE":
+        status = "FALLBACK"
+        message = provider_meta.get("fallback_reason") or "IBKR positions are live, but quote data is stale or unavailable."
+    elif portfolio_mode in {"HYBRID_LAST_POSITIONS_LIVE_QUOTES", "MANUAL_HOLDINGS_LIVE_QUOTES"}:
+        status = "FALLBACK"
+        message = provider_meta.get("fallback_reason") or "Using live fallback prices with last known positions."
+    elif portfolio_mode == "LAST_UPDATE_ONLY":
+        status = "LAST_UPDATE"
+        message = provider_meta.get("fallback_reason") or "Using saved IBKR snapshot."
+    elif portfolio_mode == "MOCK":
         status = "MOCK"
         message = f"{provider_mode_label(mode)} portfolio data selected."
+    elif snapshot_available:
+        status = "LAST_UPDATE"
+        message = provider_meta.get("fallback_reason") or "Using saved IBKR snapshot."
+    else:
+        status = "DISCONNECTED"
+        message = provider_meta.get("fallback_reason") or "Client Portal Gateway is unavailable and no saved snapshot exists."
     return {
         "status": status,
         "message": message,
         "configured_mode": mode,
         "configured_mode_label": provider_mode_label(mode),
-        "active_source": resolution.active_source,
-        "active_source_label": provider_source_label(resolution.active_source),
+        "active_source": provider_meta.get("active_source") or resolution.active_source,
+        "active_source_label": provider_source_label(provider_meta.get("active_source") or resolution.active_source),
         "fallback_active": fallback_active,
-        "fallback_reason": resolution.fallback_reason,
+        "fallback_reason": provider_meta.get("fallback_reason") or resolution.fallback_reason,
         "fallback_from": provider_mode_label(mode) if fallback_active else None,
         "provider_class": resolution.provider_class,
         "gateway_url": get_ibkr_gateway_config()["configured_url"],
@@ -2500,15 +2896,25 @@ def get_provider_status() -> Dict[str, Any]:
         "accounts_available": resolution.accounts_available,
         "positions_available": resolution.positions_available,
         "trades_available": resolution.trades_available,
-        "snapshot_available": snapshot_available,
-        "snapshot_timestamp": resolution.snapshot_timestamp,
-        "is_live": resolution.is_live,
-        "is_stale": resolution.is_stale,
-        "stale_reason": resolution.stale_reason,
+        "snapshot_available": bool(provider_meta.get("snapshot_available", snapshot_available)),
+        "snapshot_timestamp": provider_meta.get("snapshot_timestamp") or resolution.snapshot_timestamp,
+        "is_live": bool(provider_meta.get("is_live", resolution.is_live)),
+        "is_stale": bool(provider_meta.get("is_stale", resolution.is_stale)),
+        "stale_reason": provider_meta.get("stale_reason") or resolution.stale_reason,
+        "portfolioMode": provider_meta.get("portfolioMode") or portfolio_mode,
+        "positionsSource": provider_meta.get("positionsSource"),
+        "priceSource": provider_meta.get("priceSource"),
+        "activePriceProvider": provider_meta.get("activePriceProvider"),
+        "activePositionProvider": provider_meta.get("activePositionProvider"),
+        "isLivePositions": provider_meta.get("isLivePositions"),
+        "isLivePricing": provider_meta.get("isLivePricing"),
+        "isHybrid": provider_meta.get("isHybrid"),
+        "lastPositionsTimestamp": provider_meta.get("lastPositionsTimestamp"),
+        "lastPriceTimestamp": provider_meta.get("lastPriceTimestamp"),
         "lastRefresh": provider_meta.get("lastRefresh") or provider_meta.get("refreshed_at") or resolution.snapshot_timestamp,
         "nextRefresh": provider_meta.get("nextRefresh"),
         "isLiveUpdating": bool(provider_meta.get("isLiveUpdating")) if provider_meta else bool(resolution.is_live),
-        "pricesLive": provider_meta.get("pricesLive"),
+        "pricesLive": provider_meta.get("pricesLive") if provider_meta else None,
         "pricesLastRefresh": provider_meta.get("pricesLastRefresh"),
         "pricesAgeSeconds": provider_meta.get("pricesAgeSeconds"),
         "positionsLastRefresh": provider_meta.get("positionsLastRefresh") or provider_meta.get("positions_refreshed_at"),
