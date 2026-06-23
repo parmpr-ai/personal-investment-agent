@@ -3561,6 +3561,7 @@ export default function MobileExperience() {
               workspaceConfig={workspaceConfig}
               onSelectWorkspace={(workspaceId) => setActive(workspaceId)}
               onModeChange={() => refreshDashboard()}
+              portfolioSource={dashboard?.portfolio?.source}
             />
           </section>
         </MobileSheet>

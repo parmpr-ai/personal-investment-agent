@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity,
   BarChart3,
@@ -333,29 +333,65 @@ const DS_MODE_OPTIONS = [
   { value: 'ibkr-live', label: 'Live IBKR', desc: 'Requires Gateway open and authenticated.' },
 ] as const
 
-function dsStatus(mode: string, result: any, checking: boolean): { label: string; tone: string; detail: string } {
+function dsStatus(mode: string, result: any, checking: boolean, portfolioSource?: string): { label: string; tone: string; detail: string } {
   if (checking) return { label: 'Checking...', tone: 'warn', detail: 'Testing IBKR Gateway connection...' }
   if (mode === 'mock') return { label: 'Mock Mode', tone: 'neutral', detail: 'Portfolio uses simulated data.' }
+
+  // backend status field: "LIVE" | "LAST_UPDATE" | "DISCONNECTED" | "MOCK" | "partial"
+  const st = String(result?.status || '').toUpperCase()
+  // gateway_status: "connected" | "unauthenticated" | "gateway_down" | "not_applicable"
+  const gw = String(result?.gateway_status || '').toLowerCase()
+  const ts = result?.snapshot_timestamp || result?.lastRefresh
+  const src = String(portfolioSource || result?.active_source || '').toUpperCase()
+
   if (mode === 'last-update') {
-    const ts = result?.snapshot_timestamp
-    return result?.snapshot_available
+    const hasSnap = result?.snapshot_available || st === 'LAST_UPDATE' || src === 'LAST_UPDATE'
+    return hasSnap
       ? { label: 'Last Update Available', tone: 'good', detail: ts ? `Last updated ${formatCheckedAt(ts)}` : 'Snapshot available.' }
       : { label: 'No Snapshot', tone: 'bad', detail: 'No offline snapshot. Fetch live data first.' }
   }
+
   if (mode === 'ibkr-live') {
-    const s = result?.status
-    if (s === 'connected') return { label: 'Live Connected', tone: 'good', detail: result?.message || 'IBKR Gateway connected.' }
-    if (s === 'unauthenticated') return { label: 'Login Required', tone: 'warn', detail: 'Open Gateway at https://localhost:5000 and login.' }
-    return { label: 'Gateway Not Connected', tone: 'bad', detail: 'Start IBKR Client Portal Gateway and login.' }
+    // Use dashboard portfolio.source as the authoritative live signal
+    if (src === 'IBKR_LIVE' || st === 'LIVE' || gw === 'connected') {
+      return { label: 'Live Connected', tone: 'good', detail: result?.message || 'IBKR Gateway connected.' }
+    }
+    if (st === 'LAST_UPDATE' || src === 'LAST_UPDATE') {
+      const snap = ts ? `Last updated ${formatCheckedAt(ts)}` : 'Using cached snapshot.'
+      return { label: 'Live → Last Update', tone: 'warn', detail: result?.message || snap }
+    }
+    if (gw === 'unauthenticated') {
+      return { label: 'Login Required', tone: 'warn', detail: 'Open Gateway at https://localhost:5000 and login.' }
+    }
+    return { label: 'Gateway Not Connected', tone: 'bad', detail: result?.message || 'Start IBKR Client Portal Gateway and login.' }
   }
+
   return { label: 'Unknown', tone: 'neutral', detail: '' }
 }
 
-function PortfolioDataSourceCard({ hidden, onModeChange }: { hidden?: boolean; onModeChange?: () => void }) {
+const TFA_POLL_MS = 2_000
+const TFA_POLL_MAX_MS = 90_000
+
+function PortfolioDataSourceCard({
+  hidden,
+  onModeChange,
+  portfolioSource,
+}: {
+  hidden?: boolean
+  onModeChange?: () => void
+  portfolioSource?: string
+}) {
   const [mode, setMode] = useState('mock')
   const [checking, setChecking] = useState(false)
   const [checkResult, setCheckResult] = useState<any>(null)
   const [saveError, setSaveError] = useState('')
+  const tfaPollRef = useRef<number | null>(null)
+  const tfaStartRef = useRef<number>(0)
+
+  const stopTfaPoll = useCallback(() => {
+    if (tfaPollRef.current) window.clearInterval(tfaPollRef.current)
+    tfaPollRef.current = null
+  }, [])
 
   useEffect(() => {
     Promise.allSettled([
@@ -365,10 +401,37 @@ function PortfolioDataSourceCard({ hidden, onModeChange }: { hidden?: boolean; o
       if (modeRes.status === 'fulfilled' && modeRes.value?.mode) setMode(modeRes.value.mode)
       if (statusRes.status === 'fulfilled') setCheckResult(statusRes.value)
     })
-  }, [])
+    return () => stopTfaPoll()
+  }, [stopTfaPoll])
+
+  // When portfolioSource becomes IBKR_LIVE (pushed from dashboard), stop pending poll
+  useEffect(() => {
+    if (portfolioSource === 'IBKR_LIVE') stopTfaPoll()
+  }, [portfolioSource, stopTfaPoll])
+
+  const startTfaPoll = useCallback(() => {
+    stopTfaPoll()
+    tfaStartRef.current = Date.now()
+    tfaPollRef.current = window.setInterval(async () => {
+      if (Date.now() - tfaStartRef.current > TFA_POLL_MAX_MS) { stopTfaPoll(); return }
+      try {
+        const status = await fetchJson('/api/portfolio/provider/status')
+        const st = String(status?.status || '').toUpperCase()
+        const gw = String(status?.gateway_status || '').toLowerCase()
+        if (st === 'LIVE' || gw === 'connected') {
+          setCheckResult(status)
+          stopTfaPoll()
+          onModeChange?.()
+        } else {
+          setCheckResult(status)
+        }
+      } catch {}
+    }, TFA_POLL_MS)
+  }, [stopTfaPoll, onModeChange])
 
   async function selectMode(next: string) {
     setSaveError('')
+    stopTfaPoll()
     setMode(next)
     try {
       const result = await fetchJson('/api/portfolio/provider/mode', {
@@ -383,6 +446,9 @@ function PortfolioDataSourceCard({ hidden, onModeChange }: { hidden?: boolean; o
         const status = await fetchJson('/api/portfolio/provider/status').catch(() => ({ status: 'error', message: 'Gateway check failed.' }))
         setCheckResult(status)
         setChecking(false)
+        const st = String(status?.status || '').toUpperCase()
+        const gw = String(status?.gateway_status || '').toLowerCase()
+        if (st !== 'LIVE' && gw !== 'connected') startTfaPoll()
       } else {
         setCheckResult(result?.status || null)
       }
@@ -392,13 +458,19 @@ function PortfolioDataSourceCard({ hidden, onModeChange }: { hidden?: boolean; o
   }
 
   async function testGateway() {
+    stopTfaPoll()
     setChecking(true)
     const result = await fetchJson('/api/portfolio/provider/status').catch(() => ({ status: 'error', message: 'Gateway check failed.' }))
     setCheckResult(result)
     setChecking(false)
+    const st = String(result?.status || '').toUpperCase()
+    const gw = String(result?.gateway_status || '').toLowerCase()
+    if (st !== 'LIVE' && gw !== 'connected' && mode === 'ibkr-live') startTfaPoll()
   }
 
-  const { label, tone, detail } = dsStatus(mode, checkResult, checking)
+  const { label, tone, detail } = dsStatus(mode, checkResult, checking, portfolioSource)
+  const isLiveConnected = tone === 'good' && mode === 'ibkr-live'
+  const isTfaPending = Boolean(tfaPollRef.current) && !isLiveConnected
 
   return (
     <div className="ds-card">
@@ -422,7 +494,10 @@ function PortfolioDataSourceCard({ hidden, onModeChange }: { hidden?: boolean; o
         ))}
       </div>
       {!hidden && detail && <p className={`ds-detail ds-detail-${tone}`}>{detail}</p>}
-      {mode === 'ibkr-live' && checkResult?.status !== 'connected' && !checking && !hidden && (
+      {!hidden && isTfaPending && (
+        <p className="ds-detail ds-detail-warn">Waiting for IBKR login — approve in IBKR Mobile then return here.</p>
+      )}
+      {mode === 'ibkr-live' && !isLiveConnected && !checking && !isTfaPending && !hidden && (
         <div className="ds-gateway-actions">
           <button className="tab" type="button" onClick={testGateway}>Test Gateway</button>
           <a className="tab" href="https://localhost:5000" target="_blank" rel="noreferrer">Open Gateway</a>
@@ -1313,12 +1388,14 @@ export default function SettingsPage({
   workspaceConfig: providedWorkspaceConfig,
   onSelectWorkspace,
   onModeChange,
+  portfolioSource,
 }: {
   hidden?: boolean
   variant?: SettingsVariant
   workspaceConfig?: WorkspaceConfig
   onSelectWorkspace?: (workspaceId: WorkspaceId) => void
   onModeChange?: () => void
+  portfolioSource?: string
 }) {
   const localWorkspaceConfig = useWorkspaceConfig()
   const workspaceConfig = providedWorkspaceConfig || localWorkspaceConfig
@@ -1339,7 +1416,7 @@ export default function SettingsPage({
   if (variant === 'mobile') {
     return (
       <div className="mobile-settings-workspace">
-        <PortfolioDataSourceCard hidden={hidden} onModeChange={onModeChange} />
+        <PortfolioDataSourceCard hidden={hidden} onModeChange={onModeChange} portfolioSource={portfolioSource} />
         {tabs}
         <div className="mobile-settings-body">{panels}</div>
       </div>

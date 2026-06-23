@@ -129,13 +129,18 @@ export function useLiveDashboard() {
       if (Date.now() - lastFrameAt >= FRAME_TIMEOUT_MS) startPolling()
     }, 1_000)
 
-    const onVisibility = () => {
+    const onResume = () => {
       if (document.visibilityState !== 'visible') return
       void refresh()
       if (!socket || socket.readyState >= WebSocket.CLOSING) connect()
     }
-    window.addEventListener('focus', onVisibility)
-    document.addEventListener('visibilitychange', onVisibility)
+    const onPageShow = (e: PageTransitionEvent) => {
+      // iOS bfcache restore — visibilitychange may not fire
+      if (e.persisted) onResume()
+    }
+    window.addEventListener('focus', onResume)
+    window.addEventListener('pageshow', onPageShow)
+    document.addEventListener('visibilitychange', onResume)
 
     return () => {
       activeRef.current = false
@@ -144,8 +149,9 @@ export function useLiveDashboard() {
       if (watchdogTimer) window.clearInterval(watchdogTimer)
       if (staleRetryRef.current) window.clearTimeout(staleRetryRef.current)
       socket?.close()
-      window.removeEventListener('focus', onVisibility)
-      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onResume)
+      window.removeEventListener('pageshow', onPageShow)
+      document.removeEventListener('visibilitychange', onResume)
     }
   }, [commitDashboard, refresh])
 
