@@ -57,7 +57,7 @@ TRANSACTIONS=[]
 FRONTEND_CONTRACT_SCHEMA_VERSION='ARTEMIS-AI-007.0'
 
 _ROUTE_CACHE_TTL_SECONDS = {
- "dashboard": 8,
+ "dashboard": 3,
  "stock": 10,
  "context": 10,
  "context_batch": 10,

@@ -847,6 +847,7 @@ class IbkrLivePortfolioProvider:
     _CACHE_AT: Optional[datetime] = None
     _CACHE_ERROR: Optional[str] = None
     _CACHE_TTL_SECONDS = _LIVE_REFRESH_SECONDS
+    _QUOTE_REFRESH_SECONDS = 2.5
     _HEARTBEAT_LOCK = threading.RLock()
     _HEARTBEAT_CACHE: Optional[Dict[str, Any]] = None
     _HEARTBEAT_AT: Optional[datetime] = None
@@ -889,11 +890,40 @@ class IbkrLivePortfolioProvider:
             cls._REFRESH_THREAD = threading.Thread(target=_run, daemon=True, name="IbkrLivePortfolioRefresh")
             cls._REFRESH_THREAD.start()
 
+    def _refresh_quotes_only(self) -> None:
+        """Lightweight quote-only refresh: updates prices in the cached bundle without a full IBKR round-trip."""
+        with self._CACHE_LOCK:
+            if not self._CACHE_BUNDLE:
+                return
+            positions = deepcopy(self._CACHE_BUNDLE.get("positions", []))
+        conids = [str(p.get("conid") or "").strip() for p in positions if str(p.get("conid") or "").strip()]
+        if not conids:
+            return
+        quote_map = self._fetch_market_quotes(conids)
+        if not quote_map:
+            return
+        new_positions, prices_live, _, prices_lr, _ = self._overlay_live_quotes(positions, quote_map, positions)
+        as_of = datetime.now(timezone.utc).isoformat()
+        with self._CACHE_LOCK:
+            if self._CACHE_BUNDLE and prices_live:
+                self._CACHE_BUNDLE["positions"] = new_positions
+                self._CACHE_BUNDLE["pricesLive"] = True
+                self._CACHE_BUNDLE["isLiveUpdating"] = True
+                self._CACHE_BUNDLE["pricesLastRefresh"] = prices_lr or as_of
+                self._CACHE_BUNDLE["pricesAgeSeconds"] = _position_quote_refresh_age(prices_lr) if prices_lr else None
+                self._CACHE_AT = datetime.now(timezone.utc)
+
     def _refresh_loop(self) -> None:
+        last_full_at = 0.0
         while not self._REFRESH_STOP.is_set():
             try:
                 if self.get_gateway_heartbeat().get("gateway_open"):
-                    self._fetch_live_bundle()
+                    now = time.time()
+                    if (now - last_full_at) >= self._CACHE_TTL_SECONDS:
+                        self._fetch_live_bundle()
+                        last_full_at = time.time()
+                    else:
+                        self._refresh_quotes_only()
             except Exception as exc:
                 with self._CACHE_LOCK:
                     if self._CACHE_BUNDLE:
@@ -902,7 +932,7 @@ class IbkrLivePortfolioProvider:
                         self._CACHE_BUNDLE["fallback_active"] = True
                         self._CACHE_BUNDLE["fallback_reason"] = str(exc)
                         self._CACHE_BUNDLE["pricesLive"] = False
-            self._REFRESH_STOP.wait(self._CACHE_TTL_SECONDS)
+            self._REFRESH_STOP.wait(self._QUOTE_REFRESH_SECONDS)
 
     def _get(self, path: str, timeout: Optional[float] = None) -> Any:
         request_timeout = float(timeout if timeout is not None else self._gateway_config["timeout_seconds"])

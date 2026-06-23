@@ -2948,7 +2948,13 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
         case 'mktvalue':      return Number(p.market_value ?? last * shares)
         case 'last':          return last
         case 'avgcost':       return Number(p.avg_price || p.avg_cost || 0)
-        case 'daypnl':        return Number(p.day_pnl ?? p.day_change ?? 0)
+        case 'daypnl': {
+          if (p.day_pnl != null) return Number(p.day_pnl)
+          if (p.daily_pnl != null) return Number(p.daily_pnl)
+          const dc = p.day_change != null ? Number(p.day_change) : null
+          const qty = Number(p.quantity ?? p.qty ?? 0)
+          return dc != null && qty > 0 ? dc * qty : 0
+        }
         case 'daypnlpct':     return Number(p.day_change_pct || 0)
         case 'unrealized':    return Number(p.unrealized || 0)
         case 'unrealizedpct': return Number(p.unrealized_pct || 0)
@@ -2966,14 +2972,26 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
   }, [rows, sort, dir])
 
   function renderCell(col: ColKey, position: any) {
-    const change = Number(position.day_change_pct || 0)
-    const unreal = Number(position.unrealized || 0)
-    const unrealPct = Number(position.unrealized_pct || 0)
-    const dayPnl = Number(position.day_pnl ?? position.day_change ?? 0)
-    const risk = Number(position.risk || 0)
     const shares = Number(position.quantity ?? position.qty ?? 0)
-    const last = Number(position.last || position.price || 0)
-    const marketValue = Number(position.market_value ?? last * shares)
+    const lastRaw = position.last ?? position.price
+    const last = lastRaw != null ? Number(lastRaw) : null
+    // market_value from backend; fall back to last × shares only when both are known
+    const marketValueRaw = position.market_value != null
+      ? Number(position.market_value)
+      : last != null && shares > 0 ? last * shares : null
+    // avg_cost / avg_price — show — not $0.00 when missing
+    const avgCost = position.avg_price ?? position.avg_cost
+    // day_change is per-share price change; day_pnl is total position P/L.
+    // Backend doesn't send day_pnl per-position, so compute it.
+    const dayChangePx = position.day_change != null ? Number(position.day_change) : null
+    const dayPnlRaw = position.day_pnl ?? position.daily_pnl
+    const dayPnl = dayPnlRaw != null
+      ? Number(dayPnlRaw)
+      : dayChangePx != null && shares > 0 ? dayChangePx * shares : null
+    const change = Number(position.day_change_pct || 0)
+    const unreal = position.unrealized != null ? Number(position.unrealized) : null
+    const unrealPct = position.unrealized_pct != null ? Number(position.unrealized_pct) : null
+    const risk = Number(position.risk || 0)
     if (hidden) return <td key={col}>{mask}</td>
     if (col.startsWith('adv:')) {
       const def = advancedDefs.find((d) => d.key === col)
@@ -2984,21 +3002,27 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
       case 'company':
         return <td key={col} className="muted mtt-company">{position.name || '—'}</td>
       case 'shares':
-        return <td key={col}>{shares.toLocaleString('en-US')}</td>
+        return <td key={col}>{shares > 0 ? shares.toLocaleString('en-US') : '—'}</td>
       case 'mktvalue':
-        return <td key={col}>{money(marketValue)}</td>
+        return <td key={col}>{money(marketValueRaw)}</td>
       case 'last':
         return <td key={col}>{money(last)}</td>
       case 'avgcost':
-        return <td key={col}>{money(position.avg_price || position.avg_cost || 0)}</td>
-      case 'daypnl':
+        return <td key={col}>{money(avgCost)}</td>
+      case 'daypnl': {
+        if (dayPnl == null) return <td key={col}>—</td>
         return <td key={col} className={dayPnl >= 0 ? 'green' : 'red'}>{`${dayPnl >= 0 ? '+' : ''}${money(dayPnl)}`}</td>
+      }
       case 'daypnlpct':
         return <td key={col} className={change >= 0 ? 'green' : 'red'}>{`${change >= 0 ? '+' : ''}${change.toFixed(2)}%`}</td>
-      case 'unrealized':
+      case 'unrealized': {
+        if (unreal == null) return <td key={col}>—</td>
         return <td key={col} className={unreal >= 0 ? 'green' : 'red'}>{`${unreal >= 0 ? '+' : ''}${money(unreal)}`}</td>
-      case 'unrealizedpct':
+      }
+      case 'unrealizedpct': {
+        if (unrealPct == null) return <td key={col}>—</td>
         return <td key={col} className={unrealPct >= 0 ? 'green' : 'red'}>{`${unrealPct >= 0 ? '+' : ''}${unrealPct.toFixed(1)}%`}</td>
+      }
       case 'risk':
         return (
           <td key={col}>

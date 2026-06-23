@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiUrl, wsUrl } from './runtime-config'
 
-const POLL_INTERVAL_MS = 10_000
+const POLL_INTERVAL_MS = 5_000
+const LIVE_POLL_MS = 2_000
 const FRAME_TIMEOUT_MS = 10_000
 const STALE_RETRY_DELAY_MS = 750
 const DASHBOARD_CACHE_TTL_MS = 8_000
@@ -154,6 +155,16 @@ export function useLiveDashboard() {
       document.removeEventListener('visibilitychange', onResume)
     }
   }, [commitDashboard, refresh])
+
+  // Fast-poll when IBKR live and tab is visible — fills the gap between WebSocket frames.
+  const isLiveSrc = dashboard?.portfolio?.source === 'IBKR_LIVE'
+  useEffect(() => {
+    if (!isLiveSrc) return
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh()
+    }, LIVE_POLL_MS)
+    return () => window.clearInterval(id)
+  }, [isLiveSrc, refresh])
 
   return { dashboard, refresh, backendStatus, transport }
 }
