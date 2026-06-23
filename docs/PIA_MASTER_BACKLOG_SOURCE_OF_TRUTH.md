@@ -55,6 +55,7 @@ Developers may stop only for:
 - HERMES-LIVE-POSITION-METRICS-MAPPING-036 removes fake day metric / score defaults from live stock surfaces, preserves AI-risk provenance, and aligns stock hero quote reads with the live portfolio quote cache.
 - HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 restores explicit research section missing states, hardens live quote / metric contracts, and prevents null risk guards from crashing live portfolio routes.
 - HERMES-MOBILE-LIVE-REFRESH-BLINK-041 stabilizes mobile live refresh by preserving dashboard and portfolio identity across polls, memoizing the portfolio view shell, and preventing mock fallback flashes during live updates. Build passed; PO UAT pending.
+- HERMES-LIVE-QUOTES-037 ties the stock hero and AI context consumers to the live dashboard quote seed, so held symbols follow the same live quote source as the position table and debug live-quotes contract.
 
 ## Sprint Summary
 
@@ -579,6 +580,15 @@ Status: Implemented and build-validated; Product Owner mobile UAT pending.
 - Diagnostics: dev-only mount / unmount logging added for `MobileExperience`, `MobilePortfolioTable`, and `PositionCards`, plus a loading-toggle trace after the first dashboard load.
 - Validation: `npm run build` passed in `frontend/`.
 - Known limitation: PO UAT evidence is still pending in this workspace.
+
+### v0.3.39 - Live Quote Propagation Alignment
+Date: 2026-06-23
+Status: Implemented and backend/frontend validated locally; Product Owner UAT pending.
+- Backlog: HERMES-LIVE-QUOTES-037 is IMPLEMENTED / LOCAL PASS.
+- Backend: `/api/debug/live-quotes` now reports `source`, `quotesReceived`, `lastQuoteTimestamp`, and `symbols` in addition to the live quote trace. The live quote pipeline continues to source from the IBKR market-data snapshot cache.
+- Frontend: stock hero consumers now prefer the live dashboard seed over the original selected-row snapshot for held positions, so the hero follows the same live quote source as the position table.
+- Validation: backend live quote and stock payload inspection confirmed advancing timestamps and live quote fields; frontend build re-run after the hook precedence fix.
+- Known limitation: PO UAT screenshots are still pending in this workspace.
 
 ### v0.3.37 - Live Position Metrics Mapping
 Date: 2026-06-23

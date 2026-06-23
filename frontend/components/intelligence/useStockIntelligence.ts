@@ -403,7 +403,7 @@ function seedSignature(seed: Record<string, unknown> | null | undefined) {
 export function useStockIntelligence(ticker: string, seedPosition?: Record<string, unknown> | null, dashboard?: any) {
   const symbol = cleanSymbol(ticker)
   const dashboardSeed = useMemo(() => findDashboardSeed(dashboard, symbol), [dashboard, symbol])
-  const stageSeed = (isHoldingPosition(seedPosition) ? seedPosition : null) || dashboardSeed || seedPosition || null
+  const stageSeed = dashboardSeed || (isHoldingPosition(seedPosition) ? seedPosition : null) || seedPosition || null
   const stageSeedSignature = seedSignature(stageSeed)
   const stageData = useMemo(() => buildStagePayload(symbol, stageSeed), [symbol, stageSeedSignature])
   const [data, setData] = useState<any>(() => stageData)

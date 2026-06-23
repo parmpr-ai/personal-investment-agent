@@ -1043,12 +1043,23 @@ def debug_live_quotes():
     'quoteTimestamp': timestamp,
     'serverTimestamp': trace.get('serverTimestamp') if trace else meta.get('lastRefresh') or meta.get('snapshot_timestamp'),
    })
+  quote_timestamps = [row.get('quoteTimestamp') for row in output if row.get('quoteTimestamp')]
+  latest_quote_timestamp = None
+  if quote_timestamps:
+   try:
+    latest_quote_timestamp = max(datetime.fromisoformat(str(value).replace('Z', '+00:00')) for value in quote_timestamps).isoformat()
+   except Exception:
+    latest_quote_timestamp = max(str(value) for value in quote_timestamps)
   return {
+   'source': active_source,
    'gatewayConnected': bool(provider_status.get('ibkr_gateway_reachable') and provider_status.get('ibkr_authenticated')),
    'accountConnected': bool(provider_status.get('accounts_available') or provider_status.get('positions_available')),
    'marketDataSubscribed': bool(provider_status.get('is_live') and (provider_status.get('pricesLive') or meta.get('pricesLive'))),
    'pricesLive': bool(provider_status.get('is_live') and (provider_status.get('pricesLive') or meta.get('pricesLive'))),
    'positionsLive': bool(provider_status.get('is_live')),
+   'quotesReceived': sum(1 for row in output if row.get('quoteTimestamp')),
+   'lastQuoteTimestamp': latest_quote_timestamp,
+   'symbols': [row.get('symbol') for row in output if row.get('symbol')],
    'lastQuoteReceived': output[0] if output else None,
    'quoteAgeSeconds': provider_status.get('pricesAgeSeconds') or meta.get('pricesAgeSeconds'),
    'quotes': output,

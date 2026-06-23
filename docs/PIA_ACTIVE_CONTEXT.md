@@ -37,6 +37,7 @@ Stabilization Sprint / Mobile UAT
 * Live IBKR position metrics mapping and score provenance cleanup
 * Research data and live contract hardening for AMD/NBIS and portfolio contracts
 * Mobile live refresh blink stabilization so live polling updates values in place without full-screen remounts
+* Live quote propagation alignment so hero, AI context, and position table follow the same live dashboard seed
 
 
 

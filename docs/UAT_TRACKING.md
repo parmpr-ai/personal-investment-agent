@@ -16,6 +16,22 @@ Format per entry:
 
 ## UAT Log
 
+### HERMES-LIVE-QUOTES-037
+
+Status: PENDING
+Owner: HERMES
+Date: 2026-06-23
+Approved Mock: N/A
+Design Lock Commit: N/A
+Implementation Commit: pending commit in this branch
+
+Build: PASS (`npm run build`)
+
+Notes:
+- Live quote diagnostics now report advancing timestamps, quote count, and symbol list for IBKR_LIVE.
+- Stock hero consumers prefer the live dashboard seed over the original selected-row snapshot for held positions.
+- PO UAT screenshots are still pending in this workspace.
+
 ### HERMES-MOBILE-LIVE-REFRESH-BLINK-041
 
 Status: PENDING
