@@ -228,6 +228,29 @@ def get_portfolio_payload():
    p['is_stale']=False
    p['stale_reason']=None
    p=merge_manual_holdings(p,macros,state_module)
+   manual_positions=[pos for pos in p.get('positions',[]) if str(pos.get('positionSource') or pos.get('manual') or '').upper() == 'MANUAL_HOLDINGS' or bool(pos.get('manual'))]
+   manual_quote_sources=[str(pos.get('priceSource') or pos.get('quoteSource') or '').upper() for pos in manual_positions if pos.get('priceSource') or pos.get('quoteSource')]
+   manual_live_quotes=any(src in {'YAHOO_LIVE','YAHOO_DELAYED','FALLBACK_PROVIDER'} for src in manual_quote_sources) or any(bool(pos.get('isLiveQuote')) for pos in manual_positions)
+   manual_prices_last_refresh=max([str(pos.get('quoteLastRefresh')) for pos in manual_positions if pos.get('quoteLastRefresh')], default=None)
+   if manual_positions and manual_live_quotes:
+    p['positionsSource']='MANUAL_HOLDINGS'
+    p['activePositionProvider']='MANUAL_HOLDINGS'
+    p['isLivePositions']=False
+    p['portfolioMode']='MANUAL_HOLDINGS_LIVE_QUOTES'
+    p['source']='MANUAL_HOLDINGS_LIVE_QUOTES'
+    p['active_source']='MANUAL_HOLDINGS_LIVE_QUOTES'
+    p['priceSource']='YAHOO_LIVE' if 'YAHOO_LIVE' in manual_quote_sources else ('YAHOO_DELAYED' if 'YAHOO_DELAYED' in manual_quote_sources else 'FALLBACK_PROVIDER')
+    p['activePriceProvider']='YAHOO'
+    p['pricesLive']=True
+    p['pricesLastRefresh']=manual_prices_last_refresh
+    p['lastPriceTimestamp']=manual_prices_last_refresh
+    p['isLivePricing']=True
+    p['isHybrid']=True
+    p['fallback_active']=True
+    p['fallback_reason']='Manual holdings priced from live fallback provider.'
+    p['is_live']=False
+    p['is_stale']=False
+    p['stale_reason']=None
   else:
    helper = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
    p = helper._normalize_portfolio_after_price_overlay(p, resolution=resolution)

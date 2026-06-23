@@ -50,6 +50,7 @@ _SOURCE_LABELS = {
     "IBKR_LAST_UPDATE": "IBKR Last Update",
     "HYBRID_LAST_POSITIONS_LIVE_QUOTES": "Hybrid Live Quotes",
     "MANUAL_HOLDINGS_LIVE_QUOTES": "Manual Live Quotes",
+    "MANUAL_HOLDINGS": "Manual Holdings",
     "DISCONNECTED": "Disconnected",
 }
 _LIVE_MODE_ALIASES = {"live", "ibkr-live"}
