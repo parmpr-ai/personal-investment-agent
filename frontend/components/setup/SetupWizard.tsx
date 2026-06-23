@@ -9,8 +9,8 @@ import SectionHeader from '../ui/SectionHeader'
 import StatusCard from './StatusCard'
 import { defaultPreferences, setupStorage } from './storage'
 import type { ConnectionMethod, LiveConnectionResult, SetupDiagnostics, SetupPreferences } from './types'
+import { fetchApi } from '../../lib/runtime-config'
 
-const API = 'http://127.0.0.1:8000'
 const totalSteps = 7
 const command = 'docker run -it --rm -p 5000:5000 voyz/ibeam'
 
@@ -18,10 +18,7 @@ async function fetchJson<T>(path: string, timeoutMs = 3500): Promise<T> {
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(`${API}${path}`, { signal: controller.signal })
-    const payload = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(typeof payload?.detail === 'string' ? payload.detail : `HTTP ${response.status}`)
-    return payload as T
+    return await fetchApi<T>(path, { signal: controller.signal })
   } finally {
     window.clearTimeout(timer)
   }
@@ -89,20 +86,30 @@ export default function SetupWizard() {
   useEffect(() => {
     if (step !== 3) return
     let active = true
-    setDiagnosticsLoading(true)
-    setDiagnosticsError(false)
-    fetchJson<SetupDiagnostics>('/setup/diagnostics')
-      .then((data) => {
-        if (active) setDiagnostics(data)
-      })
-      .catch(() => {
+    let pollTimer: number | null = null
+    const checkDiagnostics = async (showLoading = false) => {
+      if (showLoading) setDiagnosticsLoading(true)
+      setDiagnosticsError(false)
+      try {
+        const data = await fetchJson<SetupDiagnostics>('/setup/diagnostics')
+        if (!active) return
+        setDiagnostics(data)
+        if ((data.ibkr_gateway_reachable || data.gateway_running) && !data.ibkr_authenticated) {
+          pollTimer = window.setTimeout(() => void checkDiagnostics(false), 2_000)
+        }
+      } catch {
         if (!active) return
         setDiagnostics(null)
         setDiagnosticsError(true)
-      })
-      .finally(() => active && setDiagnosticsLoading(false))
+        pollTimer = window.setTimeout(() => void checkDiagnostics(false), 2_000)
+      } finally {
+        if (active && showLoading) setDiagnosticsLoading(false)
+      }
+    }
+    void checkDiagnostics(true)
     return () => {
       active = false
+      if (pollTimer) window.clearTimeout(pollTimer)
     }
   }, [step, diagnosticsRetry])
 

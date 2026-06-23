@@ -41,6 +41,8 @@ import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
 import CompanyLogo from './intelligence/CompanyLogo'
 import { preloadStockIntelligence } from './intelligence/useStockIntelligence'
 import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePositionKey } from '../lib/pia-api'
+import { fetchApi } from '../lib/runtime-config'
+import { useLiveDashboard } from '../lib/use-live-dashboard'
 import {
   buildWatchlistUniverse,
   resolveWatchlistRows,
@@ -57,8 +59,6 @@ import {
   type WorkspaceId,
 } from './workspace'
 
-const API = 'http://127.0.0.1:8000'
-const WS = 'ws://127.0.0.1:8000/ws'
 const mask = 'â€¢â€¢â€¢â€¢â€¢â€¢'
 const assetTypes = ['Stock', 'ETF', 'Crypto', 'Option', 'Other']
 const brokers = ['IBKR', 'Freedom24', 'Revolut', 'Manual']
@@ -232,10 +232,7 @@ function portfolioGridFromView(value: PortfolioViewMode): PortfolioCardGrid {
 }
 
 async function fetchJson(path: string, init?: RequestInit) {
-  const response = await fetch(`${API}${path}`, init)
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw body
-  return body
+  return fetchApi(path, init)
 }
 
 function useMounted() {
@@ -245,32 +242,7 @@ function useMounted() {
 }
 
 function useDash() {
-  const [dashboard, setDashboard] = useState<any>(null)
-
-  useEffect(() => {
-    let active = true
-    fetchJson('/dashboard')
-      .then((data) => {
-        if (active) setDashboard(data)
-      })
-      .catch(() => {})
-
-    const ws = new WebSocket(WS)
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data)
-        if (payload.type === 'dashboard_update' && active) setDashboard(payload)
-      } catch {}
-    }
-    ws.onerror = () => {}
-
-    return () => {
-      active = false
-      ws.close()
-    }
-  }, [])
-
-  return dashboard
+  return useLiveDashboard().dashboard
 }
 
 function useNewsIntelligence() {

@@ -1,5 +1,25 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.36 - Live Frontend Refresh Recovery (HERMES-LIVE-REFRESH-FIX-025)
+
+Date: 2026-06-23
+Status: Implemented and locally validated.
+
+### Frontend
+
+* Added shared `API_BASE_URL` and `WS_BASE_URL` runtime configuration targeting the active backend port.
+* Desktop and Mobile now share a reconnecting dashboard WebSocket with a ten-second polling fallback and focus refresh.
+* Stale dashboard responses automatically trigger a follow-up fetch after cache refresh.
+* Setup polls pending Gateway authentication every two seconds and transitions to Ready without reload.
+* Removed hard-coded runtime port `8000` references from Desktop, Mobile, Setup, and the shared API client.
+
+### UAT
+
+* Mobile and Desktop rendered a second WebSocket value without reload.
+* Silent-socket UAT proved stale retry plus ten-second polling fallback.
+* Closed-socket UAT proved automatic reconnect.
+* Setup pending-to-authenticated UAT completed in 2248 ms without remount.
+
 ## v0.3.35 - Frontend Refresh Lifecycle Diagnostic (HERMES-FRONTEND-REFRESH-DIAGNOSTIC-024)
 
 Date: 2026-06-22

@@ -1,0 +1,153 @@
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { apiUrl, wsUrl } from './runtime-config'
+
+const POLL_INTERVAL_MS = 10_000
+const FRAME_TIMEOUT_MS = 10_000
+const STALE_RETRY_DELAY_MS = 750
+const DASHBOARD_CACHE_TTL_MS = 8_000
+const MAX_RECONNECT_DELAY_MS = 10_000
+
+export type DashboardBackendStatus = 'loading' | 'ok' | 'unavailable'
+export type DashboardTransport = 'connecting' | 'websocket' | 'polling'
+
+function dashboardIsStale(data: any) {
+  const responseAt = Date.parse(String(data?.responseTimestamp || ''))
+  const quoteAt = Date.parse(String(data?.quoteTimestamp || data?.portfolio?.pricesLastRefresh || ''))
+  return Number.isFinite(responseAt) && Number.isFinite(quoteAt) && responseAt - quoteAt > DASHBOARD_CACHE_TTL_MS
+}
+
+async function requestDashboard() {
+  const response = await fetch(apiUrl('/dashboard'), { cache: 'no-store' })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) throw data
+  return data
+}
+
+export function useLiveDashboard() {
+  const [dashboard, setDashboard] = useState<any>(null)
+  const [backendStatus, setBackendStatus] = useState<DashboardBackendStatus>('loading')
+  const [transport, setTransport] = useState<DashboardTransport>('connecting')
+  const activeRef = useRef(false)
+  const staleRetryRef = useRef<number | null>(null)
+
+  const commitDashboard = useCallback((data: any) => {
+    if (!activeRef.current || !data || typeof data !== 'object') return
+    setDashboard(data)
+    setBackendStatus('ok')
+  }, [])
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await requestDashboard()
+      commitDashboard(data)
+      if (dashboardIsStale(data)) {
+        if (staleRetryRef.current) window.clearTimeout(staleRetryRef.current)
+        staleRetryRef.current = window.setTimeout(async () => {
+          try {
+            commitDashboard(await requestDashboard())
+          } catch {
+            if (activeRef.current) setBackendStatus('unavailable')
+          }
+        }, STALE_RETRY_DELAY_MS)
+      }
+      return data
+    } catch {
+      if (activeRef.current) setBackendStatus('unavailable')
+      return null
+    }
+  }, [commitDashboard])
+
+  useEffect(() => {
+    activeRef.current = true
+    let socket: WebSocket | null = null
+    let reconnectTimer: number | null = null
+    let pollTimer: number | null = null
+    let watchdogTimer: number | null = null
+    let reconnectAttempt = 0
+    let lastFrameAt = Date.now()
+
+    const stopPolling = () => {
+      if (pollTimer) window.clearInterval(pollTimer)
+      pollTimer = null
+    }
+
+    const startPolling = (immediate = true) => {
+      if (!activeRef.current) return
+      const alreadyPolling = Boolean(pollTimer)
+      setTransport('polling')
+      if (immediate && !alreadyPolling) void refresh()
+      if (!pollTimer) pollTimer = window.setInterval(() => void refresh(), POLL_INTERVAL_MS)
+    }
+
+    const scheduleReconnect = () => {
+      if (!activeRef.current || reconnectTimer) return
+      const delay = Math.min(1_000 * 2 ** reconnectAttempt, MAX_RECONNECT_DELAY_MS)
+      reconnectAttempt += 1
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null
+        connect()
+      }, delay)
+    }
+
+    const connect = () => {
+      if (!activeRef.current || (socket && socket.readyState < WebSocket.CLOSING)) return
+      setTransport('connecting')
+      try {
+        socket = new WebSocket(wsUrl('/ws'))
+      } catch {
+        startPolling()
+        scheduleReconnect()
+        return
+      }
+      socket.onopen = () => {
+        lastFrameAt = Date.now()
+      }
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data)
+          if (payload?.type !== 'dashboard_update') return
+          lastFrameAt = Date.now()
+          reconnectAttempt = 0
+          stopPolling()
+          setTransport('websocket')
+          commitDashboard(payload)
+        } catch {}
+      }
+      socket.onerror = () => startPolling()
+      socket.onclose = () => {
+        socket = null
+        startPolling()
+        scheduleReconnect()
+      }
+    }
+
+    void refresh()
+    connect()
+    watchdogTimer = window.setInterval(() => {
+      if (Date.now() - lastFrameAt >= FRAME_TIMEOUT_MS) startPolling()
+    }, 1_000)
+
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return
+      void refresh()
+      if (!socket || socket.readyState >= WebSocket.CLOSING) connect()
+    }
+    window.addEventListener('focus', onVisibility)
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      activeRef.current = false
+      stopPolling()
+      if (reconnectTimer) window.clearTimeout(reconnectTimer)
+      if (watchdogTimer) window.clearInterval(watchdogTimer)
+      if (staleRetryRef.current) window.clearTimeout(staleRetryRef.current)
+      socket?.close()
+      window.removeEventListener('focus', onVisibility)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [commitDashboard, refresh])
+
+  return { dashboard, refresh, backendStatus, transport }
+}

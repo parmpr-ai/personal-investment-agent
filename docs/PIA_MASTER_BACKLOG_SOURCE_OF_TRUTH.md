@@ -549,6 +549,18 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 
 ## CHANGELOG
 
+### v0.3.36 - Live Frontend Refresh Recovery
+Date: 2026-06-23
+Status: Implemented and locally validated; Product Owner real-device UAT pending.
+- Backlog: HERMES-LIVE-REFRESH-FIX-025 is IMPLEMENTED / LOCAL PASS.
+- Architecture: DEC-UI-REFRESH-001 is IMPLEMENTED through shared `API_BASE_URL` / `WS_BASE_URL`, reconnecting WebSocket, ten-second fallback polling, and two-second pending-TFA polling.
+- Desktop and Mobile consume one `useLiveDashboard` lifecycle; dashboard frames update Portfolio, Dashboard, and Watchlists state without F5.
+- Stale dashboard responses trigger a 750 ms follow-up fetch after stale-while-revalidate; silent sockets trigger ten-second polling.
+- Setup transitions from pending authentication to Ready automatically and stops polling after success.
+- UAT: Mobile/Desktop rendered `$202.00` from a second socket frame; stale/polling sequence rendered `$100 -> $200 -> $300`; reconnect created a second socket; TFA poll transitioned in 2248 ms.
+- Evidence: `frontend/uat-screenshots/hermes-live-refresh-fix-025/` and `docs/HERMES-LIVE-REFRESH-FIX-025.md`.
+- Known limitation: Gateway was unavailable during final 2026-06-23 UAT, so changing-value UI evidence used controlled contract frames; live provider correctness was validated separately in task 017.
+
 ### v0.3.35 - Frontend Refresh Lifecycle Diagnostic
 Date: 2026-06-22
 Status: Diagnostic complete; P0 implementation continuation OPEN.

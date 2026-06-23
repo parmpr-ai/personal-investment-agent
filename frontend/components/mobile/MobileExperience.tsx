@@ -42,6 +42,7 @@ import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
 import CompanyLogo from '../intelligence/CompanyLogo'
 import { preloadStockIntelligence } from '../intelligence/useStockIntelligence'
 import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolveAssetClass, resolvePositionKey } from '../../lib/pia-api'
+import { useLiveDashboard } from '../../lib/use-live-dashboard'
 import ReorderList from './ReorderList'
 import {
   WorkspaceShell,
@@ -55,7 +56,7 @@ import {
 } from '../dashboard/widgetRegistry'
 import { usePersistedLayout } from '../dashboard/usePersistedLayout'
 import type { MobileHomeSectionId } from '../dashboard/types'
-import { API, fetchJson, mask, money, pct as formatPct, safeMessage } from '../../lib/pia-api'
+import { fetchJson, mask, money, pct as formatPct, safeMessage } from '../../lib/pia-api'
 import { instrumentSearchErrorMessage, searchInstruments, type InstrumentMatch } from '../../lib/instrument-search'
 import {
   buildWatchlistUniverse,
@@ -178,45 +179,7 @@ const scannerFallback = [
 ]
 
 function useMobileDashboard() {
-  const [dashboard, setDashboard] = useState<any>(null)
-  const [backendStatus, setBackendStatus] = useState<'loading' | 'ok' | 'unavailable'>('loading')
-
-  const refresh = useCallback(async () => {
-    try {
-      const response = await fetch('/api/dashboard', { cache: 'no-store' })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) { setBackendStatus('unavailable'); return null }
-      setDashboard(data)
-      setBackendStatus('ok')
-      return data
-    } catch {
-      setBackendStatus('unavailable')
-      return null
-    }
-  }, [])
-
-  useEffect(() => {
-    refresh()
-
-    let socket: WebSocket | undefined
-    try {
-      const wsHost = window.location.hostname
-      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      socket = new WebSocket(`${wsProto}//${wsHost}:8000/ws`)
-      socket.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data)
-          if (payload.type === 'dashboard_update') { setDashboard(payload); setBackendStatus('ok') }
-        } catch {}
-      }
-      socket.onerror = () => { if (!dashboard) setBackendStatus('unavailable') }
-    } catch {}
-
-    return () => socket?.close()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refresh])
-
-  return { dashboard, refresh, backendStatus }
+  return useLiveDashboard()
 }
 
 function riskTone(value: number) {

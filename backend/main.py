@@ -963,7 +963,8 @@ def debug_ui_refresh_status():
    'websocketPushSeconds': 1.5,
    'dashboardCacheSeconds': _ROUTE_CACHE_TTL_SECONDS['dashboard'],
    'providerStatusCacheSeconds': _ROUTE_CACHE_TTL_SECONDS['provider_status'],
-   'frontendPollingSeconds': None,
+   'frontendPollingSeconds': 10,
+   'setupAuthenticationPollingSeconds': 2,
   },
   'cacheTtl': _cache_layers_debug(),
   'dashboardCache': dashboard_cache,
@@ -973,8 +974,8 @@ def debug_ui_refresh_status():
   'deliveryContract': {
    'backendPush': 'websocket',
    'backendWebsocketPath': '/ws',
-   'pollingFallback': False,
-   'setupAuthenticationPolling': False,
+   'pollingFallback': True,
+   'setupAuthenticationPolling': True,
   },
  }
 

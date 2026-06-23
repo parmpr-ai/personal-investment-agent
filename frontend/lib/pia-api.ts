@@ -1,12 +1,8 @@
-const configuredApi = process.env.NEXT_PUBLIC_PIA_API?.trim().replace(/\/$/, '')
+import { API_BASE_URL, WS_BASE_URL, fetchApi } from './runtime-config'
 
-export const getApiBase = () => {
-  if (configuredApi) return configuredApi
-  if (typeof window !== 'undefined') return `${window.location.protocol}//${window.location.hostname}:8000`
-  return ''
-}
-
-export const API = getApiBase()
+export { API_BASE_URL, WS_BASE_URL }
+export const getApiBase = () => API_BASE_URL
+export const API = API_BASE_URL
 
 export const mask = '••••••'
 
@@ -136,8 +132,5 @@ export const safeMessage = (value: unknown, fallback: string) =>
   typeof value === 'string' ? value : typeof (value as { message?: string })?.message === 'string' ? (value as { message: string }).message : fallback
 
 export async function fetchJson(path: string, init?: RequestInit) {
-  const response = await fetch(`${getApiBase()}${path}`, init)
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw body
-  return body
+  return fetchApi(path, init)
 }
