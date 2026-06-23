@@ -351,6 +351,62 @@ def _record_live_quote_trace(
         _LIVE_QUOTE_TRACE.append(payload)
 
 
+def _cached_ai_technical_snapshot(symbol: str) -> Dict[str, Any]:
+    try:
+        from services.ai_intelligence_context import get_cached_technical_snapshot
+
+        return get_cached_technical_snapshot(symbol) or {}
+    except Exception:
+        return {}
+
+
+def _validated_value(official: Optional[float], computed: Optional[float], *, tolerance_pct: float = 1.0) -> Optional[float]:
+    if official is None:
+        return computed
+    if computed is None:
+        return official
+    threshold = max(0.01, abs(computed) * tolerance_pct / 100.0)
+    return official if abs(official - computed) <= threshold else computed
+
+
+def _derive_day_metrics(
+    *,
+    last: Optional[float],
+    previous_close: Optional[float],
+    quantity: Optional[float],
+    multiplier: Optional[float],
+    official_day_change: Optional[float] = None,
+    official_day_change_pct: Optional[float] = None,
+) -> Dict[str, Optional[float]]:
+    computed_change = None
+    computed_pct = None
+    if last is not None and previous_close not in (None, 0):
+        computed_change = round(last - previous_close, 4)
+        computed_pct = round(((last - previous_close) / previous_close) * 100, 4)
+    day_change = _validated_value(official_day_change, computed_change)
+    day_change_pct = _validated_value(official_day_change_pct, computed_pct)
+    day_pnl = None
+    day_pnl_pct = None
+    prev_market_value = None
+    if day_change is not None and quantity not in (None, 0):
+        qty_multiplier = multiplier if multiplier not in (None, 0) else 1.0
+        day_pnl = round(day_change * quantity * qty_multiplier, 2)
+    if previous_close not in (None, 0) and quantity not in (None, 0):
+        qty_multiplier = multiplier if multiplier not in (None, 0) else 1.0
+        prev_market_value = round(previous_close * quantity * qty_multiplier, 2)
+    if day_pnl is not None and prev_market_value not in (None, 0):
+        day_pnl_pct = round((day_pnl / prev_market_value) * 100, 2)
+    elif day_change_pct is not None:
+        day_pnl_pct = round(day_change_pct, 2)
+    return {
+        "day_change": round(day_change, 2) if day_change is not None else None,
+        "day_change_pct": round(day_change_pct, 2) if day_change_pct is not None else None,
+        "day_pnl": day_pnl,
+        "day_pnl_pct": day_pnl_pct,
+        "previous_market_value": prev_market_value,
+    }
+
+
 def get_live_quote_trace(limit: Optional[int] = None) -> List[Dict[str, Any]]:
     with _LIVE_QUOTE_TRACE_LOCK:
         rows = list(_LIVE_QUOTE_TRACE)
@@ -551,8 +607,46 @@ def _aggregate_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         else:
             row.setdefault("multiplier", _num(row.get("multiplier") or 1, 1))
         row["portfolio_pct"] = _num(row.get("portfolio_pct"))
+        row = _apply_position_metric_provenance(row)
         aggregated.append(row)
     return aggregated
+
+
+def _apply_position_metric_provenance(row: Dict[str, Any]) -> Dict[str, Any]:
+    symbol = str(row.get("symbol") or row.get("underlying") or "").strip().upper()
+    ai_snapshot = _cached_ai_technical_snapshot(symbol) if symbol else {}
+    technical = ai_snapshot.get("technicalIndicators") if isinstance(ai_snapshot, dict) else {}
+    ai_updated_at = ai_snapshot.get("updatedAt") or ai_snapshot.get("updated_at") or ai_snapshot.get("lastUpdated")
+    momentum_score = _maybe_num(technical.get("momentumScore")) if isinstance(technical, dict) else None
+    risk_score = _maybe_num(technical.get("riskScore")) if isinstance(technical, dict) else None
+    if risk_score is not None:
+        row["risk"] = risk_score
+        row["risk_source"] = "AI_INTELLIGENCE_CACHE"
+        row["risk_is_placeholder"] = False
+        row["risk_last_updated"] = ai_updated_at
+    else:
+        row["risk"] = None
+        row["risk_source"] = "missing"
+        row["risk_is_placeholder"] = True
+        row["risk_last_updated"] = None
+    if momentum_score is not None:
+        row["momentum_score"] = momentum_score
+        row["momentum_source"] = "AI_INTELLIGENCE_CACHE"
+        row["momentum_is_placeholder"] = False
+        row["momentum_last_updated"] = ai_updated_at
+    else:
+        row["momentum_score"] = None
+        row["momentum_source"] = "missing"
+        row["momentum_is_placeholder"] = True
+        row["momentum_last_updated"] = None
+    row["news_score"] = None
+    row["news_score_source"] = "missing"
+    row["news_score_is_placeholder"] = True
+    row["placeholder_scores"] = momentum_score is None or risk_score is None
+    row["scores_are_placeholders"] = momentum_score is None or risk_score is None
+    row["score_status"] = "missing" if momentum_score is None or risk_score is None else "available"
+    row["metrics_source"] = "AI_INTELLIGENCE_CACHE" if (momentum_score is not None or risk_score is not None) else "missing"
+    return row
 
 
 def normalize_positions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1178,13 +1272,23 @@ class IbkrLivePortfolioProvider:
                 market_value = round(last_price * qty * multiplier, 2) if qty else _num(merged.get("market_value"))
                 cost_basis = _num(merged.get("cost_basis") or merged.get("costBasis"))
                 unrealized = round(market_value - cost_basis, 2) if cost_basis or market_value else _num(merged.get("unrealized"))
+                day_metrics = _derive_day_metrics(
+                    last=last_price,
+                    previous_close=prev_close,
+                    quantity=qty,
+                    multiplier=multiplier,
+                    official_day_change=_maybe_num(merged.get("day_change")),
+                    official_day_change_pct=_maybe_num(merged.get("day_change_pct")),
+                )
                 merged.update(
                     {
                         "last": round(last_price, 4),
                         "previousClose": round(prev_close, 4) if prev_close is not None else merged.get("previousClose"),
                         "prevClose": round(prev_close, 4) if prev_close is not None else merged.get("prevClose"),
-                        "day_change": round(last_price - prev_close, 2) if prev_close is not None else _num(merged.get("day_change")),
-                        "day_change_pct": round(((last_price - prev_close) / prev_close) * 100, 2) if prev_close else _num(merged.get("day_change_pct")),
+                        "day_change": day_metrics["day_change"],
+                        "day_change_pct": day_metrics["day_change_pct"],
+                        "day_pnl": day_metrics["day_pnl"],
+                        "day_pnl_pct": day_metrics["day_pnl_pct"],
                         "market_value": round(market_value, 2) if market_value is not None else merged.get("market_value"),
                         "unrealized": round(unrealized, 2) if unrealized is not None else merged.get("unrealized"),
                         "unrealized_pct": round(unrealized / cost_basis * 100, 2) if cost_basis else _num(merged.get("unrealized_pct")),
@@ -1239,6 +1343,18 @@ class IbkrLivePortfolioProvider:
                     if cost_basis:
                         merged["unrealized"] = round(_num(merged.get("market_value")) - cost_basis, 2)
                         merged["unrealized_pct"] = round(_num(merged.get("unrealized")) / cost_basis * 100, 2)
+                    day_metrics = _derive_day_metrics(
+                        last=_num(merged.get("last")),
+                        previous_close=_maybe_num(merged.get("previousClose") or merged.get("prevClose") or merged.get("closePrice")),
+                        quantity=qty,
+                        multiplier=multiplier,
+                        official_day_change=_maybe_num(merged.get("day_change")),
+                        official_day_change_pct=_maybe_num(merged.get("day_change_pct")),
+                    )
+                    merged["day_change"] = day_metrics["day_change"]
+                    merged["day_change_pct"] = day_metrics["day_change_pct"]
+                    merged["day_pnl"] = day_metrics["day_pnl"]
+                    merged["day_pnl_pct"] = day_metrics["day_pnl_pct"]
                 if merged.get("quoteLastRefresh"):
                     quote_refreshes.append(str(merged.get("quoteLastRefresh")))
                 fallback_reason = fallback_reason or stale_reason
@@ -1509,13 +1625,24 @@ class IbkrLivePortfolioProvider:
             real = _num(p.get("realizedPnl") or p.get("realPnl"))
             last = _num(p.get("mktPrice") or p.get("lastPrice"))
             prev_close = _num(p.get("closePrice") or p.get("prevClose") or p.get("previousClose"))
-            day_change = _num(p.get("changeDay") or p.get("dayChange") or p.get("change") or (last - prev_close if prev_close and last else 0))
-            day_change_pct = _num(p.get("pctChangeDay") or p.get("changePercentDay") or p.get("dayChangePct") or ((day_change / prev_close) * 100 if prev_close else 0))
             base_sym = re.split(r"\s+", sym)[0] if is_opt and sym else sym
             option_meta = _option_metadata(contract_desc, fallback_symbol=base_sym or sym)
             multiplier = _num(p.get("multiplier") or (100 if is_opt else 1), 100 if is_opt else 1)
             cost_basis = round(avg_cost * qty * multiplier if qty else 0, 2)
             position_symbol = option_meta.get("underlying") or base_sym or sym or contract_desc
+            day_metrics = _derive_day_metrics(
+                last=last,
+                previous_close=prev_close,
+                quantity=qty,
+                multiplier=multiplier,
+                official_day_change=_maybe_num(p.get("changeDay") or p.get("dayChange") or p.get("change")),
+                official_day_change_pct=_maybe_num(p.get("pctChangeDay") or p.get("changePercentDay") or p.get("dayChangePct")),
+            )
+            ai_snapshot = _cached_ai_technical_snapshot(position_symbol or contract_desc or sym)
+            ai_technical = ai_snapshot.get("technicalIndicators") or {}
+            ai_updated_at = ai_snapshot.get("updatedAt") or ai_snapshot.get("cachedAt") or ai_snapshot.get("asOf")
+            momentum_score = _maybe_num(ai_technical.get("momentumScore"))
+            risk_score = _maybe_num(ai_technical.get("riskScore"))
             normalized.append({
                 "accountId": account_id,
                 "account_id": account_id,
@@ -1536,21 +1663,31 @@ class IbkrLivePortfolioProvider:
                 "avg_price": round(avg_price, 4),
                 "avg_cost": round(avg_cost, 4),
                 "last": round(last, 4),
-                "day_change_pct": round(day_change_pct, 2),
-                "day_change": round(day_change, 2),
+                "previousClose": round(prev_close, 4) if prev_close is not None else None,
+                "prevClose": round(prev_close, 4) if prev_close is not None else None,
+                "day_change_pct": day_metrics["day_change_pct"],
+                "day_change": day_metrics["day_change"],
+                "day_pnl": day_metrics["day_pnl"],
+                "day_pnl_pct": day_metrics["day_pnl_pct"],
                 "market_value": round(mv, 2),
                 "cost_basis": cost_basis,
                 "unrealized": round(unr, 2),
                 "realized": round(real, 2),
                 "unrealized_pct": round(unr / cost_basis * 100, 2) if cost_basis else 0,
-                "previousClose": round(prev_close, 4),
-                "prevClose": round(prev_close, 4),
-                "risk": 90 if is_opt else 70,
+                "risk": risk_score,
+                "risk_source": "AI_INTELLIGENCE_CACHE" if risk_score is not None else "missing",
+                "risk_is_placeholder": risk_score is None,
+                "risk_last_updated": ai_updated_at if risk_score is not None else None,
                 "brand": "#3B82F6",
                 "accent": "#60A5FA",
                 "logo": (base_sym or sym)[:2],
-                "momentum_score": 55,
-                "news_score": 50,
+                "momentum_score": momentum_score,
+                "momentum_source": "AI_INTELLIGENCE_CACHE" if momentum_score is not None else "missing",
+                "momentum_is_placeholder": momentum_score is None,
+                "momentum_last_updated": ai_updated_at if momentum_score is not None else None,
+                "news_score": None,
+                "news_score_source": "missing",
+                "news_score_is_placeholder": True,
                 "macro_sensitivity": 75,
                 "ai_view": "Live IBKR position",
                 "currency": p.get("currency", "USD"),
@@ -1560,6 +1697,10 @@ class IbkrLivePortfolioProvider:
                 "quoteSource": "POSITION_ENDPOINT",
                 "quoteStale": True,
                 "quoteStaleReason": "Awaiting market data snapshot.",
+                "placeholder_scores": momentum_score is None or risk_score is None,
+                "scores_are_placeholders": momentum_score is None or risk_score is None,
+                "score_status": "missing" if momentum_score is None or risk_score is None else "available",
+                "metrics_source": "AI_INTELLIGENCE_CACHE" if (momentum_score is not None or risk_score is not None) else "missing",
                 "lastRefresh": datetime.now(timezone.utc).isoformat(),
             })
         return [row for row in _aggregate_positions(normalized) if _num(row.get("qty")) != 0 or _num(row.get("market_value")) != 0]
@@ -1603,6 +1744,7 @@ class IbkrLivePortfolioProvider:
                 break
         total_cb = sum(_num(p.get("cost_basis")) for p in positions)
         total_unr = sum(_num(p.get("unrealized")) for p in positions)
+        total_daily_pnl = sum(_num(p.get("day_pnl")) for p in positions if p.get("day_pnl") is not None)
         daily_pnl = None
         daily_pnl_pct = None
         if pnl:
@@ -1610,11 +1752,14 @@ class IbkrLivePortfolioProvider:
             daily_pnl_pct = pnl.get("daily_pnl_pct")
         if daily_pnl is None:
             field_pnl = _field("dailyPnl", "dailyPnL", "dayPnl", "dayPnL", "pnl", "daily_pnl", "dailyProfitLoss")
-            daily_pnl = field_pnl
+            daily_pnl = field_pnl if field_pnl is not None else (round(total_daily_pnl, 2) if positions else None)
         if daily_pnl_pct is None and daily_pnl is not None:
             prev_net_liq = _field("previousNetLiquidation", "prevNetLiquidation", "priorNetLiquidation")
-            if prev_net_liq:
-                daily_pnl_pct = round((daily_pnl / prev_net_liq) * 100, 2)
+            previous_portfolio_value = prev_net_liq
+            if previous_portfolio_value in (None, 0) and total_value is not None and daily_pnl is not None:
+                previous_portfolio_value = total_value - daily_pnl
+            if previous_portfolio_value not in (None, 0):
+                daily_pnl_pct = round((daily_pnl / previous_portfolio_value) * 100, 2)
         return {
             "source": "IBKR_LIVE",
             "mode": "ibkr-live",

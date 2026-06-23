@@ -1,7 +1,7 @@
 # PIA Master Backlog Source Of Truth
 
 Status: Active AI memory engine
-Last updated: 2026-06-22
+Last updated: 2026-06-23
 Branch: `feat/pia-v3-foundation-integration`
 
 This Markdown is the canonical readable operating memory for PIA. The Excel workbook is the PM operational database. Both must stay synchronized after every approved sprint, merge, or implementation.
@@ -52,6 +52,7 @@ Developers may stop only for:
   - IBKR live portfolio correctness and 3-mode portfolio selection resolved; validate Product Owner review of the new UAT screenshots at `frontend/uat-screenshots/pia-ibkr-live-007/`.
   - HERMES-IBKR-UAT-009 hardens live status evaluation, duplicate detection, option normalization, and snapshot history. Offline validation confirms no mock leakage when live mode falls back to last-update.
   - HERMES-PORTFOLIO-ASSETCLASS-001 extends the portfolio model with explicit `assetClass` normalization for stock, option, and crypto across mock, snapshot, live, and manual positions.
+  - HERMES-LIVE-POSITION-METRICS-MAPPING-036 removes fake day metric / score defaults from live stock surfaces, preserves AI-risk provenance, and aligns stock hero quote reads with the live portfolio quote cache.
 
 ## Sprint Summary
 
@@ -136,6 +137,7 @@ Developers may stop only for:
 - **GOV-022-RESEARCH-MOCK-MISSING (P0, OPEN):** archive + commit the approved Research mock and add RESEARCH_DESIGN_SPEC.md to validate the Research V2 Design Lock (DEC-AI-RESEARCH-005 reference currently broken).
   - HERMES-IBKR-LIVE-007 - IBKR live portfolio correctness and 3-mode portfolio selection. IMPLEMENTED/VALIDATED (HERMES, feat/pia-v3-foundation-integration): provider modes `mock`, `last-update`, `ibkr-live`; live snapshot persistence to `backend/data/snapshots/ibkr/`; deduped live positions; desktop/mobile source badges updated; UAT screenshots captured under `frontend/uat-screenshots/pia-ibkr-live-007/`.
   - HERMES-IBKR-UAT-009 - IBKR live data correctness, source switching, option handling, snapshot history, and status reporting. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): strict LIVE / LAST_UPDATE / DISCONNECTED reporting, no silent mock fallback, option normalization, duplicate SOFI/options dedupe, `backend/data/snapshots/ibkr/history/` history log, `/api/portfolio/history`, and shared source fields across provider/status/portfolio routes. Live gateway validation remains pending because the local Client Portal Gateway is offline in this environment.
+  - HERMES-LIVE-POSITION-METRICS-MAPPING-036 - live position metrics and provenance hardening. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): day change / day P&L / day P&L% now derive from validated quote fields, momentum and risk are sourced from cached AI intelligence when available and otherwise marked missing, news score stays null until real scoring exists, and stock hero / AI context prefer the live portfolio quote cache.
 - ATHENA-AI-001 AI Intelligence Architecture & Documentation Consolidation. IMPLEMENTED 2026-06-17 (ATHENA): Architecture document created at `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md`. All 9 AI Intelligence subsystems captured: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, Auto Investor. Changelog and UAT Tracking synchronized.
 - EPIC-AI-INTELLIGENCE-ENGINE-001 Explainable Multi-Source Investment Intelligence Engine. IMPLEMENTED 2026-06-17 (HERMES): V1 backend scoring engine added for actionable stock verdict, portfolio-aware recommendation, expected return, conviction, thesis strength, risk, visual state, scenario probabilities, drivers/risks, score breakdown, factors evaluated, confidence notes, debug mode, and cache-backed `/api/intelligence/{symbol}/score`.
 - ATHENA-AI-002 AI Engine — Full Scoring Pipeline. ROADMAP: Rules-based scoring for Momentum, Trend, Sentiment, Institutional, Fair Value, Risk metrics with sub-factor breakdowns. Requires metric score persistence layer (ATHENA-AI-003). Owner: ATHENA.
@@ -284,6 +286,11 @@ Developers may stop only for:
   - `GET /api/portfolio/live/positions` returned deduped rows with option metadata; the SOFI option row exposed underlying, expiration, strike, call_put, multiplier, and contractDesc.
   - `GET /api/portfolio/history` returned the new history contract with an empty list because the local IBKR Gateway is offline and no fresh live refresh occurred in this environment.
   - Live gateway validation remains pending on a machine with an authenticated Client Portal Gateway.
+- Latest HERMES-LIVE-POSITION-METRICS-MAPPING-036 validation, 2026-06-23:
+  - `python -m py_compile backend/main.py backend/services/*.py backend/tests/*.py` passed.
+  - `python -m unittest discover -s tests -p 'test_*.py'` passed with 9 tests.
+  - Direct local endpoint checks showed `/api/portfolio/provider/status`, `/api/portfolio/live/positions`, and `/api/portfolio/live/summary` still falling back to `LAST_UPDATE` in this environment because the long-lived Gateway-connected process is unavailable here.
+  - `stock` and AI-context code paths now read from the live portfolio quote cache when the live provider is active; placeholder momentum/risk/news scores are suppressed in code and covered by backend regression tests.
 - Latest HERMES-IBKR-HOTFIX-010 validation, 2026-06-22:
   - `python -m py_compile backend/services/portfolio_providers.py backend/services/settings_store.py backend/main.py backend/services/manual_holdings.py backend/services/ibkr_service.py` passed.
   - Live provider cache TTL reduced to 12 seconds and invalidated on mode changes so `/dashboard` and `/api/portfolio/*` cannot keep serving a frozen live bundle after a mode switch.
@@ -560,6 +567,15 @@ Status: Implemented and locally validated; Product Owner real-device UAT pending
 - UAT: Mobile/Desktop rendered `$202.00` from a second socket frame; stale/polling sequence rendered `$100 -> $200 -> $300`; reconnect created a second socket; TFA poll transitioned in 2248 ms.
 - Evidence: `frontend/uat-screenshots/hermes-live-refresh-fix-025/` and `docs/HERMES-LIVE-REFRESH-FIX-025.md`.
 - Known limitation: Gateway was unavailable during final 2026-06-23 UAT, so changing-value UI evidence used controlled contract frames; live provider correctness was validated separately in task 017.
+
+### v0.3.37 - Live Position Metrics Mapping
+Date: 2026-06-23
+Status: Implemented and locally validated; live-Gateway UAT pending in this environment.
+- Backlog: HERMES-LIVE-POSITION-METRICS-MAPPING-036 is IMPLEMENTED / LOCAL PASS.
+- Backend: day change, day P&L, and day P&L% now derive from validated quote fields with fallback formulas; placeholder 55/70/50-style scores are no longer exposed as real live metrics.
+- Intelligence: risk and momentum now read from cached AI intelligence when available and otherwise return null with provenance; news score remains null until proper scoring exists.
+- Stock hero / AI context: live quote reads now prefer the portfolio quote cache so stock panels and portfolio surfaces stay aligned.
+- Validation: backend `py_compile` and `unittest` passed; code paths for `/stock/{ticker}` and AI context now use the live quote cache path when the live provider is active.
 
 ### v0.3.35 - Frontend Refresh Lifecycle Diagnostic
 Date: 2026-06-22

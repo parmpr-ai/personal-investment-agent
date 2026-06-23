@@ -65,23 +65,28 @@ def _trend_label(change_pct: float) -> str:
 
 
 def _build_actions(position: dict[str, Any] | None, watch: dict[str, Any] | None, news_items: list[dict[str, Any]]) -> list[dict[str, str]]:
-    risk = int((position or watch or {}).get("risk") or 50)
-    momentum = int((position or {}).get("momentum_score") or (watch or {}).get("momentum") or 50)
+    source = position or watch or {}
+    risk_value = source.get("risk")
+    momentum_value = (position or {}).get("momentum_score") if (position or {}).get("momentum_score") is not None else (watch or {}).get("momentum")
+    risk = int(risk_value) if risk_value is not None else None
+    momentum = int(momentum_value) if momentum_value is not None else None
     weight = float((position or {}).get("portfolio_pct") or 0)
     actions: list[dict[str, str]] = []
 
     if weight >= 15:
         actions.append({"label": "Scale carefully", "detail": "Position weight is elevated versus portfolio guardrails."})
-    if risk >= 75:
+    if risk is None:
+        actions.append({"label": "Risk unavailable", "detail": "Cached AI risk score is missing for this symbol."})
+    elif risk >= 75:
         actions.append({"label": "Hedge candidate", "detail": "Risk score suggests hedging or trim before adding."})
     elif risk >= 55:
         actions.append({"label": "Watch", "detail": "Monitor intraday tone before sizing up."})
     else:
         actions.append({"label": "Momentum continuation", "detail": "Risk profile allows measured adds if thesis holds."})
 
-    if momentum >= 70:
+    if momentum is not None and momentum >= 70:
         actions.append({"label": "Momentum continuation", "detail": "Tape and momentum scores remain supportive."})
-    if risk >= 70 or any(item.get("bias") == "Bearish" for item in news_items[:2]):
+    if (risk is not None and risk >= 70) or any(item.get("bias") == "Bearish" for item in news_items[:2]):
         actions.append({"label": "Elevated volatility", "detail": "Headline tone or risk score argues for patience."})
 
     if not actions:

@@ -34,6 +34,8 @@ Stabilization Sprint / Mobile UAT
 
 * Home Dashboard refinement
 
+* Live IBKR position metrics mapping and score provenance cleanup
+
 
 
 ## Open P0

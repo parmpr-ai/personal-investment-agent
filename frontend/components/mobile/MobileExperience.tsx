@@ -1069,8 +1069,8 @@ function PositionCard({
   const swipedRef = useRef(false)
   const touchState = useRef<{ x: number; y: number; locked: boolean | null; dx: number }>({ x: 0, y: 0, locked: null, dx: 0 })
 
-  const risk = Number(position.risk || 0)
-  const momentum = Number(position.momentum_score || position.momentum || 52)
+  const risk = position.risk ?? null
+  const momentum = position.momentum_score ?? position.momentum ?? null
   const change = Number(position.day_change_pct || position.change_pct || 0)
   const shares = Number(position.quantity ?? position.qty ?? 0)
   const last = Number(position.last || position.price || 0)
@@ -1126,8 +1126,8 @@ function PositionCard({
     <>
       {showBars && (
         <div className="mps-bars">
-          {show('risk') && <RiskBar value={risk || 31} />}
-          {show('momentum') && <MomentumBar value={momentum} />}
+          {show('risk') && (risk != null ? <RiskBar value={Number(risk)} /> : <span className="muted">Risk unavailable</span>)}
+          {show('momentum') && (momentum != null ? <MomentumBar value={Number(momentum)} /> : <span className="muted">Momentum unavailable</span>)}
         </div>
       )}
       {showBottom && (
@@ -2960,8 +2960,8 @@ function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, s
         case 'daypnlpct':     return Number(p.day_change_pct || 0)
         case 'unrealized':    return Number(p.unrealized || 0)
         case 'unrealizedpct': return Number(p.unrealized_pct || 0)
-        case 'risk':          return Number(p.risk || 0)
-        case 'momentum':      return Number(p.momentum_score || p.momentum || 0)
+        case 'risk':          return p.risk == null ? Number.NEGATIVE_INFINITY : Number(p.risk)
+        case 'momentum':      return p.momentum_score == null && p.momentum == null ? Number.NEGATIVE_INFINITY : Number(p.momentum_score ?? p.momentum)
         case 'weight':        return Number(p.portfolio_pct || 0)
         default:              return 0
       }

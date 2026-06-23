@@ -312,15 +312,44 @@ function providerSourceLabel(value: unknown) {
   return providerModeLabel(value)
 }
 
+function normalizePortfolioProviderState(status: any, portfolioSource?: string) {
+  const activeSource = String(portfolioSource || status?.active_source || status?.source || '').toUpperCase()
+  const configuredMode = String(status?.configured_mode || status?.mode || '').toLowerCase()
+  const gatewayStatus = String(status?.gateway_status || '').toLowerCase()
+  const statusCode = String(status?.status || '').toUpperCase()
+  const fallbackActive = Boolean(status?.fallback_active)
+  const snapshotAvailable = Boolean(status?.snapshot_available)
+  const isLive = activeSource === 'IBKR_LIVE' || statusCode === 'LIVE' || Boolean(status?.is_live)
+  const isLastUpdate = activeSource === 'LAST_UPDATE' || statusCode === 'LAST_UPDATE'
+  const isDisconnected = activeSource === 'DISCONNECTED' || statusCode === 'DISCONNECTED' || gatewayStatus === 'gateway_down'
+  const authenticated = Boolean(status?.ibkr_authenticated)
+  const gatewayConnected = Boolean(status?.ibkr_gateway_reachable || status?.gateway_open || gatewayStatus === 'connected' || activeSource === 'IBKR_LIVE')
+  const connected = isLive && (gatewayConnected || authenticated || gatewayStatus === 'connected')
+  return {
+    activeSource,
+    configuredMode,
+    gatewayStatus,
+    statusCode,
+    fallbackActive,
+    snapshotAvailable,
+    isLive,
+    isLastUpdate,
+    isDisconnected,
+    gatewayConnected,
+    authenticated,
+    connected,
+  }
+}
+
 function ibkrStatusMeta(status: any) {
-  const key = status?.status || 'gateway_down'
-  if (key === 'connected') return { label: 'Connected', tone: 'good', detail: status?.message || 'Connected to Client Portal Gateway' }
-  if (key === 'unauthenticated') return { label: 'Login Required', tone: 'warn', detail: 'Open the gateway and complete IBKR login' }
-  if (key === 'gateway_down') return { label: 'Gateway Down', tone: 'bad', detail: 'Start Client Portal Gateway locally' }
-  if (key === 'fallback') return { label: 'Using Fallback', tone: 'warn', detail: status?.message || 'Fallback portfolio data is active' }
-  if (key === 'error') return { label: 'Error', tone: 'bad', detail: status?.message || 'Client Portal Gateway status failed' }
-  if (status?.snapshot_available) return { label: 'Snapshot Ready', tone: 'good', detail: status?.snapshot_timestamp ? `Last updated at ${formatCheckedAt(status.snapshot_timestamp)}` : 'Offline snapshot is available' }
-  return { label: 'Degraded', tone: 'warn', detail: status?.message || 'Provider status is degraded' }
+  const state = normalizePortfolioProviderState(status)
+  if (state.connected) return { label: 'Live Connected', tone: 'good', detail: status?.message || 'IBKR Client Portal Gateway is connected and live.' }
+  if (state.isLastUpdate || state.snapshotAvailable) return { label: 'Last Update Available', tone: 'good', detail: status?.snapshot_timestamp ? `Last updated at ${formatCheckedAt(status.snapshot_timestamp)}` : 'Offline snapshot is available.' }
+  if (state.gatewayStatus === 'unauthenticated') return { label: 'Login Required', tone: 'warn', detail: 'Open the gateway and complete IBKR login.' }
+  if (state.fallbackActive) return { label: 'Using Fallback', tone: 'warn', detail: status?.message || 'Fallback portfolio data is active.' }
+  if (state.isDisconnected || state.gatewayStatus === 'gateway_down') return { label: 'Gateway Not Connected', tone: 'bad', detail: status?.message || 'Start IBKR Client Portal Gateway locally.' }
+  if (state.statusCode === 'ERROR' || state.statusCode === 'FAILED') return { label: 'Error', tone: 'bad', detail: status?.message || 'Client Portal Gateway status failed.' }
+  return { label: 'Degraded', tone: 'warn', detail: status?.message || 'Provider status is degraded.' }
 }
 
 function boolText(value: unknown) {
@@ -337,31 +366,29 @@ function dsStatus(mode: string, result: any, checking: boolean, portfolioSource?
   if (checking) return { label: 'Checking...', tone: 'warn', detail: 'Testing IBKR Gateway connection...' }
   if (mode === 'mock') return { label: 'Mock Mode', tone: 'neutral', detail: 'Portfolio uses simulated data.' }
 
-  // backend status field: "LIVE" | "LAST_UPDATE" | "DISCONNECTED" | "MOCK" | "partial"
-  const st = String(result?.status || '').toUpperCase()
-  // gateway_status: "connected" | "unauthenticated" | "gateway_down" | "not_applicable"
-  const gw = String(result?.gateway_status || '').toLowerCase()
+  const state = normalizePortfolioProviderState(result, portfolioSource)
   const ts = result?.snapshot_timestamp || result?.lastRefresh
-  const src = String(portfolioSource || result?.active_source || '').toUpperCase()
 
   if (mode === 'last-update') {
-    const hasSnap = result?.snapshot_available || st === 'LAST_UPDATE' || src === 'LAST_UPDATE'
+    const hasSnap = state.snapshotAvailable || state.isLastUpdate
     return hasSnap
       ? { label: 'Last Update Available', tone: 'good', detail: ts ? `Last updated ${formatCheckedAt(ts)}` : 'Snapshot available.' }
       : { label: 'No Snapshot', tone: 'bad', detail: 'No offline snapshot. Fetch live data first.' }
   }
 
   if (mode === 'ibkr-live') {
-    // Use dashboard portfolio.source as the authoritative live signal
-    if (src === 'IBKR_LIVE' || st === 'LIVE' || gw === 'connected') {
+    if (state.connected) {
       return { label: 'Live Connected', tone: 'good', detail: result?.message || 'IBKR Gateway connected.' }
     }
-    if (st === 'LAST_UPDATE' || src === 'LAST_UPDATE') {
+    if (state.isLastUpdate) {
       const snap = ts ? `Last updated ${formatCheckedAt(ts)}` : 'Using cached snapshot.'
       return { label: 'Live → Last Update', tone: 'warn', detail: result?.message || snap }
     }
-    if (gw === 'unauthenticated') {
+    if (state.gatewayStatus === 'unauthenticated') {
       return { label: 'Login Required', tone: 'warn', detail: 'Open Gateway at https://localhost:5000 and login.' }
+    }
+    if (state.fallbackActive) {
+      return { label: 'Using Fallback', tone: 'warn', detail: result?.message || 'Live data is temporarily falling back to the last update snapshot.' }
     }
     return { label: 'Gateway Not Connected', tone: 'bad', detail: result?.message || 'Start IBKR Client Portal Gateway and login.' }
   }
@@ -824,6 +851,22 @@ function IntegrationCenter({ compact = false, hidden = false, variant = 'desktop
   useEffect(() => {
     refreshIntegrations()
   }, [refreshIntegrations])
+
+  useEffect(() => {
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const status = await fetchJson('/api/portfolio/provider/status')
+        if (!cancelled) setProviderStatus(status)
+      } catch {}
+    }
+    const interval = window.setInterval(tick, 5000)
+    void tick()
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
 
   // Sync provider status when dashboard portfolio source changes (no separate polling needed)
   useEffect(() => {

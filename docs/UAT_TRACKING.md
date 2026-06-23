@@ -251,6 +251,27 @@ Notes: Cards v2, card customization, grid + filters, 2x2 compact IBKR style, liv
 
 ---
 
+### HERMES-LIVE-POSITION-METRICS-MAPPING-036 â€” Live position metrics and score provenance hardening
+
+Status: PASS WITH CR
+Owner: HERMES
+Date: 2026-06-23
+Approved Mock: N/A (backend + contract correction)
+Design Lock Commit: N/A
+Implementation Commit: pending commit in this PR
+
+Build: PASS
+
+Notes:
+- Removed fake real-metric defaults from live stock surfaces.
+- Day change / day P&L / day P&L% now derive from validated quote fields and formulas.
+- Risk and momentum come from cached AI intelligence when available; otherwise they return null with provenance.
+- News score remains null until real scoring exists.
+- Backend regression tests cover stock, option, crypto, mixed portfolio, and missing-previous-close cases.
+- The local Gateway-connected process was unavailable during validation in this workspace, so live endpoint output here still reflects the last-update fallback path.
+
+---
+
 ## UAT Governance Rules
 
 Per DEC-GOV-004 (LOCKED 2026-06-11):

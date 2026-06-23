@@ -2163,7 +2163,7 @@ export default function StockAiIntelligenceWidget({
   const v3AcVerdict: string        = v3AcData?.consensusVerdict ?? v3AcData?.consensus_verdict ?? '--'
   const v3CatName: string          = (fc?.catalysts?.[0]?.name) ?? 'Earnings'
   const v3FitScore: number | null  = fc?.portfolioFit?.portfolioFitScore ??
-    (composite != null ? Math.round((composite + (100 - (risk ?? 50))) / 2) : null)
+    (composite != null && risk != null ? Math.round((composite + (100 - risk)) / 2) : null)
 
   return (
     <section className={`sai sai-cr-si-026 sai-cr-si-027 sentiment-${view.toLowerCase()}`} aria-label="AI Intelligence">

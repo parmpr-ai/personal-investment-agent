@@ -159,7 +159,18 @@ const cleanText = (value: any) => {
 }
 const cleanList = (items: any[] = []) =>
   items.filter((item) => !legacyFragments.some((term) => String(item).toLowerCase().includes(term)))
-const fundamentalsScore = (p: any) => Math.round(((p.news_score || 55) + (100 - (p.macro_sensitivity || 50))) / 2)
+const fundamentalsScore = (p: any) => {
+  const news = p.news_score ?? p.newsScore ?? null
+  const macro = p.macro_sensitivity ?? p.macroSensitivity ?? null
+  if (news == null && macro == null) return null
+  const newsScore = news == null ? null : Number(news)
+  const macroScore = macro == null ? null : Number(macro)
+  const parts: number[] = []
+  if (newsScore != null && Number.isFinite(newsScore)) parts.push(newsScore)
+  if (macroScore != null && Number.isFinite(macroScore)) parts.push(100 - macroScore)
+  if (!parts.length) return null
+  return Math.round(parts.reduce((sum, value) => sum + value, 0) / parts.length)
+}
 const metricValue = (p: any, key: string) =>
   key === 'allocation'
     ? p.portfolio_pct
@@ -682,14 +693,16 @@ function Panel({ title, privateTitle: hiddenTitle, children, span = 'span-4', ic
 }
 
 function MetricBar({ label, value, tone = 'blue', hidden = false }: any) {
+  const raw = value == null ? null : Number(value)
+  const width = raw == null || !Number.isFinite(raw) ? 0 : Math.max(0, Math.min(raw, 100))
   return (
     <div className="metric-bar">
       <div>
         <span>{label}</span>
-        <b>{hidden ? mask : pct(value)}</b>
+        <b>{hidden ? mask : raw == null || !Number.isFinite(raw) ? '—' : pct(raw)}</b>
       </div>
       <i>
-        <em className={tone} style={{ width: `${Math.max(0, Math.min(value, 100))}%` }} />
+        <em className={tone} style={{ width: `${width}%` }} />
       </i>
     </div>
   )
@@ -1073,8 +1086,8 @@ function PositionCards({ rows, hidden, setSelected, grid = '3x3' }: any) {
                 <span className={p.unrealized >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.unrealized)} total</span>
               </div>
               <MetricBar label={hidden ? 'Overview' : 'Allocation'} value={p.portfolio_pct} tone="blue" hidden={hidden} />
-              <MetricBar label={hidden ? 'Controls' : 'Risk'} value={p.risk || 0} tone="red" hidden={hidden} />
-              <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={p.momentum_score || 0} tone="green" hidden={hidden} />
+              <MetricBar label={hidden ? 'Controls' : 'Risk'} value={p.risk ?? null} tone="red" hidden={hidden} />
+              <MetricBar label={hidden ? 'Activity' : 'Momentum'} value={p.momentum_score ?? p.momentum ?? null} tone="green" hidden={hidden} />
               <MetricBar label={hidden ? 'Workspace' : 'Fundamentals'} value={fundamentalsScore(p)} tone="violet" hidden={hidden} />
             </button>
           </PiaCard>

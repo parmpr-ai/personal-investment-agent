@@ -15,7 +15,7 @@ from services.ai_data_sources import (
     has_value,
     summarize_sources,
 )
-from services.ai_intelligence import build_ai_intelligence
+from services.ai_intelligence import build_ai_intelligence_bounded
 from services.ai_intelligence_v25 import (
     build_catalyst_engine,
     build_executive_brief,
@@ -29,6 +29,7 @@ from mock_intelligence_data import get_mock_intelligence
 from services.source_registry import SourceRegistry
 from services.stock_intelligence import get_ticker_news_intelligence
 from services.trade_engine import opportunity_for, trade_plan_for
+from services.performance_timing import record_stage, time_stage
 
 
 AI_CONTEXT_SCHEMA_VERSION = "1.2"
@@ -210,11 +211,11 @@ def _compact(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _timed_call(fn: Callable[..., Any], *args: Any, fallback: Any = None, **kwargs: Any) -> dict[str, Any]:
-    start = time.perf_counter()
+    start = time.perf_counter_ns()
     try:
-        return {"data": fn(*args, **kwargs), "timingMs": _elapsed_ms(start), "error": None}
+        return {"data": fn(*args, **kwargs), "timingMs": round((time.perf_counter_ns() - start) / 1_000_000, 3), "error": None}
     except Exception as exc:
-        return {"data": fallback, "timingMs": _elapsed_ms(start), "error": str(exc)}
+        return {"data": fallback, "timingMs": round((time.perf_counter_ns() - start) / 1_000_000, 3), "error": str(exc)}
 
 
 def _cache_entry_valid(saved_at: float, ttl_seconds: int) -> bool:
@@ -317,6 +318,33 @@ def _apply_context_cache_hit(context: dict[str, Any], start: float) -> dict[str,
     performance["totalMs"] = _elapsed_ms(start)
     performance["cacheStatus"] = "cached"
     return cached
+
+
+def get_cached_technical_snapshot(symbol: str) -> dict[str, Any] | None:
+    """Return the cached frontend technical payload without forcing a recompute."""
+    clean = _clean_symbol(symbol)
+    if not clean:
+        return None
+    cached = _CONTEXT_CACHE.get(f"context:{clean}")
+    if not cached or not _cache_entry_valid(cached[0], CACHE_POLICY_SECONDS["context"]):
+        return None
+    context = deepcopy(cached[1])
+    frontend_payload = dict(context.get("frontendPayload") or {})
+    technical = dict(frontend_payload.get("technicalIndicators") or {})
+    source_status = dict(context.get("sourceStatus") or {})
+    technical_status = dict(source_status.get("technicalIndicators") or {})
+    snapshot = {
+        "symbol": clean,
+        "asOf": context.get("asOf"),
+        "cachedAt": datetime.fromtimestamp(cached[0], timezone.utc).isoformat(),
+        "frontendPayload": frontend_payload,
+        "technicalIndicators": technical,
+        "sourceStatus": source_status,
+        "technicalSourceStatus": technical_status,
+    }
+    if technical_status.get("updatedAt"):
+        snapshot["updatedAt"] = technical_status.get("updatedAt")
+    return snapshot
 
 
 def _parse_display_number(value: Any) -> float | None:
@@ -922,18 +950,19 @@ def _position_sizing_context(
     current_price = _num(technical.get("currentPrice"))
     current_weight = _num((position or {}).get("portfolio_pct")) or 0.0
     current_value = _num((position or {}).get("market_value")) or 0.0
-    risk = _num(_first(technical.get("riskScore"), (position or {}).get("risk"), (watch or {}).get("risk"))) or 50.0
+    risk = _num(_first(technical.get("riskScore"), (position or {}).get("risk"), (watch or {}).get("risk")))
+    risk_for_calc = risk if risk is not None else 50.0
     sector_weight = _num(sector_context.get("portfolioSectorWeightPct")) or 0.0
     single_limit = 25.0
     sector_limit = 35.0
     single_headroom = max(0.0, single_limit - current_weight)
     sector_headroom = max(0.0, sector_limit - sector_weight)
     risk_multiplier = 1.0
-    if risk >= 85:
+    if risk_for_calc >= 85:
         risk_multiplier = 0.35
-    elif risk >= 75:
+    elif risk_for_calc >= 75:
         risk_multiplier = 0.5
-    elif risk >= 65:
+    elif risk_for_calc >= 65:
         risk_multiplier = 0.7
     risk_mode = str((macro or {}).get("risk_mode") or "").lower()
     if risk_mode and "buy" not in risk_mode:
@@ -967,7 +996,9 @@ def _position_sizing_context(
             "sectorWeightPct": round(sector_weight, 2),
             "singlePositionHeadroomPct": round(single_headroom, 2),
             "sectorHeadroomPct": round(sector_headroom, 2),
-            "riskScore": round(risk, 2),
+            "riskScore": round(risk, 2) if risk is not None else None,
+            "riskScoreSource": "technicalIndicators" if risk is not None else "missing",
+            "riskScoreIsPlaceholder": risk is None,
             "riskMultiplier": round(risk_multiplier, 2),
             "suggestedMaxAddPct": round(suggested_add_pct, 2),
             "suggestedMaxAddValue": _round(max_add_value),
@@ -986,9 +1017,12 @@ def _portfolio_fit_inputs(
     watch: dict[str, Any] | None,
 ) -> dict[str, Any]:
     expected_return = _num(technical.get("expectedReturnPct"))
-    momentum = _num(technical.get("momentumScore")) or 50.0
-    trend = _num(technical.get("trendScore")) or 50.0
-    risk = _num(sizing.get("riskScore")) or 50.0
+    momentum = _num(technical.get("momentumScore"))
+    trend = _num(technical.get("trendScore"))
+    risk = _num(sizing.get("riskScore"))
+    momentum_for_calc = momentum if momentum is not None else 50.0
+    trend_for_calc = trend if trend is not None else 50.0
+    risk_for_calc = risk if risk is not None else 50.0
     sector_weight = _num(sector_context.get("portfolioSectorWeightPct")) or 0.0
     suggested_add = _num(sizing.get("suggestedMaxAddPct")) or 0.0
     hypothetical_add_pct = min(3.0, suggested_add)
@@ -997,9 +1031,9 @@ def _portfolio_fit_inputs(
     fit_score = (
         50
         + (expected_return or 0) * 0.75
-        + (momentum - 50) * 0.18
-        + (trend - 50) * 0.16
-        - max(0.0, risk - 60) * 0.45
+        + (momentum_for_calc - 50) * 0.18
+        + (trend_for_calc - 50) * 0.16
+        - max(0.0, risk_for_calc - 60) * 0.45
         + diversification_bonus
         - max(0.0, sector_weight - 30) * 0.8
     )
@@ -1010,9 +1044,15 @@ def _portfolio_fit_inputs(
             "candidateCountry": profile.get("country"),
             "currentPrice": technical.get("currentPrice"),
             "expectedReturnPct": _round(expected_return),
-            "momentumScore": round(momentum, 2),
-            "trendScore": round(trend, 2),
-            "riskScore": round(risk, 2),
+            "momentumScore": round(momentum, 2) if momentum is not None else None,
+            "momentumScoreSource": "technicalIndicators" if momentum is not None else "missing",
+            "momentumScoreIsPlaceholder": momentum is None,
+            "trendScore": round(trend, 2) if trend is not None else None,
+            "trendScoreSource": "technicalIndicators" if trend is not None else "missing",
+            "trendScoreIsPlaceholder": trend is None,
+            "riskScore": round(risk, 2) if risk is not None else None,
+            "riskScoreSource": "technicalIndicators" if risk is not None else "missing",
+            "riskScoreIsPlaceholder": risk is None,
             "beta": technical.get("beta"),
             "macroSensitivity": _first((position or {}).get("macro_sensitivity"), (watch or {}).get("macro_sensitivity"), _catalog(str(profile.get("symbol") or "")).get("macro_sensitivity")),
             "currentPortfolioWeightPct": sizing.get("currentWeightPct"),
@@ -1289,7 +1329,13 @@ def _frontend_payload(
     driver_scorecard = _driver_scorecard(technical, analyst_consensus, fit_inputs)
     evidence = _evidence_items(symbol, technical, analyst_targets, news_sentiment, sector_context)
     scenario_outlook = _scenario_outlook(current_price, adjusted_expected_return, risk, news_impact)
-    risk_payload = {"score": int(round(risk if risk is not None else 50)), "level": _risk_label(risk)}
+    risk_payload = {
+        "score": int(round(risk)) if risk is not None else None,
+        "level": _risk_label(risk),
+        "source": "technicalIndicators" if risk is not None else "missing",
+        "isPlaceholder": risk is None,
+        "lastUpdated": _last_updated(source_contexts, ["technicalIndicators"]) if risk is not None else None,
+    }
     ai_summary = (
         f"{symbol} is a {case_type} setup with {round(adjusted_expected_return, 1)}% expected return and {_risk_label(risk).lower()} risk."
         if adjusted_expected_return is not None
@@ -1414,6 +1460,9 @@ def build_ai_intelligence_context(
     context_cache_key = f"context:{clean}"
     cached_context = _CONTEXT_CACHE.get(context_cache_key)
     if not debug and not refresh and cached_context and _cache_entry_valid(cached_context[0], CACHE_POLICY_SECONDS["context"]):
+        record_stage("Fundamentals Provider", 0)
+        record_stage("Analyst Provider", 0)
+        record_stage("AI Scoring Engine", 0)
         return _apply_context_cache_hit(cached_context[1], start)
 
     macro_result = _cached_value("macro", "global", CACHE_POLICY_SECONDS["macro"], "PIA macro snapshot", macro or {}, refresh=refresh)
@@ -1433,7 +1482,7 @@ def build_ai_intelligence_context(
                 clean,
                 CACHE_POLICY_SECONDS["fundamentals"],
                 "Yahoo Finance",
-                yahoo_fundamentals,
+                lambda ticker: yahoo_fundamentals(ticker, refresh=refresh, wait_timeout_seconds=0.55),
                 clean,
                 refresh=refresh,
                 fallback={},
@@ -1466,13 +1515,15 @@ def build_ai_intelligence_context(
                 clean,
                 CACHE_POLICY_SECONDS["technical"],
                 "PIA AI signal engine",
-                lambda ticker: build_ai_intelligence(ticker, refresh=refresh),
+                lambda ticker: build_ai_intelligence_bounded(ticker, refresh=refresh),
                 clean,
                 refresh=refresh,
                 fallback={},
             ),
         }
         fetched = {name: future.result() for name, future in futures.items()}
+    record_stage("Fundamentals Provider", fetched["fundamentals"]["timingMs"])
+    record_stage("AI Scoring Engine", fetched["aiSignal"]["timingMs"])
     fetched["macro"] = macro_result
     fetched["portfolio"] = portfolio_result
     fetched["watchlist"] = watchlist_result
@@ -1492,8 +1543,9 @@ def build_ai_intelligence_context(
     if profile.get("industry"):
         fundamentals.setdefault("industry", profile.get("industry"))
 
-    analyst_consensus = _analyst_consensus(fundamentals)
-    analyst_targets = _analyst_targets(fundamentals)
+    with time_stage("Analyst Provider"):
+        analyst_consensus = _analyst_consensus(fundamentals)
+        analyst_targets = _analyst_targets(fundamentals)
     earnings_history = _earnings_history(fundamentals)
     earnings_calendar = _earnings_calendar(clean, fundamentals, calendar)
     technical = _technical_indicators(fundamentals, ai_signal, position, watch)

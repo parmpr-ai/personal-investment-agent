@@ -1,5 +1,24 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.37 - Live Position Metrics Mapping (HERMES-LIVE-POSITION-METRICS-MAPPING-036)
+
+Date: 2026-06-23
+Status: Implemented and locally validated; live-Gateway UAT pending in this workspace.
+
+### Backend
+
+* Day change, day P&L, and day P&L% now derive from validated quote fields with documented fallback formulas.
+* Live and snapshot position payloads suppress fake placeholder metrics and expose score provenance fields for risk, momentum, and news.
+* Risk and momentum use cached AI Intelligence metrics when available; otherwise they return null and mark provenance as missing.
+* Stock hero and AI context routes now prefer the live portfolio quote cache when live data is active.
+
+### Validation
+
+* Backend regression tests now cover stock, option, crypto, mixed portfolio, and missing-previous-close cases.
+* `python -m py_compile` passed for `backend/main.py`, `backend/services/*.py`, and `backend/tests/*.py`.
+* `python -m unittest discover -s tests -p 'test_*.py'` passed with 9 tests.
+* Local endpoint checks in this workspace still reflected the last-update fallback path because the long-lived Gateway-connected process was unavailable here.
+
 ## v0.3.36 - Live Frontend Refresh Recovery (HERMES-LIVE-REFRESH-FIX-025)
 
 Date: 2026-06-23

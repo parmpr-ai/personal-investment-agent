@@ -442,12 +442,17 @@ def ai_intelligence_test(symbols:str='NVDA,AMD,SOFI,NBIS', refresh:bool=False):
  return build_ai_intelligence_test([s.strip() for s in symbols.split(',') if s.strip()], refresh=refresh)
 @app.get('/ai-intelligence/{symbol}')
 def ai_intelligence(symbol:str, refresh:bool=False):
+ live_refresh=False
+ try:
+  live_refresh=bool(resolve_portfolio_provider().is_live)
+ except Exception:
+  live_refresh=False
  def loader():
   start=time.perf_counter()
   data=build_ai_intelligence(symbol, refresh=refresh)
   return {**data, 'status': data.get('status') or 'ok', 'performanceMs': round((time.perf_counter()-start)*1000, 1)}
  fallback={'symbol': symbol.upper().split()[0], 'status': 'partial', 'sourceStatus': {'aiIntelligence': _route_source_status('aiIntelligence', 'timeout', 0, fallback_used=True, detail='AI intelligence timed out.')}}
- return _route_cache('route', f'ai:{symbol.upper().split()[0]}', 10, loader, fallback, wait_timeout_seconds=0.8)
+ return _route_cache('route', f'ai:{symbol.upper().split()[0]}', 10, loader, fallback, wait_timeout_seconds=0.8, refresh=refresh or live_refresh)
 @app.get('/scanner')
 def scanner():
  p=get_portfolio_payload(); return scanner_items(p.get('positions',[]),macro_snapshot(),WATCHLIST)
@@ -684,10 +689,15 @@ def intelligence_symbol_inputs(symbol:str):
 @app.get('/api/intelligence/{symbol}/context')
 def intelligence_symbol_context(symbol:str, refresh:bool=False, debug:bool=False, contract:str='context'):
  t=symbol.upper().split()[0]
+ live_refresh=False
+ try:
+  live_refresh=bool(resolve_portfolio_provider().is_live)
+ except Exception:
+  live_refresh=False
  def loader():
   return _build_context_payload(t, refresh=refresh, debug=debug) if contract.lower()=='frontend' else build_ai_intelligence_context(t, settings=get_settings(), portfolio=get_portfolio_payload(), macro=macro_snapshot(), calendar=catalyst_calendar(), watchlist=WATCHLIST, provider_status=_intelligence_provider_status(), refresh=refresh, debug=debug)
  fallback=_build_context_partial(t, 'AI context payload timed out.')
- return _route_cache('route', f'ctx:{contract}:{t}', _ROUTE_CACHE_TTL_SECONDS['context'], loader, fallback, wait_timeout_seconds=1.1)
+ return _route_cache('route', f'ctx:{contract}:{t}', _ROUTE_CACHE_TTL_SECONDS['context'], loader, fallback, wait_timeout_seconds=1.1, refresh=refresh or live_refresh)
 @app.get('/api/intelligence/{symbol}/research', response_model=AIResearchResponse)
 def intelligence_symbol_research(symbol:str, refresh:bool=False, debug:bool=False):
  t=symbol.upper().split()[0]; settings=get_settings()
@@ -711,10 +721,15 @@ def watchlist(): return [opportunity_for(w,macro_snapshot()) for w in WATCHLIST]
 @app.get('/stock/{ticker}')
 def stock(ticker:str):
  t=ticker.upper().split()[0]
+ live_refresh=False
+ try:
+  live_refresh=bool(resolve_portfolio_provider().is_live)
+ except Exception:
+  live_refresh=False
  def loader():
   return _build_stock_payload(t)
  fallback=_build_stock_partial(t, 'Stock panel timed out or upstream provider was slow.')
- return _route_cache('route', f'stock:{t}', _ROUTE_CACHE_TTL_SECONDS['stock'], loader, fallback, wait_timeout_seconds=0.9)
+ return _route_cache('route', f'stock:{t}', _ROUTE_CACHE_TTL_SECONDS['stock'], loader, fallback, wait_timeout_seconds=0.9, refresh=live_refresh)
 @app.post('/thesis')
 def save_thesis(req:ThesisRequest):
  THESIS_STORE.setdefault(req.ticker.upper(),[]).append({'title':req.title,'summary':req.summary,'full_text':req.full_text})
@@ -774,6 +789,14 @@ def portfolio_provider_status():
    'provider': _route_source_status('provider', str(status.get('status') or 'unknown').lower(), (time.perf_counter()-start)*1000, fallback_used=False),
   }
   status['routeStatus']='ok'
+  _UI_REFRESH_LOGGER.info(
+   'Provider status resolved configured_mode=%s active_source=%s gateway_status=%s fallback_active=%s provider_class=%s',
+   status.get('configured_mode'),
+   status.get('active_source'),
+   status.get('gateway_status'),
+   status.get('fallback_active'),
+   status.get('provider_class'),
+  )
   return status
  fallback={
   'status': 'partial',
