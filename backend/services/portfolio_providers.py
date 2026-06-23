@@ -1320,37 +1320,43 @@ class IbkrLivePortfolioProvider:
         if _snapshot_available():
             snapshot = SnapshotPortfolioProvider()
             bundle = snapshot._load_bundle()
-            as_of = bundle.get("summary", {}).get("as_of") or bundle.get("meta", {}).get("snapshot_timestamp") or datetime.now(timezone.utc).isoformat()
+            snap_meta = bundle.get("meta", {})
+            # A snapshot written by a recent live fetch is NOT stale (threshold = 15 min).
+            # Inherit its flags rather than hardcoding is_stale=True / pricesLive=False.
+            snap_stale = _is_snapshot_stale(snap_meta)
+            snap_prices_live = bool(snap_meta.get("pricesLive", False)) and not snap_stale
+            snap_live_updating = bool(snap_meta.get("isLiveUpdating", False)) and not snap_stale
+            as_of = bundle.get("summary", {}).get("as_of") or snap_meta.get("snapshot_timestamp") or datetime.now(timezone.utc).isoformat()
             return {
                 "source": "IBKR_LIVE",
                 "mode": "ibkr-live",
                 "as_of": as_of,
-                "account_id": bundle.get("meta", {}).get("account_id"),
+                "account_id": snap_meta.get("account_id"),
                 "positions": bundle.get("positions", []),
                 "summary": bundle.get("summary", {}),
                 "trades": bundle.get("trades", []),
-                "snapshot_timestamp": bundle.get("meta", {}).get("snapshot_timestamp") or bundle.get("meta", {}).get("as_of"),
+                "snapshot_timestamp": snap_meta.get("snapshot_timestamp") or snap_meta.get("as_of"),
                 "snapshot_available": True,
                 "heartbeat": heartbeat,
                 "refreshed_at": as_of,
                 "lastRefresh": as_of,
                 "nextRefresh": None,
-                "pricesLive": False,
-                "pricesLastRefresh": bundle.get("meta", {}).get("pricesLastRefresh") or bundle.get("meta", {}).get("lastRefresh") or bundle.get("meta", {}).get("snapshot_timestamp"),
-                "pricesAgeSeconds": bundle.get("meta", {}).get("pricesAgeSeconds"),
-                "isLiveUpdating": False,
-                "positions_refreshed_at": bundle.get("meta", {}).get("positionsLastRefresh") or bundle.get("meta", {}).get("positions_refreshed_at"),
-                "positionsLastRefresh": bundle.get("meta", {}).get("positionsLastRefresh") or bundle.get("meta", {}).get("positions_refreshed_at"),
-                "summary_refreshed_at": bundle.get("meta", {}).get("summaryLastRefresh") or bundle.get("meta", {}).get("summary_refreshed_at"),
-                "summaryLastRefresh": bundle.get("meta", {}).get("summaryLastRefresh") or bundle.get("meta", {}).get("summary_refreshed_at"),
-                "trades_refreshed_at": bundle.get("meta", {}).get("trades_refreshed_at"),
+                "pricesLive": snap_prices_live,
+                "pricesLastRefresh": snap_meta.get("pricesLastRefresh") or snap_meta.get("lastRefresh") or snap_meta.get("snapshot_timestamp"),
+                "pricesAgeSeconds": snap_meta.get("pricesAgeSeconds"),
+                "isLiveUpdating": snap_live_updating,
+                "positions_refreshed_at": snap_meta.get("positionsLastRefresh") or snap_meta.get("positions_refreshed_at"),
+                "positionsLastRefresh": snap_meta.get("positionsLastRefresh") or snap_meta.get("positions_refreshed_at"),
+                "summary_refreshed_at": snap_meta.get("summaryLastRefresh") or snap_meta.get("summary_refreshed_at"),
+                "summaryLastRefresh": snap_meta.get("summaryLastRefresh") or snap_meta.get("summary_refreshed_at"),
+                "trades_refreshed_at": snap_meta.get("trades_refreshed_at"),
                 "is_live": bool(heartbeat.get("gateway_open")),
-                "is_stale": True,
-                "stale_reason": "Live cache warming; using last saved snapshot.",
+                "is_stale": snap_stale,
+                "stale_reason": "Saved snapshot is stale." if snap_stale else None,
                 "fallback_active": True,
                 "fallback_reason": "Live cache warming; using last saved snapshot.",
-                "quotes_stale": True,
-                "quotes_stale_reason": "Live cache warming; using last saved snapshot.",
+                "quotes_stale": not snap_prices_live,
+                "quotes_stale_reason": None if snap_prices_live else "Live cache warming; using last saved snapshot.",
             }
         return {
             "source": "DISCONNECTED",
