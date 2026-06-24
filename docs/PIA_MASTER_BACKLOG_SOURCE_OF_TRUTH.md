@@ -1,7 +1,7 @@
 # PIA Master Backlog Source Of Truth
 
 Status: Active AI memory engine
-Last updated: 2026-06-23
+Last updated: 2026-06-24
 Branch: `feat/pia-v3-foundation-integration`
 
 This Markdown is the canonical readable operating memory for PIA. The Excel workbook is the PM operational database. Both must stay synchronized after every approved sprint, merge, or implementation.
@@ -41,6 +41,7 @@ Developers may stop only for:
 - Current sprint: Sprint 2C execution and UAT failure remediation.
 - Current status: Hybrid mock intelligence data layer deployed for UI evaluation; design governance and mock-first workflow locked; mobile correction mock pack available for Product Owner review.
 - Current status: IBKR live portfolio modes are synchronized across settings, provider status, portfolio endpoints, and mobile/desktop source badges. Mock, last-update, and live modes are persisted and validated; live snapshots persist locally under `backend/data/snapshots/ibkr/`, with history persisted under `backend/data/snapshots/ibkr/history/`, strict last-update/disconnected reporting when the gateway is offline, and live quote fallback now keeps the last known IBKR positions while refreshing prices from Yahoo Finance when IBKR is unavailable.
+- Current status: IBKR snapshot lifecycle persistence is hardened with explicit snapshot refresh state, startup warm-up, no-data reporting when neither live nor snapshot data exists, and debug/status endpoints that expose snapshot age, refresh status, and hybrid fallback provenance.
 - Current priorities:
   - Enforce mock-first design governance before any further UI implementation.
   - Interaction stabilization on Home and mobile.
@@ -115,6 +116,7 @@ Developers may stop only for:
   - Keep `mock`, `last-update`, and `ibkr-live` mode resolution aligned across settings, provider status, and portfolio endpoints.
   - Preserve local live snapshots and prevent mock rows from appearing in live or last-update modes.
   - When IBKR disconnects, keep the latest IBKR positions snapshot but continue live or near-live pricing through the fallback provider so the portfolio does not freeze on stale values.
+  - Maintain a durable latest snapshot pointer with refresh metadata, startup warm-up, and explicit `NO_DATA` reporting when neither live nor snapshot data exists.
 
 ## Active Backlog
 
@@ -144,6 +146,7 @@ Developers may stop only for:
   - HERMES-IBKR-UAT-009 - IBKR live data correctness, source switching, option handling, snapshot history, and status reporting. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): strict LIVE / LAST_UPDATE / DISCONNECTED reporting, no silent mock fallback, option normalization, duplicate SOFI/options dedupe, `backend/data/snapshots/ibkr/history/` history log, `/api/portfolio/history`, and shared source fields across provider/status/portfolio routes. Live gateway validation remains pending because the local Client Portal Gateway is offline in this environment.
   - HERMES-LIVE-POSITION-METRICS-MAPPING-036 - live position metrics and provenance hardening. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): day change / day P&L / day P&L% now derive from validated quote fields, momentum and risk are sourced from cached AI intelligence when available and otherwise marked missing, news score stays null until real scoring exists, and stock hero / AI context prefer the live portfolio quote cache.
   - HERMES-PRICE-PROVIDER-FALLBACK-044 - live price provider fallback when IBKR disconnects. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): last-known IBKR positions now persist while Yahoo Finance fallback prices recalculate market value, day P/L, unrealized, and portfolio totals; portfolio contracts now expose `portfolioMode`, `positionsSource`, `priceSource`, `isHybrid`, and fallback provenance so the UI can distinguish IBKR live vs hybrid live pricing.
+  - HERMES-IBKR-SNAPSHOT-LIFECYCLE-048 - IBKR snapshot lifecycle persistence and hybrid fallback. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): durable snapshot saves now preserve the latest valid IBKR positions/summary/trades bundle with refresh metadata and history, startup warm-up can seed the live snapshot cache without overwriting good data, `/api/debug/portfolio-snapshot` exposes snapshot age/status, `/api/price-providers/status` reports snapshot/fallback state, and `NO_DATA` is returned explicitly when neither live nor snapshot data is available.
   - HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 - research data and live contract hardening. IMPLEMENTED/LOCAL PASS (HERMES, feat/pia-v3-foundation-integration): `/api/intelligence/{symbol}/research` returns explicit missing sections/provenance, live portfolio positions expose metricStates / missingMetrics for blank values, and null-safe risk handling prevents live route crashes.
 - ATHENA-AI-001 AI Intelligence Architecture & Documentation Consolidation. IMPLEMENTED 2026-06-17 (ATHENA): Architecture document created at `docs/architecture/AI_INTELLIGENCE_ARCHITECTURE.md`. All 9 AI Intelligence subsystems captured: AI Intelligence V2, AI Engine, Portfolio Fit Engine, Position Intelligence, Opportunity Radar, Analyst Verdict Engine, News Intelligence, Investor Bot, Auto Investor. Changelog and UAT Tracking synchronized.
 - EPIC-AI-INTELLIGENCE-ENGINE-001 Explainable Multi-Source Investment Intelligence Engine. IMPLEMENTED 2026-06-17 (HERMES): V1 backend scoring engine added for actionable stock verdict, portfolio-aware recommendation, expected return, conviction, thesis strength, risk, visual state, scenario probabilities, drivers/risks, score breakdown, factors evaluated, confidence notes, debug mode, and cache-backed `/api/intelligence/{symbol}/score`.
@@ -310,6 +313,12 @@ Developers may stop only for:
   - `npm run build` passed in `frontend/`.
   - Portfolio contracts now report hybrid fallback state when IBKR is unavailable and Yahoo fallback quotes are active, instead of freezing the portfolio on stale LAST_UPDATE values.
   - Live Gateway UAT remains pending in this workspace because the authenticated Client Portal Gateway process is not available here.
+- Latest HERMES-IBKR-SNAPSHOT-LIFECYCLE-048 validation, 2026-06-24:
+  - `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/tests/test_snapshot_lifecycle.py` passed.
+  - `python -m unittest discover -s tests -p 'test_*.py'` passed with 24 tests.
+  - Snapshot persistence now retains the last valid IBKR bundle, writes explicit refresh-state metadata, and refuses to overwrite a good snapshot with empty or failed live fetches.
+  - Backend contracts now expose `/api/debug/portfolio-snapshot` plus snapshot fields in `GET /api/price-providers/status`, and live provider resolution returns explicit `NO_DATA` when neither live nor snapshot data exists.
+  - PO UAT screenshots and live Gateway validation remain pending in this workspace.
 - Latest HERMES-IBKR-HOTFIX-010 validation, 2026-06-22:
   - `python -m py_compile backend/services/portfolio_providers.py backend/services/settings_store.py backend/main.py backend/services/manual_holdings.py backend/services/ibkr_service.py` passed.
   - Live provider cache TTL reduced to 12 seconds and invalidated on mode changes so `/dashboard` and `/api/portfolio/*` cannot keep serving a frozen live bundle after a mode switch.
@@ -594,6 +603,16 @@ Status: Implemented and build-validated; Product Owner mobile UAT pending.
 - Frontend: `useLiveDashboard` now stabilizes nested dashboard data across polls, mobile home sections are memoized, and portfolio live mode preserves the last non-empty live rows so mock fallback data does not flash during refresh.
 - Diagnostics: dev-only mount / unmount logging added for `MobileExperience`, `MobilePortfolioTable`, and `PositionCards`, plus a loading-toggle trace after the first dashboard load.
 - Validation: `npm run build` passed in `frontend/`.
+- Known limitation: PO UAT evidence is still pending in this workspace.
+
+### v0.3.41 - IBKR Snapshot Lifecycle Persistence and No-Data State
+Date: 2026-06-24
+Status: Implemented and locally validated; Product Owner live-Gateway UAT pending.
+- Backlog: HERMES-IBKR-SNAPSHOT-LIFECYCLE-048 is IMPLEMENTED / LOCAL PASS.
+- Backend: live IBKR snapshot persistence now retains the latest valid bundle, writes snapshot refresh-state metadata, seeds startup warm-up from the live provider when available, and refuses to overwrite a good snapshot with empty or failed live fetches.
+- Backend: `/api/debug/portfolio-snapshot` exposes `snapshotAvailable`, `snapshotTimestamp`, `snapshotAgeSeconds`, `positionsCount`, `lastRefreshAttempt`, `lastRefreshStatus`, and `lastRefreshError`; `/api/price-providers/status` now includes snapshot and fallback quote health.
+- Contract: live provider resolution now returns an explicit `NO_DATA` state when neither live nor snapshot data exists, while snapshot fallback still overlays live fallback pricing on the last valid IBKR positions bundle.
+- Validation: backend `py_compile` plus the snapshot lifecycle regression suite passed; `python -m unittest discover -s tests -p 'test_*.py'` passed with 24 tests.
 - Known limitation: PO UAT evidence is still pending in this workspace.
 
 ### v0.3.40 - Live Position Metric Recalculation and Provenance

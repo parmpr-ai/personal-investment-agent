@@ -195,85 +195,199 @@ def _dashboard_cache_debug():
  except Exception as exc:
   return {'available':False, 'ttlSeconds':_ROUTE_CACHE_TTL_SECONDS['dashboard'], 'error':str(exc)}
 
-def get_portfolio_payload():
- import services.state as state_module
- from services.state import compute_exposures, risk_doctor, today_actions, stress_tests
- macros=macro_snapshot()
+
+def _portfolio_snapshot_debug_payload():
  try:
   resolution=resolve_portfolio_provider()
   provider=resolution.provider
-  p=provider.get_portfolio()
-  configured_mode=resolution.configured_mode
-  p['configured_mode']=configured_mode
-  p['mode']=p.get('mode') or configured_mode
-  p['provider_class']=resolution.provider_class
-  p['snapshot_available']=p.get('snapshot_available', resolution.snapshot_available)
-  p['snapshot_timestamp']=p.get('snapshot_timestamp') or resolution.snapshot_timestamp
-  p['nextRefresh']=p.get('nextRefresh')
-  p['positions']=normalize_positions(p.get('positions',[]))
+  snapshot_state={}
+  if hasattr(provider, 'get_snapshot_state'):
+   try:
+    snapshot_state=provider.get_snapshot_state() or {}
+   except Exception:
+    snapshot_state={}
+  elif hasattr(provider, 'get_snapshot_meta'):
+   try:
+    snapshot_state=provider.get_snapshot_meta() or {}
+   except Exception:
+    snapshot_state={}
+  snapshot_available=bool(snapshot_state.get('snapshotAvailable', resolution.snapshot_available))
+  snapshot_timestamp=snapshot_state.get('snapshotTimestamp') or resolution.snapshot_timestamp
+  positions_count=snapshot_state.get('positionsCount')
+  if positions_count is None:
+   try:
+    positions_count=len(provider.get_positions() or []) if hasattr(provider, 'get_positions') else 0
+   except Exception:
+    positions_count=0
+  return {
+   'snapshotAvailable': snapshot_available,
+   'snapshotTimestamp': snapshot_timestamp,
+   'snapshotAgeSeconds': snapshot_state.get('snapshotAgeSeconds'),
+   'positionsCount': positions_count or 0,
+   'source': snapshot_state.get('source') or resolution.active_source or 'DISCONNECTED',
+   'schemaVersion': snapshot_state.get('schemaVersion') or snapshot_state.get('snapshotSchemaVersion') or 1,
+   'lastRefreshAttempt': snapshot_state.get('lastRefreshAttempt'),
+   'lastRefreshStatus': snapshot_state.get('lastRefreshStatus') or snapshot_state.get('snapshotRefreshStatus'),
+   'lastRefreshError': snapshot_state.get('lastRefreshError') or snapshot_state.get('snapshotLastRefreshError'),
+   'providerClass': resolution.provider_class,
+   'fallbackActive': bool(resolution.fallback_active),
+   'fallbackReason': resolution.fallback_reason,
+   'configuredMode': resolution.configured_mode,
+   'activeSource': resolution.active_source,
+   'isLive': bool(resolution.is_live),
+   'isStale': bool(resolution.is_stale),
+  }
+ except Exception as exc:
+  return {
+   'snapshotAvailable': False,
+   'snapshotTimestamp': None,
+   'snapshotAgeSeconds': None,
+   'positionsCount': 0,
+   'source': 'DISCONNECTED',
+   'schemaVersion': 1,
+   'lastRefreshAttempt': None,
+   'lastRefreshStatus': 'failed',
+   'lastRefreshError': str(exc),
+   'providerClass': 'Unknown',
+   'fallbackActive': False,
+   'fallbackReason': str(exc),
+   'configuredMode': get_data_source_mode(),
+   'activeSource': 'DISCONNECTED',
+   'isLive': False,
+   'isStale': True,
+  }
+
+def get_portfolio_payload():
+ import services.state as state_module
+ from services.state import compute_exposures, risk_doctor, today_actions, stress_tests
+ macros = macro_snapshot()
+ try:
+  resolution = resolve_portfolio_provider()
+  provider = resolution.provider
+  snapshot_state = {}
+  if hasattr(provider, 'get_snapshot_state'):
+   try:
+    snapshot_state = provider.get_snapshot_state() or {}
+   except Exception:
+    snapshot_state = {}
+  elif hasattr(provider, 'get_snapshot_meta'):
+   try:
+    snapshot_state = provider.get_snapshot_meta() or {}
+   except Exception:
+    snapshot_state = {}
+  p = provider.get_portfolio()
+  configured_mode = resolution.configured_mode
+  p['configured_mode'] = configured_mode
+  p['mode'] = p.get('mode') or configured_mode
+  p['provider_class'] = resolution.provider_class
+  p['snapshot_available'] = p.get('snapshot_available', resolution.snapshot_available)
+  p['snapshot_timestamp'] = p.get('snapshot_timestamp') or resolution.snapshot_timestamp
+  p['snapshotAvailable'] = p['snapshot_available']
+  p['snapshotTimestamp'] = p['snapshot_timestamp']
+  p['snapshotAgeSeconds'] = snapshot_state.get('snapshotAgeSeconds', p.get('snapshotAgeSeconds'))
+  p['snapshot_age_seconds'] = p['snapshotAgeSeconds']
+  p['snapshotRefreshStatus'] = snapshot_state.get('lastRefreshStatus') or snapshot_state.get('snapshotRefreshStatus') or p.get('snapshotRefreshStatus')
+  p['snapshot_refresh_status'] = p['snapshotRefreshStatus']
+  p['snapshotLastRefreshAttempt'] = snapshot_state.get('lastRefreshAttempt') or p.get('snapshotLastRefreshAttempt')
+  p['snapshot_last_refresh_attempt'] = p['snapshotLastRefreshAttempt']
+  p['snapshotLastRefreshError'] = snapshot_state.get('lastRefreshError') or p.get('snapshotLastRefreshError')
+  p['snapshot_last_refresh_error'] = p['snapshotLastRefreshError']
+  p['snapshotSchemaVersion'] = snapshot_state.get('schemaVersion') or p.get('snapshotSchemaVersion')
+  p['snapshot_schema_version'] = p['snapshotSchemaVersion']
+  p['nextRefresh'] = p.get('nextRefresh')
+  p['positions'] = normalize_positions(p.get('positions', []))
   if configured_mode == 'mock':
-   p['source']='MOCK'
-   p['active_source']='MOCK'
-   p['portfolioMode']='MOCK'
-   p['positionsSource']='MOCK'
-   p['priceSource']='MOCK'
-   p['activePriceProvider']='MOCK'
-   p['activePositionProvider']='MOCK'
-   p['isLivePositions']=False
-   p['isLivePricing']=False
-   p['isHybrid']=False
-   p['fallback_active']=False
-   p['fallback_reason']=None
-   p['is_live']=False
-   p['is_stale']=False
-   p['stale_reason']=None
-   p=merge_manual_holdings(p,macros,state_module)
-   manual_positions=[pos for pos in p.get('positions',[]) if str(pos.get('positionSource') or pos.get('manual') or '').upper() == 'MANUAL_HOLDINGS' or bool(pos.get('manual'))]
-   manual_quote_sources=[str(pos.get('priceSource') or pos.get('quoteSource') or '').upper() for pos in manual_positions if pos.get('priceSource') or pos.get('quoteSource')]
-   manual_live_quotes=any(src in {'YAHOO_LIVE','YAHOO_DELAYED','FALLBACK_PROVIDER'} for src in manual_quote_sources) or any(bool(pos.get('isLiveQuote')) for pos in manual_positions)
-   manual_prices_last_refresh=max([str(pos.get('quoteLastRefresh')) for pos in manual_positions if pos.get('quoteLastRefresh')], default=None)
+   p['source'] = 'MOCK'
+   p['active_source'] = 'MOCK'
+   p['portfolioMode'] = 'MOCK'
+   p['positionsSource'] = 'MOCK'
+   p['priceSource'] = 'MOCK'
+   p['activePriceProvider'] = 'MOCK'
+   p['activePositionProvider'] = 'MOCK'
+   p['isLivePositions'] = False
+   p['isLivePricing'] = False
+   p['isHybrid'] = False
+   p['fallback_active'] = False
+   p['fallback_reason'] = None
+   p['is_live'] = False
+   p['is_stale'] = False
+   p['stale_reason'] = None
+   p = merge_manual_holdings(p, macros, state_module)
+   manual_positions = [pos for pos in p.get('positions', []) if str(pos.get('positionSource') or pos.get('manual') or '').upper() == 'MANUAL_HOLDINGS' or bool(pos.get('manual'))]
+   manual_quote_sources = [str(pos.get('priceSource') or pos.get('quoteSource') or '').upper() for pos in manual_positions if pos.get('priceSource') or pos.get('quoteSource')]
+   manual_live_quotes = any(src in {'YAHOO_LIVE', 'YAHOO_DELAYED', 'FALLBACK_PROVIDER'} for src in manual_quote_sources) or any(bool(pos.get('isLiveQuote')) for pos in manual_positions)
+   manual_prices_last_refresh = max([str(pos.get('quoteLastRefresh')) for pos in manual_positions if pos.get('quoteLastRefresh')], default=None)
    if manual_positions and manual_live_quotes:
-    p['positionsSource']='MANUAL_HOLDINGS'
-    p['activePositionProvider']='MANUAL_HOLDINGS'
-    p['isLivePositions']=False
-    p['portfolioMode']='MANUAL_HOLDINGS_LIVE_QUOTES'
-    p['source']='MANUAL_HOLDINGS_LIVE_QUOTES'
-    p['active_source']='MANUAL_HOLDINGS_LIVE_QUOTES'
-    p['priceSource']='YAHOO_LIVE' if 'YAHOO_LIVE' in manual_quote_sources else ('YAHOO_DELAYED' if 'YAHOO_DELAYED' in manual_quote_sources else 'FALLBACK_PROVIDER')
-    p['activePriceProvider']='YAHOO'
-    p['pricesLive']=True
-    p['pricesLastRefresh']=manual_prices_last_refresh
-    p['lastPriceTimestamp']=manual_prices_last_refresh
-    p['isLivePricing']=True
-    p['isHybrid']=True
-    p['fallback_active']=True
-    p['fallback_reason']='Manual holdings priced from live fallback provider.'
-    p['is_live']=False
-    p['is_stale']=False
-    p['stale_reason']=None
+    p['positionsSource'] = 'MANUAL_HOLDINGS'
+    p['activePositionProvider'] = 'MANUAL_HOLDINGS'
+    p['isLivePositions'] = False
+    p['portfolioMode'] = 'MANUAL_HOLDINGS_LIVE_QUOTES'
+    p['source'] = 'MANUAL_HOLDINGS_LIVE_QUOTES'
+    p['active_source'] = 'MANUAL_HOLDINGS_LIVE_QUOTES'
+    p['priceSource'] = 'YAHOO_LIVE' if 'YAHOO_LIVE' in manual_quote_sources else ('YAHOO_DELAYED' if 'YAHOO_DELAYED' in manual_quote_sources else 'FALLBACK_PROVIDER')
+    p['activePriceProvider'] = 'YAHOO'
+    p['pricesLive'] = True
+    p['pricesLastRefresh'] = manual_prices_last_refresh
+    p['lastPriceTimestamp'] = manual_prices_last_refresh
+    p['isLivePricing'] = True
+    p['isHybrid'] = True
+    p['fallback_active'] = True
+    p['fallback_reason'] = 'Manual holdings priced from live fallback provider.'
+    p['is_live'] = False
+    p['is_stale'] = False
+    p['stale_reason'] = None
   else:
    helper = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
    p = helper._normalize_portfolio_after_price_overlay(p, resolution=resolution)
-  p['positions']=normalize_positions(p.get('positions',[]))
-  p['pricesLive']=bool(p.get('pricesLive', False))
-  p['pricesLastRefresh']=p.get('pricesLastRefresh')
-  p['pricesAgeSeconds']=p.get('pricesAgeSeconds')
-  p['positionsLastRefresh']=p.get('positionsLastRefresh') or p.get('positions_refreshed_at')
-  p['summaryLastRefresh']=p.get('summaryLastRefresh') or p.get('summary_refreshed_at')
-  p['lastRefresh']=p.get('lastRefresh') or p.get('refreshed_at') or p.get('summaryLastRefresh') or resolution.snapshot_timestamp
-  p['isLiveUpdating']=p.get('isLiveUpdating', bool(p.get('isLivePricing', False) or resolution.is_live))
-  if not p.get('exposures'): p['exposures']=compute_exposures(p.get('positions',[]),p.get('total_value',0))
-  if 'guardrails' not in p: p['guardrails']=risk_doctor(p.get('positions',[]),macros)
-  if 'today_actions' not in p: p['today_actions']=today_actions(p.get('positions',[]),macros)
-  if 'stress_tests' not in p: p['stress_tests']=stress_tests(p.get('total_value',0))
-  p['baseCurrency']=p.get('currency','USD')
-  p['fxRate']=get_fx_rate('USD','EUR')
+   if not p.get('positions') and p.get('portfolioMode') in {'NO_DATA', 'DISCONNECTED', 'LAST_UPDATE_ONLY'}:
+    p = merge_manual_holdings(p, macros, state_module)
+    manual_positions = [pos for pos in p.get('positions', []) if str(pos.get('positionSource') or pos.get('manual') or '').upper() == 'MANUAL_HOLDINGS' or bool(pos.get('manual'))]
+    manual_quote_sources = [str(pos.get('priceSource') or pos.get('quoteSource') or '').upper() for pos in manual_positions if pos.get('priceSource') or pos.get('quoteSource')]
+    manual_live_quotes = any(src in {'YAHOO_LIVE', 'YAHOO_DELAYED', 'FALLBACK_PROVIDER'} for src in manual_quote_sources) or any(bool(pos.get('isLiveQuote')) for pos in manual_positions)
+    manual_prices_last_refresh = max([str(pos.get('quoteLastRefresh')) for pos in manual_positions if pos.get('quoteLastRefresh')], default=None)
+    if manual_positions:
+     p['positionsSource'] = 'MANUAL_HOLDINGS'
+     p['activePositionProvider'] = 'MANUAL_HOLDINGS'
+     p['isLivePositions'] = False
+     p['portfolioMode'] = 'MANUAL_HOLDINGS_LIVE_QUOTES' if manual_live_quotes else 'MANUAL_HOLDINGS'
+     p['source'] = p['portfolioMode']
+     p['active_source'] = p['portfolioMode']
+     p['priceSource'] = 'YAHOO_LIVE' if 'YAHOO_LIVE' in manual_quote_sources else ('YAHOO_DELAYED' if 'YAHOO_DELAYED' in manual_quote_sources else ('FALLBACK_PROVIDER' if manual_quote_sources else 'STALE'))
+     p['activePriceProvider'] = 'YAHOO' if manual_live_quotes else 'STALE'
+     p['pricesLive'] = manual_live_quotes
+     p['pricesLastRefresh'] = manual_prices_last_refresh
+     p['lastPriceTimestamp'] = manual_prices_last_refresh
+     p['isLivePricing'] = manual_live_quotes
+     p['isHybrid'] = manual_live_quotes
+     p['fallback_active'] = True
+     p['fallback_reason'] = 'Manual holdings priced from fallback provider.' if manual_live_quotes else 'Manual holdings available without live quotes.'
+     p['is_live'] = False
+     p['is_stale'] = False
+     p['stale_reason'] = None
+  p['positions'] = normalize_positions(p.get('positions', []))
+  p['pricesLive'] = bool(p.get('pricesLive', False))
+  p['pricesLastRefresh'] = p.get('pricesLastRefresh')
+  p['pricesAgeSeconds'] = p.get('pricesAgeSeconds')
+  p['positionsLastRefresh'] = p.get('positionsLastRefresh') or p.get('positions_refreshed_at')
+  p['summaryLastRefresh'] = p.get('summaryLastRefresh') or p.get('summary_refreshed_at')
+  p['lastRefresh'] = p.get('lastRefresh') or p.get('refreshed_at') or p.get('summaryLastRefresh') or resolution.snapshot_timestamp
+  p['isLiveUpdating'] = p.get('isLiveUpdating', bool(p.get('isLivePricing', False) or resolution.is_live))
+  if not p.get('exposures'):
+   p['exposures'] = compute_exposures(p.get('positions', []), p.get('total_value', 0))
+  if 'guardrails' not in p:
+   p['guardrails'] = risk_doctor(p.get('positions', []), macros)
+  if 'today_actions' not in p:
+   p['today_actions'] = today_actions(p.get('positions', []), macros)
+  if 'stress_tests' not in p:
+   p['stress_tests'] = stress_tests(p.get('total_value', 0))
+  p['baseCurrency'] = p.get('currency', 'USD')
+  p['fxRate'] = get_fx_rate('USD', 'EUR')
   if p.get('portfolioMode') == 'IBKR_LIVE' and not p.get('fallback_active'):
-   p['is_live']=True
+   p['is_live'] = True
   return p
  except Exception as e:
-  resolution=resolve_portfolio_provider()
-  demo={
+  resolution = resolve_portfolio_provider()
+  demo = {
    'source': resolution.active_source or 'DISCONNECTED',
    'mode': resolution.configured_mode,
    'configured_mode': resolution.configured_mode,
@@ -291,6 +405,12 @@ def get_portfolio_payload():
    'provider_class': resolution.provider_class,
    'snapshot_available': resolution.snapshot_available,
    'snapshot_timestamp': resolution.snapshot_timestamp,
+   'snapshotAvailable': resolution.snapshot_available,
+   'snapshotTimestamp': resolution.snapshot_timestamp,
+   'snapshotAgeSeconds': None,
+   'snapshotRefreshStatus': 'failed' if not resolution.snapshot_available else 'ok',
+   'snapshotLastRefreshAttempt': None,
+   'snapshotLastRefreshError': str(e),
    'is_live': resolution.is_live,
    'is_stale': True,
    'stale_reason': resolution.stale_reason or str(e),
@@ -321,12 +441,48 @@ def get_portfolio_payload():
    'stress_tests': [],
    'journal': [],
   }
-  demo['provider_error']=str(e)
-  demo['baseCurrency']='USD'
-  demo['fxRate']=get_fx_rate('USD','EUR')
-  demo['positions']=normalize_positions(demo.get('positions',[]))
-  if resolution.configured_mode == 'mock':
-   return merge_manual_holdings(demo,macros,state_module)
+  demo['provider_error'] = str(e)
+  demo['baseCurrency'] = 'USD'
+  demo['fxRate'] = get_fx_rate('USD', 'EUR')
+  demo['positions'] = normalize_positions(demo.get('positions', []))
+  demo = merge_manual_holdings(demo, macros, state_module)
+  manual_positions = [pos for pos in demo.get('positions', []) if str(pos.get('positionSource') or pos.get('manual') or '').upper() == 'MANUAL_HOLDINGS' or bool(pos.get('manual'))]
+  manual_quote_sources = [str(pos.get('priceSource') or pos.get('quoteSource') or '').upper() for pos in manual_positions if pos.get('priceSource') or pos.get('quoteSource')]
+  manual_live_quotes = any(src in {'YAHOO_LIVE', 'YAHOO_DELAYED', 'FALLBACK_PROVIDER'} for src in manual_quote_sources) or any(bool(pos.get('isLiveQuote')) for pos in manual_positions)
+  manual_prices_last_refresh = max([str(pos.get('quoteLastRefresh')) for pos in manual_positions if pos.get('quoteLastRefresh')], default=None)
+  if manual_positions:
+   demo['positionsSource'] = 'MANUAL_HOLDINGS'
+   demo['activePositionProvider'] = 'MANUAL_HOLDINGS'
+   demo['isLivePositions'] = False
+   demo['portfolioMode'] = 'MANUAL_HOLDINGS_LIVE_QUOTES' if manual_live_quotes else 'MANUAL_HOLDINGS'
+   demo['source'] = demo['portfolioMode']
+   demo['active_source'] = demo['portfolioMode']
+   demo['priceSource'] = 'YAHOO_LIVE' if 'YAHOO_LIVE' in manual_quote_sources else ('YAHOO_DELAYED' if 'YAHOO_DELAYED' in manual_quote_sources else ('FALLBACK_PROVIDER' if manual_quote_sources else 'STALE'))
+   demo['activePriceProvider'] = 'YAHOO' if manual_live_quotes else 'STALE'
+   demo['pricesLive'] = manual_live_quotes
+   demo['pricesLastRefresh'] = manual_prices_last_refresh
+   demo['lastPriceTimestamp'] = manual_prices_last_refresh
+   demo['isLivePricing'] = manual_live_quotes
+   demo['isHybrid'] = manual_live_quotes
+   demo['fallback_active'] = True
+   demo['fallback_reason'] = 'Manual holdings priced from fallback provider.' if manual_live_quotes else 'Manual holdings available without live quotes.'
+   demo['is_live'] = False
+   demo['is_stale'] = False
+   demo['stale_reason'] = None
+  else:
+   demo['portfolioMode'] = 'NO_DATA'
+   demo['positionsSource'] = 'NONE'
+   demo['priceSource'] = 'NONE'
+   demo['activePriceProvider'] = 'NONE'
+   demo['activePositionProvider'] = 'NONE'
+   demo['isLivePositions'] = False
+   demo['isLivePricing'] = False
+   demo['isHybrid'] = False
+   demo['fallback_active'] = False
+   demo['fallback_reason'] = resolution.fallback_reason or str(e)
+   demo['is_live'] = False
+   demo['is_stale'] = True
+   demo['stale_reason'] = resolution.stale_reason or str(e)
   return demo
 
 def payload():
@@ -343,10 +499,17 @@ async def stream_loop():
 async def lifespan(app: FastAPI):
  initialize_settings_store(); initialize_manual_holdings_store(); initialize_provider_cache()
  log_ibkr_startup_config()
+ async def _warm_startup_snapshot():
+  try:
+   await asyncio.to_thread(prime_ibkr_snapshot, force=True, respect_mode=False)
+  except Exception as exc:
+   _UI_REFRESH_LOGGER.warning('Startup IBKR snapshot warm-up failed: %s', exc)
+ startup_prime_task=asyncio.create_task(_warm_startup_snapshot())
  stream_task=asyncio.create_task(stream_loop())
  try:
   yield
  finally:
+  startup_prime_task.cancel()
   stream_task.cancel()
 
 app=FastAPI(title='Personal Investment Agent v5.6', lifespan=lifespan, default_response_class=TimedJSONResponse)
@@ -954,6 +1117,12 @@ def portfolio_live_positions():
    'provider_class': portfolio.get('provider_class'),
    'snapshot_available': portfolio.get('snapshot_available'),
    'snapshot_timestamp': portfolio.get('snapshot_timestamp'),
+   'snapshotAvailable': portfolio.get('snapshotAvailable'),
+   'snapshotTimestamp': portfolio.get('snapshotTimestamp'),
+   'snapshotAgeSeconds': portfolio.get('snapshotAgeSeconds'),
+   'snapshotRefreshStatus': portfolio.get('snapshotRefreshStatus'),
+   'snapshotLastRefreshAttempt': portfolio.get('snapshotLastRefreshAttempt'),
+   'snapshotLastRefreshError': portfolio.get('snapshotLastRefreshError'),
    'is_live': portfolio.get('is_live'),
    'is_stale': portfolio.get('is_stale'),
    'stale_reason': portfolio.get('stale_reason'),
@@ -991,6 +1160,12 @@ def portfolio_live_summary():
   summary['provider_class']=portfolio.get('provider_class')
   summary['snapshot_available']=portfolio.get('snapshot_available')
   summary['snapshot_timestamp']=portfolio.get('snapshot_timestamp') or portfolio.get('lastPositionsTimestamp')
+  summary['snapshotAvailable']=portfolio.get('snapshotAvailable')
+  summary['snapshotTimestamp']=portfolio.get('snapshotTimestamp')
+  summary['snapshotAgeSeconds']=portfolio.get('snapshotAgeSeconds')
+  summary['snapshotRefreshStatus']=portfolio.get('snapshotRefreshStatus')
+  summary['snapshotLastRefreshAttempt']=portfolio.get('snapshotLastRefreshAttempt')
+  summary['snapshotLastRefreshError']=portfolio.get('snapshotLastRefreshError')
   summary['is_live']=portfolio.get('is_live')
   summary['is_stale']=portfolio.get('is_stale')
   summary['stale_reason']=portfolio.get('stale_reason')
@@ -1026,8 +1201,14 @@ def portfolio_live_trades():
    'fallback_active': portfolio.get('fallback_active'),
    'fallback_reason': portfolio.get('fallback_reason'),
    'provider_class': portfolio.get('provider_class'),
-   'snapshot_available': portfolio.get('snapshot_available'),
-   'snapshot_timestamp': portfolio.get('snapshot_timestamp'),
+  'snapshot_available': portfolio.get('snapshot_available'),
+  'snapshot_timestamp': portfolio.get('snapshot_timestamp'),
+  'snapshotAvailable': portfolio.get('snapshotAvailable'),
+  'snapshotTimestamp': portfolio.get('snapshotTimestamp'),
+  'snapshotAgeSeconds': portfolio.get('snapshotAgeSeconds'),
+  'snapshotRefreshStatus': portfolio.get('snapshotRefreshStatus'),
+  'snapshotLastRefreshAttempt': portfolio.get('snapshotLastRefreshAttempt'),
+  'snapshotLastRefreshError': portfolio.get('snapshotLastRefreshError'),
   'is_live': portfolio.get('is_live'),
   'is_stale': portfolio.get('is_stale'),
    'stale_reason': portfolio.get('stale_reason'),
@@ -1087,6 +1268,7 @@ def price_providers_status():
   from services.price_providers import get_price_provider_status
 
   yahoo_status = get_price_provider_status(portfolio.get('positions', []) or [])
+  snapshot_debug = _portfolio_snapshot_debug_payload()
   ibkr = {
    'available': bool(portfolio.get('is_live')),
    'authenticated': bool(portfolio.get('portfolioMode') == 'IBKR_LIVE'),
@@ -1104,6 +1286,23 @@ def price_providers_status():
   return {
    'ibkr': ibkr,
    'yahoo': yahoo_status.get('yahoo') or {},
+   'snapshot': {
+    'available': snapshot_debug.get('snapshotAvailable'),
+    'timestamp': snapshot_debug.get('snapshotTimestamp'),
+    'positionsCount': snapshot_debug.get('positionsCount'),
+    'ageSeconds': snapshot_debug.get('snapshotAgeSeconds'),
+    'schemaVersion': snapshot_debug.get('schemaVersion'),
+    'lastRefreshAttempt': snapshot_debug.get('lastRefreshAttempt'),
+    'lastRefreshStatus': snapshot_debug.get('lastRefreshStatus'),
+    'lastRefreshError': snapshot_debug.get('lastRefreshError'),
+   },
+   'fallbackQuotes': {
+    'provider': 'YAHOO' if yahoo_status.get('yahoo', {}).get('available') else 'STALE',
+    'available': bool(yahoo_status.get('yahoo', {}).get('available')),
+    'lastRefresh': yahoo_status.get('lastQuoteTimestamp'),
+    'latencyMs': yahoo_status.get('yahoo', {}).get('latencyMs'),
+   },
+   'activeMode': portfolio.get('portfolioMode') or 'NO_DATA',
    'activePriceProvider': active_price_provider,
    'activePositionProvider': active_position_provider,
    'portfolioMode': portfolio_mode,
@@ -1127,6 +1326,11 @@ def price_providers_status():
   }
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get('/api/debug/portfolio-snapshot')
+def debug_portfolio_snapshot():
+ return _portfolio_snapshot_debug_payload()
 
 
 @app.get('/api/debug/ibkr-connectivity')

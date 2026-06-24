@@ -428,6 +428,7 @@ Structure scaffolded under docs/mocks/<feature>/{APPROVED,WORKING,UAT} for ai-in
 
 ### UAT Status
 - Latest build PASS (9/9 pages, TypeScript valid). Route smoke historically 200 for /, /mobile, /setup. Multiple items pending Product Owner real-device UAT; PIA-P0-001 in validation. Tracking: docs/UAT_TRACKING.md.
+- HERMES-IBKR-SNAPSHOT-LIFECYCLE-048 local backend validation passed; snapshot persistence, startup warm-up, and explicit NO_DATA fallback reporting are now in place for the portfolio stack.
 
 ### Active Epics
 - EPIC-PORTFOLIO-ANALYTICS-001 — portfolio analytics backend data infrastructure.

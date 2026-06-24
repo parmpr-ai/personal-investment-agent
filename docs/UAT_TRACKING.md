@@ -16,6 +16,22 @@ Format per entry:
 
 ## UAT Log
 
+### HERMES-IBKR-SNAPSHOT-LIFECYCLE-048
+
+Status: PENDING
+Owner: HERMES
+Date: 2026-06-24
+Approved Mock: N/A
+Design Lock Commit: N/A
+Implementation Commit: pending commit in this branch
+
+Build: PASS (`python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/tests/test_snapshot_lifecycle.py`, `python -m unittest discover -s tests -p 'test_*.py'`)
+
+Notes:
+- Snapshot lifecycle persistence now keeps the last valid IBKR bundle durable, refuses to overwrite good data with empty or failed refreshes, and records explicit refresh-state metadata.
+- Startup warm-up can seed the live snapshot cache without changing the selected mode, and the portfolio stack now exposes explicit `NO_DATA` when neither live nor snapshot data is available.
+- PO UAT screenshots and live Gateway validation are still pending in this workspace.
+
 ### HERMES-PRICE-PROVIDER-FALLBACK-044
 
 Status: PENDING

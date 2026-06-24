@@ -1,5 +1,22 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.41 - IBKR Snapshot Lifecycle Persistence and No-Data State (HERMES-IBKR-SNAPSHOT-LIFECYCLE-048)
+
+Date: 2026-06-24
+Status: Implemented and locally validated; Product Owner live-Gateway UAT pending.
+
+### Backend
+
+* Live IBKR snapshot persistence now keeps the last valid portfolio bundle durable, records refresh-state metadata, and refuses to overwrite good data with empty or failed live refreshes.
+* Startup warm-up can seed the live snapshot cache without changing the selected mode, and `/api/debug/portfolio-snapshot` exposes snapshot age, refresh attempt, and refresh status fields.
+* `GET /api/price-providers/status` now includes snapshot and fallback quote health, while the portfolio stack returns an explicit `NO_DATA` state when neither live nor snapshot data exists.
+
+### Validation
+
+* `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/tests/test_snapshot_lifecycle.py` passed.
+* `python -m unittest discover -s tests -p 'test_*.py'` passed with 24 tests.
+* Backend regression tests confirm valid snapshots persist, failed refreshes do not overwrite the cache, startup seeding works, and snapshot fallback remains available when live fetches fail.
+
 ## v0.3.39 - Live Price Provider Fallback (HERMES-PRICE-PROVIDER-FALLBACK-044)
 
 Date: 2026-06-23
