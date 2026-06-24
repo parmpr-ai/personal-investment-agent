@@ -987,6 +987,59 @@ class MockPortfolioProvider:
     def get_trades(self) -> List[Dict]:
         return []
 
+    def get_runtime_status(self) -> Dict[str, Any]:
+        summary = self.get_summary()
+        return {
+            "status": "MOCK",
+            "message": "Mock portfolio data is active.",
+            "configured_mode": "mock",
+            "configured_mode_label": provider_mode_label("mock"),
+            "active_source": "MOCK",
+            "active_source_label": provider_source_label("MOCK"),
+            "fallback_active": False,
+            "fallback_reason": None,
+            "provider_class": self.__class__.__name__,
+            "gateway_url": get_ibkr_gateway_config()["configured_url"],
+            "gateway_api": get_ibkr_gateway_config()["effective_url"],
+            "gateway_status": "not_applicable",
+            "gateway_error": None,
+            "ibkr_gateway_reachable": False,
+            "ibkr_authenticated": False,
+            "accounts_available": False,
+            "positions_available": False,
+            "trades_available": False,
+            "snapshot_available": False,
+            "snapshot_timestamp": None,
+            "snapshotAvailable": False,
+            "snapshotTimestamp": None,
+            "snapshotAgeSeconds": None,
+            "snapshotRefreshStatus": None,
+            "snapshotLastRefreshAttempt": None,
+            "snapshotLastRefreshError": None,
+            "snapshotSchemaVersion": None,
+            "is_live": False,
+            "is_stale": False,
+            "stale_reason": None,
+            "portfolioMode": "MOCK",
+            "positionsSource": "MOCK",
+            "priceSource": "MOCK",
+            "activePriceProvider": "MOCK",
+            "activePositionProvider": "MOCK",
+            "isLivePositions": False,
+            "isLivePricing": False,
+            "isHybrid": False,
+            "lastPositionsTimestamp": None,
+            "lastPriceTimestamp": None,
+            "lastRefresh": summary.get("as_of"),
+            "nextRefresh": None,
+            "isLiveUpdating": False,
+            "pricesLive": False,
+            "pricesLastRefresh": None,
+            "pricesAgeSeconds": None,
+            "positionsLastRefresh": None,
+            "summaryLastRefresh": None,
+        }
+
 
 class DisconnectedPortfolioProvider:
     source_name = "DISCONNECTED"
@@ -1051,6 +1104,58 @@ class DisconnectedPortfolioProvider:
 
     def get_snapshot_meta(self) -> Dict[str, Any]:
         return {}
+
+    def get_runtime_status(self) -> Dict[str, Any]:
+        return {
+            "status": "DISCONNECTED",
+            "message": "Client Portal Gateway is unavailable and no saved snapshot exists.",
+            "configured_mode": get_data_source_mode(),
+            "configured_mode_label": provider_mode_label(get_data_source_mode()),
+            "active_source": "DISCONNECTED",
+            "active_source_label": provider_source_label("DISCONNECTED"),
+            "fallback_active": False,
+            "fallback_reason": "Gateway offline and no saved snapshot is available.",
+            "provider_class": self.__class__.__name__,
+            "gateway_url": get_ibkr_gateway_config()["configured_url"],
+            "gateway_api": get_ibkr_gateway_config()["effective_url"],
+            "gateway_status": "gateway_down",
+            "gateway_error": "Gateway offline.",
+            "ibkr_gateway_reachable": False,
+            "ibkr_authenticated": False,
+            "accounts_available": False,
+            "positions_available": False,
+            "trades_available": False,
+            "snapshot_available": False,
+            "snapshot_timestamp": None,
+            "snapshotAvailable": False,
+            "snapshotTimestamp": None,
+            "snapshotAgeSeconds": None,
+            "snapshotRefreshStatus": None,
+            "snapshotLastRefreshAttempt": None,
+            "snapshotLastRefreshError": None,
+            "snapshotSchemaVersion": None,
+            "is_live": False,
+            "is_stale": True,
+            "stale_reason": "Gateway offline and no saved snapshot is available.",
+            "portfolioMode": "DISCONNECTED",
+            "positionsSource": "DISCONNECTED",
+            "priceSource": "STALE",
+            "activePriceProvider": "STALE",
+            "activePositionProvider": "DISCONNECTED",
+            "isLivePositions": False,
+            "isLivePricing": False,
+            "isHybrid": False,
+            "lastPositionsTimestamp": None,
+            "lastPriceTimestamp": None,
+            "lastRefresh": None,
+            "nextRefresh": None,
+            "isLiveUpdating": False,
+            "pricesLive": False,
+            "pricesLastRefresh": None,
+            "pricesAgeSeconds": None,
+            "positionsLastRefresh": None,
+            "summaryLastRefresh": None,
+        }
 
 
 @dataclass(frozen=True)
@@ -1219,6 +1324,67 @@ class SnapshotPortfolioProvider:
             "journal": [],
         }
 
+    def get_runtime_status(self) -> Dict[str, Any]:
+        snapshot_state = self.get_snapshot_state()
+        meta = self.get_snapshot_meta()
+        snapshot_available = self.is_available()
+        snapshot_timestamp = _snapshot_timestamp(meta) if snapshot_available else None
+        snapshot_age = snapshot_state.get("snapshotAgeSeconds") if isinstance(snapshot_state, dict) else None
+        last_refresh = snapshot_state.get("lastRefresh") if isinstance(snapshot_state, dict) else None
+        if not last_refresh:
+            last_refresh = snapshot_timestamp
+        return {
+            "status": "LAST_UPDATE",
+            "message": "Using saved IBKR snapshot.",
+            "configured_mode": "last-update",
+            "configured_mode_label": provider_mode_label("last-update"),
+            "active_source": "LAST_UPDATE",
+            "active_source_label": provider_source_label("LAST_UPDATE"),
+            "fallback_active": False,
+            "fallback_reason": None,
+            "provider_class": self.__class__.__name__,
+            "gateway_url": get_ibkr_gateway_config()["configured_url"],
+            "gateway_api": get_ibkr_gateway_config()["effective_url"],
+            "gateway_status": "not_applicable",
+            "gateway_error": None,
+            "gateway_open": False,
+            "ibkr_gateway_reachable": False,
+            "ibkr_authenticated": False,
+            "accounts_available": False,
+            "positions_available": False,
+            "trades_available": False,
+            "snapshot_available": snapshot_available,
+            "snapshot_timestamp": snapshot_timestamp,
+            "snapshotAvailable": snapshot_available,
+            "snapshotTimestamp": snapshot_timestamp,
+            "snapshotAgeSeconds": snapshot_age,
+            "snapshotRefreshStatus": snapshot_state.get("lastRefreshStatus"),
+            "snapshotLastRefreshAttempt": snapshot_state.get("lastRefreshAttempt"),
+            "snapshotLastRefreshError": snapshot_state.get("lastRefreshError"),
+            "snapshotSchemaVersion": snapshot_state.get("schemaVersion"),
+            "is_live": False,
+            "is_stale": bool(_is_snapshot_stale(meta)) if snapshot_available else True,
+            "stale_reason": "Saved snapshot is stale." if snapshot_available and _is_snapshot_stale(meta) else ("No saved IBKR snapshot available." if not snapshot_available else None),
+            "portfolioMode": "LAST_UPDATE_ONLY",
+            "positionsSource": "IBKR_LAST_UPDATE",
+            "priceSource": "STALE",
+            "activePriceProvider": "STALE",
+            "activePositionProvider": "IBKR_LAST_UPDATE",
+            "isLivePositions": False,
+            "isLivePricing": False,
+            "isHybrid": False,
+            "lastPositionsTimestamp": last_refresh,
+            "lastPriceTimestamp": None,
+            "lastRefresh": last_refresh,
+            "nextRefresh": None,
+            "isLiveUpdating": False,
+            "pricesLive": False,
+            "pricesLastRefresh": None,
+            "pricesAgeSeconds": None,
+            "positionsLastRefresh": last_refresh,
+            "summaryLastRefresh": last_refresh,
+        }
+
 
 # ─── IBKR Live Provider (Client Portal Gateway REST) ──────────────────────────
 
@@ -1356,6 +1522,26 @@ class IbkrLivePortfolioProvider:
         reachable = auth_error is None and isinstance(auth, dict)
         authenticated = bool(auth.get("authenticated")) if isinstance(auth, dict) else False
         status = "connected" if reachable and authenticated else ("unauthenticated" if reachable else "gateway_down")
+        # Some gateway sessions can briefly time out on /auth/status while portfolio endpoints are still available.
+        # Use a lightweight accounts probe as a secondary signal before declaring the gateway down.
+        if status != "connected":
+            accounts, accounts_error = self._safe_get("/portfolio/accounts", timeout=2.0)
+            if accounts_error is None and isinstance(accounts, list) and len(accounts) > 0:
+                reachable = True
+                authenticated = True
+                status = "connected"
+                auth_error = None
+                if not isinstance(auth, dict):
+                    auth = {}
+                auth.update(
+                    {
+                        "authenticated": True,
+                        "connected": True,
+                        "established": True,
+                        "competing": False,
+                        "fallbackProbe": "accounts",
+                    }
+                )
         payload = {
             "gateway_open": bool(reachable and authenticated),
             "gateway_status": status,
@@ -3161,24 +3347,32 @@ def get_provider_status() -> Dict[str, Any]:
     resolution = resolve_portfolio_provider()
     provider_meta: Dict[str, Any] = {}
     try:
-        portfolio_payload: Dict[str, Any] = {}
-        raw_portfolio: Dict[str, Any] = {}
-        if hasattr(resolution.provider, "get_portfolio"):
-            raw_portfolio = resolution.provider.get_portfolio() or {}
-        elif hasattr(resolution.provider, "get_summary"):
-            raw_portfolio = {"summary": resolution.provider.get_summary() or {}}
-        helper = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
-        if isinstance(raw_portfolio, dict):
-            if resolution.configured_mode == "mock":
-                provider_meta = dict(raw_portfolio.get("summary") or raw_portfolio)
-            else:
-                portfolio_payload = helper._normalize_portfolio_after_price_overlay(raw_portfolio, resolution=resolution)
-                provider_meta = dict(portfolio_payload.get("summary") or portfolio_payload)
+        provider = resolution.provider
+        if hasattr(provider, "get_runtime_status"):
+            runtime_status = provider.get_runtime_status() or {}
+            if isinstance(runtime_status, dict):
+                provider_meta = dict(runtime_status)
+        if not provider_meta:
+            raw_portfolio: Dict[str, Any] = {}
+            if hasattr(provider, "get_portfolio"):
+                raw_portfolio = provider.get_portfolio() or {}
+            elif hasattr(provider, "get_summary"):
+                raw_portfolio = {"summary": provider.get_summary() or {}}
+            helper = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
+            if isinstance(raw_portfolio, dict):
+                if resolution.configured_mode == "mock":
+                    provider_meta = dict(raw_portfolio.get("summary") or raw_portfolio)
+                else:
+                    portfolio_payload = helper._normalize_portfolio_after_price_overlay(raw_portfolio, resolution=resolution)
+                    provider_meta = dict(portfolio_payload.get("summary") or portfolio_payload)
     except Exception:
         provider_meta = {}
     mode = resolution.configured_mode
-    snapshot_available = bool(resolution.snapshot_available)
-    fallback_active = bool(resolution.fallback_active)
+    snapshot_available = bool(provider_meta.get("snapshot_available", resolution.snapshot_available))
+    fallback_active = bool(provider_meta.get("fallback_active", resolution.fallback_active))
+    gateway_status = provider_meta.get("gateway_status") or resolution.gateway_status
+    gateway_error = provider_meta.get("gateway_error") or resolution.gateway_error
+    gateway_open = bool(provider_meta.get("gateway_open", resolution.ibkr_gateway_reachable and resolution.ibkr_authenticated))
     portfolio_mode = provider_meta.get("portfolioMode") or provider_meta.get("mode") or mode.upper()
     if portfolio_mode == "IBKR_LIVE" and provider_meta.get("isLivePricing", True):
         status = "LIVE"
@@ -3217,16 +3411,17 @@ def get_provider_status() -> Dict[str, Any]:
         "provider_class": resolution.provider_class,
         "gateway_url": get_ibkr_gateway_config()["configured_url"],
         "gateway_api": get_ibkr_gateway_config()["effective_url"],
-        "gateway_status": resolution.gateway_status,
-        "gateway_error": resolution.gateway_error,
-        "ibkr_gateway_reachable": resolution.ibkr_gateway_reachable,
-        "ibkr_authenticated": resolution.ibkr_authenticated,
+        "gateway_status": gateway_status,
+        "gateway_error": gateway_error,
+        "gateway_open": gateway_open,
+        "ibkr_gateway_reachable": bool(provider_meta.get("ibkr_gateway_reachable", resolution.ibkr_gateway_reachable)),
+        "ibkr_authenticated": bool(provider_meta.get("ibkr_authenticated", resolution.ibkr_authenticated)),
         "accounts_available": resolution.accounts_available,
         "positions_available": resolution.positions_available,
         "trades_available": resolution.trades_available,
-        "snapshot_available": bool(provider_meta.get("snapshot_available", snapshot_available)),
+        "snapshot_available": snapshot_available,
         "snapshot_timestamp": provider_meta.get("snapshot_timestamp") or resolution.snapshot_timestamp,
-        "snapshotAvailable": bool(provider_meta.get("snapshot_available", snapshot_available)),
+        "snapshotAvailable": snapshot_available,
         "snapshotTimestamp": provider_meta.get("snapshot_timestamp") or resolution.snapshot_timestamp,
         "snapshotAgeSeconds": provider_meta.get("snapshotAgeSeconds"),
         "snapshotRefreshStatus": provider_meta.get("snapshotRefreshStatus") or provider_meta.get("lastRefreshStatus"),

@@ -1,5 +1,88 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.47 - IBKR Source Lifecycle Recovery (HERMES-IBKR-RECOVERY-052)
+
+Date: 2026-06-24
+Status: READY FOR UAT
+Owner: HERMES
+
+### Backend
+
+* `get_provider_status()` now resolves from the live runtime source path so an authenticated IBKR Gateway reports `IBKR_LIVE` instead of a stale persisted mode.
+* The gateway heartbeat now falls back to the accounts probe when auth/status is inconclusive, which prevents false disconnected states on the provider route.
+* Provider status, `/portfolio`, `/dashboard`, settings, and mobile now read the same source-of-truth contract and automatic snapshot/demo fallback remains intact.
+
+### Frontend
+
+* Settings now shows a compact `Portfolio Source` card with `Current Source` and `Last Updated`, matching the portfolio source contract.
+* Desktop settings now receives the portfolio source seed from the dashboard so the source badge stays in sync.
+
+### Validation
+
+* `python -m py_compile backend/main.py backend/services/portfolio_providers.py`
+* `python -m unittest discover -s tests -p 'test_*.py'`
+* `npm run build`
+* Live endpoint checks confirmed `provider/status`, `/portfolio`, and `/dashboard` all report `IBKR_LIVE` in this workspace.
+
+## v0.3.46 - Price Provider Fallback UX (ARTEMIS-PRICE-PROVIDER-FALLBACK-UX-045)
+
+Date: 2026-06-24
+Status: READY FOR UAT
+Owner: ARTEMIS
+
+### Frontend
+
+* Portfolio header badge is now variant-aware: `IBKR LIVE` → green (`ibkr`), `HYBRID LIVE` → amber (`warning`) with subtitle "Last IBKR positions + live Yahoo quotes", `LAST UPDATE` → blue (`info`), `MANUAL + LIVE QUOTES` → yellow (`yahoo`).
+* `resolvePortfolioBadge()` added to `pia-api.ts` — auto-infers HYBRID LIVE when `fallback_active + pricesLive`, handles all new mode strings (`HYBRID_LAST_POSITIONS_LIVE_QUOTES`, `MANUAL_HOLDINGS_LIVE_QUOTES`, `DISCONNECTED`).
+* `resolvePositionPriceSource()` added — maps `priceSource`/`quote_source`/`price_source` fields to `ibkr | yahoo | stale | null`.
+* Dual timestamp row added to the portfolio header: **Positions:** Xm ago / **Prices:** Xm ago (shown only when `positionsLastRefresh` or `pricesLastRefresh` present).
+* Amber stale-prices banner added: "⚠ Prices may be stale — last updated Xm ago" shown when `pricesLive === false` in non-mock mode; no full-screen block.
+* Per-position source markers in the Last column: tiny `YH` / `IBKR` / `STALE` chips rendered only when `priceSource` is explicitly set, so no visual clutter when data is absent.
+* `MobileStatusDock` shows portfolio mode badge inline in the dock header; IBKR row shows `degraded` in hybrid mode; stale prices strip appears below dock rows when `pricesLive === false`.
+* Mobile portfolio header and positions-count badges use `resolvePortfolioBadge()` with correct variants; new `badge--hybrid` CSS class added (amber, distinct from live green).
+* Settings `PortfolioDataSourceCard` no longer shows "Gateway Not Connected" (fatal red) when `pricesLive` is true — shows "Fallback Live Pricing Active" or "IBKR Gateway Offline" (warn amber) instead.
+* Settings card now shows a Positions / Prices source split row: e.g. "Positions: Last IBKR Snapshot / Prices: Yahoo Live" in non-mock modes.
+
+### Validation
+
+* `npm run build` PASS — compiled in 11.2s, 12/12 static pages.
+
+---
+
+## v0.3.45 - Documentation Sync (ATHENA-DOCS-SYNC-049)
+
+Date: 2026-06-24
+Status: Documentation only — no code
+Owner: ATHENA
+
+### Thread UAT Outcomes (recorded from ATHENA-DOCS-SYNC-049)
+
+| Task | Status | Notes |
+|---|---|---|
+| HERMES-LIVE-REFRESH-FIX-025 | IMPLEMENTED | Shared API_BASE_URL/WS_BASE_URL, WebSocket reconnect, 10s polling fallback, focus/visibility refresh, TFA polling. Commit: 3c4a4b6 |
+| ARTEMIS-SETTINGS-DATASOURCE-UX-018 | IMPLEMENTED | Portfolio Data Source card, Mock/Last Update/Live IBKR selector, auto gateway validation, live status indicators |
+| ARTEMIS-PIA-IBKR-APP-SWITCH-027 | IMPLEMENTED | pageshow listener, TFA polling, auto dashboard refresh on IBKR app return |
+| HERMES-IBKR-MARKETDATA-STATUS-028 | IMPLEMENTED | Fixed IBKR C5.10 prefix parse error; restored field mapping 85/86; `pricesLive` restored |
+| HERMES-LIVE-POSITION-METRICS-MAPPING-036 | **FAIL PO UAT** | Portfolio calculations still incorrect |
+| ARTEMIS-AI-RESEARCH-TAB-IMPLEMENTATION-038 | **PARTIAL** | Research V3 visible; backend gaps, `[object Object]` rendering bug, excessive card nesting, missing analyst distributions |
+| HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 | READY FOR UAT | Explicit missing states, metricStates, missingMetrics, safer null-risk handling. Commit: 9d20e03 |
+| HERMES-MOBILE-LIVE-REFRESH-BLINK-041 | **FAIL PO UAT** | Flashing reduced; portfolio calculations still wrong; quotes not propagating correctly. Commits: b684469, dfd7335 |
+| HERMES-PRICE-PROVIDER-FALLBACK-044 | **PARTIAL** | Yahoo fallback, hybrid mode, manual holdings live pricing implemented. Snapshot persistence behavior not matching requirements. Commits: a27ba55, 3374c7d |
+| HERMES-IBKR-SNAPSHOT-LIFECYCLE-048 | **FAIL PO UAT** | Snapshot lifecycle not behaving exactly as required. Commit: 8a9d43b0 |
+| ARTEMIS-PRICE-PROVIDER-FALLBACK-UX-045 | READY FOR UAT | Badge variants, timestamps, stale banner, source markers, settings split |
+
+### Open P0 Items (no new features until these pass UAT)
+
+1. **HERMES-PORTFOLIO-CALCULATION-046** — Portfolio Total, Day P/L, Day P/L %, Unrealized P/L calculations incorrect
+2. **HERMES-LIVE-QUOTES-037** — Live quote propagation audit
+3. **HERMES-LIVE-REFRESH-039** — Full dashboard refresh architecture
+4. **ARTEMIS-PORTFOLIO-TABLE-COLUMNS-047** — Columns, ordering, sorting, desktop parity
+5. Research data coverage audit (open, no task ID yet)
+6. Research mobile layout optimization (open, no task ID yet)
+7. Compact AI widget vignette regression (open, no task ID yet)
+
+---
+
 ## v0.3.41 - IBKR Snapshot Lifecycle Persistence and No-Data State (HERMES-IBKR-SNAPSHOT-LIFECYCLE-048)
 
 Date: 2026-06-24

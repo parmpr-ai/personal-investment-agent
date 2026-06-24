@@ -1,7 +1,7 @@
 # PIA Master Backlog Source Of Truth
 
 Status: Active AI memory engine
-Last updated: 2026-06-24
+Last updated: 2026-06-24 (HERMES-IBKR-RECOVERY-052)
 Branch: `feat/pia-v3-foundation-integration`
 
 This Markdown is the canonical readable operating memory for PIA. The Excel workbook is the PM operational database. Both must stay synchronized after every approved sprint, merge, or implementation.
@@ -42,19 +42,20 @@ Developers may stop only for:
 - Current status: Hybrid mock intelligence data layer deployed for UI evaluation; design governance and mock-first workflow locked; mobile correction mock pack available for Product Owner review.
 - Current status: IBKR live portfolio modes are synchronized across settings, provider status, portfolio endpoints, and mobile/desktop source badges. Mock, last-update, and live modes are persisted and validated; live snapshots persist locally under `backend/data/snapshots/ibkr/`, with history persisted under `backend/data/snapshots/ibkr/history/`, strict last-update/disconnected reporting when the gateway is offline, and live quote fallback now keeps the last known IBKR positions while refreshing prices from Yahoo Finance when IBKR is unavailable.
 - Current status: IBKR snapshot lifecycle persistence is hardened with explicit snapshot refresh state, startup warm-up, no-data reporting when neither live nor snapshot data exists, and debug/status endpoints that expose snapshot age, refresh status, and hybrid fallback provenance.
-- Current priorities:
-  - Enforce mock-first design governance before any further UI implementation.
-  - Interaction stabilization on Home and mobile.
-  - Mobile density refinement across cards, scanner rails, and intelligence surfaces.
-  - Stock workspace expansion around Technical, Company, News, Videos, and Analyst Targets. Analyst Targets V2 completed for HERMES scope.
-  - Notification Center refactor for mobile-safe visibility.
-  - Performance smoothing for motion/render cost.
+- Current status: IBKR source lifecycle recovery is now aligned across settings, provider status, portfolio, dashboard, and mobile. The runtime provider status path resolves Live IBKR from the live heartbeat instead of stale persisted state, so the current source contract stays honest and automatic snapshot/demo fallback remains available when live IBKR is unavailable.
+- Current priorities (2026-06-24 reset — NO NEW FEATURES until P0s pass UAT):
+  - **P0 #1 HERMES-PORTFOLIO-CALCULATION-046** — fix Portfolio Total, Day P/L, Day P/L %, Unrealized P/L.
+  - **P0 #2 HERMES-LIVE-QUOTES-037** — live quote propagation audit and fix.
+  - **P0 #3 HERMES-IBKR-SNAPSHOT-LIFECYCLE-048** — snapshot lifecycle rework (still FAIL PO UAT).
+  - **P0 #4 HERMES-LIVE-REFRESH-039** — full dashboard refresh architecture.
+  - **P0 #5 ARTEMIS-PORTFOLIO-TABLE-COLUMNS-047** — portfolio table columns, ordering, sorting, desktop parity.
 - Mobile correction mock review for Portfolio Snapshot, Position Full Screen, Workspace Navigation, Alerts, Stock Quote/Technical IA, and News/Videos cards.
 - IBKR live portfolio correctness and 3-mode portfolio selection resolved; validate Product Owner review of the new UAT screenshots at `frontend/uat-screenshots/pia-ibkr-live-007/`.
 - HERMES-IBKR-UAT-009 hardens live status evaluation, duplicate detection, option normalization, and snapshot history. Offline validation confirms no mock leakage when live mode falls back to last-update.
 - HERMES-PORTFOLIO-ASSETCLASS-001 extends the portfolio model with explicit `assetClass` normalization for stock, option, and crypto across mock, snapshot, live, and manual positions.
 - HERMES-LIVE-POSITION-METRICS-MAPPING-036 removes fake day metric / score defaults from live stock surfaces, preserves AI-risk provenance, and aligns stock hero quote reads with the live portfolio quote cache.
 - HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 restores explicit research section missing states, hardens live quote / metric contracts, and prevents null risk guards from crashing live portfolio routes.
+- HERMES-IBKR-RECOVERY-052 restores production-grade source lifecycle resolution so live IBKR, snapshot, and demo states are resolved from the same runtime source-of-truth contract across settings, portfolio, dashboard, and mobile.
 - HERMES-MOBILE-LIVE-REFRESH-BLINK-041 stabilizes mobile live refresh by preserving dashboard and portfolio identity across polls, memoizing the portfolio view shell, and preventing mock fallback flashes during live updates. Build passed; PO UAT pending.
 - HERMES-LIVE-QUOTES-037 ties the stock hero and AI context consumers to the live dashboard quote seed, so held symbols follow the same live quote source as the position table and debug live-quotes contract.
 - HERMES-LIVE-POSITION-METRICS-038 recalculates live day P/L, day %, and unrealized from validated quote inputs, removes fake zero fallbacks, and emits calculation provenance in position, summary, and debug payloads.
@@ -119,6 +120,32 @@ Developers may stop only for:
   - Maintain a durable latest snapshot pointer with refresh metadata, startup warm-up, and explicit `NO_DATA` reporting when neither live nor snapshot data exists.
 
 ## Active Backlog
+
+### OPEN P0 — Immediate Priority (no new features until these pass UAT)
+
+- **HERMES-PORTFOLIO-CALCULATION-046** — Portfolio calculations incorrect (Portfolio Total, Day P/L, Day P/L %, Unrealized P/L). Root cause not isolated. Depends on HERMES-LIVE-QUOTES-037. Owner: HERMES. Status: OPEN P0.
+- **HERMES-LIVE-QUOTES-037** — Live quote propagation audit. Quotes not reaching portfolio table, hero, AI context consistently. Owner: HERMES. Status: OPEN P0.
+- **HERMES-LIVE-REFRESH-039** — Full dashboard refresh architecture. Owner: HERMES. Status: OPEN P0.
+- **ARTEMIS-PORTFOLIO-TABLE-COLUMNS-047** — Portfolio table columns, ordering, sorting, desktop parity. Owner: ARTEMIS. Status: OPEN P0.
+- **Research data coverage audit** (no task ID). Owner: HERMES. Status: OPEN.
+- **Research mobile layout optimization** (no task ID). Owner: ARTEMIS. Status: OPEN.
+- **Compact AI widget vignette regression** (no task ID). Owner: ARTEMIS. Status: OPEN.
+
+### Recently Delivered (Thread 2026-06-24, ATHENA-DOCS-SYNC-049)
+
+- **ARTEMIS-PRICE-PROVIDER-FALLBACK-UX-045** — Price provider fallback UI. READY FOR UAT (ARTEMIS): badge variants (ibkr/warning/info/yahoo), hybrid subtitle, dual timestamps, stale banner, per-position source markers, settings Positions/Prices split, non-fatal gateway messaging. `npm run build` PASS 11.2s.
+- **ARTEMIS-SETTINGS-DATASOURCE-UX-018** — Portfolio Data Source card. IMPLEMENTED (ARTEMIS): Mock/Last Update/Live IBKR selector, auto gateway validation, live status indicators.
+- **ARTEMIS-PIA-IBKR-APP-SWITCH-027** — IBKR app switch recovery. IMPLEMENTED (ARTEMIS): `pageshow` listener, TFA polling, auto dashboard refresh.
+- **HERMES-IBKR-MARKETDATA-STATUS-028** — IBKR market data parse fix. IMPLEMENTED (HERMES): C5.10-prefix field support, field mapping 85/86 corrected, `pricesLive` restored.
+- **HERMES-LIVE-REFRESH-FIX-025** — Frontend live refresh recovery. IMPLEMENTED (HERMES, commit 3c4a4b6): shared API_BASE_URL/WS_BASE_URL, WebSocket reconnect, 10s polling fallback, TFA polling.
+- **HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040** — Research data contract hardening. READY FOR UAT (HERMES, commit 9d20e03): explicit missing states, metricStates, missingMetrics, null-risk handling.
+- **ARTEMIS-AI-RESEARCH-TAB-IMPLEMENTATION-038** — ResearchTabV3. PARTIAL PO UAT (ARTEMIS): V3 visible; backend gaps, object rendering bug, card nesting, missing analyst distributions remain.
+- **HERMES-MOBILE-LIVE-REFRESH-BLINK-041** — Mobile live refresh blink. FAIL PO UAT (HERMES, commits b684469/dfd7335): flashing reduced; calculations still wrong — blocked by HERMES-PORTFOLIO-CALCULATION-046.
+- **HERMES-LIVE-POSITION-METRICS-MAPPING-036** — Live position metric mapping. FAIL PO UAT (HERMES, commits 4a15052/a38becd): day P/L / %, aggregation, provenance done; calculations still incorrect — blocked by HERMES-PORTFOLIO-CALCULATION-046.
+- **HERMES-PRICE-PROVIDER-FALLBACK-044** — Price provider fallback backend. PARTIAL PO UAT (HERMES, commits a27ba55/3374c7d): Yahoo fallback, hybrid mode, manual holdings live pricing done; snapshot persistence not matching requirements.
+- **HERMES-IBKR-SNAPSHOT-LIFECYCLE-048** — Snapshot lifecycle persistence. FAIL PO UAT (HERMES, commit 8a9d43b0): durable persistence, startup warm-up, NO_DATA state done; lifecycle behavior still not matching requirements.
+
+---
 
 - EPIC AI Intelligence — Compact V3 delivery milestone (2026-06-22): premium compact widget + card customization + semantic tone engine shipped. Design locked (DEC-AI-CV3).
   - ARTEMIS-AI-COMPACT-REDESIGN-001 — AiIntelligenceCompactV3 premium compact widget. IMPLEMENTED (ARTEMIS, 1b7d426): 3 rows × 4 cards, 2.2 visible cards per row; no Last Updated, no score badge, no dots/arrows.
@@ -359,6 +386,7 @@ Developers may stop only for:
   - DONE 2026-06-22: HERMES-IBKR-UAT-009 live source resolution hardening, snapshot history, duplicate detection, and option normalization.
   - DONE 2026-06-22: HERMES-PORTFOLIO-ASSETCLASS-001 assetClass normalization and manual holdings schema expansion.
   - DONE 2026-06-22: HERMES-IBKR-HOTFIX-010 live refresh cadence, contract-first option classification, mode cache invalidation, and stale status hardening.
+  - DONE 2026-06-24: HERMES-IBKR-RECOVERY-052 source lifecycle recovery and settings/provider sync.
 - ATHENA:
   - DONE 2026-05-28: Create Mobile Portfolio Snapshot, Position Full Screen, Workspace Navigation, and Alerts mocks.
   - DONE 2026-05-28: Fix Market Pulse swipe gestures.
@@ -613,6 +641,15 @@ Status: Implemented and locally validated; Product Owner live-Gateway UAT pendin
 - Backend: `/api/debug/portfolio-snapshot` exposes `snapshotAvailable`, `snapshotTimestamp`, `snapshotAgeSeconds`, `positionsCount`, `lastRefreshAttempt`, `lastRefreshStatus`, and `lastRefreshError`; `/api/price-providers/status` now includes snapshot and fallback quote health.
 - Contract: live provider resolution now returns an explicit `NO_DATA` state when neither live nor snapshot data exists, while snapshot fallback still overlays live fallback pricing on the last valid IBKR positions bundle.
 - Validation: backend `py_compile` plus the snapshot lifecycle regression suite passed; `python -m unittest discover -s tests -p 'test_*.py'` passed with 24 tests.
+- Known limitation: PO UAT evidence is still pending in this workspace.
+
+### v0.3.42 - IBKR Source Lifecycle Recovery
+Date: 2026-06-24
+Status: Implemented and locally validated; Product Owner UAT pending.
+- Backlog: HERMES-IBKR-RECOVERY-052 is IMPLEMENTED / LOCAL PASS.
+- Backend: `get_provider_status()` now resolves from runtime provider status, `get_gateway_heartbeat()` falls back to the accounts probe when auth/status is misleading, and the provider route no longer reuses stale cache state.
+- Frontend: settings, portfolio, dashboard, and mobile all read the same source-of-truth contract; the compact Settings card now shows only Current Source and Last Updated.
+- Validation: backend `py_compile`, backend `unittest`, frontend `npm run build`, and live endpoint smoke checks all passed in this workspace.
 - Known limitation: PO UAT evidence is still pending in this workspace.
 
 ### v0.3.40 - Live Position Metric Recalculation and Provenance

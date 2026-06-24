@@ -16,6 +16,187 @@ Format per entry:
 
 ## UAT Log
 
+### HERMES-IBKR-RECOVERY-052
+
+Status: READY FOR UAT
+Owner: HERMES
+Date: 2026-06-24
+Approved Mock: N/A
+Design Lock Commit: N/A
+Implementation Commit: (pending commit in this branch)
+
+Build: PASS (`python -m py_compile backend/main.py backend/services/portfolio_providers.py`, `python -m unittest discover -s tests -p 'test_*.py'`, `npm run build`)
+
+Notes:
+- Runtime provider status now resolves from the live heartbeat path instead of stale persisted mode, so settings, provider status, portfolio, dashboard, and mobile agree on `IBKR_LIVE` when the Gateway is authenticated.
+- Live IBKR now falls back to snapshot/demo only when required, and the compact settings source card shows Current Source and Last Updated.
+- Local backend/frontend validation passed in this workspace; PO UAT still pending.
+
+### ARTEMIS-PRICE-PROVIDER-FALLBACK-UX-045
+
+Status: READY FOR UAT
+Owner: ARTEMIS
+Date: 2026-06-24
+Approved Mock: N/A
+Design Lock Commit: N/A
+Implementation Commit: (current branch — this thread)
+
+Build: PASS (`npm run build` — compiled in 11.2s, 12/12 static pages)
+
+Notes:
+- `resolvePortfolioBadge()` and `resolvePositionPriceSource()` added to `pia-api.ts`; all new mode strings supported (HYBRID_LAST_POSITIONS_LIVE_QUOTES, MANUAL_HOLDINGS_LIVE_QUOTES, DISCONNECTED, auto-inferred HYBRID).
+- Portfolio header badge now uses correct PiaBadge variant (ibkr=green, warning=amber, info=blue) with hybrid subtitle and dual timestamps row.
+- Amber stale-prices banner shown when `pricesLive === false` in non-mock mode; never a full-screen block.
+- Per-position source markers (YH / IBKR / STALE) in the Last column, shown only when `priceSource` explicitly set.
+- Settings card shows "Fallback Live Pricing Active" / "IBKR Gateway Offline" instead of fatal "Gateway Not Connected" when `pricesLive` is true.
+- Settings card Positions/Prices split row added.
+- Mobile: MobileStatusDock badge, stale strip, hybrid-aware IBKR row, badge--hybrid CSS class.
+- PO live-Gateway UAT still pending.
+
+---
+
+### HERMES-IBKR-SNAPSHOT-LIFECYCLE-048 — UAT OUTCOME: FAIL
+
+Status: FAIL PO UAT
+Owner: HERMES
+Date: 2026-06-24
+Implementation Commit: 8a9d43b0
+
+Notes:
+- Snapshot lifecycle still not behaving exactly as required per PO UAT.
+- Durable persistence, startup warm-up, NO_DATA state, and debug endpoint were all implemented and locally validated.
+- PO UAT found snapshot persistence behavior still not matching requirements.
+- Tracked by HERMES-IBKR-SNAPSHOT-LIFECYCLE-048; P0 fix needed before UAT re-entry.
+
+---
+
+### HERMES-PRICE-PROVIDER-FALLBACK-044 — UAT OUTCOME: PARTIAL
+
+Status: PARTIAL PO UAT
+Owner: HERMES
+Date: 2026-06-24
+Implementation Commits: a27ba55, 3374c7d
+
+Notes:
+- Yahoo fallback pricing, hybrid mode, manual holdings live pricing implemented and locally validated.
+- PO finding: snapshot persistence behavior not matching requirements.
+- Upstream dependency on HERMES-IBKR-SNAPSHOT-LIFECYCLE-048 fix before full re-test.
+
+---
+
+### HERMES-MOBILE-LIVE-REFRESH-BLINK-041 — UAT OUTCOME: FAIL
+
+Status: FAIL PO UAT
+Owner: HERMES
+Date: 2026-06-24
+Implementation Commits: b684469, dfd7335
+
+Notes:
+- Flashing reduced; component identity preserved across polls; mock fallback flashes eliminated per local validation.
+- PO UAT findings: portfolio calculations still wrong; quotes still not propagating correctly.
+- Upstream root cause: HERMES-PORTFOLIO-CALCULATION-046 (P0 open). Cannot re-UAT until calculations are fixed.
+
+---
+
+### ARTEMIS-AI-RESEARCH-TAB-IMPLEMENTATION-038 — UAT OUTCOME: PARTIAL
+
+Status: PARTIAL PO UAT
+Owner: ARTEMIS
+Date: 2026-06-24
+Implementation Commit: (this branch)
+
+Notes:
+- Research V3 tab visible and renderable. ResearchTabV3.tsx delivered as drop-in replacement.
+- PO findings: many backend data gaps; `[object Object]` rendering bug; excessive card nesting; missing analyst distributions; placeholder values suspected.
+- Design Lock invalid until research-approved.png is committed (GOV-022-RESEARCH-MOCK-MISSING).
+- Backend gaps tracked under HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 (READY FOR UAT).
+
+---
+
+### HERMES-LIVE-POSITION-METRICS-MAPPING-036 — UAT OUTCOME: FAIL
+
+Status: FAIL PO UAT
+Owner: HERMES
+Date: 2026-06-24
+Implementation Commits: 4a15052, a38becd
+
+Notes:
+- Day Change, Day P/L, Day P/L %, portfolio aggregation, risk/momentum provenance, fake News Score 50 removal, quote cache preference all implemented and locally validated.
+- PO UAT: portfolio calculations still incorrect.
+- Root cause isolated to open P0 HERMES-PORTFOLIO-CALCULATION-046.
+
+---
+
+### HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040
+
+Status: READY FOR UAT
+Owner: HERMES
+Date: 2026-06-24
+Implementation Commit: 9d20e03
+
+Notes:
+- Explicit missing states, metricStates, missingMetrics, safer null-risk handling implemented.
+- Local backend validation passed.
+- PO UAT pending.
+
+---
+
+### HERMES-IBKR-MARKETDATA-STATUS-028
+
+Status: IMPLEMENTED (no UAT result provided)
+Owner: HERMES
+Date: 2026-06-24
+
+Notes:
+- Root cause: IBKR returns prefix values like `C5.10` which were treated as invalid numeric.
+- Fix: support IBKR-prefix field values; correct field mapping 85/86; `pricesLive` flag restored.
+- Commit recorded in this branch.
+
+---
+
+### ARTEMIS-PIA-IBKR-APP-SWITCH-027
+
+Status: IMPLEMENTED (no UAT result provided)
+Owner: ARTEMIS
+Date: 2026-06-24
+
+Notes:
+- `pageshow` listener added to detect return from IBKR app.
+- TFA polling integrated.
+- Auto dashboard refresh triggered when returning from IBKR app.
+
+---
+
+### ARTEMIS-SETTINGS-DATASOURCE-UX-018
+
+Status: IMPLEMENTED (no UAT result provided)
+Owner: ARTEMIS
+Date: 2026-06-24
+
+Notes:
+- Portfolio Data Source card placed at top of Settings.
+- Mock / Last Update / Live IBKR selector implemented.
+- Auto gateway validation on mode switch.
+- Live status indicators (pill, tone, detail) added.
+
+---
+
+### HERMES-LIVE-REFRESH-FIX-025
+
+Status: IMPLEMENTED
+Owner: HERMES
+Date: 2026-06-24
+Implementation Commit: 3c4a4b6
+
+Notes:
+- Shared `API_BASE_URL` and `WS_BASE_URL` runtime configuration.
+- Removed hardcoded port 8000 references.
+- WebSocket reconnect with 10-second polling fallback.
+- Focus/visibility refresh trigger.
+- Setup/TFA polling (2s interval, max 90s) with automatic Ready transition.
+
+---
+
 ### HERMES-IBKR-SNAPSHOT-LIFECYCLE-048
 
 Status: PENDING

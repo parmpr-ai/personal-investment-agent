@@ -1,6 +1,6 @@
 # PIA Project Status
 
-Last updated: 2026-06-22 (ATHENA-GOV-021)
+Last updated: 2026-06-24 (HERMES-IBKR-RECOVERY-052)
 Branch: `feat/pia-v3-foundation-integration`
 
 ## AI Intelligence V2
@@ -47,3 +47,14 @@ Updated 2026-06-22 (ATHENA-GOV-022).
 3. Competitive Comparison + provider data gaps (peers, financials, TAM, guidance, ownership, fund sentiment, DCF) — placeholders/hidden until providers added.
 
 Decisions DEC-AI-RESEARCH-001..007 LOCKED. Backend perf well within budget (p50 ≤12ms / p95 ≤18ms vs 500/1000ms).
+
+## Portfolio / IBKR Source Recovery
+
+| Item | Status |
+|---|---|
+| HERMES-IBKR-RECOVERY-052 (Live IBKR source lifecycle recovery) | COMPLETE / locally validated |
+
+### Notes
+- Runtime provider status now drives the current source contract, so settings, provider status, portfolio, dashboard, and mobile all agree on `IBKR_LIVE` when the gateway is authenticated.
+- Snapshot and demo fallback still work automatically when live IBKR is unavailable; the compact settings card now shows only Current Source and Last Updated.
+- Validation passed: backend `py_compile`, backend `unittest`, frontend `npm run build`, and live route smoke checks.

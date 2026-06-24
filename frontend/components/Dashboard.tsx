@@ -40,7 +40,8 @@ import DashboardHome from './dashboard/DashboardHome'
 import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
 import CompanyLogo from './intelligence/CompanyLogo'
 import { preloadStockIntelligence } from './intelligence/useStockIntelligence'
-import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePositionKey } from '../lib/pia-api'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePortfolioBadge, resolvePositionPriceSource, resolvePositionKey } from '../lib/pia-api'
+import { useCurrency } from '../lib/use-currency'
 import { fetchApi } from '../lib/runtime-config'
 import { useLiveDashboard } from '../lib/use-live-dashboard'
 import {
@@ -153,6 +154,16 @@ const compactVolume = (value: any) => {
 }
 const safeMessage = (value: any, fallback: string) =>
   typeof value === 'string' ? value : typeof value?.message === 'string' ? value.message : fallback
+function fmtTimestamp(ts: string | null | undefined): string {
+  if (!ts) return '—'
+  try {
+    const d = new Date(ts)
+    const age = Date.now() - d.getTime()
+    if (age < 60_000) return 'just now'
+    if (age < 3_600_000) return `${Math.round(age / 60_000)}m ago`
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+  } catch { return ts }
+}
 const cleanText = (value: any) => {
   const text = typeof value === 'string' ? value : ''
   return legacyFragments.some((term) => text.toLowerCase().includes(term)) ? '' : text
@@ -480,7 +491,14 @@ export default function Dashboard() {
         )}
         {activeTool === 'tax' && <TaxPage hidden={privacyHidden} />}
         {activeTool === 'about' && <AboutPage hidden={privacyHidden} />}
-        {activeTool === 'settings' && <SettingsPage hidden={privacyHidden} workspaceConfig={workspaceConfig} onSelectWorkspace={selectWorkspace} />}
+        {activeTool === 'settings' && (
+          <SettingsPage
+            hidden={privacyHidden}
+            workspaceConfig={workspaceConfig}
+            onSelectWorkspace={selectWorkspace}
+            portfolioSource={dashboard?.portfolio?.source}
+          />
+        )}
       </main>
       {selected && (
         <StockIntelligenceShell
@@ -809,7 +827,7 @@ function NewsIntelligencePanel({ items, digest, isDemo, hidden }: any) {
   )
 }
 
-function Kpis({ p, hidden }: any) {
+function Kpis({ p, hidden, fmt }: { p: any; hidden: boolean; fmt: (v: unknown) => string }) {
   const arr = [
     ['Total Value', p.total_value],
     ['Daily P/L', p.daily_pnl, p.daily_pnl_pct],
@@ -825,7 +843,7 @@ function Kpis({ p, hidden }: any) {
           <PiaMetric
             density="compact"
             label={hidden ? 'Overview' : title}
-            value={hidden ? mask : secondary === 'pct' ? pct(value) : money(value)}
+            value={hidden ? mask : secondary === 'pct' ? pct(value) : fmt(value)}
             delta={typeof secondary === 'number' ? (hidden ? mask : pct(secondary)) : undefined}
             trend={typeof secondary === 'number' ? (secondary >= 0 ? 'positive' : 'negative') : 'neutral'}
           />
@@ -838,18 +856,23 @@ function Kpis({ p, hidden }: any) {
 function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
   const mounted = useMounted()
   const [activeTf, setActiveTf] = useState('1M')
+  const { currency, toggle: toggleCurrency, fmt } = useCurrency(Number(p.fxRate || 0.87))
   const tfOptions = ['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL']
   const dayPnlPct = Number(p.daily_pnl_pct || 0)
-  const total = Number(p.total_value || 0)
-  const bp = Number(p.buying_power || 0)
+  const fxMult = currency === 'EUR' ? Number(p.fxRate || 0.87) : 1
+  const total = Number(p.total_value || 0) * fxMult
+  const bp = Number(p.buying_power || 0) * fxMult
+  const sym = currency === 'EUR' ? '€' : '$'
+  const badge = resolvePortfolioBadge(p.source, p.mode, { pricesLive: p.pricesLive, fallbackActive: p.fallback_active })
+  const showStaleBanner = !hidden && p.pricesLive === false && String(p.mode || '').toLowerCase() !== 'mock'
   const ibkrMetrics = [
-    { label: 'Realized P/L', value: '$0.00' },
-    { label: 'Excess Liq.', value: money(Math.round(bp * 0.85)) },
-    { label: 'SMA', value: money(Math.round(total * 0.92)) },
-    { label: 'Theta', value: `$${(-(Math.round(total * 0.00012 * 100) / 100)).toFixed(2)}` },
-    { label: 'Vega', value: `$${Math.round(total * 0.0026)}` },
-    { label: 'Maint. Mgn', value: money(Math.round(total * 0.22)) },
-    { label: 'Init. Mgn', value: money(Math.round(total * 0.15)) },
+    { label: 'Realized P/L', value: `${sym}0.00` },
+    { label: 'Excess Liq.', value: fmt(Math.round(Number(p.buying_power || 0) * 0.85)) },
+    { label: 'SMA', value: fmt(Math.round(Number(p.total_value || 0) * 0.92)) },
+    { label: 'Theta', value: `${sym}${(-(Math.round(Number(p.total_value || 0) * 0.00012 * 100) / 100)).toFixed(2)}` },
+    { label: 'Vega', value: `${sym}${Math.round(Number(p.total_value || 0) * 0.0026)}` },
+    { label: 'Maint. Mgn', value: fmt(Math.round(Number(p.total_value || 0) * 0.22)) },
+    { label: 'Init. Mgn', value: fmt(Math.round(Number(p.total_value || 0) * 0.15)) },
     { label: 'SPX Δ', value: (total / 260000).toFixed(2) },
     { label: 'Net Δ', value: (total / 87500).toFixed(2) },
     { label: 'Day Trades', value: '3' },
@@ -858,18 +881,38 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
     <>
       <div className={showMarginDiscipline ? 'snapshot-grid' : 'snapshot-grid snapshot-grid-main'}>
         <div>
+          {showStaleBanner && (
+            <div className="ps-stale-banner">
+              ⚠ Prices may be stale{p.pricesLastRefresh ? ` — last updated ${fmtTimestamp(p.pricesLastRefresh)}` : ''}
+            </div>
+          )}
           <div className="snapshot-source-row">
-            <PiaBadge variant="info">{portfolioSourceBadgeLabel(p.source, p.mode)}</PiaBadge>
+            <PiaBadge variant={badge.variant as any}>{badge.label}</PiaBadge>
+            <button
+              type="button"
+              className={`cur-chip${currency === 'EUR' ? ' eur' : ''}`}
+              onClick={toggleCurrency}
+              title={`Switch to ${currency === 'USD' ? 'EUR €' : 'USD $'}`}
+            >
+              {currency === 'USD' ? '$ USD' : '€ EUR'}
+            </button>
             <span className="muted">{hidden ? mask : p.snapshot_timestamp ? `Last updated at ${new Date(p.snapshot_timestamp).toLocaleString()}` : 'Live source'}</span>
           </div>
-          <div className="hero-value">{hidden ? mask : money(p.total_value)}</div>
+          {!hidden && badge.subtitle && <div className="snapshot-source-subtitle">{badge.subtitle}</div>}
+          {!hidden && (p.positionsLastRefresh || p.pricesLastRefresh) && (
+            <div className="snapshot-ts-row">
+              {p.positionsLastRefresh && <span>Positions: <b>{fmtTimestamp(p.positionsLastRefresh)}</b></span>}
+              {p.pricesLastRefresh && <span>Prices: <b>{fmtTimestamp(p.pricesLastRefresh)}</b></span>}
+            </div>
+          )}
+          <div className="hero-value">{hidden ? mask : fmt(p.total_value)}</div>
           <div className="hero-meta">
-            <span className={p.daily_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.daily_pnl)} today</span>
+            <span className={p.daily_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : fmt(p.daily_pnl)} today</span>
             <span className={`snapshot-pnl-pct ${dayPnlPct >= 0 ? 'green' : 'red'}`}>{hidden ? mask : `${dayPnlPct >= 0 ? '+' : ''}${Math.abs(dayPnlPct).toFixed(2)}%`}</span>
             <span>{p.risk_mode || '-'}</span>
           </div>
           <div className="snapshot-market-status">{hidden ? mask : `${p.market_status || 'Market Open'} · ${p.session_note || 'Closes in 1h 18m'}`}</div>
-          <Kpis p={p} hidden={hidden} />
+          <Kpis p={p} hidden={hidden} fmt={fmt} />
           <div className="snapshot-tf-rail">
             {tfOptions.map((tf) => (
               <button key={tf} type="button" className={`snapshot-tf-chip${activeTf === tf ? ' active' : ''}`} onClick={() => setActiveTf(tf)}>{tf}</button>
@@ -1172,7 +1215,17 @@ function PositionsTable({ rows, hidden, setSelected, sort, direction, onColSort 
               </td>
               <td>{hidden ? mask : p.qty}</td>
               <td>{hidden ? mask : money(p.avg_price)}</td>
-              <td>{hidden ? mask : money(p.last)}</td>
+              <td>
+                {hidden ? mask : (() => {
+                  const src = resolvePositionPriceSource(p)
+                  return src ? (
+                    <span className="pos-price-cell">
+                      {money(p.last)}
+                      <span className={`pos-src ${src}`}>{src === 'yahoo' ? 'YH' : src === 'ibkr' ? 'IBKR' : 'STALE'}</span>
+                    </span>
+                  ) : money(p.last)
+                })()}
+              </td>
               <td>{hidden ? mask : money(p.market_value)}</td>
               <td className={p.unrealized >= 0 ? 'green' : 'red'}>
                 {hidden ? mask : money(p.unrealized)}

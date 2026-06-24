@@ -309,10 +309,11 @@ function providerSourceLabel(value: unknown) {
   if (raw === 'IBKR_LIVE') return 'Live IBKR'
   if (raw === 'HYBRID_LAST_POSITIONS_LIVE_QUOTES') return 'Hybrid Live Quotes'
   if (raw === 'MANUAL_HOLDINGS_LIVE_QUOTES') return 'Manual Live Quotes'
-  if (raw === 'LAST_UPDATE_ONLY') return 'Last Update'
-  if (raw === 'LAST_UPDATE') return 'Last Update'
+  if (raw === 'LAST_UPDATE_ONLY') return 'Snapshot'
+  if (raw === 'IBKR_LAST_UPDATE') return 'Snapshot'
+  if (raw === 'LAST_UPDATE') return 'Snapshot'
   if (raw === 'STALE') return 'Stale'
-  if (raw === 'MOCK' || raw === 'MOCK_FALLBACK') return 'Mock'
+  if (raw === 'MOCK' || raw === 'MOCK_FALLBACK') return 'Demo'
   return providerModeLabel(value)
 }
 
@@ -396,7 +397,13 @@ function dsStatus(mode: string, result: any, checking: boolean, portfolioSource?
       return { label: 'Login Required', tone: 'warn', detail: 'Open Gateway at https://localhost:5000 and login.' }
     }
     if (state.fallbackActive) {
+      if (result?.pricesLive) {
+        return { label: 'Fallback Live Pricing Active', tone: 'warn', detail: 'IBKR Gateway offline. Positions from last snapshot, prices via live Yahoo Finance.' }
+      }
       return { label: 'Using Fallback', tone: 'warn', detail: result?.message || 'Live data is temporarily falling back to the last update snapshot.' }
+    }
+    if (result?.pricesLive && !state.connected) {
+      return { label: 'IBKR Gateway Offline', tone: 'warn', detail: 'Gateway unreachable. Fallback live pricing active via Yahoo Finance.' }
     }
     return { label: 'Gateway Not Connected', tone: 'bad', detail: result?.message || 'Start IBKR Client Portal Gateway and login.' }
   }
@@ -525,13 +532,16 @@ function PortfolioDataSourceCard({
   }
 
   const { label, tone, detail } = dsStatus(displayMode, checkResult, checking, portfolioSource)
-  const isLiveConnected = tone === 'good' && displayMode === 'ibkr-live'
-  const isTfaPending = Boolean(tfaPollRef.current) && !isLiveConnected && displayMode === 'ibkr-live'
+  const currentSourceRaw = String(portfolioSource || checkResult?.active_source || checkResult?.portfolioMode || displayMode || mode || '').toUpperCase()
+  const currentSourceLabel = providerSourceLabel(currentSourceRaw)
+  const lastUpdatedAt = checkResult?.lastRefresh || checkResult?.summaryLastRefresh || checkResult?.positionsLastRefresh || checkResult?.snapshot_timestamp || checkResult?.snapshotTimestamp || null
+  const isLiveConnected = currentSourceRaw === 'IBKR_LIVE'
+  const isTfaPending = false
 
   return (
     <div className="ds-card">
       <div className="ds-card-header">
-        <span className="ds-card-title">{hidden ? 'Data Source' : 'Portfolio Data Source'}</span>
+        <span className="ds-card-title">{hidden ? 'Data Source' : 'Portfolio Source'}</span>
         <span className={`ds-status-pill ds-pill-${tone}`}>{hidden ? 'Status' : label}</span>
       </div>
       <div className="ds-mode-row" role="radiogroup" aria-label="Portfolio Data Source">
@@ -549,11 +559,33 @@ function PortfolioDataSourceCard({
           </button>
         ))}
       </div>
+      {false && (
+        <div className="ds-source-split">
+          <div className="ds-source-item">
+            <span>Positions</span>
+            <span>{displayMode === 'ibkr-live' && isLiveConnected ? 'IBKR Live' : displayMode === 'last-update' || checkResult?.active_source === 'LAST_UPDATE' ? 'Last IBKR Snapshot' : checkResult?.snapshot_available ? 'Last IBKR Snapshot' : '—'}</span>
+          </div>
+          <div className="ds-source-item">
+            <span>Prices</span>
+            <span>{isLiveConnected ? 'IBKR Live' : checkResult?.pricesLive ? 'Yahoo Live' : checkResult?.snapshot_timestamp ? 'Stale' : '—'}</span>
+          </div>
+        </div>
+      )}
+      <div className="ds-source-summary">
+        <div className="ds-source-item">
+          <span>Current Source</span>
+          <span>{hidden ? 'Source' : currentSourceLabel}</span>
+        </div>
+        <div className="ds-source-item">
+          <span>Last Updated</span>
+          <span>{hidden ? 'Timestamp' : formatCheckedAt(lastUpdatedAt)}</span>
+        </div>
+      </div>
       {!hidden && detail && <p className={`ds-detail ds-detail-${tone}`}>{detail}</p>}
-      {!hidden && isTfaPending && (
+      {false && (
         <p className="ds-detail ds-detail-warn">Waiting for IBKR login — approve in IBKR Mobile then return here.</p>
       )}
-      {mode === 'ibkr-live' && !isLiveConnected && !checking && !isTfaPending && !hidden && (
+      {false && (
         <div className="ds-gateway-actions">
           <button className="tab" type="button" onClick={testGateway}>Test Gateway</button>
           <a className="tab" href="https://localhost:5000" target="_blank" rel="noreferrer">Open Gateway</a>
@@ -597,6 +629,9 @@ function IbkrProviderCard({
   const activeSource = isPortfolioLive ? 'IBKR_LIVE' : (status.active_source || '')
   const gatewayStatus = status.gateway_status ? ibkrStatusMeta({ status: status.gateway_status }) : null
   const gatewayLabel = isPortfolioLive ? 'Connected' : (status.gateway_status === 'not_applicable' ? 'Not Required' : gatewayStatus?.label || meta.label)
+  const currentSourceLabel = providerSourceLabel(activeSource || configuredMode || status.portfolioMode || status.mode)
+  const lastUpdatedAt = status.lastRefresh || status.summaryLastRefresh || status.positionsLastRefresh || status.snapshot_timestamp || status.snapshotTimestamp || null
+  const detail = meta.detail || status.message || 'Source switches automatically when live IBKR is available.'
 
   return (
     <div className="integration-card ibkr-provider-card">
@@ -615,7 +650,7 @@ function IbkrProviderCard({
       </div>
 
       <section className="ibkr-provider-section">
-        <h3>{hidden ? 'Data Source' : 'Portfolio Data Source'}</h3>
+        <h3>{hidden ? 'Data Source' : 'Portfolio Source'}</h3>
         <div className="ibkr-mode-selector" role="radiogroup" aria-label="Portfolio Data Source">
           {PROVIDER_MODE_OPTIONS.map((option) => (
             <div key={option.value} className="ibkr-mode-option">
@@ -634,57 +669,17 @@ function IbkrProviderCard({
         </div>
       </section>
 
-      <div className="status-grid ibkr-provider-grid">
-        <IbkrFact label="Configured Mode" value={providerModeLabel(configuredMode)} hidden={hidden} />
-        <IbkrFact label="Active Source" value={providerSourceLabel(activeSource || configuredMode)} hidden={hidden} />
-        <IbkrFact label="Fallback Used" value={boolText(status.fallback_active)} hidden={hidden} />
-        <IbkrFact label="Status" value={meta.label} detail={meta.detail} hidden={hidden} />
-        <IbkrFact label="Authenticated" value={boolText(status.ibkr_authenticated)} hidden={hidden} />
-        <IbkrFact label="Gateway" value={gatewayLabel} hidden={hidden} />
-        <IbkrFact label="Snapshot" value={status.snapshot_available ? 'Available' : 'Unavailable'} detail={status.snapshot_timestamp ? `Last updated at ${formatCheckedAt(status.snapshot_timestamp)}` : 'Will update after the next successful live fetch'} hidden={hidden} />
-      </div>
-
-      {status.fallback_active ? (
-        <div className="empty-state ibkr-fallback-message">
-          <p>{hidden ? mask : status.message || 'Live IBKR unavailable. Using offline snapshot or mock fallback.'}</p>
+      <div className="ds-source-summary">
+        <div className="ds-source-item">
+          <span>Current Source</span>
+          <span>{hidden ? 'Source' : currentSourceLabel}</span>
         </div>
-      ) : null}
-
-      <div className="ibkr-test-row">
-        <button className="tab active" type="button" onClick={onProviderTest} disabled={providerTesting}>
-          {providerTesting ? 'Testing...' : 'Test Client Portal Gateway'}
-        </button>
-        <a className="tab" href="https://localhost:5000" target="_blank" rel="noreferrer">Open Gateway</a>
-      </div>
-
-      {providerTestResult ? (
-        <div className="empty-state ibkr-test-result">
-          <b>{hidden ? 'Result' : providerTestResult.status === 'connected' ? 'Connected to Client Portal Gateway' : ibkrStatusMeta(providerTestResult).label}</b>
-          <p className="muted">{hidden ? mask : providerTestResult.message}</p>
-          <div className="ibkr-result-grid">
-            <span>Authenticated: <b>{hidden ? mask : String(Boolean(providerTestResult.ibkr_authenticated))}</b></span>
-            <span>Accounts: <b>{hidden ? mask : providerTestResult.accounts_available ? 'available' : 'unavailable'}</b></span>
-            <span>Positions: <b>{hidden ? mask : providerTestResult.positions_available ? 'available' : 'unavailable'}</b></span>
-            <span>Trades: <b>{hidden ? mask : providerTestResult.trades_available ? 'available' : 'unavailable'}</b></span>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="ibkr-help-grid">
-        <div className="empty-state">
-          <b>{hidden ? 'Gateway Help' : 'Client Portal Gateway setup'}</b>
-          <ol>
-            <li>Start Client Portal Gateway locally.</li>
-            <li>Open https://localhost:5000</li>
-            <li>Login with IBKR.</li>
-            <li>Return to PIA and press Test Connection.</li>
-          </ol>
-        </div>
-        <div className="empty-state">
-          <b>{hidden ? 'Security' : 'Security note'}</b>
-          <p className="muted">{hidden ? mask : 'PIA never stores your IBKR username or password. Live IBKR mode reads data from your local Client Portal Gateway session.'}</p>
+        <div className="ds-source-item">
+          <span>Last Updated</span>
+          <span>{hidden ? 'Timestamp' : formatCheckedAt(lastUpdatedAt)}</span>
         </div>
       </div>
+      {!hidden && detail && <p className="muted">{detail}</p>}
     </div>
   )
 }

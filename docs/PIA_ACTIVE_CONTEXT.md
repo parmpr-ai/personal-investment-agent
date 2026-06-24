@@ -40,6 +40,7 @@ Stabilization Sprint / Mobile UAT
 * Live quote propagation alignment so hero, AI context, and position table follow the same live dashboard seed
 * Live position metric recalculation so day P/L, day %, and unrealized stay derived from live quote inputs with provenance
 * Live price provider fallback so portfolios keep updating with Yahoo Finance quotes when IBKR is disconnected while preserving the latest IBKR positions snapshot
+* IBKR source lifecycle recovery so settings, provider status, portfolio, dashboard, and mobile all read the same Live IBKR / Snapshot / Demo contract
 
 
 
@@ -429,6 +430,7 @@ Structure scaffolded under docs/mocks/<feature>/{APPROVED,WORKING,UAT} for ai-in
 ### UAT Status
 - Latest build PASS (9/9 pages, TypeScript valid). Route smoke historically 200 for /, /mobile, /setup. Multiple items pending Product Owner real-device UAT; PIA-P0-001 in validation. Tracking: docs/UAT_TRACKING.md.
 - HERMES-IBKR-SNAPSHOT-LIFECYCLE-048 local backend validation passed; snapshot persistence, startup warm-up, and explicit NO_DATA fallback reporting are now in place for the portfolio stack.
+- HERMES-IBKR-RECOVERY-052 local backend and frontend validation passed; provider status, portfolio, dashboard, and mobile now resolve Live IBKR from the runtime source contract and the settings source card is compact again.
 
 ### Active Epics
 - EPIC-PORTFOLIO-ANALYTICS-001 — portfolio analytics backend data infrastructure.
@@ -491,3 +493,49 @@ Structure scaffolded under docs/mocks/<feature>/{APPROVED,WORKING,UAT} for ai-in
 3. **Wire real endpoint** end-to-end (frontend consuming HERMES-AI-V3-003.0 contract); verify <1s load.
 4. **Close ARTEMIS-AI-V3-RESEARCH-003** once #1–#3 done.
 5. **Provider roadmap:** peer-selection provider (Competitive Comparison) + financials/TAM/guidance/ownership/fund-sentiment/DCF providers to replace placeholders.
+
+---
+
+## 2026-06-24 ATHENA-DOCS-SYNC-049 — Thread Outcomes & Project Priority Reset
+
+### Current Priority (NO new features until P0s pass UAT)
+
+**P0 #1 — Fix portfolio calculations (HERMES-PORTFOLIO-CALCULATION-046)**
+Portfolio Total, Day P/L, Day P/L %, Unrealized P/L are still incorrect. Root cause not yet isolated. Blocks all live portfolio UAT.
+
+**P0 #2 — Fix live quote propagation (HERMES-LIVE-QUOTES-037)**
+Quotes not propagating correctly to portfolio table, hero, and AI context. Dependency of P0 #1.
+
+**P0 #3 — Fix snapshot lifecycle + hybrid mode (HERMES-IBKR-SNAPSHOT-LIFECYCLE-048)**
+Snapshot persistence behavior still not matching requirements after v1 implementation. Hybrid mode fallback needs rework.
+
+### Thread UAT Outcomes
+
+| Task | UAT Result | Notes |
+|---|---|---|
+| HERMES-LIVE-REFRESH-FIX-025 | IMPLEMENTED | Commit 3c4a4b6 — WebSocket reconnect, polling, TFA polling |
+| ARTEMIS-SETTINGS-DATASOURCE-UX-018 | IMPLEMENTED | Portfolio Data Source card, gateway validation |
+| ARTEMIS-PIA-IBKR-APP-SWITCH-027 | IMPLEMENTED | pageshow + TFA polling + auto refresh |
+| HERMES-IBKR-MARKETDATA-STATUS-028 | IMPLEMENTED | Fixed C5.10 prefix parse; pricesLive restored |
+| HERMES-LIVE-POSITION-METRICS-MAPPING-036 | **FAIL** | Portfolio calculations still wrong |
+| ARTEMIS-AI-RESEARCH-TAB-IMPLEMENTATION-038 | **PARTIAL** | V3 visible; backend gaps, object rendering bug, card nesting |
+| HERMES-RESEARCH-DATA-AND-LIVE-CONTRACT-040 | READY FOR UAT | Commit 9d20e03 |
+| HERMES-MOBILE-LIVE-REFRESH-BLINK-041 | **FAIL** | Reduced blink; calcs still wrong; quotes not propagating. Commits b684469, dfd7335 |
+| HERMES-PRICE-PROVIDER-FALLBACK-044 | **PARTIAL** | Snapshot persistence not matching requirements. Commits a27ba55, 3374c7d |
+| HERMES-IBKR-SNAPSHOT-LIFECYCLE-048 | **FAIL** | Lifecycle not as required. Commit 8a9d43b0 |
+| HERMES-IBKR-RECOVERY-052 | READY FOR UAT | Runtime source detection aligned across settings, provider status, portfolio, dashboard, and mobile; Live IBKR now shows as connected when the Gateway is authenticated. |
+| ARTEMIS-PRICE-PROVIDER-FALLBACK-UX-045 | READY FOR UAT | Badge variants, timestamps, stale banner, source markers, settings split |
+
+### Open Items (no task ID yet)
+- Research data coverage audit
+- Research mobile layout optimization
+- Compact AI widget vignette regression
+
+### Open P0 Task Register
+
+| Task ID | Title | Owner | Status |
+|---|---|---|---|
+| HERMES-PORTFOLIO-CALCULATION-046 | Portfolio calculations incorrect | HERMES | OPEN P0 |
+| HERMES-LIVE-QUOTES-037 | Live quote propagation audit | HERMES | OPEN P0 |
+| HERMES-LIVE-REFRESH-039 | Full dashboard refresh architecture | HERMES | OPEN P0 |
+| ARTEMIS-PORTFOLIO-TABLE-COLUMNS-047 | Portfolio table columns, ordering, sorting, desktop parity | ARTEMIS | OPEN P0 |

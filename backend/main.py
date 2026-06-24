@@ -1036,7 +1036,7 @@ class DataSourceModeRequest(BaseModel):
 
 @app.get('/api/portfolio/provider/status')
 def portfolio_provider_status():
- def loader():
+ try:
   start=time.perf_counter()
   status=get_provider_status()
   status['sourceStatus']={
@@ -1051,32 +1051,32 @@ def portfolio_provider_status():
    status.get('fallback_active'),
    status.get('provider_class'),
   )
-  return status
- fallback={
-  'status': 'partial',
-  'message': 'Provider status warming up.',
-  'configured_mode': get_data_source_mode(),
-  'active_source': 'DISCONNECTED',
-  'fallback_active': True,
-  'fallback_reason': 'Provider status request timed out.',
-  'provider_class': 'Unknown',
-  'portfolioMode': 'LAST_UPDATE_ONLY',
-  'positionsSource': 'DISCONNECTED',
-  'priceSource': 'STALE',
-  'activePriceProvider': 'STALE',
-  'activePositionProvider': 'DISCONNECTED',
-  'isLivePositions': False,
-  'isLivePricing': False,
-  'isHybrid': False,
-  'lastPositionsTimestamp': None,
-  'lastPriceTimestamp': None,
-  'pricesLastRefresh': None,
-  'positionsLastRefresh': None,
-  'summaryLastRefresh': None,
-  'sourceStatus': {'provider': _route_source_status('provider', 'timeout', 0, fallback_used=True, detail='Provider status request timed out.')},
- }
- result=_route_cache('route', 'provider-status', _ROUTE_CACHE_TTL_SECONDS['provider_status'], loader, fallback, wait_timeout_seconds=0.8)
- return _stamp_ui_refresh_response(result, '/api/portfolio/provider/status')
+  return _stamp_ui_refresh_response(status, '/api/portfolio/provider/status')
+ except Exception as exc:
+  fallback={
+   'status': 'partial',
+   'message': 'Provider status warming up.',
+   'configured_mode': get_data_source_mode(),
+   'active_source': 'DISCONNECTED',
+   'fallback_active': True,
+   'fallback_reason': 'Provider status request failed.',
+   'provider_class': 'Unknown',
+   'portfolioMode': 'LAST_UPDATE_ONLY',
+   'positionsSource': 'DISCONNECTED',
+   'priceSource': 'STALE',
+   'activePriceProvider': 'STALE',
+   'activePositionProvider': 'DISCONNECTED',
+   'isLivePositions': False,
+   'isLivePricing': False,
+   'isHybrid': False,
+   'lastPositionsTimestamp': None,
+   'lastPriceTimestamp': None,
+   'pricesLastRefresh': None,
+   'positionsLastRefresh': None,
+   'summaryLastRefresh': None,
+   'sourceStatus': {'provider': _route_source_status('provider', 'error', 0, fallback_used=True, error=str(exc), detail='Provider status request failed.')},
+  }
+  return _stamp_ui_refresh_response(fallback, '/api/portfolio/provider/status')
 
 @app.get('/api/portfolio/provider/mode')
 def portfolio_provider_mode():
