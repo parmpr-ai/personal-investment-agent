@@ -16,6 +16,68 @@ Format per entry:
 
 ## UAT Log
 
+### HERMES-PROD-STABILIZATION-057
+
+Status: PENDING UAT
+Owner: HERMES
+Date: 2026-06-25
+
+#### UAT Checklist
+
+| Check | Status | Notes |
+|---|---|---|
+| Live IBKR Desktop — portfolio values match IBKR | PENDING | Requires live gateway |
+| Live IBKR Mobile — portfolio values match IBKR | PENDING | Requires live gateway |
+| Gateway OFF → Snapshot recovery (Desktop) | PENDING | |
+| Gateway OFF → Snapshot recovery (Mobile) | PENDING | |
+| Gateway restored → Auto-switch back to IBKR LIVE | PENDING | |
+| Options cost_basis correct (not 100× overstated) | PENDING | Fix in v0.3.49 |
+| Day P&L populated for options positions | PENDING | Fix in v0.3.49 |
+| Day P&L populated for stocks | PENDING | |
+| No IBKR/Yahoo/STALE labels in portfolio table rows | PENDING | Fix in v0.3.49 |
+| Provider source visible only in Settings → Integrations | PENDING | |
+| Desktop == Mobile portfolio values | PENDING | |
+| `/api/debug/source-trace` returns switchDurationMs | PENDING | Fix in v0.3.49 |
+| `/api/debug/source-trace` returns snapshotPositions | PENDING | Fix in v0.3.49 |
+
+#### Known state before UAT
+- Snapshot captured 2026-06-24 has **incorrect** cost_basis for options (100× bug, pre-fix). Force-refresh snapshot after deploying v0.3.49 via `POST /api/portfolio/snapshot/refresh?force=true`.
+
+---
+
+### HERMES-END-TO-END-PORTFOLIO-RECOVERY-056
+
+Status: READY FOR UAT
+Owner: HERMES + Senior Dev closure
+Date: 2026-06-24
+Approved Mock: N/A
+Design Lock Commit: N/A
+Implementation Commit: (pending commit in this branch)
+
+Build:
+- `python -m pytest tests/test_snapshot_lifecycle.py -v` → 8/8 PASS
+- `python -c "import services.portfolio_providers"` → clean
+- `npx tsc --noEmit` → 0 errors
+
+Acceptance Criteria UAT Matrix:
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | Mobile source == Desktop source | READY |
+| 2 | Snapshot never collapses portfolio when gateway goes offline | READY |
+| 3 | Automatic switch to snapshot on gateway loss | READY |
+| 4 | Automatic recovery to IBKR LIVE on gateway restore | READY |
+| 5 | `/api/debug/source-trace` endpoint returns full lifecycle state | READY |
+| 6 | `[SOURCE_SWITCH]`, `[SNAPSHOT_REJECTED]`, `[MOBILE_SOURCE]` logs emitted | READY |
+| 7 | 8/8 unit tests pass | PASS |
+
+Notes:
+- Root cause of portfolio collapse (FAIL #2): `SnapshotPortfolioProvider.get_snapshot_state()` was missing — raised `AttributeError` when gateway went offline, causing `get_portfolio_payload()` to hit the except branch and return `total_value: 0`. Fixed.
+- Root cause of false IBKR_LIVE source (FAIL #1 / FAIL #3): `IbkrLivePortfolioProvider.get_portfolio()` hardcoded `source: "IBKR_LIVE"` regardless of what `_load_bundle()` returned. Fixed to honor bundle source.
+- Snapshot write guard rejects: positions=0, total_value≤0, non-finite fields, missing account_id.
+- Mobile now uses same `/api/dashboard?surface=mobile` proxy path as desktop — no direct cross-origin calls.
+- `next.config.js` merged to single module.exports — prevents cache collision between dev servers.
+- PO UAT still pending (screenshots from live gateway scenarios A/B/C/D).
+
 ### HERMES-IBKR-RECOVERY-052
 
 Status: READY FOR UAT

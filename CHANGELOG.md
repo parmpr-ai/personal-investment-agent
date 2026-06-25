@@ -1,5 +1,91 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.49 - HERMES Production Stabilization Sprint (HERMES-PROD-STABILIZATION-057)
+
+Date: 2026-06-25
+Status: READY FOR UAT
+Owner: HERMES
+
+### Backend (portfolio_providers.py)
+
+* **BUGFIX: Options cost_basis double-multiplication eliminated** — `_normalize_live_positions()` was computing `cost_basis = avgCost × qty × multiplier`. IBKR's `avgCost` is already per-contract (i.e. `avgPrice × multiplier`), so multiplying by `multiplier` again caused a 100× overstatement of cost basis for every option position, making unrealized P&L appear deeply negative. Fixed to `avgCost × qty`.
+* **Day P&L now populated for options** — Added IBKR market data fields `82` (Change %) and `83` (Change) to `_QUOTE_FIELDS`. `_overlay_live_quotes()` now passes IBKR-reported day change as `official_day_change` / `official_day_change_pct` to `_derive_day_metrics()`. Day P&L is now computed even when `previousClose` is absent (common for options).
+* **`/api/debug/source-trace` enhanced** — Now returns `snapshotPositions` (array of symbol/qty/market_value per position), `lastSwitchDurationMs` (how long the source resolution took), and structured per-event `switchDurationMs`.
+* **`resolve_portfolio_provider()` timing** — Source resolution is now timed end-to-end; `switchDurationMs` is included in `[SOURCE_SWITCH]` log events and the source trace state.
+
+### Frontend (Dashboard.tsx)
+
+* **Removed per-row provider labels** — The `YH` / `IBKR` / `STALE` source badges displayed on each "Last Price" cell in the portfolio table have been removed. Provider source information now appears exclusively in Settings → Integrations. `resolvePositionPriceSource` import removed.
+
+### Canonical Field Mapping (both surfaces)
+
+Both Desktop and Mobile consume the same canonical position fields from the backend:
+
+| Canonical field | IBKR positions endpoint | IBKR market data |
+|---|---|---|
+| `last` | `mktPrice` / `lastPrice` | field `31` |
+| `day_change` | — (derived) | field `83` |
+| `day_change_pct` | — (derived) | field `82` |
+| `previousClose` | `closePrice` | field `86` |
+| `day_pnl` | derived: `day_change × qty × multiplier` | — |
+| `day_pnl_pct` | derived: `day_pnl / prev_mkt_value × 100` | — |
+| `market_value` | `mktValue` | recalc: `last × qty × multiplier` |
+| `cost_basis` | `avgCost × qty` | — |
+| `unrealized` | `unrealPnl` → recalc: `mv − cost_basis` | — |
+| `unrealized_pct` | derived: `unrealized / cost_basis × 100` | — |
+| `avg_price` | `avgPrice` | — |
+| `avg_cost` | `avgCost` (per-contract) | — |
+| `qty` | `position` | — |
+| `multiplier` | `multiplier` (100 for options) | — |
+
+### Summary Account Fields (IBKR → Canonical)
+
+| IBKR `ledger` / `summary` field | Canonical | REST API |
+|---|---|---|
+| `netliquidation.amount` | `net_liquidation` = `total_value` | `portfolio.total_value` |
+| `totalcashvalue.amount` | `cash` | `portfolio.cash` |
+| `buyingpower.amount` | `buying_power` | `portfolio.buying_power` |
+| `availablefunds.amount` | `available_funds` | — |
+| `maintmarginreq.amount` | `maint_margin_req` | — |
+| `grosspositionvalue.amount` | `gross_position_value` | — |
+| `excessliquidity.amount` | `excess_liquidity` | — |
+| `sum(position.day_pnl)` | `daily_pnl` | `portfolio.daily_pnl` |
+| `sum(position.unrealized)` | `unrealized` | `portfolio.unrealized` |
+
+## v0.3.48 - End-to-End Portfolio Source Recovery (HERMES-END-TO-END-PORTFOLIO-RECOVERY-056)
+
+Date: 2026-06-24
+Status: READY FOR UAT
+Owner: HERMES + Senior Dev closure
+
+### Backend (portfolio_providers.py / main.py)
+
+* **Source lifecycle engine** — `resolve_portfolio_provider()` enforces locked priority: IBKR LIVE → Snapshot → Demo. No manual intervention, no restart required.
+* **Snapshot write guard** — `_persist_live_snapshot()` validates every candidate before writing. Rejects bundles with zero portfolio value, zero positions, missing account ID, or non-finite numeric fields. Last known good snapshot is never overwritten by an invalid refresh.
+* **Live provider source honesty** — `IbkrLivePortfolioProvider.get_portfolio()` now returns `source` and `mode` from `_load_bundle()` instead of hardcoding `IBKR_LIVE`. If the live fetch fails mid-request and falls back to snapshot, the frontend sees `LAST_UPDATE` not a false `IBKR_LIVE`.
+* **Live provider snapshot fallback** — `_load_bundle()` recovers from a live fetch error using the last saved snapshot. Only returns `NO_DATA` if no snapshot exists.
+* **`get_snapshot_state()`** added to `SnapshotPortfolioProvider` (was missing, caused `AttributeError` when the gateway went offline).
+* **Lifecycle logs** — structured log tags emitted on every state transition: `[LIFECYCLE]`, `[SOURCE_SWITCH]`, `[SNAPSHOT_SAVE]`, `[SNAPSHOT_REFRESH]`, `[SNAPSHOT_REJECTED]`, `[MOBILE_SOURCE]`, `[DASHBOARD_SOURCE]`.
+* **`/api/debug/source-trace`** endpoint — exposes `currentSource`, `previousSource`, `lastSwitchReason`, `snapshotTimestamp`, `snapshotPortfolioValue`, `snapshotPositionCount`, `gatewayConnected`, `authenticated`, recent event log.
+* **Removed duplicate `_normalize_mode`** — second definition at line 3257 was dead code overriding the canonical first definition.
+
+### Frontend (use-live-dashboard.ts / Dashboard.tsx / MobileExperience.tsx)
+
+* `useLiveDashboard` now accepts `surface: 'desktop' | 'mobile'` and passes `?surface=` to `/api/dashboard`. Both surfaces call the **same** backend endpoint via the same-origin Next.js proxy — no direct cross-origin calls from the mobile client.
+* `commitDashboard` validates that the response contains `portfolio.positions` array before updating state. A partial or error response does **not** reset a valid previous state.
+* Desktop uses `useLiveDashboard('desktop')`, mobile uses `useLiveDashboard('mobile')` — both log `[DASHBOARD_SOURCE]` / `[MOBILE_SOURCE]` on source change.
+* `next.config.js` merged to single export to prevent cache collision between concurrent mobile/desktop dev servers.
+
+### Tests (backend/tests/test_snapshot_lifecycle.py)
+
+8 new unit tests covering: valid snapshot persist → failed refresh does not overwrite → periodic refresh replaces after interval → snapshot recovery → zero-value reject → production resolver priority chain → live bundle snapshot fallback → no-data when no snapshot.
+
+### Validation
+
+* `python -m pytest tests/test_snapshot_lifecycle.py -v` — 8/8 PASS
+* `python -c "import services.portfolio_providers"` — import clean
+* `npx tsc --noEmit` — 0 errors
+
 ## v0.3.47 - IBKR Source Lifecycle Recovery (HERMES-IBKR-RECOVERY-052)
 
 Date: 2026-06-24

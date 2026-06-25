@@ -53,8 +53,16 @@ Decisions DEC-AI-RESEARCH-001..007 LOCKED. Backend perf well within budget (p50 
 | Item | Status |
 |---|---|
 | HERMES-IBKR-RECOVERY-052 (Live IBKR source lifecycle recovery) | COMPLETE / locally validated |
+| HERMES-PROD-STABILIZATION-057 (Production stabilization sprint) | COMPLETE / PENDING UAT |
 
-### Notes
+### Notes (057)
+- **Options cost_basis bug fixed**: `avgCost × qty` (was incorrectly `× multiplier` again, causing 100× overstatement).
+- **Day P&L now populated**: IBKR fields 82+83 added to market data snapshot request; options get day change directly from IBKR even without previousClose.
+- **No provider labels in table rows**: Desktop portfolio table no longer shows YH/IBKR/STALE per row.
+- **Source trace enhanced**: `switchDurationMs` and `snapshotPositions` now in `/api/debug/source-trace`.
+- **⚠️ Action required after deploy**: Force-refresh snapshot (`POST /api/portfolio/snapshot/refresh?force=true`) — existing snapshot has pre-fix cost_basis values for options.
+
+### Notes (052)
 - Runtime provider status now drives the current source contract, so settings, provider status, portfolio, dashboard, and mobile all agree on `IBKR_LIVE` when the gateway is authenticated.
 - Snapshot and demo fallback still work automatically when live IBKR is unavailable; the compact settings card now shows only Current Source and Last Updated.
 - Validation passed: backend `py_compile`, backend `unittest`, frontend `npm run build`, and live route smoke checks.

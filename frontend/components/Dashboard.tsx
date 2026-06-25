@@ -9,6 +9,7 @@ import {
   Brain,
   ChevronLeft,
   ChevronRight,
+  Columns,
   Database,
   Eye,
   EyeOff,
@@ -40,7 +41,7 @@ import DashboardHome from './dashboard/DashboardHome'
 import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
 import CompanyLogo from './intelligence/CompanyLogo'
 import { preloadStockIntelligence } from './intelligence/useStockIntelligence'
-import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePortfolioBadge, resolvePositionPriceSource, resolvePositionKey } from '../lib/pia-api'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePortfolioBadge, resolvePositionKey } from '../lib/pia-api'
 import { useCurrency } from '../lib/use-currency'
 import { fetchApi } from '../lib/runtime-config'
 import { useLiveDashboard } from '../lib/use-live-dashboard'
@@ -264,7 +265,7 @@ function useMounted() {
 }
 
 function useDash() {
-  return useLiveDashboard().dashboard
+  return useLiveDashboard('desktop').dashboard
 }
 
 function useNewsIntelligence() {
@@ -511,7 +512,7 @@ export default function Dashboard() {
           onClose={() => setSelected(null)}
         />
       )}
-      <IntegrationStatusDock health={sourceHealth} hidden={privacyHidden} />
+      <IntegrationStatusDock health={sourceHealth} hidden={privacyHidden} portfolioSource={dashboard?.portfolio?.source} />
     </div>
   )
 }
@@ -531,10 +532,13 @@ function statusTone(label: string) {
   return 'neutral'
 }
 
-function IntegrationStatusDock({ health = [], hidden = false }: { health?: any[]; hidden?: boolean }) {
+function IntegrationStatusDock({ health = [], hidden = false, portfolioSource }: { health?: any[]; hidden?: boolean; portfolioSource?: string }) {
   const bySource = (name: string) => health.find((item: any) => item.source === name)
+  const ibkrStatus = portfolioSource === 'IBKR_LIVE'
+    ? { status: 'healthy', data_received: true }
+    : bySource('IBKR')
   const items = [
-    { name: 'IBKR', icon: Wallet, status: bySource('IBKR') },
+    { name: 'IBKR', icon: Wallet, status: ibkrStatus },
     { name: 'Yahoo', icon: Globe2, status: bySource('Yahoo Finance') },
     { name: 'Feeds', icon: Database, status: bySource('RSS') },
   ]
@@ -958,18 +962,176 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
   )
 }
 
+// --- Desktop portfolio column customization (ARTEMIS-PORTFOLIO-TABLE-CUSTOMIZE-054) ---
+// Keys are deliberately aligned with mobile COL_DEFS so both views share the same
+// localStorage keys and stay in sync.  Mobile-only keys (risk, momentum, sparkline,
+// company) are simply not rendered on desktop.
+type DeskColKey = 'ticker' | 'shares' | 'avgcost' | 'last' | 'mktvalue' | 'cost_basis' | 'unrealized' | 'unrealizedpct' | 'daypnl' | 'daypnlpct' | 'weight'
+
+interface DeskColDef { key: DeskColKey; label: string; sortKey?: string; defaultOn: boolean; frozen?: boolean }
+
+const DESK_COL_DEFS: DeskColDef[] = [
+  { key: 'ticker',        label: 'Symbol',       sortKey: 'alphabetical', defaultOn: true, frozen: true },
+  { key: 'shares',        label: 'Quantity',     sortKey: 'quantity',     defaultOn: true },
+  { key: 'avgcost',       label: 'Avg Cost',                              defaultOn: true },
+  { key: 'last',          label: 'Last Price',                            defaultOn: true },
+  { key: 'mktvalue',      label: 'Market Value', sortKey: 'market_value', defaultOn: true },
+  { key: 'cost_basis',    label: 'Cost Basis',                            defaultOn: false },
+  { key: 'unrealized',    label: 'Unrealized',   sortKey: 'total_pnl',   defaultOn: true },
+  { key: 'unrealizedpct', label: 'Unrealized %',                         defaultOn: false },
+  { key: 'daypnl',        label: 'Day P/L',      sortKey: 'daily_pnl',   defaultOn: true },
+  { key: 'daypnlpct',     label: 'Day P/L %',                            defaultOn: false },
+  { key: 'weight',        label: 'Portfolio %',  sortKey: 'allocation',  defaultOn: true },
+]
+
+// Same keys as mobile so desktop ↔ mobile preferences stay in sync
+const DESK_COL_LS_KEY       = 'pia.portfolioColumns.mobile.v2'
+const DESK_COL_ORDER_LS_KEY = 'pia.portfolioColOrder.mobile.v2'
+
+const DESK_VALID_KEYS = new Set(DESK_COL_DEFS.map((c) => c.key))
+
+function readDeskCols(): Set<DeskColKey> {
+  try {
+    const raw = localStorage.getItem(DESK_COL_LS_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw) as string[]
+      if (Array.isArray(arr) && arr.length) {
+        const filtered = arr.filter((k) => DESK_VALID_KEYS.has(k as DeskColKey)) as DeskColKey[]
+        if (filtered.length) return new Set(filtered)
+      }
+    }
+  } catch {}
+  return new Set(DESK_COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key))
+}
+
+function readDeskOrder(): DeskColKey[] {
+  try {
+    const raw = localStorage.getItem(DESK_COL_ORDER_LS_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw) as string[]
+      if (Array.isArray(arr) && arr.length) {
+        const filtered = arr.filter((k) => DESK_VALID_KEYS.has(k as DeskColKey)) as DeskColKey[]
+        const allKeys = DESK_COL_DEFS.map((c) => c.key)
+        const missing = allKeys.filter((k) => !filtered.includes(k))
+        return [...filtered, ...missing]
+      }
+    }
+  } catch {}
+  return DESK_COL_DEFS.map((c) => c.key)
+}
+
+function ColumnCustomizeMenu({
+  visible, order, onToggle, onReorder, onReset,
+}: {
+  visible: Set<DeskColKey>
+  order: DeskColKey[]
+  onToggle: (k: DeskColKey) => void
+  onReorder: (next: DeskColKey[]) => void
+  onReset: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const dragKey = useRef<DeskColKey | null>(null)
+  const [dragOver, setDragOver] = useState<DeskColKey | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handler(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const orderedDefs = order
+    .map((k) => DESK_COL_DEFS.find((c) => c.key === k))
+    .filter(Boolean) as DeskColDef[]
+
+  function handleDragOver(e: React.DragEvent, key: DeskColKey) {
+    e.preventDefault()
+    setDragOver(key)
+  }
+
+  function handleDrop(targetKey: DeskColKey) {
+    const src = dragKey.current
+    if (!src || src === targetKey) { setDragOver(null); return }
+    const next = [...order]
+    const si = next.indexOf(src)
+    const ti = next.indexOf(targetKey)
+    if (si < 0 || ti < 0) { setDragOver(null); return }
+    next.splice(si, 1)
+    next.splice(ti, 0, src)
+    onReorder(next)
+    setDragOver(null)
+    dragKey.current = null
+  }
+
+  return (
+    <div className="desk-col-menu-wrap" ref={menuRef}>
+      <button
+        type="button"
+        className={`desk-col-menu-btn${open ? ' active' : ''}`}
+        title="Customize Columns"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Columns size={15} />
+        <span>Columns</span>
+      </button>
+      {open && (
+        <div className="desk-col-popover" role="dialog" aria-label="Customize columns">
+          <div className="desk-col-popover-head">
+            <span>Customize Columns</span>
+            <button type="button" className="desk-col-reset" onClick={() => { onReset(); setOpen(false) }}>Reset</button>
+          </div>
+          <p className="desk-col-hint">Drag to reorder · toggle to show/hide</p>
+          <ul className="desk-col-list">
+            {orderedDefs.map((col) => (
+              <li
+                key={col.key}
+                className={`desk-col-item${dragOver === col.key ? ' drag-over' : ''}${col.frozen ? ' frozen' : ''}`}
+                draggable={!col.frozen}
+                onDragStart={() => { if (!col.frozen) dragKey.current = col.key }}
+                onDragOver={(e) => handleDragOver(e, col.key)}
+                onDrop={() => handleDrop(col.key)}
+                onDragEnd={() => setDragOver(null)}
+                onDragLeave={() => setDragOver(null)}
+              >
+                <span className="desk-col-drag" aria-hidden="true">⠿</span>
+                <input
+                  type="checkbox"
+                  id={`dcol-${col.key}`}
+                  checked={visible.has(col.key)}
+                  disabled={col.frozen}
+                  onChange={() => onToggle(col.key)}
+                />
+                <label htmlFor={`dcol-${col.key}`}>{col.label}</label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: any) {
   const [view, setView] = useState<PortfolioViewMode>('table')
   const [viewMenuOpen, setViewMenuOpen] = useState(false)
   const [sort, setSort] = useState('allocation')
   const [direction, setDirection] = useState<'desc' | 'asc'>('desc')
   const viewMenuRef = useRef<HTMLDivElement>(null)
+  const [deskCols, setDeskCols] = useState<Set<DeskColKey>>(() => new Set(DESK_COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key)))
+  const [deskOrder, setDeskOrder] = useState<DeskColKey[]>(() => DESK_COL_DEFS.map((c) => c.key))
 
   useEffect(() => {
     try {
       const saved = normalizePortfolioView(localStorage.getItem('pia.portfolioView.desktop'))
       if (saved) setView(saved)
     } catch {}
+    setDeskCols(readDeskCols())
+    setDeskOrder(readDeskOrder())
   }, [])
 
   useEffect(() => {
@@ -990,6 +1152,29 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
   function handleColSort(col: string) {
     if (sort === col) setDirection((d) => (d === 'desc' ? 'asc' : 'desc'))
     else { setSort(col); setDirection('desc') }
+  }
+
+  function toggleDeskCol(key: DeskColKey) {
+    setDeskCols((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      try { localStorage.setItem(DESK_COL_LS_KEY, JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
+
+  function reorderDeskCols(next: DeskColKey[]) {
+    setDeskOrder(next)
+    try { localStorage.setItem(DESK_COL_ORDER_LS_KEY, JSON.stringify(next)) } catch {}
+  }
+
+  function resetDeskCols() {
+    const defaultCols = new Set(DESK_COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key))
+    const defaultOrder = DESK_COL_DEFS.map((c) => c.key)
+    setDeskCols(defaultCols)
+    setDeskOrder(defaultOrder)
+    try { localStorage.removeItem(DESK_COL_LS_KEY); localStorage.removeItem(DESK_COL_ORDER_LS_KEY) } catch {}
   }
   const rows = useMemo(
     () =>
@@ -1023,6 +1208,15 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
                 onChange={setFilter}
                 tabs={['All', 'Stocks', 'Options', 'ETFs', 'Other'].map((x) => ({ id: x, label: x }))}
               />
+              {view === 'table' && (
+                <ColumnCustomizeMenu
+                  visible={deskCols}
+                  order={deskOrder}
+                  onToggle={toggleDeskCol}
+                  onReorder={reorderDeskCols}
+                  onReset={resetDeskCols}
+                />
+              )}
               <div className="portfolio-view-menu" ref={viewMenuRef}>
                 <button
                   type="button"
@@ -1086,7 +1280,7 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
           </PiaButton>
         </div>
         {view === 'table' ? (
-          <PositionsTable rows={rows} hidden={hidden} setSelected={setSelected} sort={sort} direction={direction} onColSort={handleColSort} />
+          <PositionsTable rows={rows} hidden={hidden} setSelected={setSelected} sort={sort} direction={direction} onColSort={handleColSort} visibleCols={deskCols} colOrder={deskOrder} />
         ) : (
           <PositionCards rows={rows} hidden={hidden} setSelected={setSelected} grid={portfolioGridFromView(view)} />
         )}
@@ -1173,7 +1367,11 @@ function ScannerColumn({ title, items, hidden }: any) {
   )
 }
 
-function PositionsTable({ rows, hidden, setSelected, sort, direction, onColSort }: any) {
+function PositionsTable({ rows, hidden, setSelected, sort, direction, onColSort, visibleCols, colOrder }: any) {
+  const visible = (visibleCols as Set<DeskColKey>) ?? new Set(DESK_COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key))
+  const order   = (colOrder   as DeskColKey[])     ?? DESK_COL_DEFS.map((c) => c.key)
+  const activeCols = order.filter((k) => visible.has(k) && DESK_VALID_KEYS.has(k))
+
   function ColHead({ col, label }: { col: string; label: string }) {
     const active = sort === col
     return (
@@ -1182,60 +1380,70 @@ function PositionsTable({ rows, hidden, setSelected, sort, direction, onColSort 
       </th>
     )
   }
+
+  function renderHead(k: DeskColKey) {
+    const def = DESK_COL_DEFS.find((c) => c.key === k)!
+    if (def.sortKey) return <ColHead key={k} col={def.sortKey} label={def.label} />
+    return <th key={k}>{def.label}</th>
+  }
+
+  function renderCell(k: DeskColKey, p: any) {
+    switch (k) {
+      case 'ticker':
+        return (
+          <td key="ticker">
+            <div className="row-symbol">
+              <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
+              <div>
+                <b>{hidden ? mask : p.symbol}</b>
+                <div className="muted">{hidden ? 'Workspace item' : p.name}</div>
+              </div>
+            </div>
+          </td>
+        )
+      case 'shares':
+        return <td key="shares">{hidden ? mask : p.qty}</td>
+      case 'avgcost':
+        return <td key="avgcost">{hidden ? mask : money(p.avg_price)}</td>
+      case 'last':
+        return <td key="last">{hidden ? mask : money(p.last)}</td>
+      case 'mktvalue':
+        return <td key="mktvalue">{hidden ? mask : money(p.market_value)}</td>
+      case 'cost_basis':
+        return <td key="cost_basis">{hidden ? mask : money(p.cost_basis)}</td>
+      case 'unrealized':
+        return (
+          <td key="unrealized" className={p.unrealized >= 0 ? 'green' : 'red'}>
+            {hidden ? mask : money(p.unrealized)}
+            <br />
+            <small>{hidden ? mask : pct(p.unrealized_pct)}</small>
+          </td>
+        )
+      case 'unrealizedpct':
+        return <td key="unrealizedpct" className={p.unrealized >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(p.unrealized_pct)}</td>
+      case 'daypnl':
+        return <td key="daypnl" className={(p.day_pnl || 0) >= 0 ? 'green' : 'red'}>{hidden ? mask : money(p.day_pnl || 0)}</td>
+      case 'daypnlpct':
+        return <td key="daypnlpct" className={(p.day_pnl_pct || 0) >= 0 ? 'green' : 'red'}>{hidden ? mask : pct(p.day_pnl_pct || 0)}</td>
+      case 'weight':
+        return <td key="weight">{hidden ? mask : pct(p.portfolio_pct)}</td>
+      default:
+        return <td key={k}>—</td>
+    }
+  }
+
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <ColHead col="alphabetical" label="Symbol" />
-            <th>Type</th>
-            <ColHead col="quantity" label="Qty" />
-            <th>Avg</th>
-            <th>Last</th>
-            <ColHead col="market_value" label="Mkt Value" />
-            <ColHead col="total_pnl" label="Unrlzd" />
-            <ColHead col="daily_pnl" label="Day P/L" />
-            <ColHead col="allocation" label="% Port" />
+            {activeCols.map((k) => renderHead(k))}
           </tr>
         </thead>
         <tbody>
           {rows.map((p: any, i: number) => (
             <tr key={resolvePositionKey(p, i)} onClick={() => setSelected(p)}>
-              <td>
-                <div className="row-symbol">
-                  <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
-                  <div>
-                    <b>{hidden ? mask : p.symbol}</b>
-                    <div className="muted">{hidden ? 'Workspace item' : p.name}</div>
-                  </div>
-                </div>
-              </td>
-              <td>
-                <PiaBadge variant="neutral" size="compact">{hidden ? mask : p.sec_type || 'STK'}</PiaBadge>
-              </td>
-              <td>{hidden ? mask : p.qty}</td>
-              <td>{hidden ? mask : money(p.avg_price)}</td>
-              <td>
-                {hidden ? mask : (() => {
-                  const src = resolvePositionPriceSource(p)
-                  return src ? (
-                    <span className="pos-price-cell">
-                      {money(p.last)}
-                      <span className={`pos-src ${src}`}>{src === 'yahoo' ? 'YH' : src === 'ibkr' ? 'IBKR' : 'STALE'}</span>
-                    </span>
-                  ) : money(p.last)
-                })()}
-              </td>
-              <td>{hidden ? mask : money(p.market_value)}</td>
-              <td className={p.unrealized >= 0 ? 'green' : 'red'}>
-                {hidden ? mask : money(p.unrealized)}
-                <br />
-                <small>{hidden ? mask : pct(p.unrealized_pct)}</small>
-              </td>
-              <td className={p.day_pnl >= 0 ? 'green' : 'red'}>
-                {hidden ? mask : money(p.day_pnl || 0)}
-              </td>
-              <td>{hidden ? mask : pct(p.portfolio_pct)}</td>
+              {activeCols.map((k) => renderCell(k, p))}
             </tr>
           ))}
         </tbody>

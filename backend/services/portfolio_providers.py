@@ -10,6 +10,7 @@ Fallback chain: ibkr-live → demo → mock
 """
 import json
 import logging
+import math
 import os
 import re
 import socket
@@ -64,6 +65,15 @@ _LIVE_REFRESH_SECONDS = 12.0
 _SNAPSHOT_LOCK = threading.RLock()
 _LIVE_QUOTE_TRACE_LOCK = threading.RLock()
 _LIVE_QUOTE_TRACE: deque[Dict[str, Any]] = deque(maxlen=500)
+_SOURCE_TRACE_LOCK = threading.RLock()
+_SOURCE_TRACE_EVENTS: deque[Dict[str, Any]] = deque(maxlen=100)
+_SOURCE_TRACE_STATE: Dict[str, Any] = {
+    "currentSource": None,
+    "previousSource": None,
+    "lastSwitchReason": None,
+    "lastSwitchTimestamp": None,
+}
+_SURFACE_SOURCE_STATE: Dict[str, str] = {}
 _IBKR_LOGGER = logging.getLogger("uvicorn.error")
 
 
@@ -292,20 +302,159 @@ def _snapshot_state_from_meta(meta_payload: Dict[str, Any], *, state_payload: Op
 def _snapshot_bundle_is_valid(bundle: Dict[str, Any]) -> tuple[bool, str]:
     if not isinstance(bundle, dict):
         return False, "Snapshot bundle must be a dictionary."
-    if str(bundle.get("source") or "").upper() != "IBKR_LIVE":
+
+    meta_payload = bundle.get("meta_payload") if isinstance(bundle.get("meta_payload"), dict) else {}
+    positions_payload = bundle.get("positions_payload") if isinstance(bundle.get("positions_payload"), dict) else {}
+    summary_payload = bundle.get("summary_payload") if isinstance(bundle.get("summary_payload"), dict) else {}
+    source = bundle.get("source") or meta_payload.get("source") or positions_payload.get("source")
+    if str(source or "").upper() != "IBKR_LIVE":
         return False, "Snapshot bundle is not sourced from IBKR_LIVE."
-    account_id = str(bundle.get("account_id") or "").strip()
+    account_id = str(bundle.get("account_id") or meta_payload.get("account_id") or positions_payload.get("account_id") or "").strip()
     if not account_id:
         return False, "Snapshot bundle is missing an account id."
     positions = bundle.get("positions")
+    if positions is None:
+        positions = positions_payload.get("positions")
     if not isinstance(positions, list) or not positions:
         return False, "Snapshot bundle returned no positions."
     summary = bundle.get("summary")
+    if summary is None:
+        summary = summary_payload.get("summary") if isinstance(summary_payload.get("summary"), dict) else summary_payload
     if not isinstance(summary, dict):
         return False, "Snapshot bundle is missing summary data."
     if not any(isinstance(position, dict) and (str(position.get("conid") or "").strip() or str(position.get("symbol") or position.get("underlying") or "").strip()) for position in positions):
         return False, "Snapshot bundle positions are not identifiable."
+
+    portfolio_value = _maybe_num(summary.get("total_value") or summary.get("net_liquidation") or summary.get("netLiquidation"))
+    if portfolio_value is None or not math.isfinite(portfolio_value) or portfolio_value <= 0:
+        return False, "Snapshot portfolio value must be a finite positive number."
+
+    for position in positions:
+        if not isinstance(position, dict):
+            return False, "Snapshot contains an invalid position row."
+        for field in ("quantity", "qty", "last", "market_value", "cost_basis", "unrealized"):
+            if field not in position or position.get(field) in (None, ""):
+                continue
+            value = _maybe_num(position.get(field))
+            if value is None or not math.isfinite(value):
+                return False, f"Snapshot position field '{field}' is not a finite number."
     return True, ""
+
+
+def _stored_snapshot_validation() -> tuple[bool, str]:
+    if not (_SNAPSHOT_META_FILE.exists() and _SNAPSHOT_POSITIONS_FILE.exists() and _SNAPSHOT_SUMMARY_FILE.exists()):
+        return False, "Snapshot files are incomplete."
+    return _snapshot_bundle_is_valid(_load_snapshot_bundle())
+
+
+def _source_switch_reason(resolution: "ProviderResolution") -> str:
+    if resolution.active_source == "IBKR_LIVE":
+        return "IBKR Gateway is reachable and authenticated."
+    if resolution.active_source == "LAST_UPDATE":
+        return resolution.fallback_reason or "IBKR unavailable; selected last known good snapshot."
+    if resolution.active_source == "MOCK":
+        return resolution.fallback_reason or "No valid live or snapshot portfolio; selected demo data."
+    return resolution.fallback_reason or resolution.stale_reason or "Portfolio source resolved."
+
+
+def _record_provider_resolution(resolution: "ProviderResolution", *, switch_duration_ms: Optional[float] = None) -> "ProviderResolution":
+    source = str(resolution.active_source or "DISCONNECTED")
+    reason = _source_switch_reason(resolution)
+    now = datetime.now(timezone.utc).isoformat()
+    with _SOURCE_TRACE_LOCK:
+        previous = _SOURCE_TRACE_STATE.get("currentSource")
+        if previous != source:
+            _SOURCE_TRACE_STATE.update(
+                {
+                    "previousSource": previous,
+                    "currentSource": source,
+                    "lastSwitchReason": reason,
+                    "lastSwitchTimestamp": now,
+                    "lastSwitchDurationMs": round(switch_duration_ms, 1) if switch_duration_ms is not None else None,
+                }
+            )
+            event = {
+                "timestamp": now,
+                "event": "SOURCE_SWITCH",
+                "previousSource": previous,
+                "currentSource": source,
+                "reason": reason,
+                "switchDurationMs": round(switch_duration_ms, 1) if switch_duration_ms is not None else None,
+            }
+            _SOURCE_TRACE_EVENTS.appendleft(event)
+            _IBKR_LOGGER.info(
+                "[SOURCE_SWITCH] previous=%s current=%s reason=%s duration_ms=%s",
+                previous or "NONE",
+                source,
+                reason,
+                round(switch_duration_ms, 1) if switch_duration_ms is not None else "n/a",
+            )
+            _IBKR_LOGGER.info(
+                "[LIFECYCLE] source=%s gateway=%s authenticated=%s snapshot=%s provider=%s",
+                source,
+                resolution.gateway_status,
+                resolution.ibkr_authenticated,
+                resolution.snapshot_available,
+                resolution.provider_class,
+            )
+    return resolution
+
+
+def record_surface_source(surface: str, portfolio: Dict[str, Any]) -> None:
+    normalized_surface = "mobile" if str(surface or "").lower() == "mobile" else "dashboard"
+    marker = "MOBILE_SOURCE" if normalized_surface == "mobile" else "DASHBOARD_SOURCE"
+    source = str(portfolio.get("source") or portfolio.get("active_source") or "UNKNOWN")
+    position_count = len(portfolio.get("positions") or []) if isinstance(portfolio.get("positions"), list) else 0
+    signature = f"{source}:{portfolio.get('total_value')}:{position_count}:{portfolio.get('snapshot_timestamp')}"
+    with _SOURCE_TRACE_LOCK:
+        if _SURFACE_SOURCE_STATE.get(normalized_surface) == signature:
+            return
+        _SURFACE_SOURCE_STATE[normalized_surface] = signature
+    _IBKR_LOGGER.info(
+        "[%s] source=%s portfolio_value=%s positions=%s timestamp=%s",
+        marker,
+        source,
+        portfolio.get("total_value"),
+        position_count,
+        portfolio.get("as_of") or portfolio.get("snapshot_timestamp"),
+    )
+
+
+def get_source_trace() -> Dict[str, Any]:
+    bundle = _load_snapshot_bundle()
+    positions_payload = bundle.get("positions_payload") if isinstance(bundle.get("positions_payload"), dict) else {}
+    summary_payload = bundle.get("summary_payload") if isinstance(bundle.get("summary_payload"), dict) else {}
+    summary = summary_payload.get("summary") if isinstance(summary_payload.get("summary"), dict) else summary_payload
+    positions = positions_payload.get("positions") if isinstance(positions_payload.get("positions"), list) else []
+    meta = bundle.get("meta_payload") if isinstance(bundle.get("meta_payload"), dict) else {}
+    valid, invalid_reason = _stored_snapshot_validation()
+    with _SOURCE_TRACE_LOCK:
+        state = deepcopy(_SOURCE_TRACE_STATE)
+        events = list(_SOURCE_TRACE_EVENTS)
+    snapshot_positions = []
+    if valid and positions:
+        snapshot_positions = [
+            {
+                "symbol": str(p.get("symbol") or p.get("underlying") or p.get("contractDesc") or "").strip(),
+                "qty": _maybe_num(p.get("qty") or p.get("quantity") or p.get("position")),
+                "market_value": _maybe_num(p.get("market_value") or p.get("marketValue")),
+                "assetClass": str(p.get("assetClass") or p.get("sec_type") or "STK"),
+            }
+            for p in positions[:50]
+        ]
+    state.update(
+        {
+            "snapshotTimestamp": _snapshot_timestamp(meta) if valid else None,
+            "snapshotPortfolioValue": _maybe_num(summary.get("total_value") or summary.get("net_liquidation")) if valid else None,
+            "snapshotPositionCount": len(positions) if valid else 0,
+            "snapshotPositions": snapshot_positions,
+            "snapshotValid": valid,
+            "snapshotInvalidReason": None if valid else invalid_reason,
+            "lastSwitchDurationMs": state.get("lastSwitchDurationMs"),
+            "events": events,
+        }
+    )
+    return state
 
 
 def _snapshot_refresh_is_due(meta_payload: Dict[str, Any], *, force: bool = False) -> bool:
@@ -938,12 +1087,8 @@ def _save_snapshot_bundle(bundle: Dict[str, Any]) -> None:
 
 
 def _snapshot_available() -> bool:
-    if not (_SNAPSHOT_META_FILE.exists() and _SNAPSHOT_POSITIONS_FILE.exists() and _SNAPSHOT_SUMMARY_FILE.exists()):
-        return False
-    meta_payload = _read_json_file(_SNAPSHOT_META_FILE, {})
-    if isinstance(meta_payload, dict) and meta_payload.get("snapshot_valid") is False:
-        return False
-    return True
+    valid, _ = _stored_snapshot_validation()
+    return valid
 
 
 # ─── Mock Provider (built-in demo data) ───────────────────────────────────────
@@ -1278,6 +1423,25 @@ class SnapshotPortfolioProvider:
     def get_snapshot_meta(self) -> Dict[str, Any]:
         return self._load_bundle()["meta"]
 
+    def get_snapshot_state(self) -> Dict[str, Any]:
+        bundle = self._load_bundle()
+        meta = bundle.get("meta") if isinstance(bundle.get("meta"), dict) else {}
+        state = _load_snapshot_state()
+        snapshot_state = _snapshot_state_from_meta(meta, state_payload=state)
+        snapshot_state.update(
+            {
+                "source": "LAST_UPDATE",
+                "snapshotAvailable": self.is_available(),
+                "snapshotTimestamp": _snapshot_timestamp(meta),
+                "snapshotAgeSeconds": _snapshot_age_seconds(meta),
+                "positionsCount": len(bundle.get("positions") or []),
+                "lastRefreshAttempt": state.get("lastRefreshAttempt") or snapshot_state.get("lastRefreshAttempt"),
+                "lastRefreshStatus": state.get("lastRefreshStatus") or snapshot_state.get("lastRefreshStatus"),
+                "lastRefreshError": state.get("lastRefreshError") or snapshot_state.get("lastRefreshError"),
+            }
+        )
+        return snapshot_state
+
     def get_portfolio(self) -> Dict[str, Any]:
         from services.state import compute_exposures, risk_doctor, today_actions, stress_tests, macro_snapshot
         positions = self.get_positions()
@@ -1400,7 +1564,7 @@ class IbkrLivePortfolioProvider:
     _HEARTBEAT_CACHE: Optional[Dict[str, Any]] = None
     _HEARTBEAT_AT: Optional[datetime] = None
     _HEARTBEAT_TTL_SECONDS = 4.0
-    _QUOTE_FIELDS = "31,7059,84,85,86,87,88"
+    _QUOTE_FIELDS = "31,82,83,84,85,86,87,88,7059"
     _QUOTE_BATCH_SIZE = 25
     _REFRESH_THREAD_LOCK = threading.RLock()
     _REFRESH_THREAD: Optional[threading.Thread] = None
@@ -1670,6 +1834,9 @@ class IbkrLivePortfolioProvider:
                     "symbol": symbol,
                     "last": last_val,
                     "pricePrefix": price_prefix,
+                    # Field 83 = Change (absolute), Field 82 = Change % — both day changes from IBKR.
+                    "day_change": _maybe_num(entry.get("83") or entry.get("change") or entry.get("dayChange")),
+                    "day_change_pct": _maybe_num(entry.get("82") or entry.get("changePercent") or entry.get("dayChangePct")),
                     "bid": _maybe_num(entry.get("84") or entry.get("bid")),
                     "ask": _maybe_num(entry.get("85") or entry.get("ask")),
                     "previous_close": _maybe_num(entry.get("86") or entry.get("previousClose") or entry.get("prevClose") or entry.get("close")),
@@ -1748,23 +1915,27 @@ class IbkrLivePortfolioProvider:
                 market_value = round(last_price * qty * multiplier, 2) if qty else _num(merged.get("market_value"))
                 cost_basis = _num(merged.get("cost_basis") or merged.get("costBasis"))
                 unrealized = round(market_value - cost_basis, 2) if cost_basis or market_value else _num(merged.get("unrealized"))
+                # Prefer IBKR-reported day change (fields 82/83) over derivation — critical for
+                # options where previousClose may be absent.
+                official_day_change = _maybe_num(quote.get("day_change") or merged.get("day_change"))
+                official_day_change_pct = _maybe_num(quote.get("day_change_pct") or merged.get("day_change_pct"))
                 day_metrics = _derive_day_metrics(
                     last=last_price,
                     previous_close=prev_close,
                     quantity=qty,
                     multiplier=multiplier,
-                    official_day_change=_maybe_num(merged.get("day_change")),
-                    official_day_change_pct=_maybe_num(merged.get("day_change_pct")),
+                    official_day_change=official_day_change,
+                    official_day_change_pct=official_day_change_pct,
                 )
                 merged.update(
                     {
                         "last": round(last_price, 4),
                         "previousClose": round(prev_close, 4) if prev_close is not None else merged.get("previousClose"),
                         "prevClose": round(prev_close, 4) if prev_close is not None else merged.get("prevClose"),
-                        "day_change": day_metrics["day_change"],
-                        "day_change_pct": day_metrics["day_change_pct"],
+                        "day_change": day_metrics["day_change"] if day_metrics["day_change"] is not None else official_day_change,
+                        "day_change_pct": day_metrics["day_change_pct"] if day_metrics["day_change_pct"] is not None else official_day_change_pct,
                         "day_pnl": day_metrics["day_pnl"],
-                        "day_pnl_pct": day_metrics["day_pnl_pct"],
+                        "day_pnl_pct": day_metrics["day_pnl_pct"] if day_metrics["day_pnl_pct"] is not None else official_day_change_pct,
                         "market_value": round(market_value, 2) if market_value is not None else merged.get("market_value"),
                         "unrealized": round(unrealized, 2) if unrealized is not None else merged.get("unrealized"),
                         "unrealized_pct": round(unrealized / cost_basis * 100, 2) if cost_basis else _num(merged.get("unrealized_pct")),
@@ -2006,7 +2177,14 @@ class IbkrLivePortfolioProvider:
         fallback_active: bool,
         fallback_reason: Optional[str],
     ) -> Dict[str, Any]:
-        active_source = portfolio_mode
+        if positions_source == "IBKR_LIVE":
+            active_source = "IBKR_LIVE"
+        elif positions_source == "IBKR_LAST_UPDATE":
+            active_source = "LAST_UPDATE"
+        elif positions_source == "MOCK":
+            active_source = "MOCK"
+        else:
+            active_source = portfolio_mode
         active_price_provider = "IBKR" if price_source == "IBKR_LIVE" else ("YAHOO" if price_source in {"YAHOO_LIVE", "YAHOO_DELAYED", "FALLBACK_PROVIDER"} else "STALE")
         is_live_positions = positions_source == "IBKR_LIVE"
         is_live_pricing = price_source != "STALE"
@@ -2127,8 +2305,12 @@ class IbkrLivePortfolioProvider:
             else:
                 price_source = "STALE"
 
-        if portfolio_mode == "IBKR_LIVE" and positions_source == "IBKR_LIVE" and not fallback_active:
+        if positions_source == "IBKR_LIVE":
             active_source = "IBKR_LIVE"
+        elif positions_source == "IBKR_LAST_UPDATE":
+            active_source = "LAST_UPDATE"
+        elif positions_source == "MOCK":
+            active_source = "MOCK"
         else:
             active_source = portfolio_mode
 
@@ -2616,7 +2798,9 @@ class IbkrLivePortfolioProvider:
             base_sym = re.split(r"\s+", sym)[0] if is_opt and sym else sym
             option_meta = _option_metadata(contract_desc, fallback_symbol=base_sym or sym)
             multiplier = _num(p.get("multiplier") or (100 if is_opt else 1), 100 if is_opt else 1)
-            cost_basis = round(avg_cost * qty * multiplier if qty else 0, 2)
+            # IBKR avgCost is already per-contract (avgPrice × multiplier for options).
+            # Do NOT multiply by multiplier again — that would be 100× overstatement.
+            cost_basis = round(avg_cost * qty if qty else 0, 2)
             position_symbol = option_meta.get("underlying") or base_sym or sym or contract_desc
             day_metrics = _derive_day_metrics(
                 last=last,
@@ -2842,15 +3026,17 @@ class IbkrLivePortfolioProvider:
         valid, invalid_reason = _snapshot_bundle_is_valid(bundle)
         snapshot_available_before = _snapshot_available()
         should_persist = bool(valid and (_snapshot_refresh_is_due(current_meta, force=force) or not snapshot_available_before))
-        snapshot_timestamp = bundle.get("snapshot_timestamp") or bundle.get("as_of") or _snapshot_timestamp(current_meta) or current_state.get("snapshotTimestamp")
+        candidate_timestamp = bundle.get("snapshot_timestamp") or bundle.get("as_of") or attempt_at
+        persisted_timestamp = _snapshot_timestamp(current_meta) or current_state.get("snapshotTimestamp")
+        snapshot_timestamp = candidate_timestamp if should_persist else persisted_timestamp
         positions_count = len(bundle.get("positions", [])) if isinstance(bundle.get("positions"), list) else 0
         state_payload = {
             "schemaVersion": _SNAPSHOT_SCHEMA_VERSION,
-            "source": bundle.get("source", "IBKR_LIVE"),
+            "source": bundle.get("source", "IBKR_LIVE") if should_persist else (current_meta.get("source") or current_state.get("source") or "IBKR_LIVE"),
             "snapshotAvailable": bool(snapshot_available_before or should_persist),
             "snapshotTimestamp": snapshot_timestamp,
             "snapshotAgeSeconds": 0.0 if should_persist else (_snapshot_age_seconds(current_meta) if current_meta else current_state.get("snapshotAgeSeconds")),
-            "positionsCount": positions_count or current_state.get("positionsCount", 0),
+            "positionsCount": positions_count if should_persist else int(current_meta.get("positions_count") or current_state.get("positionsCount") or 0),
             "lastRefreshAttempt": attempt_at,
             "lastRefreshStatus": "ok" if valid else "failed",
             "lastRefreshError": None if valid else (refresh_error or invalid_reason),
@@ -2938,6 +3124,15 @@ class IbkrLivePortfolioProvider:
                     "pricesLastRefresh": bundle.get("pricesLastRefresh"),
                 }
             )
+            marker = "SNAPSHOT_REFRESH" if snapshot_available_before else "SNAPSHOT_SAVE"
+            _IBKR_LOGGER.info(
+                "[%s] timestamp=%s portfolio_value=%s positions=%s account=%s",
+                marker,
+                snapshot_timestamp,
+                round(total_value, 2),
+                positions_count,
+                bundle.get("account_id"),
+            )
             return True
 
         state_payload["snapshotPersisted"] = False
@@ -2945,6 +3140,16 @@ class IbkrLivePortfolioProvider:
             state_payload["lastRefreshStatus"] = "ok"
             state_payload["lastRefreshError"] = None
             state_payload["snapshotRefreshStatus"] = "skipped"
+        else:
+            state_payload["snapshotRefreshStatus"] = "rejected"
+            _IBKR_LOGGER.warning(
+                "[SNAPSHOT_REJECTED] reason=%s preserved_timestamp=%s preserved_positions=%s candidate_positions=%s candidate_value=%s",
+                refresh_error or invalid_reason,
+                persisted_timestamp,
+                state_payload["positionsCount"],
+                positions_count,
+                total_value,
+            )
         _write_snapshot_state({**current_state, **state_payload})
         return False
 
@@ -2970,14 +3175,23 @@ class IbkrLivePortfolioProvider:
         macros = macro_snapshot()
         total_cb = sum(p.get("cost_basis", 0) for p in positions)
         total_unr = sum(p.get("unrealized", 0) for p in positions)
+        # Use the bundle's actual source — _load_bundle() may fall back to snapshot
+        # mid-request (gateway went offline between heartbeat check and data fetch).
+        bundle_source = bundle.get("source", "IBKR_LIVE")
+        bundle_mode = bundle.get("mode", "ibkr-live")
+        is_live_source = bundle_source == "IBKR_LIVE"
+        _IBKR_LOGGER.debug(
+            "[LIFECYCLE] get_portfolio bundle_source=%s is_live=%s positions=%s value=%s",
+            bundle_source, is_live_source, len(positions), round(total_value, 2),
+        )
         return {
-            "source": "IBKR_LIVE",
-            "mode": "ibkr-live",
+            "source": bundle_source,
+            "mode": bundle_mode,
             "as_of": bundle["as_of"],
-            "snapshot_available": True,
-            "snapshot_timestamp": bundle["snapshot_timestamp"],
-            "snapshotAvailable": True,
-            "snapshotTimestamp": bundle["snapshot_timestamp"],
+            "snapshot_available": bool(bundle.get("snapshot_available", True)),
+            "snapshot_timestamp": bundle.get("snapshot_timestamp"),
+            "snapshotAvailable": bool(bundle.get("snapshot_available", True)),
+            "snapshotTimestamp": bundle.get("snapshot_timestamp"),
             "snapshotAgeSeconds": snapshot_state.get("snapshotAgeSeconds"),
             "snapshotRefreshStatus": snapshot_state.get("lastRefreshStatus"),
             "snapshotLastRefreshAttempt": snapshot_state.get("lastRefreshAttempt"),
@@ -2985,13 +3199,15 @@ class IbkrLivePortfolioProvider:
             "snapshotSchemaVersion": snapshot_state.get("schemaVersion"),
             "lastRefresh": bundle.get("lastRefresh") or bundle.get("refreshed_at") or bundle.get("as_of"),
             "nextRefresh": bundle.get("nextRefresh"),
-            "isLiveUpdating": bundle.get("isLiveUpdating", True),
+            "isLiveUpdating": bundle.get("isLiveUpdating", is_live_source),
+            "fallback_active": bundle.get("fallback_active", not is_live_source),
+            "fallback_reason": bundle.get("fallback_reason"),
             "pricesLive": bundle.get("pricesLive"),
             "pricesLastRefresh": bundle.get("pricesLastRefresh"),
             "pricesAgeSeconds": bundle.get("pricesAgeSeconds"),
             "positionsLastRefresh": bundle.get("positionsLastRefresh") or bundle.get("positions_refreshed_at"),
             "summaryLastRefresh": bundle.get("summaryLastRefresh") or bundle.get("summary_refreshed_at"),
-            "is_live": bundle.get("is_live", True),
+            "is_live": bundle.get("is_live", is_live_source),
             "is_stale": bundle.get("is_stale", False),
             "stale_reason": bundle.get("stale_reason"),
             "total_value": round(total_value, 2),
@@ -3003,7 +3219,7 @@ class IbkrLivePortfolioProvider:
             "cash": summary.get("cash", 0),
             "buying_power": summary.get("buying_power", 0),
             "margin_used": round(summary.get("maint_margin_req", 0) / total_value * 100, 2) if total_value else 0,
-            "risk_mode": "IBKR LIVE",
+            "risk_mode": "IBKR LIVE" if is_live_source else "LAST UPDATE",
             "positions": positions,
             "exposures": compute_exposures(positions, total_value),
             "guardrails": risk_doctor(positions, macros),
@@ -3073,16 +3289,6 @@ class IbkrLivePortfolioProvider:
 
 
 # ─── Provider Factory ─────────────────────────────────────────────────────────
-
-def _normalize_mode(mode: str) -> str:
-    mode = (mode or "").strip().lower()
-    if mode in _LIVE_MODE_ALIASES:
-        return "ibkr-live"
-    if mode in _LAST_UPDATE_MODE_ALIASES:
-        return "last-update"
-    if mode == "mock":
-        return "mock"
-    return mode
 
 
 def get_data_source_mode() -> str:
@@ -3207,7 +3413,8 @@ def _diagnose_live_provider(provider: IbkrLivePortfolioProvider) -> Dict[str, An
 
 
 def resolve_portfolio_provider() -> ProviderResolution:
-    """Resolve the active portfolio provider and expose fallback metadata."""
+    """Resolve Live IBKR -> valid snapshot -> demo for the production lifecycle."""
+    _t0 = time.monotonic()
     mode = get_data_source_mode()
     snapshot = SnapshotPortfolioProvider()
     snapshot_available = snapshot.is_available()
@@ -3215,9 +3422,13 @@ def resolve_portfolio_provider() -> ProviderResolution:
     snapshot_timestamp = _snapshot_timestamp(snapshot_meta)
     snapshot_stale = _is_snapshot_stale(snapshot_meta) if snapshot_available else False
 
+    def resolved(value: ProviderResolution) -> ProviderResolution:
+        duration_ms = (time.monotonic() - _t0) * 1000
+        return _record_provider_resolution(value, switch_duration_ms=duration_ms)
+
     if mode == "mock":
         mock = MockPortfolioProvider()
-        return ProviderResolution(
+        return resolved(ProviderResolution(
             provider=mock,
             configured_mode=mode,
             active_source=mock.source_name,
@@ -3229,11 +3440,11 @@ def resolve_portfolio_provider() -> ProviderResolution:
             is_live=False,
             is_stale=False,
             stale_reason=None,
-        )
+        ))
 
     if mode == "last-update":
         if snapshot_available:
-            return ProviderResolution(
+            return resolved(ProviderResolution(
                 provider=snapshot,
                 configured_mode=mode,
                 active_source=snapshot.source_name,
@@ -3245,21 +3456,21 @@ def resolve_portfolio_provider() -> ProviderResolution:
                 is_live=False,
                 is_stale=snapshot_stale,
                 stale_reason="Saved snapshot is stale." if snapshot_stale else None,
-            )
-        disconnected = DisconnectedPortfolioProvider()
-        return ProviderResolution(
-            provider=disconnected,
+            ))
+        mock = MockPortfolioProvider()
+        return resolved(ProviderResolution(
+            provider=mock,
             configured_mode=mode,
-            active_source=disconnected.source_name,
-            fallback_active=False,
-            fallback_reason="No saved IBKR snapshot available.",
-            provider_class=disconnected.__class__.__name__,
+            active_source=mock.source_name,
+            fallback_active=True,
+            fallback_reason="No valid saved IBKR snapshot; using demo portfolio.",
+            provider_class=mock.__class__.__name__,
             snapshot_available=False,
             snapshot_timestamp=None,
             is_live=False,
-            is_stale=True,
-            stale_reason="No saved IBKR snapshot available.",
-        )
+            is_stale=False,
+            stale_reason=None,
+        ))
 
     if mode == "ibkr-live":
         live = IbkrLivePortfolioProvider()
@@ -3276,7 +3487,7 @@ def resolve_portfolio_provider() -> ProviderResolution:
         if heartbeat.get("gateway_open"):
             live_meta = live.get_snapshot_meta() if hasattr(live, "get_snapshot_meta") else {}
             live_timestamp = _snapshot_timestamp(live_meta) or snapshot_timestamp
-            return ProviderResolution(
+            return resolved(ProviderResolution(
                 provider=live,
                 configured_mode=mode,
                 active_source=live.source_name,
@@ -3289,9 +3500,9 @@ def resolve_portfolio_provider() -> ProviderResolution:
                 is_stale=False,
                 stale_reason=None,
                 **diagnostics,
-            )
+            ))
         if snapshot_available:
-            return ProviderResolution(
+            return resolved(ProviderResolution(
                 provider=snapshot,
                 configured_mode=mode,
                 active_source=snapshot.source_name,
@@ -3304,25 +3515,25 @@ def resolve_portfolio_provider() -> ProviderResolution:
                 is_stale=snapshot_stale,
                 stale_reason="Client Portal Gateway unavailable; using saved snapshot." if snapshot_stale else "Client Portal Gateway unavailable; using last-update snapshot.",
                 **diagnostics,
-            )
-        disconnected = DisconnectedPortfolioProvider()
-        return ProviderResolution(
-            provider=disconnected,
+            ))
+        mock = MockPortfolioProvider()
+        return resolved(ProviderResolution(
+            provider=mock,
             configured_mode=mode,
-            active_source=disconnected.source_name,
-            fallback_active=False,
-            fallback_reason="Client Portal Gateway unavailable and no saved snapshot exists.",
-            provider_class=disconnected.__class__.__name__,
+            active_source=mock.source_name,
+            fallback_active=True,
+            fallback_reason="Client Portal Gateway unavailable and no valid snapshot exists; using demo portfolio.",
+            provider_class=mock.__class__.__name__,
             snapshot_available=False,
             snapshot_timestamp=None,
             is_live=False,
-            is_stale=True,
-            stale_reason="Client Portal Gateway unavailable and no saved snapshot exists.",
+            is_stale=False,
+            stale_reason=None,
             **diagnostics,
-        )
+        ))
 
     mock = MockPortfolioProvider()
-    return ProviderResolution(
+    return resolved(ProviderResolution(
         provider=mock,
         configured_mode=mode if mode in _PROVIDER_MODES else "mock",
         active_source=mock.source_name,
@@ -3334,7 +3545,7 @@ def resolve_portfolio_provider() -> ProviderResolution:
         is_live=False,
         is_stale=False,
         stale_reason=None,
-    )
+    ))
 
 
 def get_active_provider():
@@ -3369,11 +3580,29 @@ def get_provider_status() -> Dict[str, Any]:
         provider_meta = {}
     mode = resolution.configured_mode
     snapshot_available = bool(provider_meta.get("snapshot_available", resolution.snapshot_available))
-    fallback_active = bool(provider_meta.get("fallback_active", resolution.fallback_active))
+    fallback_active = bool(resolution.fallback_active or provider_meta.get("fallback_active"))
     gateway_status = provider_meta.get("gateway_status") or resolution.gateway_status
     gateway_error = provider_meta.get("gateway_error") or resolution.gateway_error
     gateway_open = bool(provider_meta.get("gateway_open", resolution.ibkr_gateway_reachable and resolution.ibkr_authenticated))
-    portfolio_mode = provider_meta.get("portfolioMode") or provider_meta.get("mode") or mode.upper()
+    portfolio_mode = provider_meta.get("portfolioMode") or provider_meta.get("mode")
+    if resolution.active_source == "IBKR_LIVE":
+        portfolio_mode = "IBKR_LIVE"
+    elif resolution.active_source == "LAST_UPDATE":
+        portfolio_mode = "LAST_UPDATE_ONLY"
+    elif resolution.active_source == "MOCK":
+        portfolio_mode = "MOCK"
+    portfolio_mode = portfolio_mode or mode.upper().replace("-", "_")
+    positions_source = provider_meta.get("positionsSource") or (
+        "IBKR_LIVE" if resolution.active_source == "IBKR_LIVE" else (
+            "IBKR_LAST_UPDATE" if resolution.active_source == "LAST_UPDATE" else "MOCK"
+        )
+    )
+    prices_live = bool(provider_meta.get("pricesLive"))
+    price_source = provider_meta.get("priceSource") or (
+        "IBKR_LIVE" if resolution.active_source == "IBKR_LIVE" and prices_live else (
+            "STALE" if resolution.active_source == "LAST_UPDATE" else "MOCK"
+        )
+    )
     if portfolio_mode == "IBKR_LIVE" and provider_meta.get("isLivePricing", True):
         status = "LIVE"
         message = "Live IBKR Client Portal Gateway is available."
@@ -3432,19 +3661,19 @@ def get_provider_status() -> Dict[str, Any]:
         "is_stale": bool(provider_meta.get("is_stale", resolution.is_stale)),
         "stale_reason": provider_meta.get("stale_reason") or resolution.stale_reason,
         "portfolioMode": provider_meta.get("portfolioMode") or portfolio_mode,
-        "positionsSource": provider_meta.get("positionsSource"),
-        "priceSource": provider_meta.get("priceSource"),
-        "activePriceProvider": provider_meta.get("activePriceProvider"),
-        "activePositionProvider": provider_meta.get("activePositionProvider"),
-        "isLivePositions": provider_meta.get("isLivePositions"),
-        "isLivePricing": provider_meta.get("isLivePricing"),
-        "isHybrid": provider_meta.get("isHybrid"),
+        "positionsSource": positions_source,
+        "priceSource": price_source,
+        "activePriceProvider": provider_meta.get("activePriceProvider") or ("IBKR" if price_source == "IBKR_LIVE" else ("STALE" if price_source == "STALE" else "MOCK")),
+        "activePositionProvider": provider_meta.get("activePositionProvider") or positions_source,
+        "isLivePositions": bool(provider_meta.get("isLivePositions", positions_source == "IBKR_LIVE")),
+        "isLivePricing": bool(provider_meta.get("isLivePricing", price_source == "IBKR_LIVE")),
+        "isHybrid": bool(provider_meta.get("isHybrid", False)),
         "lastPositionsTimestamp": provider_meta.get("lastPositionsTimestamp"),
         "lastPriceTimestamp": provider_meta.get("lastPriceTimestamp"),
         "lastRefresh": provider_meta.get("lastRefresh") or provider_meta.get("refreshed_at") or resolution.snapshot_timestamp,
         "nextRefresh": provider_meta.get("nextRefresh"),
         "isLiveUpdating": bool(provider_meta.get("isLiveUpdating")) if provider_meta else bool(resolution.is_live),
-        "pricesLive": provider_meta.get("pricesLive") if provider_meta else None,
+        "pricesLive": prices_live if provider_meta else None,
         "pricesLastRefresh": provider_meta.get("pricesLastRefresh"),
         "pricesAgeSeconds": provider_meta.get("pricesAgeSeconds"),
         "positionsLastRefresh": provider_meta.get("positionsLastRefresh") or provider_meta.get("positions_refreshed_at"),
