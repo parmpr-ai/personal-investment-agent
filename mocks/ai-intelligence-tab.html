@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Design B — Glass Premium Borderless</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  background:#04071a;margin:0;padding:0;min-height:100vh;
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif;-webkit-font-smoothing:antialiased;
+}
+.phone{
+  width:100%;max-width:100%;background:#04071a;overflow:hidden;
+  background-image:radial-gradient(ellipse at 50% 0%,rgba(129,140,248,.09) 0%,transparent 55%);
+}
+
+.sbar{display:flex;justify-content:space-between;align-items:center;padding:16px 28px 0;}
+.sbar-time{font-size:15px;font-weight:700;color:#eef4fb;}
+.sbar-icons{display:flex;gap:7px;align-items:center;}
+
+.wh{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,.06);}
+.wh-left{display:flex;align-items:baseline;gap:8px;min-width:0;flex:1;overflow:hidden;}
+.wh-ticker{font-size:18px;font-weight:800;color:#eef4fb;flex-shrink:0;}
+.wh-name{font-size:13px;color:#4a5f78;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.wh-right{display:flex;align-items:center;gap:8px;}
+.vc-chip{border:1.5px solid #34d399;color:#34d399;font-size:12px;font-weight:800;letter-spacing:.8px;padding:4px 13px;border-radius:8px;box-shadow:0 0 14px rgba(52,211,153,.22);}
+.icon-btn{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;}
+
+.tabs{display:flex;border-bottom:1px solid rgba(255,255,255,.06);padding:0 6px;}
+.tab{flex:1;text-align:center;padding:11px 2px 10px;font-size:12px;font-weight:600;color:#3d5168;position:relative;cursor:pointer;white-space:nowrap;}
+.tab.on{color:#34d399;}
+.tab.on::after{content:'';position:absolute;bottom:0;left:15%;right:15%;height:2px;background:linear-gradient(90deg,#34d399,#a78bfa);border-radius:2px 2px 0 0;}
+
+.scroll{max-height:740px;overflow-y:auto;scrollbar-width:none;}
+.scroll::-webkit-scrollbar{display:none;}
+
+/* ════════════════════════════════
+   HERO BLOCK — full bleed
+   Top: image  |  Bottom: conviction
+════════════════════════════════ */
+.hero-block{overflow:hidden;}
+
+.hero-img{position:relative;height:290px;overflow:hidden;}
+.hero-img img,.hero-svg{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;
+}
+@keyframes breathe{0%,100%{transform:scale(1);}50%{transform:scale(1.04);}}
+.hero-img::before{
+  content:'';position:absolute;inset:0;z-index:1;
+  background:
+    linear-gradient(180deg,rgba(4,7,26,.45) 0%,transparent 28%,transparent 52%,rgba(4,7,26,1) 100%),
+    linear-gradient(90deg,rgba(4,7,26,.45) 0%,transparent 18%,transparent 82%,rgba(4,7,26,.45) 100%);
+}
+
+/* Seamless conviction area below image */
+.hero-conviction{
+  background:#04071a;
+  padding:12px 18px 16px;
+  display:flex;flex-direction:column;align-items:center;
+  position:relative;overflow:hidden;
+}
+.hero-conviction::before{
+  content:'';position:absolute;top:-50px;left:50%;transform:translateX(-50%);
+  width:280px;height:100px;
+  background:radial-gradient(ellipse,rgba(52,211,153,.12) 0%,transparent 68%);
+  pointer-events:none;z-index:0;
+}
+.hc-eye{
+  font-size:9px;font-weight:700;letter-spacing:3px;text-transform:uppercase;
+  color:rgba(52,211,153,.5);margin-bottom:3px;position:relative;z-index:1;
+}
+.hc-buy{
+  font-size:52px;font-weight:900;line-height:.88;letter-spacing:-2px;
+  background:linear-gradient(135deg,#34d399 0%,#6ee7b7 50%,#34d399 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  filter:drop-shadow(0 0 20px rgba(52,211,153,.5));
+  animation:buyglow 3.5s ease-in-out infinite;
+  position:relative;z-index:1;
+}
+@keyframes buyglow{
+  0%,100%{filter:drop-shadow(0 0 20px rgba(52,211,153,.5));}
+  50%{filter:drop-shadow(0 0 38px rgba(52,211,153,.9));}
+}
+.hc-sub{
+  font-size:11px;color:rgba(238,244,251,.34);font-weight:500;
+  margin-top:4px;margin-bottom:12px;position:relative;z-index:1;
+}
+/* Ring gauges row */
+.hc-rings{
+  display:flex;width:100%;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);
+  border-radius:14px;overflow:hidden;position:relative;z-index:1;
+}
+.mr{flex:1;display:flex;flex-direction:column;align-items:center;padding:10px 4px 9px;gap:2px;}
+.mr+.mr{border-left:1px solid rgba(255,255,255,.07);}
+.mr-svg{position:relative;width:40px;height:40px;}
+.mr-svg svg{width:40px;height:40px;}
+.mr-ctr{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+.mr-v{font-weight:800;line-height:1;}
+.mr-v.g{color:#34d399;}.mr-v.r{color:#f87171;}.mr-v.a{color:#fbbf24;}
+.mr-lbl{font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,.28);}
+.mr-note{font-size:9px;color:rgba(255,255,255,.22);}
+
+/* ════════════════════════════════
+   TIME HORIZON
+════════════════════════════════ */
+.th{padding:20px 0 6px;border-top:1px solid rgba(255,255,255,.05);}
+.th-lbl{font-size:9.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#3d5168;padding:0 18px 9px;}
+.th-row{display:flex;gap:6px;overflow-x:auto;padding:0 18px;scrollbar-width:none;}
+.th-row::-webkit-scrollbar{display:none;}
+.thp{flex-shrink:0;padding:6px 15px;border-radius:20px;font-size:12px;font-weight:600;color:#3d5168;
+  border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);white-space:nowrap;}
+.thp.on{background:rgba(52,211,153,.1);border-color:rgba(52,211,153,.28);color:#34d399;}
+
+/* ════════════════════════════════
+   SECTION HEADER
+════════════════════════════════ */
+.sh{display:flex;align-items:center;justify-content:space-between;padding:24px 18px 10px;}
+.sh h3{font-size:16px;font-weight:700;color:#eef4fb;}
+.sh-i{width:24px;height:24px;border-radius:50%;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;font-size:11px;color:#3d5168;}
+.sh-lnk{font-size:12px;color:#818cf8;font-weight:600;}
+
+/* ════════════════════════════════
+   GLASS CARDS — borderless (full width)
+════════════════════════════════ */
+.gcard{
+  background:rgba(255,255,255,.038);
+  border-top:1px solid rgba(255,255,255,.08);
+  border-bottom:1px solid rgba(255,255,255,.08);
+  border-radius:0;overflow:hidden;
+}
+
+/* ── CONVICTION BRIEF ── */
+.b-sec{padding:16px 18px;}
+.b-sec+.b-sec{border-top:1px solid rgba(255,255,255,.05);}
+.b-lbl{font-size:10px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;margin-bottom:11px;display:flex;align-items:center;gap:6px;}
+.b-lbl.g{color:#34d399;}.b-lbl.a{color:#fbbf24;}.b-lbl.r{color:#f87171;}.b-lbl.bl{color:#818cf8;}
+.bi{display:flex;align-items:flex-start;gap:9px;margin-bottom:9px;}
+.bi:last-child{margin-bottom:0;}
+.bdot{width:5px;height:5px;border-radius:50%;margin-top:5.5px;flex-shrink:0;}
+.bdot.g{background:#34d399;}.bdot.a{background:#fbbf24;}.bdot.r{background:#f87171;}.bdot.bl{background:#818cf8;}
+.bt{font-size:13px;color:rgba(238,244,251,.68);line-height:1.5;}
+.bt b{color:#eef4fb;font-weight:700;}
+
+.clat{background:rgba(129,140,248,.06);border:1px solid rgba(129,140,248,.13);border-radius:12px;padding:11px 12px;margin-bottom:12px;display:flex;align-items:flex-start;gap:9px;}
+.clat-ico{width:28px;height:28px;border-radius:8px;flex-shrink:0;background:rgba(129,140,248,.12);display:flex;align-items:center;justify-content:center;font-size:13px;}
+.clat-b{flex:1;}
+.clat-eye{font-size:9px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:rgba(129,140,248,.6);margin-bottom:4px;}
+.clat-ttl{font-size:12px;font-weight:600;color:#eef4fb;line-height:1.4;margin-bottom:5px;}
+.clat-meta{display:flex;align-items:center;gap:7px;}
+.clat-bdg{font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:rgba(52,211,153,.16);color:#34d399;}
+.clat-tm{font-size:10px;color:#3d5168;}
+.cat-rows{display:flex;flex-direction:column;gap:10px;}
+.cat-row{display:flex;align-items:center;gap:10px;}
+.cat-lbl{font-size:11px;color:#4a5f78;font-weight:600;width:58px;flex-shrink:0;}
+.cat-bar{flex:1;height:5px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden;}
+.cat-fill{height:100%;border-radius:3px;}
+.cat-fill.h{background:linear-gradient(90deg,#f87171,#fbbf24);}
+.cat-fill.m{background:linear-gradient(90deg,#fbbf24,#818cf8);}
+.cat-fill.l{background:linear-gradient(90deg,#818cf8,#c4b5fd);}
+.cat-pct{font-size:11px;font-weight:700;color:#eef4fb;width:30px;text-align:right;flex-shrink:0;}
+
+/* ── PORTFOLIO FIT ── */
+.pfit{padding:18px;}
+.pfit-top{display:flex;align-items:center;gap:18px;margin-bottom:16px;}
+.fit-ring{position:relative;width:76px;height:76px;flex-shrink:0;}
+.fit-ring svg{width:76px;height:76px;}
+.fit-ctr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.fit-num{font-size:22px;font-weight:800;color:#eef4fb;line-height:1;}
+.fit-sub{font-size:9px;font-weight:600;color:#3d5168;}
+.fit-rows{flex:1;}
+.fit-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04);}
+.fit-row:last-child{border-bottom:none;}
+.fit-key{font-size:12.5px;color:#4a5f78;}
+.fit-val{font-size:12.5px;font-weight:700;}
+.fit-val.pos{color:#34d399;}.fit-val.warn{color:#fbbf24;}.fit-val.neg{color:#f87171;}
+.pfit-act{
+  background:linear-gradient(135deg,rgba(52,211,153,.08),rgba(129,140,248,.06));
+  border:1px solid rgba(52,211,153,.15);border-radius:14px;padding:14px 16px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.pfa-l .t{font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#3d5168;margin-bottom:5px;}
+.pfa-l .a{font-size:26px;font-weight:900;color:#34d399;}
+.pfa-r{text-align:right;}
+.pfa-r .t{font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#3d5168;margin-bottom:5px;}
+.pfa-r .v{font-size:16px;font-weight:700;color:#eef4fb;}
+.pfa-r .s{font-size:10.5px;color:#3d5168;}
+
+/* ── BULL VS BEAR ── */
+.bvb{overflow:hidden;}
+.bvbs{display:flex;align-items:stretch;border-bottom:1px solid rgba(255,255,255,.06);min-height:82px;}
+.bvbs-bull{flex:1;background:linear-gradient(135deg,rgba(52,211,153,.12) 0%,transparent 100%);padding:16px;display:flex;flex-direction:column;justify-content:center;}
+.bvbs-bear{flex:1;background:linear-gradient(225deg,rgba(248,113,113,.12) 0%,transparent 100%);padding:16px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;}
+.bvbp{font-size:38px;font-weight:900;line-height:1;letter-spacing:-1.5px;}
+.bvbp.g{color:#34d399;filter:drop-shadow(0 0 14px rgba(52,211,153,.4));}
+.bvbp.r{color:#f87171;filter:drop-shadow(0 0 14px rgba(248,113,113,.4));}
+.bvbl{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-top:4px;}
+.bvbl.g{color:rgba(52,211,153,.5);}.bvbl.r{color:rgba(248,113,113,.5);}
+.bvb-vs{width:42px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-left:1px solid rgba(255,255,255,.06);border-right:1px solid rgba(255,255,255,.06);}
+.vs-c{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:800;color:#3d5168;}
+.bvb-bar{padding:12px 18px 10px;border-bottom:1px solid rgba(255,255,255,.05);}
+.bvb-blbls{display:flex;justify-content:space-between;margin-bottom:7px;}
+.bvb-blbl{font-size:9.5px;font-weight:600;}
+.bvb-blbl.g{color:rgba(52,211,153,.65);}.bvb-blbl.r{color:rgba(248,113,113,.65);}
+.bvb-trk{height:7px;background:rgba(248,113,113,.18);border-radius:4px;overflow:hidden;}
+.bvb-fill{height:100%;width:72%;border-radius:4px;background:linear-gradient(90deg,#34d399,#6ee7b7);}
+.bvb-cols{display:grid;grid-template-columns:1fr 1fr;}
+.bvb-bcol{padding:14px 14px 18px;}
+.bvb-bcol:first-child{border-right:1px solid rgba(255,255,255,.05);}
+.bvb-bhead{font-size:9px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;margin-bottom:11px;display:flex;align-items:center;gap:5px;}
+.bvb-bhead .d{width:6px;height:6px;border-radius:50%;}
+.bvb-bhead .d.g{background:#34d399;box-shadow:0 0 5px rgba(52,211,153,.5);}
+.bvb-bhead .d.r{background:#f87171;box-shadow:0 0 5px rgba(248,113,113,.5);}
+.bvb-bhead .g{color:#34d399;}.bvb-bhead .r{color:#f87171;}
+.bpt{margin-bottom:10px;}
+.bpt:last-child{margin-bottom:0;}
+.bpt-t{font-size:12px;font-weight:700;color:#eef4fb;margin-bottom:2px;}
+.bpt-s{font-size:10.5px;color:#3d5168;line-height:1.35;}
+
+/* ── NEWS ── */
+.nscr{display:flex;gap:10px;overflow-x:auto;padding:0 18px 4px;scrollbar-width:none;}
+.nscr::-webkit-scrollbar{display:none;}
+.nc{
+  flex-shrink:0;width:170px;
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;overflow:hidden;
+}
+.nc-img{height:100px;position:relative;overflow:hidden;}
+.nc-img::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 35%,rgba(4,7,26,.88) 100%);}
+.nc-img .ico{position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);font-size:32px;opacity:.22;}
+.nc-bdg{position:absolute;bottom:7px;left:7px;z-index:1;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:4px;}
+.nc-bdg.pos{background:rgba(52,211,153,.18);color:#34d399;}
+.nc-bdg.neu{background:rgba(129,140,248,.16);color:#818cf8;}
+.nc-bdg.neg{background:rgba(248,113,113,.18);color:#f87171;}
+.nc-body{padding:10px 11px 13px;}
+.nc-ttl{font-size:12px;font-weight:600;color:#eef4fb;line-height:1.4;margin-bottom:5px;}
+.nc-tm{font-size:10px;color:#3d5168;}
+.i1{background:linear-gradient(140deg,#061510,#0c2018);}
+.i2{background:linear-gradient(140deg,#060d1e,#0c1630);}
+.i3{background:linear-gradient(140deg,#141304,#201e08);}
+.i4{background:linear-gradient(140deg,#160606,#221010);}
+
+.footer{margin:22px 20px 36px;padding-top:14px;border-top:1px solid rgba(255,255,255,.05);display:flex;justify-content:space-between;font-size:10px;}
+.footer span{color:#243040;}
+</style>
+</head>
+<body>
+<div class="phone">
+
+<div class="wh">
+  <div class="wh-left">
+    <span class="wh-ticker">NBIS</span>
+    <span class="wh-name">Nebius Group NV</span>
+  </div>
+  <div class="wh-right">
+    <div class="vc-chip">BUY</div>
+    <div class="icon-btn"><svg width="16" height="4" viewBox="0 0 16 4" fill="#64748b"><circle cx="2" cy="2" r="1.6"/><circle cx="8" cy="2" r="1.6"/><circle cx="14" cy="2" r="1.6"/></svg></div>
+    <div class="icon-btn"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#64748b" stroke-width="1.8" stroke-linecap="round"><line x1="1" y1="1" x2="12" y2="12"/><line x1="12" y1="1" x2="1" y2="12"/></svg></div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab on">Brief</div>
+  <div class="tab">Research</div>
+  <div class="tab">Portfolio</div>
+  <div class="tab">History</div>
+</div>
+
+<div class="scroll">
+
+  <!-- ════ HERO BLOCK: image top + conviction bottom ════ -->
+  <div class="hero-block">
+
+    <!-- Image -->
+    <div class="hero-img">
+      <svg class="hero-svg" viewBox="0 0 390 290" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="bg-glow" cx="50%" cy="40%" r="70%">
+            <stop offset="0%" stop-color="#1a1040"/>
+            <stop offset="100%" stop-color="#04071a"/>
+          </radialGradient>
+          <radialGradient id="green-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#34d399" stop-opacity="0.22"/>
+            <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="purple-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#818cf8" stop-opacity="0.18"/>
+            <stop offset="100%" stop-color="#818cf8" stop-opacity="0"/>
+          </radialGradient>
+          <filter id="blur6"><feGaussianBlur stdDeviation="6"/></filter>
+          <filter id="blur12"><feGaussianBlur stdDeviation="12"/></filter>
+        </defs>
+        <!-- bg -->
+        <rect width="390" height="290" fill="url(#bg-glow)"/>
+        <!-- purple glow top-left -->
+        <ellipse cx="80" cy="80" rx="160" ry="120" fill="url(#purple-glow)" filter="url(#blur12)"/>
+        <!-- green glow bottom-right -->
+        <ellipse cx="310" cy="210" rx="180" ry="130" fill="url(#green-glow)" filter="url(#blur12)"/>
+        <!-- subtle grid -->
+        <g stroke="rgba(255,255,255,0.04)" stroke-width="1">
+          <line x1="0" y1="58" x2="390" y2="58"/>
+          <line x1="0" y1="116" x2="390" y2="116"/>
+          <line x1="0" y1="174" x2="390" y2="174"/>
+          <line x1="0" y1="232" x2="390" y2="232"/>
+          <line x1="78" y1="0" x2="78" y2="290"/>
+          <line x1="156" y1="0" x2="156" y2="290"/>
+          <line x1="234" y1="0" x2="234" y2="290"/>
+          <line x1="312" y1="0" x2="312" y2="290"/>
+        </g>
+        <!-- rising chart line -->
+        <polyline points="10,240 50,220 90,230 130,195 170,180 210,155 250,130 290,100 330,75 370,48"
+          fill="none" stroke="rgba(52,211,153,0.35)" stroke-width="2.5" stroke-linejoin="round"/>
+        <!-- chart fill -->
+        <polygon points="10,240 50,220 90,230 130,195 170,180 210,155 250,130 290,100 330,75 370,48 370,290 10,290"
+          fill="url(#green-area)" opacity="0.12"/>
+        <defs>
+          <linearGradient id="green-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#34d399" stop-opacity="0.6"/>
+            <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <!-- bull silhouette (simplified) -->
+        <g transform="translate(145,60) scale(0.9)" opacity="0.13" fill="#eef4fb">
+          <!-- body -->
+          <ellipse cx="100" cy="110" rx="72" ry="48"/>
+          <!-- head -->
+          <ellipse cx="168" cy="88" rx="32" ry="28"/>
+          <!-- neck -->
+          <rect x="138" y="80" width="32" height="36" rx="8"/>
+          <!-- legs -->
+          <rect x="52" y="148" width="16" height="56" rx="7"/>
+          <rect x="76" y="148" width="16" height="60" rx="7"/>
+          <rect x="112" y="148" width="16" height="56" rx="7"/>
+          <rect x="136" y="148" width="16" height="52" rx="7"/>
+          <!-- tail -->
+          <path d="M30,95 Q10,70 18,50 Q22,38 30,44" stroke="#eef4fb" stroke-width="8" fill="none" stroke-linecap="round"/>
+          <!-- horn -->
+          <path d="M175,68 Q195,40 185,28" stroke="#eef4fb" stroke-width="7" fill="none" stroke-linecap="round"/>
+          <!-- eye -->
+          <circle cx="178" cy="82" r="4" fill="#04071a"/>
+        </g>
+        <!-- glow dot on chart peak -->
+        <circle cx="370" cy="48" r="5" fill="#34d399" opacity="0.9"/>
+        <circle cx="370" cy="48" r="12" fill="#34d399" opacity="0.18" filter="url(#blur6)"/>
+      </svg>
+    </div>
+
+    <!-- Conviction — seamlessly below image -->
+    <div class="hero-conviction">
+      <div class="hc-eye">AI Verdict</div>
+      <div class="hc-buy">BUY</div>
+      <div class="hc-sub">Strong Conviction · Strong Opportunity</div>
+      <!-- 3 ring gauges -->
+      <div class="hc-rings">
+        <div class="mr">
+          <div class="mr-svg">
+            <svg viewBox="0 0 50 50">
+              <defs><linearGradient id="rg1" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#34d399"/><stop offset="100%" stop-color="#6ee7b7"/></linearGradient></defs>
+              <circle cx="25" cy="25" r="18" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="4"/>
+              <circle cx="25" cy="25" r="18" fill="none" stroke="url(#rg1)" stroke-width="4" stroke-linecap="round"
+                stroke-dasharray="100.5 12.6" transform="rotate(-90 25 25)"/>
+            </svg>
+            <div class="mr-ctr"><span class="mr-v g" style="font-size:11px">88</span></div>
+          </div>
+          <div class="mr-lbl">Conviction</div>
+          <div class="mr-note">Strong</div>
+        </div>
+        <div class="mr">
+          <div class="mr-svg">
+            <svg viewBox="0 0 50 50">
+              <defs><linearGradient id="rg2" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#f87171"/><stop offset="100%" stop-color="#fca5a5"/></linearGradient></defs>
+              <circle cx="25" cy="25" r="18" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="4"/>
+              <circle cx="25" cy="25" r="18" fill="none" stroke="url(#rg2)" stroke-width="4" stroke-linecap="round"
+                stroke-dasharray="67.9 45.2" transform="rotate(-90 25 25)"/>
+            </svg>
+            <div class="mr-ctr"><span class="mr-v r" style="font-size:9px;font-weight:800">HIGH</span></div>
+          </div>
+          <div class="mr-lbl">Risk Level</div>
+          <div class="mr-note">Elevated</div>
+        </div>
+        <div class="mr">
+          <div class="mr-svg">
+            <svg viewBox="0 0 50 50">
+              <defs><linearGradient id="rg3" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#34d399"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient></defs>
+              <circle cx="25" cy="25" r="18" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="4"/>
+              <circle cx="25" cy="25" r="18" fill="none" stroke="url(#rg3)" stroke-width="4" stroke-linecap="round"
+                stroke-dasharray="84.8 28.3" transform="rotate(-90 25 25)"/>
+            </svg>
+            <div class="mr-ctr"><span class="mr-v g" style="font-size:9px">+18%</span></div>
+          </div>
+          <div class="mr-lbl">Exp. Return</div>
+          <div class="mr-note">1Y Horizon</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /hero-block -->
+
+  <!-- TIME HORIZON -->
+  <div class="th">
+    <div class="th-lbl">Horizon</div>
+    <div class="th-row">
+      <div class="thp">Day</div><div class="thp">1M</div><div class="thp">Q</div><div class="thp">6M</div>
+      <div class="thp on">1Y</div><div class="thp">2Y</div><div class="thp">3Y</div><div class="thp">5Y</div><div class="thp">📅 Date</div>
+    </div>
+  </div>
+
+  <!-- CONVICTION BRIEF -->
+  <div class="sh"><h3>Conviction Brief</h3><div class="sh-i">i</div></div>
+  <div class="gcard">
+    <div class="b-sec">
+      <div class="b-lbl g">Bullish Drivers</div>
+      <div class="bi"><div class="bdot g"></div><div class="bt"><b>GPU cloud revenue tripling YoY</b> — only EU-domiciled hyperscaler, no US overlap</div></div>
+      <div class="bi"><div class="bdot g"></div><div class="bt"><b>H100/H200 clusters sold out</b> through Q3 2027 — 94% contracted ARR</div></div>
+      <div class="bi"><div class="bdot g"></div><div class="bt"><b>EU data sovereignty tailwind</b> — NIS2 mandating EU-hosted AI inference by 2027</div></div>
+    </div>
+    <div class="b-sec">
+      <div class="b-lbl a">Key Watchouts</div>
+      <div class="bi"><div class="bdot a"></div><div class="bt"><b>Cash burn accelerating</b> — FCF −$42M/qtr; breakeven not before Q4 2027</div></div>
+      <div class="bi"><div class="bdot a"></div><div class="bt"><b>NVIDIA single-vendor risk</b> — GPU allocation fully reliant on Nvidia</div></div>
+      <div class="bi"><div class="bdot a"></div><div class="bt"><b>Customer concentration</b> — top 3 clients = 54% of ARR</div></div>
+    </div>
+    <div class="b-sec">
+      <div class="b-lbl r">Main Risks</div>
+      <div class="bi"><div class="bdot r"></div><div class="bt"><b>Dilution</b> — secondary offering likely H2 2026, est. 8–12%</div></div>
+      <div class="bi"><div class="bdot r"></div><div class="bt"><b>Hyperscaler entry</b> — Azure EU Sovereign Cloud targeting same enterprise</div></div>
+    </div>
+    <div class="b-sec">
+      <div class="b-lbl bl">Catalyst Impact</div>
+      <div class="clat">
+        <div class="clat-ico">🏗️</div>
+        <div class="clat-b">
+          <div class="clat-eye">Latest Catalyst</div>
+          <div class="clat-ttl">Nebius secures €500M EU AI Fund grant for Frankfurt DC expansion</div>
+          <div class="clat-meta"><div class="clat-bdg">Positive</div><div class="clat-tm">10m ago</div></div>
+        </div>
+      </div>
+      <div class="cat-rows">
+        <div class="cat-row"><span class="cat-lbl">Short term</span><div class="cat-bar"><div class="cat-fill h" style="width:85%"></div></div><span class="cat-pct">85%</span></div>
+        <div class="cat-row"><span class="cat-lbl">Mid term</span><div class="cat-bar"><div class="cat-fill m" style="width:76%"></div></div><span class="cat-pct">76%</span></div>
+        <div class="cat-row"><span class="cat-lbl">Long term</span><div class="cat-bar"><div class="cat-fill l" style="width:62%"></div></div><span class="cat-pct">62%</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PORTFOLIO FIT -->
+  <div class="sh"><h3>Portfolio Fit</h3><div class="sh-i">i</div></div>
+  <div class="gcard">
+    <div class="pfit">
+      <div class="pfit-top">
+        <div class="fit-ring">
+          <svg viewBox="0 0 76 76">
+            <defs><linearGradient id="fg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#fbbf24"/><stop offset="100%" stop-color="#f59e0b"/></linearGradient></defs>
+            <circle cx="38" cy="38" r="29" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="6"/>
+            <circle cx="38" cy="38" r="29" fill="none" stroke="url(#fg)" stroke-width="6" stroke-linecap="round" stroke-dasharray="134.8 47.4" transform="rotate(-90 38 38)"/>
+          </svg>
+          <div class="fit-ctr"><div class="fit-num">74</div><div class="fit-sub">/100</div></div>
+        </div>
+        <div class="fit-rows">
+          <div class="fit-row"><span class="fit-key">Beta</span><span class="fit-val warn">1.85 · High Vol</span></div>
+          <div class="fit-row"><span class="fit-key">Diversification</span><span class="fit-val pos">Positive</span></div>
+          <div class="fit-row"><span class="fit-key">Concentration Risk</span><span class="fit-val pos">Low</span></div>
+          <div class="fit-row"><span class="fit-key">Correlation</span><span class="fit-val pos">Low</span></div>
+        </div>
+      </div>
+      <div class="pfit-act">
+        <div class="pfa-l"><div class="t">Recommended Action</div><div class="a">ADD</div></div>
+        <div class="pfa-r"><div class="t">Suggested Allocation</div><div class="v">3% – 8%</div><div class="s">of total portfolio</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BULL VS BEAR -->
+  <div class="sh"><h3>Bull vs Bear</h3><div class="sh-i">i</div></div>
+  <div class="gcard">
+    <div class="bvb">
+      <div class="bvbs">
+        <div class="bvbs-bull"><div class="bvbp g">72%</div><div class="bvbl g">Bullish</div></div>
+        <div class="bvb-vs"><div class="vs-c">VS</div></div>
+        <div class="bvbs-bear"><div class="bvbp r">28%</div><div class="bvbl r">Bearish</div></div>
+      </div>
+      <div class="bvb-bar">
+        <div class="bvb-blbls"><span class="bvb-blbl g">Bull Bias · 72%</span><span class="bvb-blbl r">Bear · 28%</span></div>
+        <div class="bvb-trk"><div class="bvb-fill"></div></div>
+      </div>
+      <div class="bvb-cols">
+        <div class="bvb-bcol">
+          <div class="bvb-bhead"><div class="d g"></div><span class="g">Bull Case</span></div>
+          <div class="bpt"><div class="bpt-t">Revenue +127% YoY</div><div class="bpt-s">Visible backlog through Q3 2027</div></div>
+          <div class="bpt"><div class="bpt-t">EU moat</div><div class="bpt-s">No competitor at scale</div></div>
+          <div class="bpt"><div class="bpt-t">Margin +14pp</div><div class="bpt-s">YoY expansion accelerating</div></div>
+          <div class="bpt"><div class="bpt-t">4.2x P/S vs 6.8x</div><div class="bpt-s">Discount to AI cloud peers</div></div>
+        </div>
+        <div class="bvb-bcol">
+          <div class="bvb-bhead"><div class="d r"></div><span class="r">Bear Case</span></div>
+          <div class="bpt"><div class="bpt-t">Cash runway</div><div class="bpt-s">&lt;12 months at current burn</div></div>
+          <div class="bpt"><div class="bpt-t">Single vendor risk</div><div class="bpt-s">100% reliant on Nvidia GPU</div></div>
+          <div class="bpt"><div class="bpt-t">~10% dilution</div><div class="bpt-s">Secondary offering H2 2026</div></div>
+          <div class="bpt"><div class="bpt-t">Azure EU launch</div><div class="bpt-s">Targeting same segment</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEWS -->
+  <div class="sh"><h3>News &amp; Catalysts</h3><span class="sh-lnk">View all →</span></div>
+  <div class="nscr">
+    <div class="nc"><div class="nc-img i1"><span class="ico">🏗️</span><div class="nc-bdg pos">Positive</div></div><div class="nc-body"><div class="nc-ttl">Nebius secures €500M EU AI Fund grant for Frankfurt DC</div><div class="nc-tm">10m ago</div></div></div>
+    <div class="nc"><div class="nc-img i2"><span class="ico">🤖</span><div class="nc-bdg pos">Positive</div></div><div class="nc-body"><div class="nc-ttl">Nvidia confirms H200 allocation for EU partners through 2027</div><div class="nc-tm">2h ago</div></div></div>
+    <div class="nc"><div class="nc-img i3"><span class="ico">🏛️</span><div class="nc-bdg neu">Neutral</div></div><div class="nc-body"><div class="nc-ttl">ECB directive mandates EU-hosted AI inference by 2027</div><div class="nc-tm">Jun 22, 2026</div></div></div>
+    <div class="nc"><div class="nc-img i4"><span class="ico">⚡</span><div class="nc-bdg neg">Watch</div></div><div class="nc-body"><div class="nc-ttl">Azure EU Sovereign Cloud beta launches in Amsterdam</div><div class="nc-tm">Jun 21, 2026</div></div></div>
+  </div>
+
+  <div class="footer"><span>Bloomberg · SEC · Nebius IR</span><span>Jun 23, 2026</span></div>
+
+</div>
+</div>
+</body>
+</html>

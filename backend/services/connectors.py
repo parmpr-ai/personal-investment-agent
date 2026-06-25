@@ -2,7 +2,10 @@ import os
 import time
 from typing import Any, Dict, List
 import httpx
-import feedparser
+try:
+ import feedparser
+except ImportError:
+ feedparser=None
 from dotenv import load_dotenv
 
 from services.settings_store import get_settings
