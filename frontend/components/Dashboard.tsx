@@ -41,7 +41,7 @@ import DashboardHome from './dashboard/DashboardHome'
 import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
 import CompanyLogo from './intelligence/CompanyLogo'
 import { preloadStockIntelligence } from './intelligence/useStockIntelligence'
-import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePortfolioBadge, resolvePositionKey, resolveAssetClass } from '../lib/pia-api'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePositionKey, resolveAssetClass, dotSourceLabel } from '../lib/pia-api'
 import { useCurrency } from '../lib/use-currency'
 import { fetchApi } from '../lib/runtime-config'
 import { useLiveDashboard } from '../lib/use-live-dashboard'
@@ -867,7 +867,6 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
   const total = Number(p.total_value || 0) * fxMult
   const bp = Number(p.buying_power || 0) * fxMult
   const sym = currency === 'EUR' ? '€' : '$'
-  const badge = resolvePortfolioBadge(p.source, p.mode, { pricesLive: p.pricesLive, fallbackActive: p.fallback_active })
   const showStaleBanner = !hidden && p.pricesLive === false && String(p.mode || '').toLowerCase() !== 'mock'
   const ibkrMetrics = [
     { label: 'Realized P/L', value: `${sym}0.00` },
@@ -891,24 +890,12 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
             </div>
           )}
           <div className="snapshot-source-row">
-            <PiaBadge variant={badge.variant as any}>{badge.label}</PiaBadge>
-            <button
-              type="button"
-              className={`cur-chip${currency === 'EUR' ? ' eur' : ''}`}
-              onClick={toggleCurrency}
-              title={`Switch to ${currency === 'USD' ? 'EUR €' : 'USD $'}`}
-            >
-              {currency === 'USD' ? '$ USD' : '€ EUR'}
-            </button>
-            <span className="muted">{hidden ? mask : p.snapshot_timestamp ? `Last updated at ${new Date(p.snapshot_timestamp).toLocaleString()}` : 'Live source'}</span>
-          </div>
-          {!hidden && badge.subtitle && <div className="snapshot-source-subtitle">{badge.subtitle}</div>}
-          {!hidden && (p.positionsLastRefresh || p.pricesLastRefresh) && (
-            <div className="snapshot-ts-row">
-              {p.positionsLastRefresh && <span>Positions: <b>{fmtTimestamp(p.positionsLastRefresh)}</b></span>}
-              {p.pricesLastRefresh && <span>Prices: <b>{fmtTimestamp(p.pricesLastRefresh)}</b></span>}
+            <span className="pf-source-dot">{hidden ? '' : dotSourceLabel(p.source, p.mode)}</span>
+            <div className="cur-seg" role="group" aria-label="Currency">
+              <button type="button" className={`cur-seg-btn${currency === 'USD' ? ' active' : ''}`} onClick={() => { if (currency !== 'USD') toggleCurrency() }}>$</button>
+              <button type="button" className={`cur-seg-btn${currency === 'EUR' ? ' active' : ''}`} onClick={() => { if (currency !== 'EUR') toggleCurrency() }}>€</button>
             </div>
-          )}
+          </div>
           <div className="hero-value">{hidden ? mask : fmt(p.total_value)}</div>
           <div className="hero-meta">
             <span className={p.daily_pnl >= 0 ? 'green' : 'red'}>{hidden ? mask : fmt(p.daily_pnl)} today</span>

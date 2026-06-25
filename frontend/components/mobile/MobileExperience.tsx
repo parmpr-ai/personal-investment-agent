@@ -41,7 +41,7 @@ import MobileReorderableSections from '../dashboard/MobileReorderableSections'
 import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
 import CompanyLogo from '../intelligence/CompanyLogo'
 import { preloadStockIntelligence } from '../intelligence/useStockIntelligence'
-import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePortfolioBadge, resolveAssetClass, resolvePositionKey } from '../../lib/pia-api'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePortfolioBadge, resolveAssetClass, resolvePositionKey, dotSourceLabel } from '../../lib/pia-api'
 import { useCurrency } from '../../lib/use-currency'
 import { useLiveDashboard } from '../../lib/use-live-dashboard'
 import ReorderList from './ReorderList'
@@ -2434,13 +2434,13 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
     <div className={`pf-header${expanded ? ' expanded' : ' collapsed'}`} role="region" aria-label="Portfolio overview">
       <div className="pf-header-main" role="button" tabIndex={0} onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()}>
         <div className="pf-header-nlv">
-          <span className="pf-header-label">Portfolio · NLV</span>
+          <span className="pf-header-label">Portfolio</span>
           <div className="pf-header-source-row">
-            {(() => { const b = resolvePortfolioBadge(portfolio.source, portfolio.mode, { pricesLive: portfolio.pricesLive, fallbackActive: portfolio.fallback_active }); return <span className={sourceBadgeClass(portfolio.source, portfolio.mode, { pricesLive: portfolio.pricesLive, fallbackActive: portfolio.fallback_active })}>{b.label}</span> })()}
-            <span className="pf-header-source-time">{hidden ? mask : portfolio.snapshot_timestamp ? `Last updated at ${new Date(portfolio.snapshot_timestamp).toLocaleString()}` : 'Live portfolio'}</span>
-            <button type="button" className={`cur-chip${currency === 'EUR' ? ' eur' : ''}`} onClick={(e) => { e.stopPropagation(); toggleCurrency() }} aria-label="Toggle currency">
-              {currency === 'USD' ? '$ USD' : '€ EUR'}
-            </button>
+            <span className="pf-source-dot">{hidden ? '' : dotSourceLabel(portfolio.source, portfolio.mode)}</span>
+            <div className="cur-seg" role="group" aria-label="Currency">
+              <button type="button" className={`cur-seg-btn${currency === 'USD' ? ' active' : ''}`} onClick={(e) => { e.stopPropagation(); if (currency !== 'USD') toggleCurrency() }}>$</button>
+              <button type="button" className={`cur-seg-btn${currency === 'EUR' ? ' active' : ''}`} onClick={(e) => { e.stopPropagation(); if (currency !== 'EUR') toggleCurrency() }}>€</button>
+            </div>
           </div>
           <div className="pf-header-hero">{hidden ? mask : fmt(total)}</div>
           <div className="pf-header-pnl-row">
