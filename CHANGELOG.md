@@ -1,5 +1,34 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.50 - ARTEMIS Portfolio UX Pass (ARTEMIS-PORTFOLIO-UX-058)
+
+Date: 2026-06-25
+Status: READY FOR UAT
+Owner: ARTEMIS
+
+### Mobile — Currency Toggle in Portfolio Header (MobileExperience.tsx)
+
+* **Currency toggle added to `PortfolioHeader`** — `useCurrency(fxRate)` hook now wired into the portfolio header (previously only in the PortfolioInsights swipe rail). A `cur-chip` button appears inline with the source badge and toggles between `$ USD` / `€ EUR`. Persists via `localStorage` (`pia.currency`).
+* **Hero NLV and summary metrics converted** — `PortfolioHeader` now uses `fmt()` for: hero Net Liquidation Value, Day P&L, Unrealized P&L, Realized P&L, and all `fullMetrics` monetary fields (Market Value, Excess Liq, SMA, Buying Power, Maintenance Margin, Initial Margin, Cash). Theta/Vega currency symbol also follows the selected currency.
+* Individual position rows remain in trading currency (ARTEMIS constraint: no position-level FX conversion).
+
+### Option Presentation — Clean Labels (Desktop + Mobile)
+
+* **Desktop table ticker column** — `PositionsTable.renderCell('ticker')` now shows `AAPL 200C JAN25` format for options instead of raw IBKR contract string (e.g. `SPY   250117C00500000`). `resolveAssetClass()` detects options; `formatOptionSymbol()` builds the label from `underlying`, `strike`, `call_put`, and `expiry`.
+* **Mobile position card header** — `PositionCard` card header `<strong>` now shows the clean option label for options, matching Mobile table rows (which were already correct via `renderTickerCell`).
+* `CompanyLogo` in desktop ticker now uses `underlying` as the logo symbol for options.
+
+### Settings — Integrations Tab Simplified
+
+* **Integrations tab** now shows only `PortfolioDataSourceCard`: Portfolio Source (Mock / Last Update / Live IBKR), Current Source, Last Updated. Full integration detail (health, connectors, data preview) removed from the Integrations tab.
+* **System → Advanced Diagnostics** — new collapsible section in the System tab exposes the full `IntegrationCenter` (connector health, Yahoo, Seeking Alpha, RSS, FRED, Telegram, Discord, OpenAI). Hidden by default; revealed by "Show" button.
+
+### No Backend Changes
+
+ARTEMIS owns presentation only. No backend files, no calculation logic, no API contracts modified.
+
+---
+
 ## v0.3.49 - HERMES Production Stabilization Sprint (HERMES-PROD-STABILIZATION-057)
 
 Date: 2026-06-25

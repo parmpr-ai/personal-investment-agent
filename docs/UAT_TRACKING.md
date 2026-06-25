@@ -16,6 +16,35 @@ Format per entry:
 
 ## UAT Log
 
+### ARTEMIS-PORTFOLIO-UX-058
+
+Status: PENDING UAT
+Owner: ARTEMIS
+Date: 2026-06-25
+Commit: `6a1891c`
+Build: PASS (`npm run build` — no errors, no type errors)
+
+#### UAT Checklist
+
+| Check | Status | Notes |
+|---|---|---|
+| Mobile PortfolioHeader shows $/€ toggle button | PENDING | Button in source-badge row; tap to toggle |
+| Mobile toggle converts hero NLV (Total Portfolio Value) | PENDING | fmt(total) via useCurrency |
+| Mobile toggle converts Day P&L, Unrealized P/L, Realized P/L | PENDING | fmt() applied to all |
+| Mobile toggle converts fullMetrics (Buy Power, Margins, Cash…) | PENDING | fmt() in fullMetrics array |
+| Mobile toggle persists across reload (localStorage) | PENDING | pia.currency key |
+| Mobile toggle does NOT convert position prices/premiums | PENDING | Individual rows untouched |
+| Desktop table — options show clean label e.g. AAPL 200C JAN25 | PENDING | formatOptionSymbol() in renderCell('ticker') |
+| Mobile card header — options show clean label | PENDING | formatOptionSymbol() in PositionCard header |
+| Mobile table rows — options already showed clean label | PASS | renderTickerCell() was correct before this sprint |
+| Desktop Columns button visible in table toolbar | PASS | Already working — view='table' shows ColumnCustomizeMenu |
+| Mobile Manage Columns accessible via three-dot menu | PASS | Already working — three-dot → Manage Table Columns |
+| Both platforms share same column localStorage keys | PASS | pia.portfolioColumns.mobile.v2 / pia.portfolioColOrder.mobile.v2 |
+| Settings → Integrations shows only Portfolio Source / Current Source / Last Updated | PENDING | PortfolioDataSourceCard only |
+| Settings → System → Advanced Diagnostics (collapsed) shows full integration center | PENDING | IntegrationCenter in GlowCard |
+
+---
+
 ### HERMES-PROD-STABILIZATION-057
 
 Status: PENDING UAT
