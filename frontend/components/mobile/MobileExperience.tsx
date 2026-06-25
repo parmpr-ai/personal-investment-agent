@@ -41,7 +41,7 @@ import MobileReorderableSections from '../dashboard/MobileReorderableSections'
 import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
 import CompanyLogo from '../intelligence/CompanyLogo'
 import { preloadStockIntelligence } from '../intelligence/useStockIntelligence'
-import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolveAssetClass, resolvePositionKey } from '../../lib/pia-api'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePortfolioBadge, resolveAssetClass, resolvePositionKey } from '../../lib/pia-api'
 import { useCurrency } from '../../lib/use-currency'
 import { useLiveDashboard } from '../../lib/use-live-dashboard'
 import ReorderList from './ReorderList'
@@ -180,7 +180,7 @@ const scannerFallback = [
 ]
 
 function useMobileDashboard() {
-  return useLiveDashboard()
+  return useLiveDashboard('mobile')
 }
 
 function riskTone(value: number) {
@@ -450,13 +450,23 @@ function mobileStatusLabel(status: any) {
   if (status.status === 'failed') return 'Degraded'
   return 'Standby'
 }
+function fmtMobileTs(ts: string | null | undefined): string {
+  if (!ts) return '—'
+  try {
+    const age = Date.now() - new Date(ts).getTime()
+    if (age < 60_000) return 'just now'
+    if (age < 3_600_000) return `${Math.round(age / 60_000)}m ago`
+    return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+  } catch { return ts }
+}
 
-function MobileStatusDock({ health, hidden, portfolioSource }: { health: any[]; hidden: boolean; portfolioSource?: string }) {
+function MobileStatusDock({ health, hidden, portfolioSource, portfolio }: { health: any[]; hidden: boolean; portfolioSource?: string; portfolio?: any }) {
   const bySource = (name: string) => health.find((item: any) => item.source === name)
-  // When portfolio is definitively live, IBKR is connected regardless of health-check cache
   const ibkrLive = portfolioSource === 'IBKR_LIVE'
+  const ibkrHybrid = String(portfolioSource || '').includes('HYBRID')
+  const badge = resolvePortfolioBadge(portfolio?.source, portfolio?.mode, { pricesLive: portfolio?.pricesLive, fallbackActive: portfolio?.fallback_active })
   const rows = [
-    { name: 'IBKR', icon: Wallet, status: ibkrLive ? { status: 'healthy', data_received: true } : bySource('IBKR') },
+    { name: 'IBKR', icon: Wallet, status: ibkrLive ? { status: 'healthy', data_received: true } : ibkrHybrid ? { status: 'degraded', data_received: false } : bySource('IBKR') },
     { name: 'Yahoo', icon: Globe2, status: bySource('Yahoo Finance') },
     { name: 'Feeds', icon: Database, status: bySource('RSS') },
   ]
@@ -466,6 +476,7 @@ function MobileStatusDock({ health, hidden, portfolioSource }: { health: any[]; 
       <div className="mobile-status-dock-head">
         <ShieldCheck size={16} />
         <span>{hidden ? 'Status' : 'Connection Status'}</span>
+        {!hidden && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 5, background: badge.variant === 'ibkr' ? 'rgba(96,165,250,.12)' : badge.variant === 'warning' ? 'rgba(251,191,36,.12)' : 'rgba(100,116,139,.1)', color: badge.variant === 'ibkr' ? '#60a5fa' : badge.variant === 'warning' ? '#fbbf24' : '#94a3b8' }}>{badge.label}</span>}
       </div>
       <div className="mobile-status-dock-grid">
         {rows.map(({ name, icon: Icon, status }) => {
@@ -479,6 +490,9 @@ function MobileStatusDock({ health, hidden, portfolioSource }: { health: any[]; 
           )
         })}
       </div>
+      {!hidden && portfolio?.pricesLive === false && String(portfolio?.mode || '').toLowerCase() !== 'mock' && (
+        <div className="mobile-fallback-strip">⚠ Prices may be stale{portfolio?.pricesLastRefresh ? ` — updated ${fmtMobileTs(portfolio.pricesLastRefresh)}` : ''}</div>
+      )}
     </section>
   )
 }
@@ -1070,6 +1084,24 @@ function WatchlistMovers({ scanner, positions, onSelect, hidden = false }: { sca
   )
 }
 
+function formatOptionSymbol(position: any): string {
+  const base = String(position.underlying || String(position.symbol || '').split(' ')[0] || position.symbol || '')
+  const strike = position.strike ? String(position.strike) : ''
+  const rawPc = position.call_put || position.callPut || position.put_call || ''
+  const pc = rawPc ? String(rawPc).charAt(0).toUpperCase() : ''
+  const meta = strike && pc ? `${strike}${pc}` : pc || strike
+  const expRaw = position.expiry || position.last_trade_date || ''
+  let expStr = ''
+  if (expRaw) {
+    const d = new Date(expRaw)
+    if (!isNaN(d.getTime())) {
+      const mo = d.toLocaleString('en-US', { month: 'short' }).toUpperCase().slice(0, 3)
+      expStr = ` ${mo}${String(d.getFullYear()).slice(2)}`
+    }
+  }
+  return (`${base} ${meta}${expStr}`.trim()) || String(position.symbol || '')
+}
+
 function PositionCard({
   position, fields, order, tf, grid, hidden, onSelect, onLongPress, context = 'portfolio',
 }: {
@@ -1230,7 +1262,7 @@ function PositionCard({
       <div className="mobile-card-symbol">
         <CompanyLogo source={position} symbol={position.symbol} hidden={hidden} className="mtt-logo" />
         <div>
-          <strong>{hidden ? mask : position.symbol}</strong>
+          <strong>{hidden ? mask : resolveAssetClass(position) === 'option' ? formatOptionSymbol(position) : position.symbol}</strong>
           <span>{hidden ? 'Workspace item' : position.name || 'Portfolio holding'}</span>
           <small className="mobile-card-last-price">{hidden ? mask : money(last)}</small>
         </div>
@@ -2305,10 +2337,11 @@ function PortfolioChart({ data, hidden }: { data: number[] | null; hidden: boole
   )
 }
 
-function sourceBadgeClass(source: unknown, mode?: unknown): string {
-  const lbl = portfolioSourceBadgeLabel(source, mode)
-  if (lbl === 'IBKR LIVE') return 'badge badge--live'
-  if (lbl === 'LAST UPDATE') return 'badge badge--lastupdate'
+function sourceBadgeClass(source: unknown, mode?: unknown, opts?: { pricesLive?: boolean; fallbackActive?: boolean }): string {
+  const badge = resolvePortfolioBadge(source, mode, opts)
+  if (badge.variant === 'ibkr') return 'badge badge--live'
+  if (badge.variant === 'warning') return 'badge badge--hybrid'
+  if (badge.label === 'LAST UPDATE') return 'badge badge--lastupdate'
   return 'badge badge--mock'
 }
 
@@ -2319,6 +2352,7 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
   portfolio: any; positions: any[]; hidden: boolean; expanded: boolean; onToggle: () => void
 }) {
   const [selectedTf, setSelectedTf] = useState<TfKey>('1M')
+  const { currency, toggle: toggleCurrency, fmt } = useCurrency(Number(portfolio.fxRate || 0.87))
 
   const total = portfolio.total_value || positions.reduce((s: number, p: any) => s + Number(p.market_value || 0), 0)
   const dayPnl = portfolio.daily_pnl || positions.reduce((s: number, p: any) => s + Number(p.day_pnl || 0), 0)
@@ -2380,19 +2414,20 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
     return vals.length >= 2 ? vals : null
   }, [rawHistory, selectedTf])
 
+  const sym = currency === 'EUR' ? '€' : '$'
   const fullMetrics = [
-    { label: 'Mkt Value', value: money(total) },
-    { label: 'Excess Liq', value: money(excessLiq) },
-    { label: 'SMA', value: money(sma) },
-    { label: 'Theta', value: `$${theta.toFixed(2)}` },
-    { label: 'Vega', value: `$${vega}` },
-    { label: 'Buy Power', value: money(bp) },
-    { label: 'Maint. Mgn', value: money(maintMgn) },
-    { label: 'Init. Mgn', value: money(initMgn) },
+    { label: 'Mkt Value', value: fmt(total) },
+    { label: 'Excess Liq', value: fmt(excessLiq) },
+    { label: 'SMA', value: fmt(sma) },
+    { label: 'Theta', value: `${sym}${theta.toFixed(2)}` },
+    { label: 'Vega', value: `${sym}${vega}` },
+    { label: 'Buy Power', value: fmt(bp) },
+    { label: 'Maint. Mgn', value: fmt(maintMgn) },
+    { label: 'Init. Mgn', value: fmt(initMgn) },
     { label: 'SPX Δ', value: spxDelta },
     { label: 'Net Δ', value: netDelta },
     { label: 'Day Trades', value: '3' },
-    { label: 'Cash', value: money(cash) },
+    { label: 'Cash', value: fmt(cash) },
   ]
 
   return (
@@ -2401,13 +2436,16 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
         <div className="pf-header-nlv">
           <span className="pf-header-label">Portfolio · NLV</span>
           <div className="pf-header-source-row">
-            <span className={sourceBadgeClass(portfolio.source, portfolio.mode)}>{portfolioSourceBadgeLabel(portfolio.source, portfolio.mode)}</span>
+            {(() => { const b = resolvePortfolioBadge(portfolio.source, portfolio.mode, { pricesLive: portfolio.pricesLive, fallbackActive: portfolio.fallback_active }); return <span className={sourceBadgeClass(portfolio.source, portfolio.mode, { pricesLive: portfolio.pricesLive, fallbackActive: portfolio.fallback_active })}>{b.label}</span> })()}
             <span className="pf-header-source-time">{hidden ? mask : portfolio.snapshot_timestamp ? `Last updated at ${new Date(portfolio.snapshot_timestamp).toLocaleString()}` : 'Live portfolio'}</span>
+            <button type="button" className={`cur-chip${currency === 'EUR' ? ' eur' : ''}`} onClick={(e) => { e.stopPropagation(); toggleCurrency() }} aria-label="Toggle currency">
+              {currency === 'USD' ? '$ USD' : '€ EUR'}
+            </button>
           </div>
-          <div className="pf-header-hero">{hidden ? mask : money(total)}</div>
+          <div className="pf-header-hero">{hidden ? mask : fmt(total)}</div>
           <div className="pf-header-pnl-row">
             <span className={`pf-header-day-pnl ${dayPnl >= 0 ? 'green' : 'red'}`}>
-              {hidden ? mask : `${dayPnl >= 0 ? '+' : ''}${money(dayPnl)}`}
+              {hidden ? mask : `${dayPnl >= 0 ? '+' : ''}${fmt(dayPnl)}`}
             </span>
             <span className={`pf-header-day-pct ${dayPnl >= 0 ? 'green' : 'red'}`}>
               {hidden ? mask : `${dayPnlPct >= 0 ? '+' : ''}${Math.abs(dayPnlPct).toFixed(2)}%`}
@@ -2422,11 +2460,11 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
           <div className="pf-header-secondary">
             <div className="pf-header-sec-item">
               <span>Unrealized P/L</span>
-              <b className={unreal >= 0 ? 'green' : 'red'}>{hidden ? mask : `${unreal >= 0 ? '+' : ''}${money(unreal)}`}</b>
+              <b className={unreal >= 0 ? 'green' : 'red'}>{hidden ? mask : `${unreal >= 0 ? '+' : ''}${fmt(unreal)}`}</b>
             </div>
             <div className="pf-header-sec-item">
               <span>Realized P/L</span>
-              <b className={realized >= 0 ? 'green' : 'red'}>{hidden ? mask : `${realized >= 0 ? '+' : ''}${money(realized)}`}</b>
+              <b className={realized >= 0 ? 'green' : 'red'}>{hidden ? mask : `${realized >= 0 ? '+' : ''}${fmt(realized)}`}</b>
             </div>
           </div>
 
@@ -3631,7 +3669,7 @@ export default function MobileExperience() {
             <div className="mobile-portfolio-header">
               <span className="mobile-portfolio-count">
                 Positions
-                {portfolio.source && <span className={`${sourceBadgeClass(portfolio.source, portfolio.mode)} pf-count-badge`}>{portfolioSourceBadgeLabel(portfolio.source, portfolio.mode)}</span>}
+                {portfolio.source && (() => { const b = resolvePortfolioBadge(portfolio.source, portfolio.mode, { pricesLive: portfolio.pricesLive, fallbackActive: portfolio.fallback_active }); return <span className={`${sourceBadgeClass(portfolio.source, portfolio.mode, { pricesLive: portfolio.pricesLive, fallbackActive: portfolio.fallback_active })} pf-count-badge`}>{b.label}</span> })()}
               </span>
               <div className="pf-header-actions">
                 <div className="pf-pos-filter" role="group" aria-label="Position type filter">
@@ -3674,7 +3712,7 @@ export default function MobileExperience() {
       {active === 'settings' && (
         <MobileSheet title="Settings" onClose={() => setActive('home')}>
           <section className="mobile-section mobile-settings-section">
-            <MobileStatusDock health={sourceHealth} hidden={privacyHidden} portfolioSource={dashboard?.portfolio?.source} />
+            <MobileStatusDock health={sourceHealth} hidden={privacyHidden} portfolioSource={dashboard?.portfolio?.source} portfolio={dashboard?.portfolio} />
             <SettingsPage
               hidden={privacyHidden}
               variant="mobile"

@@ -1269,10 +1269,12 @@ function WorkspaceSettings({
   )
 }
 
-function IntegrationsSettings({ hidden, variant, portfolioSource }: { hidden?: boolean; variant?: SettingsVariant; portfolioSource?: string }) {
+function IntegrationsSettings({ hidden, variant, portfolioSource, onModeChange }: { hidden?: boolean; variant?: SettingsVariant; portfolioSource?: string; onModeChange?: () => void }) {
   return (
-    <div>
-      <IntegrationCenter compact hidden={hidden} variant={variant} portfolioSource={portfolioSource} />
+    <div className="settings-panels">
+      <GlowCard>
+        <PortfolioDataSourceCard hidden={hidden} onModeChange={onModeChange} portfolioSource={portfolioSource} />
+      </GlowCard>
     </div>
   )
 }
@@ -1303,6 +1305,7 @@ function NotificationsSettings() {
 }
 
 function SystemSettings({ hidden, variant }: { hidden?: boolean; variant?: SettingsVariant }) {
+  const [advOpen, setAdvOpen] = useState(false)
   return (
     <>
       <div className="settings-panels">
@@ -1319,6 +1322,18 @@ function SystemSettings({ hidden, variant }: { hidden?: boolean; variant?: Setti
         </GlowCard>
       </div>
       <SourceHealthPanel hidden={hidden} variant={variant} />
+      <div className="settings-panels" style={{ marginTop: 16 }}>
+        <GlowCard>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <h3 style={{ margin: 0 }}>Advanced Diagnostics</h3>
+            <button className="tab" type="button" onClick={() => setAdvOpen((v) => !v)}>
+              {advOpen ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          <p className="muted" style={{ marginBottom: advOpen ? 12 : 0 }}>Integration health, connector status, and data source diagnostics.</p>
+          {advOpen && <IntegrationCenter compact hidden={hidden} variant={variant} />}
+        </GlowCard>
+      </div>
     </>
   )
 }
@@ -1450,6 +1465,7 @@ function SettingsTabPanels({
   workspaceConfig,
   onSelectWorkspace,
   portfolioSource,
+  onModeChange,
 }: {
   tab: (typeof settingsTabs)[number]
   hidden?: boolean
@@ -1457,10 +1473,11 @@ function SettingsTabPanels({
   workspaceConfig: WorkspaceConfig
   onSelectWorkspace?: (workspaceId: WorkspaceId) => void
   portfolioSource?: string
+  onModeChange?: () => void
 }) {
   if (tab === 'General') return <GeneralSettings hidden={hidden} />
   if (tab === 'Workspace') return <WorkspaceSettings hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} />
-  if (tab === 'Integrations') return <IntegrationsSettings hidden={hidden} variant={variant} portfolioSource={portfolioSource} />
+  if (tab === 'Integrations') return <IntegrationsSettings hidden={hidden} variant={variant} portfolioSource={portfolioSource} onModeChange={onModeChange} />
   if (tab === 'Notifications') return <NotificationsSettings />
   if (tab === 'System') return <SystemSettings hidden={hidden} variant={variant} />
   return <SettingsAbout hidden={hidden} />
@@ -1495,7 +1512,7 @@ export default function SettingsPage({
     </div>
   )
 
-  const panels = <SettingsTabPanels tab={tab} hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} portfolioSource={portfolioSource} />
+  const panels = <SettingsTabPanels tab={tab} hidden={hidden} variant={variant} workspaceConfig={workspaceConfig} onSelectWorkspace={onSelectWorkspace} portfolioSource={portfolioSource} onModeChange={onModeChange} />
 
   if (variant === 'mobile') {
     return (

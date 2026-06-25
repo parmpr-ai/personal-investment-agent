@@ -41,7 +41,7 @@ import DashboardHome from './dashboard/DashboardHome'
 import StockIntelligenceShell from './intelligence/StockIntelligenceShell'
 import CompanyLogo from './intelligence/CompanyLogo'
 import { preloadStockIntelligence } from './intelligence/useStockIntelligence'
-import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePortfolioBadge, resolvePositionKey } from '../lib/pia-api'
+import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePortfolioBadge, resolvePositionKey, resolveAssetClass } from '../lib/pia-api'
 import { useCurrency } from '../lib/use-currency'
 import { fetchApi } from '../lib/runtime-config'
 import { useLiveDashboard } from '../lib/use-live-dashboard'
@@ -1367,6 +1367,24 @@ function ScannerColumn({ title, items, hidden }: any) {
   )
 }
 
+function formatOptionSymbol(position: any): string {
+  const base = String(position.underlying || String(position.symbol || '').split(' ')[0] || position.symbol || '')
+  const strike = position.strike ? String(position.strike) : ''
+  const rawPc = position.call_put || position.callPut || position.put_call || ''
+  const pc = rawPc ? String(rawPc).charAt(0).toUpperCase() : ''
+  const meta = strike && pc ? `${strike}${pc}` : pc || strike
+  const expRaw = position.expiry || position.last_trade_date || ''
+  let expStr = ''
+  if (expRaw) {
+    const d = new Date(expRaw)
+    if (!isNaN(d.getTime())) {
+      const mo = d.toLocaleString('en-US', { month: 'short' }).toUpperCase().slice(0, 3)
+      expStr = ` ${mo}${String(d.getFullYear()).slice(2)}`
+    }
+  }
+  return (`${base} ${meta}${expStr}`.trim()) || String(position.symbol || '')
+}
+
 function PositionsTable({ rows, hidden, setSelected, sort, direction, onColSort, visibleCols, colOrder }: any) {
   const visible = (visibleCols as Set<DeskColKey>) ?? new Set(DESK_COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key))
   const order   = (colOrder   as DeskColKey[])     ?? DESK_COL_DEFS.map((c) => c.key)
@@ -1393,9 +1411,9 @@ function PositionsTable({ rows, hidden, setSelected, sort, direction, onColSort,
         return (
           <td key="ticker">
             <div className="row-symbol">
-              <CompanyLogo source={p} symbol={p.symbol} hidden={hidden} className="logo" />
+              <CompanyLogo source={p} symbol={p.underlying || p.symbol} hidden={hidden} className="logo" />
               <div>
-                <b>{hidden ? mask : p.symbol}</b>
+                <b>{hidden ? mask : resolveAssetClass(p) === 'option' ? formatOptionSymbol(p) : p.symbol}</b>
                 <div className="muted">{hidden ? 'Workspace item' : p.name}</div>
               </div>
             </div>
