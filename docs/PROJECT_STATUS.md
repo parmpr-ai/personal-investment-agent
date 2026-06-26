@@ -7,12 +7,19 @@ Branch: `feat/pia-v3-foundation-integration`
 
 | Item | Status | Sprint |
 |---|---|---|
-| Portfolio Total deviation (~30K) | **FIXED** | ARTEMIS-060 |
+| Canonical pipeline (QuoteEngine + Calculator + ProviderManager) | **IMPLEMENTED — PENDING UAT** | ARTEMIS-061 |
+| Multi-path calculation divergence (root cause) | **FIXED** | ARTEMIS-061 |
+| Snapshot positions strip stale prices on load | **FIXED** | ARTEMIS-061 |
+| Options LAST_KNOWN price cache on restart | **IMPLEMENTED** | ARTEMIS-061 |
+| Portfolio Total deviation (~30K) | **FIXED** | ARTEMIS-060/061 |
 | Frontend metric approximations (Excess Liq, Margins) | **FIXED** | ARTEMIS-060 |
 | Options cost_basis 100× overstatement | **FIXED** | HERMES-057 |
 | Day P&L (fields 82+83) | **FIXED** | HERMES-057 |
-| Live Yahoo quotes on Snapshot mode | **CONFIRMED WORKING** | Audited ARTEMIS-060 |
-| Source lifecycle (IBKR → Snapshot → Demo) | **CONFIRMED WORKING** | Audited ARTEMIS-060 |
+| [QUOTE_PROVIDER] log event | **ADDED** | ARTEMIS-061 |
+| [PROVIDER_SWITCH] log event | **ADDED** | ARTEMIS-061 |
+| [PORTFOLIO_CALCULATED] log event | **ADDED** | ARTEMIS-061 |
+| [CANONICAL_DTO] log event | **ADDED** | ARTEMIS-061 |
+| [SNAPSHOT_LOAD] log event | **ADDED** | ARTEMIS-061 |
 | [QUOTE_UPDATE] log event | **ADDED** | ARTEMIS-060 |
 | [PORTFOLIO_RECALCULATED] log event | **ADDED** | ARTEMIS-060 |
 | IBKR Trade History Panel (Desktop) | **ADDED** | ARTEMIS-060 |

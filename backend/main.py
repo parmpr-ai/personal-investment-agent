@@ -260,6 +260,7 @@ def _portfolio_snapshot_debug_payload():
 def get_portfolio_payload():
  import services.state as state_module
  from services.state import compute_exposures, risk_doctor, today_actions, stress_tests
+ from services.provider_manager import get_canonical_portfolio
  macros = macro_snapshot()
  try:
   resolution = resolve_portfolio_provider()
@@ -338,8 +339,7 @@ def get_portfolio_payload():
     p['is_stale'] = False
     p['stale_reason'] = None
   else:
-   helper = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
-   p = helper._normalize_portfolio_after_price_overlay(p, resolution=resolution)
+   p = get_canonical_portfolio(resolution=resolution)
    if not p.get('positions') and p.get('portfolioMode') in {'NO_DATA', 'DISCONNECTED', 'LAST_UPDATE_ONLY'}:
     p = merge_manual_holdings(p, macros, state_module)
     manual_positions = [pos for pos in p.get('positions', []) if str(pos.get('positionSource') or pos.get('manual') or '').upper() == 'MANUAL_HOLDINGS' or bool(pos.get('manual'))]
@@ -390,14 +390,9 @@ def get_portfolio_payload():
   resolution = resolve_portfolio_provider()
   if resolution.snapshot_available:
    try:
-    snapshot_provider = SnapshotPortfolioProvider()
-    snapshot_payload = snapshot_provider.get_portfolio()
-    helper = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
-    recovered = helper._normalize_portfolio_after_price_overlay(snapshot_payload, resolution=resolution)
+    recovered = get_canonical_portfolio(resolution=resolution)
     recovered['provider_error'] = str(e)
-    recovered['recovery_reason'] = 'Primary provider failed; recovered from last known good snapshot.'
-    recovered['provider_class'] = snapshot_provider.__class__.__name__
-    recovered['configured_mode'] = resolution.configured_mode
+    recovered['recovery_reason'] = 'Primary provider failed; recovered via canonical portfolio path.'
     recovered['positions'] = normalize_positions(recovered.get('positions', []))
     recovered['baseCurrency'] = recovered.get('currency', 'USD')
     recovered['fxRate'] = get_fx_rate('USD', 'EUR')

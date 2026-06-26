@@ -78,6 +78,46 @@ Build: PENDING
 
 ---
 
+### ARTEMIS-PORTFOLIO-ENGINE-REFACTOR-061
+
+Status: PENDING UAT
+Owner: ARTEMIS
+Date: 2026-06-26
+Build: PENDING (py_compile PASS)
+
+#### UAT Acceptance Criteria (from spec)
+
+| Check | Status | Notes |
+|---|---|---|
+| Desktop == Mobile == IBKR on Portfolio Total | PENDING | PortfolioCalculator uses IBKR NLV |
+| Desktop == Mobile == IBKR on Market Value | PENDING | Calculator: qty × last × mult |
+| Desktop == Mobile == IBKR on Buying Power | PENDING | Passed through from IBKR summary |
+| Desktop == Mobile == IBKR on Margin fields | PENDING | Passed through from IBKR summary |
+| Desktop == Mobile == IBKR on Excess Liquidity | PENDING | Passed through from IBKR summary |
+| Snapshot survives server restart | PENDING | ProviderManager: prime_cache + strip_stale |
+| Yahoo updates prices while IBKR offline | PENDING | QuoteEngine: Yahoo fills missing symbols |
+| Options show LAST_KNOWN price when offline | PENDING | QuoteEngine: prime_cache seeds options |
+| Auto-switch back to IBKR after login | PENDING | resolve_portfolio_provider lifecycle |
+| No UI calculation differences | PENDING | No consumer recalculates values |
+| One Canonical Portfolio DTO consumed everywhere | PENDING | All paths through provider_manager |
+| [QUOTE_PROVIDER] log emitted per request | PENDING | QuoteEngine structured log |
+| [PROVIDER_SWITCH] log on source change | PENDING | QuoteEngine + ProviderManager logs |
+| [PORTFOLIO_CALCULATED] log emitted per request | PENDING | PortfolioCalculator structured log |
+| [CANONICAL_DTO] log emitted per request | PENDING | ProviderManager structured log |
+| [SNAPSHOT_LOAD] log on snapshot restore | PENDING | ProviderManager structured log |
+
+#### New Files
+- `backend/services/quote_engine.py` — QuoteEngine, Quote dataclass, Yahoo fetcher
+- `backend/services/portfolio_calculator.py` — calculate(), strip_stale_fields()
+- `backend/services/provider_manager.py` — get_canonical_portfolio() orchestrator
+
+#### Architecture Change
+- `get_portfolio_payload()` in main.py now calls `get_canonical_portfolio(resolution)` for all non-MOCK paths
+- `_normalize_portfolio_after_price_overlay()` is BYPASSED — PortfolioCalculator replaces it
+- QuoteEngine singleton preserves last-known price cache across requests
+
+---
+
 ### ARTEMIS-PORTFOLIO-UX-058
 
 Status: PENDING UAT

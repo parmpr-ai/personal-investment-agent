@@ -1,5 +1,60 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.53 - Portfolio Engine Architectural Refactor (ARTEMIS-PORTFOLIO-ENGINE-REFACTOR-061)
+
+Date: 2026-06-26
+Status: PENDING UAT
+Owner: ARTEMIS
+
+### Architecture — New Canonical Portfolio Pipeline
+
+This release replaces the multi-path portfolio calculation with a single deterministic pipeline:
+
+**Provider Manager → Quote Engine → Portfolio Calculator → Canonical Portfolio DTO → All consumers**
+
+#### New Files
+
+* **`backend/services/quote_engine.py`** — `QuoteEngine` singleton with priority-ordered market data:
+  - P1: IBKR Live (prices embedded in normalized positions)
+  - P2: Yahoo Finance (live/delayed quotes for STK/ETF/CRYPTO)
+  - P3: Last Known (server-session cache, survives brief outages)
+  - P4: NO_DATA (options with no IBKR + cold start)
+  - `prime_cache()`: pre-populates last-known from snapshot positions so options have a price after restart
+  - Structured logs: `[QUOTE_PROVIDER]`, `[PROVIDER_SWITCH]`
+
+* **`backend/services/portfolio_calculator.py`** — `calculate()`: single pure function
+  - Input: raw positions (no prices) + QuoteEngine quotes + optional IBKR summary
+  - Computes: `market_value = qty × last × multiplier` per position (options: multiplier=100)
+  - Cost basis: `avg_cost × qty` (avgCost from IBKR is already per-contract — no extra multiplier)
+  - Portfolio total: IBKR NLV when live (authoritative), `Σ(MV) + cash` when offline
+  - Account fields (buying_power, excess_liquidity, margins): passed from IBKR summary when live; `None` when offline
+  - Structured log: `[PORTFOLIO_CALCULATED]`
+
+* **`backend/services/provider_manager.py`** — `get_canonical_portfolio()`: orchestrator
+  - Calls `resolve_portfolio_provider()` for deterministic source detection
+  - IBKR_LIVE: loads bundle via `_load_bundle()`, extracts positions + IBKR summary
+  - LAST_UPDATE: loads snapshot, strips stale computed fields, seeds QuoteEngine cache
+  - Falls through to MOCK when no positions available
+  - Structured logs: `[SNAPSHOT_LOAD]`, `[PROVIDER_SWITCH]`, `[CANONICAL_DTO]`
+
+#### `backend/main.py` — Wiring
+
+* `get_portfolio_payload()` now calls `get_canonical_portfolio(resolution=resolution)` for all IBKR and Snapshot paths
+* `_normalize_portfolio_after_price_overlay()` is **bypassed** — PortfolioCalculator replaces its logic with a single deterministic path
+* Error recovery path also uses `get_canonical_portfolio()` (no longer calls `_normalize_portfolio_after_price_overlay` on snapshot)
+* MOCK path is **unchanged** — continues through existing `MockPortfolioProvider.get_portfolio()`
+
+#### Why
+
+The PO UAT after ARTEMIS-060 confirmed values still differ from IBKR. Root cause: three separate functions computed portfolio totals with slightly different formulas:
+1. `_normalize_live_summary()` — used IBKR NLV (correct)
+2. `IbkrLivePortfolioProvider.get_portfolio()` — re-summed positions (wrong)
+3. `_normalize_portfolio_after_price_overlay()` — re-summed again with cash (wrong)
+
+This refactor eliminates paths 2 and 3. The PortfolioCalculator is the **only** place that computes portfolio values.
+
+---
+
 ## v0.3.52 - Portfolio Engine Stabilization (ARTEMIS-PORTFOLIO-ENGINE-STABILIZATION-060)
 
 Date: 2026-06-25
