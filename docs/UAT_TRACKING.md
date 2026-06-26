@@ -16,6 +16,68 @@ Format per entry:
 
 ## UAT Log
 
+### ARTEMIS-PORTFOLIO-ENGINE-STABILIZATION-060
+
+Status: PENDING UAT
+Owner: ARTEMIS
+Date: 2026-06-25
+Build: PENDING
+
+#### UAT Checklist — Portfolio Total
+
+| Check | Status | Notes |
+|---|---|---|
+| Desktop Portfolio Total matches IBKR app NLV exactly | PENDING | Fix: now uses `netliquidation` field |
+| Mobile Portfolio Total matches IBKR app NLV exactly | PENDING | Same fix |
+| ~30K deviation resolved | PENDING | Root cause: non-position assets excluded |
+| Desktop NLV == Mobile NLV | PENDING | Must be identical |
+
+#### UAT Checklist — Frontend Metrics
+
+| Check | Status | Notes |
+|---|---|---|
+| Desktop Excess Liq shows actual value (not bp×0.85) | PENDING | Now uses `p.excess_liquidity` |
+| Desktop Maint. Mgn shows actual value (not total×0.22) | PENDING | Now uses `p.maint_margin_req` |
+| Desktop Init. Mgn shows actual value (not total×0.15) | PENDING | Now uses `p.init_margin_req` |
+| Desktop Realized P/L shows actual value (not $0.00) | PENDING | Now uses `p.realized_pnl` |
+| Mobile Excess Liq matches Desktop | PENDING | Both use backend field |
+| Mobile Maint. Mgn matches Desktop | PENDING | Both use backend field |
+| Metrics show `—` when not available in Demo/Snapshot | PENDING | `||` fallback behavior |
+
+#### UAT Checklist — Trade History
+
+| Check | Status | Notes |
+|---|---|---|
+| Portfolio page shows Trade History panel | PENDING | New IBKRTradesPanel component |
+| Trades load from IBKR snapshot | PENDING | Fetches /api/portfolio/live/trades |
+| Symbol filter works | PENDING | URL param: ?symbol=META |
+| BUY/SELL side filter works | PENDING | URL param: ?side=BUY |
+| Pagination shown when > 25 trades | PENDING | Prev/Next controls |
+| BUY shown green, SELL shown red | PENDING | CSS class |
+| Hidden mode masks trade data | PENDING | Uses `mask` variable |
+
+#### UAT Checklist — Observability
+
+| Check | Status | Notes |
+|---|---|---|
+| Backend logs show [QUOTE_UPDATE] after Yahoo overlay | PENDING | Log emitted in overlay function |
+| Backend logs show [PORTFOLIO_RECALCULATED] per request | PENDING | Log emitted at end of overlay |
+
+#### UAT Checklist — Source Lifecycle (verified by audit)
+
+| Check | Status | Notes |
+|---|---|---|
+| App starts, IBKR offline, snapshot present → loads Snapshot | CONFIRMED (audit) | SnapshotPortfolioProvider reads from disk immediately |
+| Snapshot positions get live Yahoo prices | CONFIRMED (audit) | `_apply_yahoo_price_fallback` called for all modes |
+| No auto-Demo when snapshot exists | CONFIRMED (audit) | `resolve_portfolio_provider` enforces lifecycle correctly |
+
+#### Post-Deploy Actions
+
+1. Force-refresh snapshot after deploy: `POST /api/portfolio/snapshot/refresh?force=true`
+   (Existing snapshot has pre-fix `total_value` computed incorrectly)
+
+---
+
 ### ARTEMIS-PORTFOLIO-UX-058
 
 Status: PENDING UAT

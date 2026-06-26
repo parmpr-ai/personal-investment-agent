@@ -2362,12 +2362,12 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
   const cash = Number(portfolio.cash || 0)
   const bp = Number(portfolio.buying_power || 0)
 
-  const excessLiq = Math.round(bp * 0.85)
+  const excessLiq = Number(portfolio.excess_liquidity) || Math.round(bp * 0.85)
   const sma = Math.round(total * 0.92)
   const theta = -(Math.round(total * 0.00012 * 100) / 100)
   const vega = Math.round(total * 0.0026)
-  const maintMgn = Math.round(total * 0.22)
-  const initMgn = Math.round(total * 0.15)
+  const maintMgn = Number(portfolio.maint_margin_req) || Math.round(total * 0.22)
+  const initMgn = Number(portfolio.init_margin_req) || Math.round(total * 0.15)
   const spxDelta = (total / 260000).toFixed(2)
   const netDelta = (total / 87500).toFixed(2)
 

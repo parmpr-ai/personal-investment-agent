@@ -10,7 +10,7 @@ from services.state import portfolio_snapshot, macro_snapshot, news_items, catal
 from services.trade_engine import scanner_items, opportunity_for
 from services.ws import manager
 from services.settings_store import get_settings, save_settings, initialize_settings_store
-from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES, get_snapshot_history, normalize_positions, get_live_quote_trace, SnapshotPortfolioProvider, IbkrLivePortfolioProvider, log_ibkr_startup_config
+from services.portfolio_providers import get_data_source_mode, set_data_source_mode, get_provider_status, resolve_portfolio_provider, _PROVIDER_MODES, get_snapshot_history, normalize_positions, get_live_quote_trace, SnapshotPortfolioProvider, MockPortfolioProvider, IbkrLivePortfolioProvider, get_source_trace, record_surface_source, prime_ibkr_snapshot, log_ibkr_startup_config
 from services.connectors import InstrumentSearchError, source_health, test_source, yahoo_news, yahoo_fundamentals, yahoo_symbol_search, get_fx_rate
 from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding, initialize_manual_holdings_store
 from services.news_intelligence import get_news_intelligence
@@ -296,7 +296,8 @@ def get_portfolio_payload():
   p['snapshot_schema_version'] = p['snapshotSchemaVersion']
   p['nextRefresh'] = p.get('nextRefresh')
   p['positions'] = normalize_positions(p.get('positions', []))
-  if configured_mode == 'mock':
+  if resolution.active_source == 'MOCK' or isinstance(provider, MockPortfolioProvider):
+   p['mode'] = 'mock'
    p['source'] = 'MOCK'
    p['active_source'] = 'MOCK'
    p['portfolioMode'] = 'MOCK'
@@ -387,6 +388,29 @@ def get_portfolio_payload():
   return p
  except Exception as e:
   resolution = resolve_portfolio_provider()
+  if resolution.snapshot_available:
+   try:
+    snapshot_provider = SnapshotPortfolioProvider()
+    snapshot_payload = snapshot_provider.get_portfolio()
+    helper = IbkrLivePortfolioProvider.__new__(IbkrLivePortfolioProvider)
+    recovered = helper._normalize_portfolio_after_price_overlay(snapshot_payload, resolution=resolution)
+    recovered['provider_error'] = str(e)
+    recovered['recovery_reason'] = 'Primary provider failed; recovered from last known good snapshot.'
+    recovered['provider_class'] = snapshot_provider.__class__.__name__
+    recovered['configured_mode'] = resolution.configured_mode
+    recovered['positions'] = normalize_positions(recovered.get('positions', []))
+    recovered['baseCurrency'] = recovered.get('currency', 'USD')
+    recovered['fxRate'] = get_fx_rate('USD', 'EUR')
+    _UI_REFRESH_LOGGER.warning(
+     '[LIFECYCLE] primary provider failed; snapshot recovery source=%s positions=%s value=%s error=%s',
+     recovered.get('source'),
+     len(recovered.get('positions') or []),
+     recovered.get('total_value'),
+     str(e),
+    )
+    return recovered
+   except Exception as snapshot_exc:
+    _UI_REFRESH_LOGGER.error('[SNAPSHOT_REJECTED] runtime recovery failed error=%s', str(snapshot_exc))
   demo = {
    'source': resolution.active_source or 'DISCONNECTED',
    'mode': resolution.configured_mode,
@@ -608,11 +632,13 @@ def manual_holdings_delete(holding_id:str):
  if not delete_manual_holding(holding_id): raise HTTPException(status_code=404, detail='Manual holding not found')
  return {'ok':True,'id':holding_id}
 @app.get('/dashboard')
-def dashboard():
+def dashboard(surface:Optional[str]=None):
  def loader():
   return _build_dashboard_payload()
  fallback=_build_dashboard_partial('Dashboard data is still warming up.')
  result=_route_cache('route', 'dashboard', _ROUTE_CACHE_TTL_SECONDS['dashboard'], loader, fallback, wait_timeout_seconds=0.8)
+ if isinstance(result, dict) and isinstance(result.get('portfolio'), dict):
+  record_surface_source(surface or 'dashboard', result['portfolio'])
  return _stamp_ui_refresh_response(result, '/dashboard')
 @app.get('/macros')
 def macros(): return macro_snapshot()
@@ -1174,45 +1200,35 @@ def portfolio_live_summary():
   raise HTTPException(status_code=503, detail=str(e))
 
 @app.get('/api/portfolio/live/trades')
-def portfolio_live_trades():
+def portfolio_live_trades(limit: int = 100, offset: int = 0, symbol: str = None, side: str = None):
  try:
   portfolio = get_portfolio_payload()
   resolution=resolve_portfolio_provider()
   provider=resolution.provider
+  all_trades = provider.get_trades()
+  if symbol:
+   all_trades = [t for t in all_trades if str(t.get('symbol') or '').upper() == symbol.upper()]
+  if side:
+   all_trades = [t for t in all_trades if str(t.get('side') or '').upper() == side.upper()]
+  all_trades_sorted = sorted(all_trades, key=lambda t: str(t.get('trade_time') or t.get('tradeTime') or ''), reverse=True)
+  total = len(all_trades_sorted)
+  page_trades = all_trades_sorted[offset:offset + limit]
   return _stamp_ui_refresh_response({
    'source': portfolio.get('source'),
    'active_source': portfolio.get('active_source'),
    'portfolioMode': portfolio.get('portfolioMode'),
    'positionsSource': portfolio.get('positionsSource'),
-   'priceSource': portfolio.get('priceSource'),
-   'activePriceProvider': portfolio.get('activePriceProvider'),
-   'activePositionProvider': portfolio.get('activePositionProvider'),
    'mode': portfolio.get('mode'),
-   'configured_mode': portfolio.get('configured_mode'),
    'as_of': portfolio.get('as_of') or portfolio.get('snapshot_timestamp'),
    'lastRefresh': portfolio.get('lastRefresh') or portfolio.get('summaryLastRefresh') or portfolio.get('as_of') or portfolio.get('snapshot_timestamp'),
-   'nextRefresh': portfolio.get('nextRefresh'),
-   'isLiveUpdating': portfolio.get('isLiveUpdating'),
-   'pricesLive': bool(portfolio.get('isLivePricing') or portfolio.get('pricesLive', False)),
-   'pricesLastRefresh': portfolio.get('pricesLastRefresh'),
-   'pricesAgeSeconds': portfolio.get('pricesAgeSeconds'),
-   'positionsLastRefresh': portfolio.get('positionsLastRefresh') or portfolio.get('lastPositionsTimestamp'),
-   'summaryLastRefresh': portfolio.get('summaryLastRefresh'),
+   'is_live': portfolio.get('is_live'),
+   'is_stale': portfolio.get('is_stale'),
    'fallback_active': portfolio.get('fallback_active'),
-   'fallback_reason': portfolio.get('fallback_reason'),
-   'provider_class': portfolio.get('provider_class'),
-  'snapshot_available': portfolio.get('snapshot_available'),
-  'snapshot_timestamp': portfolio.get('snapshot_timestamp'),
-  'snapshotAvailable': portfolio.get('snapshotAvailable'),
-  'snapshotTimestamp': portfolio.get('snapshotTimestamp'),
-  'snapshotAgeSeconds': portfolio.get('snapshotAgeSeconds'),
-  'snapshotRefreshStatus': portfolio.get('snapshotRefreshStatus'),
-  'snapshotLastRefreshAttempt': portfolio.get('snapshotLastRefreshAttempt'),
-  'snapshotLastRefreshError': portfolio.get('snapshotLastRefreshError'),
-  'is_live': portfolio.get('is_live'),
-  'is_stale': portfolio.get('is_stale'),
-   'stale_reason': portfolio.get('stale_reason'),
-   'trades': provider.get_trades()
+   'trades': page_trades,
+   'total': total,
+   'limit': limit,
+   'offset': offset,
+   'has_more': offset + limit < total,
   }, '/api/portfolio/live/trades')
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
@@ -1331,6 +1347,26 @@ def price_providers_status():
 @app.get('/api/debug/portfolio-snapshot')
 def debug_portfolio_snapshot():
  return _portfolio_snapshot_debug_payload()
+
+
+@app.get('/api/debug/source-trace')
+def debug_source_trace():
+ status = get_provider_status()
+ trace = get_source_trace()
+ current_source = status.get('active_source') or trace.get('currentSource')
+ return {
+  **trace,
+  'currentSource': current_source,
+  'gatewayConnected': bool(status.get('ibkr_gateway_reachable') and status.get('ibkr_authenticated')),
+  'authenticated': bool(status.get('ibkr_authenticated')),
+  'gatewayStatus': status.get('gateway_status'),
+  'configuredMode': status.get('configured_mode'),
+  'portfolioMode': status.get('portfolioMode'),
+  'positionsSource': status.get('positionsSource'),
+  'priceSource': status.get('priceSource'),
+  'providerClass': status.get('provider_class'),
+  'responseTimestamp': _utc_now_iso(),
+ }
 
 
 @app.get('/api/debug/ibkr-connectivity')

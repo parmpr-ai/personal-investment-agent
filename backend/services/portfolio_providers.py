@@ -2277,6 +2277,14 @@ class IbkrLivePortfolioProvider:
                     fallback_active = True
                     if not fallback_reason:
                         fallback_reason = "Using Yahoo Finance fallback prices."
+                yahoo_updated = len([p for p in positions if str(p.get("quoteSource") or "").upper() not in ("", "STALE")])
+                _IBKR_LOGGER.info(
+                    "[QUOTE_UPDATE] source=YAHOO_FALLBACK updated_positions=%s prices_live=%s positions_source=%s refresh=%s",
+                    yahoo_updated,
+                    prices_live,
+                    positions_source,
+                    prices_last_refresh,
+                )
             else:
                 quote_sources.extend([str(p.get("priceSource") or p.get("quoteSource") or "STALE").upper() for p in positions if p.get("priceSource") or p.get("quoteSource")])
 
@@ -2315,8 +2323,13 @@ class IbkrLivePortfolioProvider:
             active_source = portfolio_mode
 
         total_market_value = round(sum(_num(p.get("market_value")) for p in positions), 2)
-        cash = _num(payload.get("cash") or payload.get("summary", {}).get("cash") if isinstance(payload.get("summary"), dict) else payload.get("cash"))
-        total_value = round(total_market_value + cash, 2) if positions or cash else _num(payload.get("total_value") or payload.get("summary", {}).get("total_value") if isinstance(payload.get("summary"), dict) else payload.get("total_value"))
+        _summary_ref = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+        cash = _num(payload.get("cash") or _summary_ref.get("cash"))
+        computed_total = round(total_market_value + cash, 2) if total_market_value or cash else 0.0
+        ibkr_nlv = _num(payload.get("net_liquidation") or payload.get("total_value") or _summary_ref.get("net_liquidation") or _summary_ref.get("total_value"))
+        # IBKR_LIVE: preserve the NLV from summary (includes all assets, exact margin accounting)
+        # LAST_UPDATE/snapshot: recompute from live-priced positions; stored NLV is stale
+        total_value = ibkr_nlv if positions_source == "IBKR_LIVE" and ibkr_nlv > 0 else (computed_total or ibkr_nlv)
         cost_basis = round(sum(_num(p.get("cost_basis") or p.get("costBasis")) for p in positions), 2)
         unrealized = round(sum(_num(p.get("unrealized")) for p in positions), 2)
         day_pnls = [_maybe_num(p.get("day_pnl")) for p in positions if _maybe_num(p.get("day_pnl")) is not None]
@@ -2354,7 +2367,12 @@ class IbkrLivePortfolioProvider:
                 "positions": positions,
                 "total_value": total_value,
                 "cash": round(cash, 2),
-                "buying_power": _num(payload.get("buying_power") or payload.get("summary", {}).get("buying_power") if isinstance(payload.get("summary"), dict) else payload.get("buying_power")),
+                "buying_power": _num(payload.get("buying_power") or _summary_ref.get("buying_power")),
+                "excess_liquidity": _num(payload.get("excess_liquidity") or _summary_ref.get("excess_liquidity")),
+                "maint_margin_req": _num(payload.get("maint_margin_req") or _summary_ref.get("maint_margin_req")),
+                "init_margin_req": _num(payload.get("init_margin_req") or _summary_ref.get("init_margin_req")),
+                "available_funds": _num(payload.get("available_funds") or _summary_ref.get("available_funds")),
+                "gross_position_value": _num(payload.get("gross_position_value") or _summary_ref.get("gross_position_value")),
                 "cost_basis": round(cost_basis, 2),
                 "unrealized": round(unrealized, 2),
                 "unrealized_pct": round(unrealized / cost_basis * 100, 2) if cost_basis not in (None, 0) else payload.get("unrealized_pct"),
@@ -2419,6 +2437,10 @@ class IbkrLivePortfolioProvider:
                 "total_value": total_value,
                 "cash": round(cash, 2),
                 "buying_power": _num(summary.get("buying_power") or payload.get("buying_power")),
+                "excess_liquidity": _num(summary.get("excess_liquidity") or payload.get("excess_liquidity")),
+                "maint_margin_req": _num(summary.get("maint_margin_req") or payload.get("maint_margin_req")),
+                "init_margin_req": _num(summary.get("init_margin_req") or payload.get("init_margin_req")),
+                "available_funds": _num(summary.get("available_funds") or payload.get("available_funds")),
                 "unrealized": round(unrealized, 2),
                 "unrealized_pct": round(unrealized / cost_basis * 100, 2) if cost_basis not in (None, 0) else summary.get("unrealized_pct"),
                 "daily_pnl": daily_pnl,
@@ -2428,6 +2450,15 @@ class IbkrLivePortfolioProvider:
             }
         )
         payload["summary"] = summary
+        _IBKR_LOGGER.info(
+            "[PORTFOLIO_RECALCULATED] source=%s total_value=%s net_liq=%s positions=%s daily_pnl=%s prices_live=%s",
+            active_source,
+            round(total_value, 2),
+            round(total_value, 2),
+            len(positions),
+            round(daily_pnl, 2) if daily_pnl is not None else None,
+            price_source != "STALE",
+        )
         return payload
 
     def _fetch_live_bundle(self, *, force_snapshot: bool = False) -> Dict[str, Any]:
@@ -2905,9 +2936,12 @@ class IbkrLivePortfolioProvider:
 
         total_market_value = sum(_num(p.get("market_value")) for p in positions)
         cash = _amt("totalcashvalue")
-        total_value = round(cash + total_market_value, 2) if positions else _amt("netliquidation")
-        if not total_value:
-            total_value = _amt("netliquidation") or total_market_value
+        ibkr_nlv = _amt("netliquidation")
+        # Prefer IBKR's reported NLV — it accounts for all assets (cash equivalents, T-bills,
+        # bonds, accrued interest, pending settlements, margin) that are not in the positions list.
+        # Using cash + position market values undercount by ~30K in typical portfolios.
+        computed_total = round(cash + total_market_value, 2) if (total_market_value or cash) else 0.0
+        total_value = ibkr_nlv if ibkr_nlv > 0 else (computed_total or total_market_value)
         currency = "USD"
         for key in ("netliquidation", "availablefunds", "buyingpower"):
             node = raw.get(key, {})

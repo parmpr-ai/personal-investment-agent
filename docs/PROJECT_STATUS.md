@@ -1,7 +1,34 @@
 # PIA Project Status
 
-Last updated: 2026-06-24 (HERMES-IBKR-RECOVERY-052)
+Last updated: 2026-06-25 (ARTEMIS-PORTFOLIO-ENGINE-STABILIZATION-060)
 Branch: `feat/pia-v3-foundation-integration`
+
+## Portfolio Engine — Production Status
+
+| Item | Status | Sprint |
+|---|---|---|
+| Portfolio Total deviation (~30K) | **FIXED** | ARTEMIS-060 |
+| Frontend metric approximations (Excess Liq, Margins) | **FIXED** | ARTEMIS-060 |
+| Options cost_basis 100× overstatement | **FIXED** | HERMES-057 |
+| Day P&L (fields 82+83) | **FIXED** | HERMES-057 |
+| Live Yahoo quotes on Snapshot mode | **CONFIRMED WORKING** | Audited ARTEMIS-060 |
+| Source lifecycle (IBKR → Snapshot → Demo) | **CONFIRMED WORKING** | Audited ARTEMIS-060 |
+| [QUOTE_UPDATE] log event | **ADDED** | ARTEMIS-060 |
+| [PORTFOLIO_RECALCULATED] log event | **ADDED** | ARTEMIS-060 |
+| IBKR Trade History Panel (Desktop) | **ADDED** | ARTEMIS-060 |
+| Trade history pagination API | **ADDED** | ARTEMIS-060 |
+| Currency toggle (Desktop + Mobile) | **COMPLETE** | ARTEMIS-058/059 |
+| Option clean labels (Desktop + Mobile) | **COMPLETE** | ARTEMIS-058 |
+| Settings Integrations cleanup | **COMPLETE** | ARTEMIS-058 |
+| Portfolio header simplification | **COMPLETE** | ARTEMIS-059 |
+| IBKR field mapping documentation | **CREATED** | ARTEMIS-060 |
+
+### Post-Deploy Actions Required
+1. **Force-refresh snapshot** after deploying HERMES-057 + ARTEMIS-060 fixes:
+   `POST /api/portfolio/snapshot/refresh?force=true`
+   Existing snapshot has pre-fix cost_basis values for options and stale `total_value`.
+
+
 
 ## AI Intelligence V2
 

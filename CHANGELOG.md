@@ -1,5 +1,71 @@
 # Personal Investment Agent — Changelog
 
+## v0.3.52 - Portfolio Engine Stabilization (ARTEMIS-PORTFOLIO-ENGINE-STABILIZATION-060)
+
+Date: 2026-06-25
+Status: READY FOR UAT
+Owner: ARTEMIS (temporarily owns frontend + backend for this epic)
+
+### Backend — Portfolio Total Deviation Fix (P0)
+
+* **ROOT CAUSE FIXED: ~30K Portfolio Total deviation** — `_normalize_live_summary` was computing `total_value = cash + sum(position.market_value)`. This excluded non-position assets: money market funds, accrued interest, pending settlements, bond coupons. IBKR's `netliquidation` field (the canonical NLV) is now preferred as primary. Computed sum is fallback only.
+* **`_normalize_portfolio_after_price_overlay` updated** — For `IBKR_LIVE` mode: preserves IBKR-reported NLV from summary (exact, includes all assets). For `LAST_UPDATE`/snapshot mode: recomputes from live-priced positions (snapshot NLV is stale after Yahoo price overlay).
+* **Margin/liquidity fields explicitly propagated** — `excess_liquidity`, `maint_margin_req`, `init_margin_req`, `available_funds`, `gross_position_value` are now explicitly included in both `payload.update()` and `summary.update()` in the overlay function, preventing them from being silently dropped.
+
+### Backend — Observability
+
+* **`[QUOTE_UPDATE]`** log event emitted after Yahoo Finance price fallback is applied. Fields: `source=YAHOO_FALLBACK`, `updated_positions`, `prices_live`, `positions_source`, `refresh`.
+* **`[PORTFOLIO_RECALCULATED]`** log event emitted at the end of `_normalize_portfolio_after_price_overlay`. Fields: `source`, `total_value`, `net_liq`, `positions`, `daily_pnl`, `prices_live`.
+
+### Backend — Trade History Pagination
+
+* `/api/portfolio/live/trades` now supports `?limit=N&offset=M&symbol=SYM&side=BUY|SELL` query parameters. Results are sorted newest-first. Response includes `total`, `has_more`, pagination metadata.
+
+### Frontend — Metric Accuracy Fix
+
+* **Desktop `ibkrMetrics`** — Replaced hardcoded approximations with actual backend fields:
+  - `Excess Liq.`: now uses `p.excess_liquidity` (was `buying_power × 0.85`)
+  - `Maint. Mgn`: now uses `p.maint_margin_req` (was `total × 0.22`)
+  - `Init. Mgn`: now uses `p.init_margin_req` (was `total × 0.15`)
+  - `Realized P/L`: now uses `p.realized_pnl` (was hardcoded `$0.00`)
+  - Shows `—` when field is not available (e.g. snapshot with no margin data).
+* **Mobile `fullMetrics`** — Same fix for `excessLiq`, `maintMgn`, `initMgn`: use `portfolio.excess_liquidity`, `portfolio.maint_margin_req`, `portfolio.init_margin_req` with computed fallback for backward compat.
+
+### Frontend — IBKR Trade History Panel
+
+* New `IBKRTradesPanel` component in `PortfolioPage` (full-width panel below Exposure Map and Portfolio Scanner).
+* Fetches from `/api/portfolio/live/trades` with pagination and symbol/side filters.
+* Displays: date, symbol, side (green BUY / red SELL), quantity, price, commission. 25 trades per page. Pagination controls shown when total > 25.
+* CSS: `.ibkr-trades-panel`, `.ibkr-trades-table`, `.ibkr-trades-filters`, `.ibkr-trades-pagination` added to `globals.css`.
+
+### Documentation
+
+* Created `docs/IBKR_FIELD_MAPPING.md` — canonical mapping of IBKR API fields to PIA fields for portfolio summary, positions, and market data. Documents the 30K deviation root cause and options cost_basis root cause.
+
+---
+
+## v0.3.51 - Portfolio Production Polish (ARTEMIS-PORTFOLIO-PRODUCTION-POLISH-059)
+
+Date: 2026-06-25
+Status: READY FOR UAT
+Owner: ARTEMIS
+
+### Portfolio Header Simplification
+
+* **Timestamps removed** from both Desktop and Mobile portfolio headers. No `Last updated at…`, no `Next refresh in…`, no `Snapshot as of…` text anywhere in the header.
+* **Source badge replaced** with subtle dot indicator: `● IBKR` / `● Snapshot` / `● Demo`. Implemented via `dotSourceLabel()` function (canonical in `pia-api.ts`). CSS class `.pf-source-dot` (10px, muted, no background).
+* **Header label** changed from `Portfolio · NLV` to `Portfolio` (Desktop), `Portfolio` (Mobile). Clean and minimal.
+
+### Currency Toggle — Segmented Control
+
+* Single `cur-chip` cycling button replaced with `$ | €` segmented control (`.cur-seg` + `.cur-seg-btn`). Active state highlighted blue (`#7dc4ff`). Present on both Desktop (`PortfolioSnapshot`) and Mobile (`PortfolioHeader`). Identical design on both surfaces.
+
+### CSS Added
+
+* `.pf-source-dot`, `.cur-seg`, `.cur-seg-btn`, `.cur-seg-btn.active`, `.snapshot-source-row`, `.mtt-sym-label`, `.mtt-sym-option`, `.row-symbol b` overflow guards.
+
+---
+
 ## v0.3.50 - ARTEMIS Portfolio UX Pass (ARTEMIS-PORTFOLIO-UX-058)
 
 Date: 2026-06-25

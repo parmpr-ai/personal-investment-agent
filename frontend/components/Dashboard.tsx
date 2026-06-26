@@ -868,14 +868,18 @@ function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
   const bp = Number(p.buying_power || 0) * fxMult
   const sym = currency === 'EUR' ? '€' : '$'
   const showStaleBanner = !hidden && p.pricesLive === false && String(p.mode || '').toLowerCase() !== 'mock'
+  const excessLiq = Number(p.excess_liquidity || 0)
+  const maintMgn = Number(p.maint_margin_req || 0)
+  const initMgn = Number(p.init_margin_req || 0)
+  const realizedPnl = Number(p.realized_pnl || 0)
   const ibkrMetrics = [
-    { label: 'Realized P/L', value: `${sym}0.00` },
-    { label: 'Excess Liq.', value: fmt(Math.round(Number(p.buying_power || 0) * 0.85)) },
+    { label: 'Realized P/L', value: p.realized_pnl != null ? fmt(realizedPnl) : `${sym}—` },
+    { label: 'Excess Liq.', value: excessLiq ? fmt(excessLiq) : '—' },
     { label: 'SMA', value: fmt(Math.round(Number(p.total_value || 0) * 0.92)) },
     { label: 'Theta', value: `${sym}${(-(Math.round(Number(p.total_value || 0) * 0.00012 * 100) / 100)).toFixed(2)}` },
     { label: 'Vega', value: `${sym}${Math.round(Number(p.total_value || 0) * 0.0026)}` },
-    { label: 'Maint. Mgn', value: fmt(Math.round(Number(p.total_value || 0) * 0.22)) },
-    { label: 'Init. Mgn', value: fmt(Math.round(Number(p.total_value || 0) * 0.15)) },
+    { label: 'Maint. Mgn', value: maintMgn ? fmt(maintMgn) : '—' },
+    { label: 'Init. Mgn', value: initMgn ? fmt(initMgn) : '—' },
     { label: 'SPX Δ', value: (total / 260000).toFixed(2) },
     { label: 'Net Δ', value: (total / 87500).toFixed(2) },
     { label: 'Day Trades', value: '3' },
@@ -1278,6 +1282,93 @@ function PortfolioPage({ d, hidden, filter, setFilter, filtered, setSelected }: 
       <Panel title="Portfolio Scanner" privateTitle="Workspace" span="span-6" hidden={hidden}>
         <PortfolioScanner d={d} hidden={hidden} />
       </Panel>
+      <Panel title="Trade History" privateTitle="Activity" span="span-12" hidden={hidden}>
+        <IBKRTradesPanel hidden={hidden} />
+      </Panel>
+    </div>
+  )
+}
+
+function IBKRTradesPanel({ hidden }: { hidden: boolean }) {
+  const [trades, setTrades] = useState<any[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [offset, setOffset] = useState(0)
+  const [symbolFilter, setSymbolFilter] = useState('')
+  const [sideFilter, setSideFilter] = useState('')
+  const limit = 25
+
+  useEffect(() => {
+    setLoading(true)
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+    if (symbolFilter) params.set('symbol', symbolFilter)
+    if (sideFilter) params.set('side', sideFilter)
+    fetchApi(`/api/portfolio/live/trades?${params}`)
+      .then((r: any) => { setTrades(r?.trades || []); setTotal(r?.total || 0) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [offset, symbolFilter, sideFilter])
+
+  function fmtTradeTime(ts: string) {
+    if (!ts) return '—'
+    const d = new Date(ts)
+    return isNaN(d.getTime()) ? ts : d.toLocaleString('en-US', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  }
+
+  return (
+    <div className="ibkr-trades-panel">
+      <div className="ibkr-trades-filters">
+        <input
+          className="ibkr-trades-search"
+          type="text"
+          placeholder="Filter by symbol…"
+          value={symbolFilter}
+          onChange={(e) => { setSymbolFilter(e.target.value.toUpperCase()); setOffset(0) }}
+        />
+        <select className="ibkr-trades-side" value={sideFilter} onChange={(e) => { setSideFilter(e.target.value); setOffset(0) }}>
+          <option value="">All sides</option>
+          <option value="BUY">Buy</option>
+          <option value="SELL">Sell</option>
+        </select>
+        <span className="muted" style={{ fontSize: 11 }}>{total} trades</span>
+      </div>
+      {loading ? (
+        <p className="muted">Loading…</p>
+      ) : trades.length === 0 ? (
+        <p className="muted">No trades found.</p>
+      ) : (
+        <table className="ibkr-trades-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th style={{ textAlign: 'right' }}>Qty</th>
+              <th style={{ textAlign: 'right' }}>Price</th>
+              <th style={{ textAlign: 'right' }}>Commission</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trades.map((t: any, i: number) => (
+              <tr key={i}>
+                <td className="muted">{hidden ? mask : fmtTradeTime(t.trade_time || t.tradeTime)}</td>
+                <td><b>{hidden ? mask : (t.symbol || '—')}</b></td>
+                <td><span className={t.side === 'BUY' ? 'green' : 'red'}>{hidden ? mask : (t.side || '—')}</span></td>
+                <td style={{ textAlign: 'right' }}>{hidden ? mask : (t.quantity ?? '—')}</td>
+                <td style={{ textAlign: 'right' }}>{hidden ? mask : (t.price ? `$${Number(t.price).toFixed(2)}` : '—')}</td>
+                <td style={{ textAlign: 'right' }}>{hidden ? mask : (t.commission != null ? `$${Number(t.commission).toFixed(2)}` : '—')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {total > limit && (
+        <div className="ibkr-trades-pagination">
+          <button type="button" className="tab" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>← Prev</button>
+          <span className="muted">{offset + 1}–{Math.min(offset + limit, total)} of {total}</span>
+          <button type="button" className="tab" disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)}>Next →</button>
+        </div>
+      )}
     </div>
   )
 }
