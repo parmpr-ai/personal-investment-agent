@@ -1,0 +1,161 @@
+from typing import Any, Dict, List, Optional
+
+DEFAULT_LIMITS = {
+    "max_position_pct": 25.0,
+    "max_single_trade_pct": 8.0,
+    "stop_loss_pct": 8.0,
+    "daily_loss_limit_pct": 3.0,
+    "max_portfolio_beta": 1.4,
+    "vix_pause_threshold": 27.0,
+    "max_open_positions": 12,
+    "min_cash_reserve_pct": 10.0,
+    "max_leverage": 1.0,
+}
+
+
+class RiskManager:
+    def __init__(self, limits: Dict[str, Any] | None = None):
+        self.limits = {**DEFAULT_LIMITS, **(limits or {})}
+
+    def check_trade(
+        self,
+        action: str,
+        ticker: str,
+        proposed_qty: float,
+        price: float,
+        portfolio: Dict[str, Any],
+        macro: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Returns {approved, adjusted_qty, reasons}."""
+        reasons: List[str] = []
+        approved = True
+        qty = proposed_qty
+        total = float(portfolio.get("total_value", 1))
+        cash = float(portfolio.get("cash", 0))
+        positions = portfolio.get("positions", [])
+        daily_pnl_pct = float(portfolio.get("daily_pnl_pct", 0))
+        vix = float(macro.get("vix", 18))
+
+        # Daily loss circuit breaker
+        if daily_pnl_pct < -self.limits["daily_loss_limit_pct"]:
+            return {
+                "approved": False,
+                "adjusted_qty": 0,
+                "reasons": [f"Daily loss limit hit ({daily_pnl_pct:.1f}%). No new buys today."],
+            }
+
+        # VIX filter
+        if action == "BUY" and vix > self.limits["vix_pause_threshold"]:
+            return {
+                "approved": False,
+                "adjusted_qty": 0,
+                "reasons": [f"VIX={vix} exceeds pause threshold {self.limits['vix_pause_threshold']}. Halting new buys."],
+            }
+
+        # Hostile macro
+        if action == "BUY" and macro.get("hostile", False):
+            reasons.append("Macro hostile - reducing size by 50%")
+            qty = qty * 0.5
+
+        # Cash reserve
+        if action == "BUY":
+            cash_pct = cash / total * 100
+            if cash_pct < self.limits["min_cash_reserve_pct"]:
+                return {
+                    "approved": False,
+                    "adjusted_qty": 0,
+                    "reasons": [f"Cash reserve {cash_pct:.1f}% below minimum {self.limits['min_cash_reserve_pct']}%."],
+                }
+
+        # Position concentration
+        trade_value = qty * price
+        existing_pos = next((p for p in positions if p.get("symbol", "").split()[0] == ticker), None)
+        existing_value = float(existing_pos.get("market_value", 0)) if existing_pos else 0
+        new_total_value = existing_value + (trade_value if action == "BUY" else -trade_value)
+        new_pct = new_total_value / total * 100
+
+        if action == "BUY" and new_pct > self.limits["max_position_pct"]:
+            allowed_value = self.limits["max_position_pct"] / 100 * total - existing_value
+            if allowed_value <= 0:
+                return {
+                    "approved": False,
+                    "adjusted_qty": 0,
+                    "reasons": [f"{ticker} already at max concentration {existing_value/total*100:.1f}%"],
+                }
+            qty = min(qty, allowed_value / price)
+            reasons.append(f"Size capped: max position {self.limits['max_position_pct']}%")
+
+        # Single trade size cap
+        max_trade_value = self.limits["max_single_trade_pct"] / 100 * total
+        if action == "BUY" and qty * price > max_trade_value:
+            qty = max_trade_value / price
+            reasons.append(f"Single trade capped at {self.limits['max_single_trade_pct']}% of portfolio")
+
+        # Max open positions
+        if action == "BUY" and not existing_pos:
+            open_count = len([p for p in positions if float(p.get("qty", 0)) > 0])
+            if open_count >= self.limits["max_open_positions"]:
+                return {
+                    "approved": False,
+                    "adjusted_qty": 0,
+                    "reasons": [f"Max positions reached ({open_count}/{self.limits['max_open_positions']})"],
+                }
+
+        # Cash check for buys
+        if action == "BUY" and qty * price > cash:
+            qty = cash * 0.95 / price
+            reasons.append("Size reduced to available cash")
+
+        qty = max(0, round(qty, 6))
+        if qty <= 0:
+            approved = False
+            reasons.append("Adjusted quantity is zero")
+
+        return {"approved": approved, "adjusted_qty": qty, "reasons": reasons}
+
+    def compute_stop_loss(self, price: float, action: str = "BUY") -> float:
+        if action == "BUY":
+            return round(price * (1 - self.limits["stop_loss_pct"] / 100), 2)
+        return round(price * (1 + self.limits["stop_loss_pct"] / 100), 2)
+
+    def position_size_shares(self, ticker: str, price: float, portfolio_value: float, risk_pct: float = 2.0) -> int:
+        dollar_risk = portfolio_value * risk_pct / 100
+        stop_distance = price * self.limits["stop_loss_pct"] / 100
+        if stop_distance <= 0 or price <= 0:
+            return 0
+        shares = dollar_risk / stop_distance
+        max_by_concentration = (self.limits["max_single_trade_pct"] / 100 * portfolio_value) / price
+        return max(1, int(min(shares, max_by_concentration)))
+
+    def should_trigger_stop(self, position: Dict[str, Any], current_price: float) -> bool:
+        avg_price = float(position.get("avg_price", current_price))
+        if avg_price <= 0:
+            return False
+        loss_pct = (current_price - avg_price) / avg_price * 100
+        return loss_pct < -self.limits["stop_loss_pct"]
+
+    def portfolio_health(self, portfolio: Dict[str, Any], macro: Dict[str, Any]) -> Dict[str, Any]:
+        total = float(portfolio.get("total_value", 1))
+        cash = float(portfolio.get("cash", 0))
+        positions = portfolio.get("positions", [])
+        daily_pnl_pct = float(portfolio.get("daily_pnl_pct", 0))
+        vix = float(macro.get("vix", 18))
+        alerts = []
+        if cash / total * 100 < self.limits["min_cash_reserve_pct"]:
+            alerts.append({"level": "warning", "msg": f"Cash {cash/total*100:.1f}% below {self.limits['min_cash_reserve_pct']}% reserve"})
+        if daily_pnl_pct < -self.limits["daily_loss_limit_pct"]:
+            alerts.append({"level": "danger", "msg": f"Daily loss {daily_pnl_pct:.1f}% exceeded limit"})
+        if vix > self.limits["vix_pause_threshold"]:
+            alerts.append({"level": "warning", "msg": f"VIX={vix} - new buys paused"})
+        for p in positions:
+            pct = float(p.get("portfolio_pct", 0))
+            if pct > self.limits["max_position_pct"]:
+                alerts.append({"level": "warning", "msg": f"{p['symbol']} at {pct:.1f}% - over max concentration"})
+        return {
+            "ok": len([a for a in alerts if a["level"] == "danger"]) == 0,
+            "alerts": alerts,
+            "cash_pct": round(cash / total * 100, 1),
+            "position_count": len(positions),
+            "daily_pnl_pct": daily_pnl_pct,
+            "vix": vix,
+        }

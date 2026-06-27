@@ -11,6 +11,8 @@ from services.settings_store import get_settings, save_settings
 from services.connectors import source_health, test_source, yahoo_news, yahoo_fundamentals
 from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding
 from services.news_intelligence import get_news_intelligence
+from services.autonomous_agent import agent as autonomous_agent, get_recent_decisions, get_agent_log
+from services.paper_trading import get_portfolio_summary as paper_summary, get_trade_history, reset_book
 load_dotenv()
 try:
  from services.ibkr_service import get_ibkr_portfolio
@@ -34,6 +36,21 @@ class ManualHoldingRequest(BaseModel):
  avg_price: float
  currency: str='USD'
  notes: str=''
+
+class AgentConfigRequest(BaseModel):
+ enabled: bool|None=None
+ mode: str|None=None
+ cycle_minutes: int|None=None
+ universe: list[str]|None=None
+ strategies: list[str]|None=None
+ risk_per_trade_pct: float|None=None
+ max_position_pct: float|None=None
+ stop_loss_pct: float|None=None
+ daily_loss_limit_pct: float|None=None
+ vix_pause_threshold: float|None=None
+ min_confidence: int|None=None
+ auto_stop_loss: bool|None=None
+ auto_take_profit: bool|None=None
 
 THESIS_STORE={}
 TRANSACTIONS=[]
@@ -246,6 +263,53 @@ def qa_checklist():
    {'name':'Tax','items':['Import works','15% Greek gains logic','Loss offset','UCITS exemption flag']}
   ]
  }
+
+@app.get('/agent/status')
+def agent_status(): return autonomous_agent.status()
+
+@app.post('/agent/start')
+def agent_start():
+ if not os.getenv('ANTHROPIC_API_KEY'):
+  raise HTTPException(status_code=400, detail='ANTHROPIC_API_KEY not set. Add it to backend/.env')
+ return autonomous_agent.start()
+
+@app.post('/agent/stop')
+def agent_stop(): return autonomous_agent.stop()
+
+@app.post('/agent/config')
+def agent_config(req:AgentConfigRequest):
+ updates={k:v for k,v in req.model_dump().items() if v is not None}
+ return autonomous_agent.configure(updates)
+
+@app.post('/agent/cycle')
+async def agent_cycle_once():
+ if not os.getenv('ANTHROPIC_API_KEY'):
+  raise HTTPException(status_code=400, detail='ANTHROPIC_API_KEY not set.')
+ await autonomous_agent._run_cycle()
+ return autonomous_agent.status()
+
+@app.get('/agent/decisions')
+def agent_decisions(limit:int=50): return get_recent_decisions(limit)
+
+@app.get('/agent/log')
+def agent_log_endpoint(limit:int=100): return get_agent_log(limit)
+
+@app.get('/agent/paper/portfolio')
+async def paper_portfolio():
+ from services.market_data import fetch_quotes
+ positions=paper_summary()
+ tickers=[p['ticker'] for p in positions.get('positions',[])]
+ if tickers:
+  quotes=await fetch_quotes(tickers)
+  prices={t:q.get('price',0) for t,q in quotes.items()}
+  positions=paper_summary(prices)
+ return positions
+
+@app.get('/agent/paper/trades')
+def paper_trades(limit:int=100): return get_trade_history(limit)
+
+@app.post('/agent/paper/reset')
+def paper_reset(): return reset_book()
 
 @app.websocket('/ws')
 async def ws(ws:WebSocket):
