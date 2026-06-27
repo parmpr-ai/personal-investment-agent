@@ -13,3 +13,4 @@ backend/Lib/
 backend/Scripts/
 backend/Include/
 backend/pyvenv.cfg
+backend/*.sqlite3
