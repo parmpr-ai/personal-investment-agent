@@ -13,6 +13,7 @@ from services.manual_holdings import create_manual_holding, delete_manual_holdin
 from services.news_intelligence import get_news_intelligence
 from services.autonomous_agent import agent as autonomous_agent, get_recent_decisions, get_agent_log
 from services.paper_trading import get_portfolio_summary as paper_summary, get_trade_history, reset_book
+from services.ibkr_trader import test_ibkr_paper, get_ibkr_paper_account
 load_dotenv()
 try:
  from services.ibkr_service import get_ibkr_portfolio
@@ -312,6 +313,12 @@ def paper_trades(limit:int=100): return get_trade_history(limit)
 
 @app.post('/agent/paper/reset')
 def paper_reset(): return reset_book()
+
+@app.get('/agent/ibkr-paper/test')
+def ibkr_paper_test(): return test_ibkr_paper(get_settings())
+
+@app.get('/agent/ibkr-paper/account')
+def ibkr_paper_account(): return get_ibkr_paper_account(get_settings())
 
 @app.websocket('/ws')
 async def ws(ws:WebSocket):

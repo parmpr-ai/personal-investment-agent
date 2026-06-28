@@ -19,6 +19,7 @@ from services.paper_trading import (
     get_open_shorts,
     get_portfolio_summary,
 )
+from services.ibkr_trader import place_ibkr_order, get_ibkr_paper_account, test_ibkr_paper
 
 logger = logging.getLogger(__name__)
 
@@ -569,10 +570,7 @@ class AutonomousAgent:
             else:
                 stop = target = None
 
-            if self.config["mode"] == "paper":
-                result = execute_paper_trade(ticker=ticker, action=action, qty=qty, price=price, stop_loss=stop, target=target, reason=d.get("reasoning", "")[:400], confidence=confidence)
-            else:
-                result = {"ok": False, "error": "Live trading not enabled"}
+            result = self._execute(action, ticker, qty, price, stop, target, d.get("reasoning", "")[:400], confidence)
 
             _save_decision(cycle_id, {**d, "qty": qty, "price": price, "executed": result.get("ok", False), "execution_result": result, "blocked_reason": result.get("error") if not result.get("ok") else None})
             if result.get("ok"):
@@ -600,6 +598,23 @@ class AutonomousAgent:
         self._last_cycle_summary = summary
         _log("info", f"[{cycle_id}] Done: executed={executed}, blocked={blocked}, regime={macro.get('regime')}, portfolio=${paper['total_value']:,.0f} ({paper['total_return_pct']:+.2f}%)")
 
+    def _execute(self, action: str, ticker: str, qty: float, price: float,
+                 stop: Optional[float], target: Optional[float], reason: str, confidence: int) -> Dict[str, Any]:
+        mode = self.config["mode"]
+        if mode == "paper":
+            return execute_paper_trade(ticker=ticker, action=action, qty=qty, price=price,
+                                       stop_loss=stop, target=target, reason=reason, confidence=confidence)
+        elif mode == "ibkr_paper":
+            ibkr_result = place_ibkr_order(ticker=ticker, action=action, qty=qty, price=price,
+                                            order_type="MKT", mode="ibkr_paper")
+            if ibkr_result.get("ok"):
+                # Mirror into internal book so portfolio_summary stays consistent
+                execute_paper_trade(ticker=ticker, action=action, qty=qty, price=price,
+                                    stop_loss=stop, target=target, reason=reason, confidence=confidence)
+            return ibkr_result
+        else:
+            return {"ok": False, "error": f"Mode '{mode}' not enabled for execution"}
+
     async def _check_stops(self, open_longs: List[Dict], open_shorts: List[Dict], quotes: Dict, cycle_id: str):
         # Long stop: sell if price falls 8%+ below entry
         for pos in open_longs:
@@ -609,7 +624,7 @@ class AutonomousAgent:
                 continue
             if self._risk.should_trigger_stop(pos, price):
                 _log("warning", f"[{cycle_id}] LONG STOP: {ticker} @ ${price:.2f} (avg ${pos['avg_price']:.2f})")
-                result = execute_paper_trade(ticker=ticker, action="SELL", qty=pos["qty"], price=price, reason="AUTO LONG STOP-LOSS", confidence=99)
+                result = self._execute("SELL", ticker, pos["qty"], price, None, None, "AUTO LONG STOP-LOSS", 99)
                 _save_decision(cycle_id, {"ticker": ticker, "action": "SELL", "qty": pos["qty"], "price": price, "confidence": 99, "reasoning": "Auto long stop-loss", "executed": result.get("ok", False), "execution_result": result})
 
         # Short stop: cover if price rises 8%+ above entry
@@ -623,7 +638,7 @@ class AutonomousAgent:
             rise_pct = (price - avg) / avg * 100 if avg else 0
             if rise_pct >= short_stop_pct:
                 _log("warning", f"[{cycle_id}] SHORT STOP: {ticker} @ ${price:.2f} rose +{rise_pct:.1f}% vs entry ${avg:.2f}")
-                result = execute_paper_trade(ticker=ticker, action="COVER", qty=pos["qty"], price=price, reason="AUTO SHORT STOP-LOSS", confidence=99)
+                result = self._execute("COVER", ticker, pos["qty"], price, None, None, f"AUTO SHORT STOP: +{rise_pct:.1f}%", 99)
                 _save_decision(cycle_id, {"ticker": ticker, "action": "COVER", "qty": pos["qty"], "price": price, "confidence": 99, "reasoning": f"Auto short stop: price +{rise_pct:.1f}%", "executed": result.get("ok", False), "execution_result": result})
 
 
