@@ -673,9 +673,10 @@ export default function MobileExperience() {
   const [editMode, setEditMode]             = useState(false)
   const [showAdd, setShowAdd]               = useState(false)
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount (honour ?ws= URL param for direct linking)
   useEffect(() => {
-    const savedId = readActive()
+    const param = new URLSearchParams(window.location.search).get('ws')
+    const savedId = param && WORKSPACE_MAP[param] ? param : readActive()
     setWorkspaceIdState(savedId)
     setPinnedState(readPinned())
     setLayoutState(readLayout(savedId))
