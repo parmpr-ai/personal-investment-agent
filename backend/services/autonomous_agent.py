@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from services.market_data import fetch_quotes, fetch_macro, fetch_news_sentiment
+from services.market_data import fetch_quotes, fetch_enhanced_quotes, fetch_macro, fetch_sector_momentum
+from services.news_scorer import score_news, sentiment_boost
 from services.risk_manager import RiskManager
 from services.paper_trading import (
     execute_paper_trade,
@@ -140,128 +141,167 @@ def get_agent_log(limit: int = 100) -> List[Dict[str, Any]]:
 
 # ── Rule-based signal engine ──────────────────────────────────────────────────
 
-def _score_momentum(q: Dict, macro: Dict) -> tuple[int, str]:
-    """Momentum: above SMA20, RVOL spike, positive day, RSI healthy."""
+def _news_adj(q: Dict, news: Dict, ticker: str) -> tuple[int, str]:
+    """Add news sentiment + catalyst bonus from pre-scored news dict."""
+    delta, reason = sentiment_boost(news, ticker)
+    return delta, reason
+
+
+def _multi_tf_adj(q: Dict) -> tuple[int, str]:
+    """Multi-timeframe: daily trend + ADX + golden cross."""
+    score = 0
+    reasons = []
+    td = q.get("trend_direction")
+    if td == "UP":
+        score += 15
+        reasons.append(f"5d trend UP ({q.get('trend_5d_pct',0):+.1f}%)")
+    elif td == "DOWN":
+        score -= 15
+        reasons.append(f"5d trend DOWN ({q.get('trend_5d_pct',0):+.1f}%)")
+    if q.get("golden_cross"):
+        score += 10
+        reasons.append("SMA20>SMA50 golden cross")
+    if q.get("above_sma50_daily") and q.get("above_sma20_daily"):
+        score += 8
+        reasons.append("above both SMA20+SMA50")
+    if q.get("strong_trend") and q.get("adx"):
+        score += 12
+        reasons.append(f"ADX={q['adx']:.0f} strong trend")
+    return score, ", ".join(reasons)
+
+
+def _rs_adj(q: Dict) -> tuple[int, str]:
+    """Relative strength vs SPY."""
+    rs = q.get("rs_vs_spy")
+    if rs is None:
+        return 0, ""
+    if rs >= 1.5:
+        return 15, f"RS={rs:.1f}x SPY (leader)"
+    if rs >= 1.1:
+        return 8,  f"RS={rs:.1f}x SPY (outperform)"
+    if rs <= 0.5:
+        return -12, f"RS={rs:.1f}x SPY (laggard)"
+    return 0, ""
+
+
+def _52w_adj(q: Dict) -> tuple[int, str]:
+    """52-week position bonus/penalty."""
+    pct = q.get("pct_from_52w_high")
+    if pct is None:
+        return 0, ""
+    if q.get("near_52w_high"):
+        return 12, "near 52w high (strength)"
+    if q.get("near_52w_low"):
+        return -10, "near 52w low (caution)"
+    if pct < 15:
+        return 8, f"{pct:.0f}% from 52w high"
+    return 0, ""
+
+
+def _score_momentum(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
     score = 0
     reasons = []
     if q.get("above_sma20"):
-        score += 20
-        reasons.append("above SMA20")
+        score += 20; reasons.append("above SMA20")
     rvol = q.get("rvol", 1.0) or 1.0
     if rvol >= 2.0:
-        score += 25
-        reasons.append(f"RVOL={rvol:.1f} strong")
+        score += 25; reasons.append(f"RVOL={rvol:.1f} strong")
     elif rvol >= 1.3:
-        score += 15
-        reasons.append(f"RVOL={rvol:.1f} elevated")
+        score += 15; reasons.append(f"RVOL={rvol:.1f} elevated")
     chg = q.get("change_pct", 0) or 0
-    if chg >= 2.0:
-        score += 20
-        reasons.append(f"+{chg:.1f}% day")
-    elif chg >= 0.8:
-        score += 10
-        reasons.append(f"+{chg:.1f}% day")
+    if chg >= 2.0:   score += 20; reasons.append(f"+{chg:.1f}% day")
+    elif chg >= 0.8: score += 10; reasons.append(f"+{chg:.1f}% day")
     rsi = q.get("rsi")
     if rsi is not None:
-        if 52 <= rsi <= 68:
-            score += 15
-            reasons.append(f"RSI={rsi} healthy")
-        elif rsi > 75:
-            score -= 20
-            reasons.append(f"RSI={rsi} overbought")
+        if 52 <= rsi <= 68: score += 15; reasons.append(f"RSI={rsi}")
+        elif rsi > 75:      score -= 20; reasons.append(f"RSI={rsi} overbought")
     if not macro.get("hostile"):
-        score += 10
-        reasons.append("macro supportive")
-    return score, "Momentum: " + ", ".join(reasons) if reasons else "no signal"
+        score += 10; reasons.append("macro OK")
+    for adj_fn in [lambda: _multi_tf_adj(q), lambda: _rs_adj(q), lambda: _52w_adj(q)]:
+        d, r = adj_fn()
+        score += d
+        if r: reasons.append(r)
+    ticker = q.get("ticker", "")
+    nd, nr = _news_adj(q, news, ticker)
+    score += nd
+    if nr: reasons.append(nr)
+    return score, "Momentum: " + ", ".join(reasons)
 
 
-def _score_mean_reversion(q: Dict, macro: Dict) -> tuple[int, str]:
-    """Mean reversion: oversold RSI, below SMA20, macro not hostile."""
-    score = 0
-    reasons = []
+def _score_mean_reversion(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
+    score = 0; reasons = []
     rsi = q.get("rsi")
-    if rsi is None:
-        return 0, "no RSI data"
-    if rsi <= 30:
-        score += 40
-        reasons.append(f"RSI={rsi} oversold")
-    elif rsi <= 38:
-        score += 25
-        reasons.append(f"RSI={rsi} weak")
-    else:
-        return 0, "RSI not oversold"
+    if rsi is None: return 0, "no RSI"
+    if rsi <= 30:        score += 40; reasons.append(f"RSI={rsi} oversold")
+    elif rsi <= 38:      score += 25; reasons.append(f"RSI={rsi} weak")
+    else: return 0, "RSI not oversold"
     if not q.get("above_sma20"):
-        score += 15
-        reasons.append("below SMA20 (reversion target)")
+        score += 15; reasons.append("below SMA20")
     chg = q.get("change_pct", 0) or 0
-    if chg < -2.0:
-        score += 15
-        reasons.append(f"{chg:.1f}% pullback")
-    if macro.get("hostile"):
-        score -= 30
-        reasons.append("macro hostile — penalized")
+    if chg < -2.0: score += 15; reasons.append(f"{chg:.1f}% pullback")
+    if macro.get("hostile"): score -= 30; reasons.append("macro hostile")
+    if q.get("near_52w_low"): score += 10; reasons.append("near 52w low — high reversion potential")
+    rs = q.get("rs_vs_spy")
+    if rs is not None and rs > 0.8: score += 8; reasons.append("RS holding vs SPY")
+    ticker = q.get("ticker", "")
+    nd, nr = _news_adj(q, news, ticker)
+    # For mean reversion, negative news confirmation is OK (oversold from bad news = buy)
+    if nd < 0: score += abs(nd) * 0.3  # small contrarian credit
+    elif nd > 0: score += nd
+    if nr: reasons.append(nr)
     return score, "MeanRev: " + ", ".join(reasons)
 
 
-def _score_breakout(q: Dict, macro: Dict) -> tuple[int, str]:
-    """Breakout: RVOL > 2, strong positive day, above SMA20, RSI not yet overbought."""
-    score = 0
-    reasons = []
+def _score_breakout(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
+    score = 0; reasons = []
     rvol = q.get("rvol", 1.0) or 1.0
-    chg = q.get("change_pct", 0) or 0
-    rsi = q.get("rsi") or 50
-    if rvol < 1.8 or chg < 1.5:
-        return 0, "no breakout signal"
-    score += 30
-    reasons.append(f"RVOL={rvol:.1f} + {chg:+.1f}% breakout")
-    if q.get("above_sma20"):
-        score += 20
-        reasons.append("above SMA20")
-    if rsi < 72:
-        score += 15
-        reasons.append(f"RSI={rsi} not exhausted")
-    else:
-        score -= 10
-        reasons.append(f"RSI={rsi} extended")
-    regime = macro.get("regime", "NEUTRAL")
-    if "RISK_ON" in regime:
-        score += 15
-        reasons.append(f"regime={regime}")
+    chg  = q.get("change_pct", 0) or 0
+    rsi  = q.get("rsi") or 50
+    if rvol < 1.8 or chg < 1.5: return 0, "no breakout"
+    score += 30; reasons.append(f"RVOL={rvol:.1f} + {chg:+.1f}%")
+    if q.get("above_sma20"): score += 20; reasons.append("above SMA20")
+    if rsi < 72: score += 15; reasons.append(f"RSI={rsi} not exhausted")
+    else:        score -= 10; reasons.append(f"RSI={rsi} extended")
+    if "RISK_ON" in macro.get("regime", ""):
+        score += 15; reasons.append(f"regime={macro.get('regime')}")
+    if q.get("strong_trend") and q.get("trend_direction") == "UP":
+        score += 12; reasons.append(f"ADX={q.get('adx',0):.0f} trend confirming")
+    if q.get("near_52w_high"): score += 10; reasons.append("near 52w high breakout")
+    d, r = _rs_adj(q); score += d
+    if r: reasons.append(r)
+    ticker = q.get("ticker", "")
+    nd, nr = _news_adj(q, news, ticker)
+    score += nd
+    if nr: reasons.append(nr)
     return score, "Breakout: " + ", ".join(reasons)
 
 
-def _score_trend_follow(q: Dict, macro: Dict) -> tuple[int, str]:
-    """Trend: steady above SMA20, positive but not parabolic, macro aligned."""
-    score = 0
-    reasons = []
-    if not q.get("above_sma20"):
-        return 0, "below SMA20"
+def _score_trend_follow(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
+    score = 0; reasons = []
+    if not q.get("above_sma20"): return 0, "below SMA20"
     score += 20
     chg = q.get("change_pct", 0) or 0
     rsi = q.get("rsi") or 50
-    if 0.2 <= chg <= 2.5:
-        score += 20
-        reasons.append(f"{chg:+.1f}% steady")
-    if 45 <= rsi <= 65:
-        score += 20
-        reasons.append(f"RSI={rsi} mid-range")
+    if 0.2 <= chg <= 2.5: score += 20; reasons.append(f"{chg:+.1f}% steady")
+    if 45 <= rsi <= 65:   score += 20; reasons.append(f"RSI={rsi}")
     rvol = q.get("rvol", 1.0) or 1.0
-    if rvol >= 1.0:
-        score += 10
-        reasons.append(f"RVOL={rvol:.1f}")
+    if rvol >= 1.0: score += 10; reasons.append(f"RVOL={rvol:.1f}")
     regime = macro.get("regime", "NEUTRAL")
-    if "RISK_ON" in regime:
-        score += 15
-        reasons.append(f"regime={regime}")
-    elif "RISK_OFF" in regime:
-        score -= 25
-        reasons.append("risk-off regime")
-    return score, "Trend: above SMA20, " + ", ".join(reasons) if reasons else "Trend: above SMA20"
+    if "RISK_ON" in regime:   score += 15; reasons.append(f"regime={regime}")
+    elif "RISK_OFF" in regime: score -= 25; reasons.append("risk-off")
+    for adj_fn in [lambda: _multi_tf_adj(q), lambda: _rs_adj(q)]:
+        d, r = adj_fn(); score += d
+        if r: reasons.append(r)
+    ticker = q.get("ticker", "")
+    nd, nr = _news_adj(q, news, ticker)
+    score += nd
+    if nr: reasons.append(nr)
+    return score, "Trend: above SMA20, " + ", ".join(reasons)
 
 
 # ── Short signal scorers ──────────────────────────────────────────────────────
 
-def _score_short_momentum(q: Dict, macro: Dict) -> tuple[int, str]:
+def _score_short_momentum(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
     """Short momentum: overbought RSI + negative day + elevated volume."""
     score = 0
     reasons = []
@@ -301,10 +341,35 @@ def _score_short_momentum(q: Dict, macro: Dict) -> tuple[int, str]:
         score -= 20
         reasons.append("strong bull regime — penalized")
 
+    # Multi-tf: downtrend + death cross confirm short
+    td = q.get("trend_direction")
+    if td == "DOWN":
+        score += 12
+        reasons.append(f"5d trend DOWN ({q.get('trend_5d_pct', 0):+.1f}%)")
+    if not q.get("golden_cross") and not q.get("above_sma50_daily"):
+        score += 8
+        reasons.append("below SMA50 — bearish structure")
+    if q.get("strong_trend") and td == "DOWN":
+        score += 10
+        reasons.append(f"ADX={q.get('adx', 0):.0f} strong downtrend")
+
+    # RS: lagging SPY is a short candidate
+    rs = q.get("rs_vs_spy")
+    if rs is not None and rs <= 0.5:
+        score += 12
+        reasons.append(f"RS={rs:.1f}x SPY (laggard)")
+
+    # News: bearish news confirms short; bullish news penalizes
+    ticker = q.get("ticker", "")
+    nd, nr = _news_adj(q, news, ticker)
+    score -= nd  # invert: bearish news (negative nd) strengthens short
+    if nr:
+        reasons.append(nr)
+
     return score, "SHORT-Momentum: " + ", ".join(reasons)
 
 
-def _score_short_breakdown(q: Dict, macro: Dict) -> tuple[int, str]:
+def _score_short_breakdown(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
     """Short breakdown: price breaks below SMA20 with volume + macro risk-off."""
     score = 0
     reasons = []
@@ -346,6 +411,31 @@ def _score_short_breakdown(q: Dict, macro: Dict) -> tuple[int, str]:
         score += 10
         reasons.append(f"VIX={vix} elevated fear")
 
+    # Multi-tf daily confirmation
+    td = q.get("trend_direction")
+    if td == "DOWN":
+        score += 12
+        reasons.append(f"5d trend DOWN ({q.get('trend_5d_pct', 0):+.1f}%)")
+    if not q.get("above_sma50_daily"):
+        score += 8
+        reasons.append("below daily SMA50")
+    if q.get("near_52w_low"):
+        score -= 8
+        reasons.append("near 52w low — caution (may bounce)")
+
+    # RS laggard confirms breakdown
+    rs = q.get("rs_vs_spy")
+    if rs is not None and rs <= 0.6:
+        score += 10
+        reasons.append(f"RS={rs:.1f}x SPY underperforming")
+
+    # Bearish news confirms breakdown
+    ticker = q.get("ticker", "")
+    nd, nr = _news_adj(q, news, ticker)
+    score -= nd  # invert sign: negative nd = bearish news = helps short
+    if nr:
+        reasons.append(nr)
+
     return score, "SHORT-Breakdown: " + ", ".join(reasons)
 
 
@@ -371,6 +461,7 @@ def _decide_for_ticker(
     open_longs: List[Dict],
     open_shorts: List[Dict],
     config: Dict,
+    news: Dict = {},
 ) -> List[Dict[str, Any]]:
     if not q.get("ok") or not q.get("price"):
         return []
@@ -414,7 +505,7 @@ def _decide_for_ticker(
         for strat in long_strategies:
             fn = LONG_STRATEGY_FNS.get(strat)
             if fn:
-                score, reason = fn(q, macro)
+                score, reason = fn(q, macro, news)
                 if score > best_score:
                     best_score, best_reason = score, reason
         confidence = min(int(best_score * 1.1), 99)
@@ -429,7 +520,7 @@ def _decide_for_ticker(
         for strat in short_strategies:
             fn = SHORT_STRATEGY_FNS.get(strat)
             if fn:
-                score, reason = fn(q, macro)
+                score, reason = fn(q, macro, news)
                 if score > best_score:
                     best_score, best_reason = score, reason
         confidence = min(int(best_score * 1.1), 99)
@@ -446,10 +537,11 @@ def generate_decisions(
     open_longs: List[Dict],
     open_shorts: List[Dict],
     config: Dict,
+    news: Dict = {},
 ) -> List[Dict[str, Any]]:
     all_decisions = []
     for ticker, q in quotes.items():
-        all_decisions.extend(_decide_for_ticker(ticker, q, macro, open_longs, open_shorts, config))
+        all_decisions.extend(_decide_for_ticker(ticker, q, macro, open_longs, open_shorts, config, news))
     # Closes first (SELL/COVER), then new entries by confidence desc
     all_decisions.sort(key=lambda d: (_CLOSE_PRIORITY.get(d["action"], 3), -d.get("confidence", 0)))
     return all_decisions[:10]
@@ -518,7 +610,28 @@ class AutonomousAgent:
         _log("info", f"[{cycle_id}] Cycle start")
 
         universe = self.config.get("universe", UNIVERSE)
-        quotes, macro = await asyncio.gather(fetch_quotes(universe), fetch_macro())
+
+        # Fetch enhanced market data + macro + news concurrently
+        quotes, macro, news, sectors = await asyncio.gather(
+            fetch_enhanced_quotes(universe),
+            fetch_macro(),
+            score_news(universe),
+            fetch_sector_momentum(),
+            return_exceptions=True,
+        )
+        # Gracefully handle failures in non-critical data sources
+        if isinstance(quotes, Exception):
+            _log("error", f"[{cycle_id}] fetch_enhanced_quotes failed: {quotes}"); return
+        if isinstance(macro, Exception):
+            _log("error", f"[{cycle_id}] fetch_macro failed: {macro}"); return
+        if isinstance(news, Exception):
+            _log("warning", f"[{cycle_id}] score_news failed: {news}"); news = {}
+        if isinstance(sectors, Exception):
+            _log("warning", f"[{cycle_id}] fetch_sector_momentum failed: {sectors}"); sectors = {}
+
+        if sectors:
+            _log("info", f"[{cycle_id}] Sector rotation: top={sectors.get('top_sectors')}, bottom={sectors.get('bottom_sectors')}")
+
         open_longs = get_open_longs()
         open_shorts = get_open_shorts()
         paper = get_portfolio_summary({t: q.get("price", 0) for t, q in quotes.items()})
@@ -530,8 +643,8 @@ class AutonomousAgent:
         open_longs = get_open_longs()
         open_shorts = get_open_shorts()
 
-        # Generate decisions via rule engine
-        decisions = generate_decisions(quotes, macro, open_longs, open_shorts, self.config)
+        # Generate decisions via rule engine (with news + enhanced quotes)
+        decisions = generate_decisions(quotes, macro, open_longs, open_shorts, self.config, news)
 
         executed = 0
         blocked = 0
@@ -580,6 +693,8 @@ class AutonomousAgent:
                 _log("warning", f"[{cycle_id}] FAILED {action} {ticker}: {result.get('error')}")
 
         paper_after = get_portfolio_summary({t: q.get("price", 0) for t, q in quotes.items()})
+        bullish_count = sum(1 for v in news.values() if isinstance(v, dict) and v.get("direction") == "BULLISH")
+        bearish_count = sum(1 for v in news.values() if isinstance(v, dict) and v.get("direction") == "BEARISH")
         summary = {
             "cycle_id": cycle_id,
             "ts": datetime.now(timezone.utc).isoformat(),
@@ -593,6 +708,9 @@ class AutonomousAgent:
             "total_return_pct": paper_after["total_return_pct"],
             "open_longs": len(paper_after["longs"]),
             "open_shorts": len(paper_after["shorts"]),
+            "news_bullish": bullish_count,
+            "news_bearish": bearish_count,
+            "top_sectors": sectors.get("top_sectors", []) if isinstance(sectors, dict) else [],
         }
         self._last_cycle_ts = summary["ts"]
         self._last_cycle_summary = summary

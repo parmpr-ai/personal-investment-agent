@@ -8,6 +8,13 @@ import httpx
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; InvestAgent/6.0)"}
 _TIMEOUT = 8
 
+# Sector ETFs for rotation detection
+SECTOR_ETFS = {
+    "XLK": "Tech", "XLF": "Financials", "XLE": "Energy",
+    "XLV": "Healthcare", "XLY": "ConsumerDisc", "XLI": "Industrials",
+    "XLC": "Comms", "XLRE": "RealEstate", "XLB": "Materials",
+}
+
 
 async def _get(url: str, params: dict | None = None) -> dict:
     async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_HEADERS) as client:
@@ -17,12 +24,12 @@ async def _get(url: str, params: dict | None = None) -> dict:
 
 
 async def fetch_quote(ticker: str) -> Dict[str, Any]:
+    """Fetch intraday quote + derive RSI, SMA, RVOL from 5m bars."""
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
         data = await _get(url, {"range": "1d", "interval": "5m"})
         result = data.get("chart", {}).get("result", [{}])[0]
         meta = result.get("meta", {})
-        timestamps = result.get("timestamp", [])
         closes = (result.get("indicators", {}).get("quote", [{}])[0].get("close") or [])
         volumes = (result.get("indicators", {}).get("quote", [{}])[0].get("volume") or [])
         valid_closes = [c for c in closes if c is not None]
@@ -30,12 +37,16 @@ async def fetch_quote(ticker: str) -> Dict[str, Any]:
         prev_close = meta.get("previousClose") or meta.get("chartPreviousClose") or 0
         last = meta.get("regularMarketPrice") or (valid_closes[-1] if valid_closes else 0)
         change_pct = round((last - prev_close) / prev_close * 100, 2) if prev_close else 0
-        avg_vol_20 = meta.get("regularMarketVolume", 0)
-        recent_vol = valid_volumes[-1] if valid_volumes else avg_vol_20
-        rvol = round(recent_vol / avg_vol_20, 2) if avg_vol_20 else 1.0
+        avg_vol = meta.get("regularMarketVolume", 0)
+        recent_vol = valid_volumes[-1] if valid_volumes else avg_vol
+        rvol = round(recent_vol / avg_vol, 2) if avg_vol else 1.0
         sma20 = round(sum(valid_closes[-20:]) / min(20, len(valid_closes)), 2) if valid_closes else last
-        above_sma20 = last > sma20 if sma20 else True
         rsi = _compute_rsi(valid_closes)
+        w52_high = meta.get("fiftyTwoWeekHigh") or last
+        w52_low = meta.get("fiftyTwoWeekLow") or last
+        # How far from 52w high (0% = at high, 100% = at low)
+        w52_range = w52_high - w52_low
+        pct_from_high = round((w52_high - last) / w52_range * 100, 1) if w52_range else 0
         return {
             "ticker": ticker.upper(),
             "price": round(last, 2),
@@ -44,10 +55,13 @@ async def fetch_quote(ticker: str) -> Dict[str, Any]:
             "volume": recent_vol,
             "rvol": rvol,
             "sma20": sma20,
-            "above_sma20": above_sma20,
+            "above_sma20": last > sma20 if sma20 else True,
             "rsi": rsi,
-            "52w_high": meta.get("fiftyTwoWeekHigh"),
-            "52w_low": meta.get("fiftyTwoWeekLow"),
+            "52w_high": w52_high,
+            "52w_low": w52_low,
+            "pct_from_52w_high": pct_from_high,
+            "near_52w_high": pct_from_high < 5,
+            "near_52w_low": pct_from_high > 85,
             "market_cap": meta.get("marketCap"),
             "currency": meta.get("currency", "USD"),
             "exchange": meta.get("exchangeName", ""),
@@ -57,6 +71,45 @@ async def fetch_quote(ticker: str) -> Dict[str, Any]:
         }
     except Exception as e:
         return {"ticker": ticker.upper(), "ok": False, "error": str(e), "price": 0, "change_pct": 0}
+
+
+async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
+    """Fetch daily OHLCV for multi-day trend, ADX, SMA50, relative strength."""
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+        data = await _get(url, {"range": f"{days}d", "interval": "1d"})
+        result = data.get("chart", {}).get("result", [{}])[0]
+        q = result.get("indicators", {}).get("quote", [{}])[0]
+        highs = [h for h in (q.get("high") or []) if h is not None]
+        lows  = [l for l in (q.get("low")  or []) if l is not None]
+        closes = [c for c in (q.get("close") or []) if c is not None]
+        if not closes:
+            return {"ticker": ticker.upper(), "ok": False, "error": "no daily data"}
+        sma20 = sum(closes[-20:]) / min(20, len(closes)) if len(closes) >= 5 else closes[-1]
+        sma50 = sum(closes[-50:]) / min(50, len(closes)) if len(closes) >= 10 else closes[-1]
+        last = closes[-1]
+        # 5-day trend: slope of last 5 closes
+        if len(closes) >= 5:
+            slope = (closes[-1] - closes[-5]) / closes[-5] * 100
+        else:
+            slope = 0
+        adx = _compute_adx(highs, lows, closes)
+        return {
+            "ticker": ticker.upper(),
+            "ok": True,
+            "closes": closes,
+            "sma20_daily": round(sma20, 2),
+            "sma50_daily": round(sma50, 2),
+            "above_sma20_daily": last > sma20,
+            "above_sma50_daily": last > sma50,
+            "golden_cross": sma20 > sma50,  # SMA20 > SMA50 = bullish
+            "trend_5d_pct": round(slope, 2),
+            "trend_direction": "UP" if slope > 1 else ("DOWN" if slope < -1 else "FLAT"),
+            "adx": adx,
+            "strong_trend": adx is not None and adx > 25,
+        }
+    except Exception as e:
+        return {"ticker": ticker.upper(), "ok": False, "error": str(e)}
 
 
 def _compute_rsi(closes: list, period: int = 14) -> Optional[float]:
@@ -69,41 +122,148 @@ def _compute_rsi(closes: list, period: int = 14) -> Optional[float]:
     avg_loss = sum(losses) / period
     if avg_loss == 0:
         return 100.0
-    rs = avg_gain / avg_loss
-    return round(100 - (100 / (1 + rs)), 1)
+    return round(100 - (100 / (1 + avg_gain / avg_loss)), 1)
 
 
-async def fetch_quotes(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
-    tasks = [fetch_quote(t) for t in tickers]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+def _compute_adx(highs: list, lows: list, closes: list, period: int = 14) -> Optional[float]:
+    """Average Directional Index — measures trend strength (>25 = strong trend)."""
+    n = min(len(highs), len(lows), len(closes))
+    if n < period + 2:
+        return None
+    highs, lows, closes = highs[-n:], lows[-n:], closes[-n:]
+    plus_dm, minus_dm, tr_list = [], [], []
+    for i in range(1, n):
+        up   = highs[i]  - highs[i-1]
+        down = lows[i-1] - lows[i]
+        plus_dm.append(up   if up > down and up > 0 else 0)
+        minus_dm.append(down if down > up and down > 0 else 0)
+        tr = max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1]))
+        tr_list.append(tr)
+    def smooth(lst):
+        s = sum(lst[:period])
+        result = [s]
+        for v in lst[period:]:
+            s = s - s / period + v
+            result.append(s)
+        return result
+    atr   = smooth(tr_list)
+    s_pdm = smooth(plus_dm)
+    s_mdm = smooth(minus_dm)
+    dx_list = []
+    for a, p, m in zip(atr, s_pdm, s_mdm):
+        if a == 0:
+            continue
+        di_plus  = 100 * p / a
+        di_minus = 100 * m / a
+        denom = di_plus + di_minus
+        dx_list.append(100 * abs(di_plus - di_minus) / denom if denom else 0)
+    if not dx_list:
+        return None
+    return round(sum(dx_list[-period:]) / min(period, len(dx_list)), 1)
+
+
+def _relative_strength(ticker_closes: list, spy_closes: list, days: int = 20) -> Optional[float]:
+    """RS = stock return / SPY return over N days. >1.0 = outperforming."""
+    if len(ticker_closes) < days + 1 or len(spy_closes) < days + 1:
+        return None
+    t_ret = (ticker_closes[-1] - ticker_closes[-days]) / ticker_closes[-days]
+    s_ret = (spy_closes[-1]  - spy_closes[-days])  / spy_closes[-days]
+    if s_ret == 0:
+        return None
+    return round(t_ret / abs(s_ret) if s_ret < 0 else t_ret / s_ret, 2)
+
+
+async def fetch_enhanced_quotes(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
+    """
+    Returns intraday quote enriched with daily trend, ADX, relative strength vs SPY.
+    Runs all fetches concurrently.
+    """
+    all_tickers = list(set(tickers + ["SPY"]))
+    intraday_tasks  = [fetch_quote(t) for t in all_tickers]
+    daily_tasks     = [fetch_quote_daily(t, 60) for t in all_tickers]
+
+    intraday_results, daily_results = await asyncio.gather(
+        asyncio.gather(*intraday_tasks, return_exceptions=True),
+        asyncio.gather(*daily_tasks,    return_exceptions=True),
+    )
+
+    intraday = {}
+    for t, r in zip(all_tickers, intraday_results):
+        intraday[t.upper()] = r if isinstance(r, dict) else {"ok": False, "error": str(r)}
+
+    daily = {}
+    for t, r in zip(all_tickers, daily_results):
+        daily[t.upper()] = r if isinstance(r, dict) else {"ok": False, "error": str(r)}
+
+    spy_closes = daily.get("SPY", {}).get("closes", [])
+
     out = {}
-    for ticker, res in zip(tickers, results):
-        out[ticker.upper()] = res if isinstance(res, dict) else {"ticker": ticker.upper(), "ok": False, "error": str(res)}
+    for ticker in tickers:
+        t = ticker.upper()
+        base = intraday.get(t, {"ok": False})
+        d    = daily.get(t, {})
+        if d.get("ok"):
+            base.update({
+                "sma20_daily":       d.get("sma20_daily"),
+                "sma50_daily":       d.get("sma50_daily"),
+                "above_sma20_daily": d.get("above_sma20_daily"),
+                "above_sma50_daily": d.get("above_sma50_daily"),
+                "golden_cross":      d.get("golden_cross"),
+                "trend_5d_pct":      d.get("trend_5d_pct"),
+                "trend_direction":   d.get("trend_direction"),
+                "adx":               d.get("adx"),
+                "strong_trend":      d.get("strong_trend"),
+                "rs_vs_spy":         _relative_strength(d.get("closes", []), spy_closes),
+            })
+        out[t] = base
     return out
 
 
-async def fetch_macro() -> Dict[str, Any]:
-    indices = {"^GSPC": "SP500", "^NDX": "NDX100", "^RUT": "Russell2K", "^VIX": "VIX", "^TNX": "US10Y", "DX-Y.NYB": "DXY", "BTC-USD": "BTC"}
-    tasks = {alias: fetch_quote(sym) for sym, alias in indices.items()}
-    results = {}
-    for alias, coro in tasks.items():
-        results[alias] = await coro
-    vix = results.get("VIX", {}).get("price", 18.4)
-    us10y = results.get("US10Y", {}).get("price", 4.43)
-    dxy = results.get("DXY", {}).get("price", 104.1)
-    btc = results.get("BTC", {}).get("price", 102400)
-    macro_regime = _classify_regime(vix, us10y, dxy)
+async def fetch_sector_momentum() -> Dict[str, Any]:
+    """Fetch all sector ETFs to detect rotation — which sectors are hot."""
+    tasks = [fetch_quote(etf) for etf in SECTOR_ETFS]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    sectors = {}
+    for etf, res in zip(SECTOR_ETFS.keys(), results):
+        if isinstance(res, dict) and res.get("ok"):
+            sectors[etf] = {
+                "name": SECTOR_ETFS[etf],
+                "change_pct": res.get("change_pct", 0),
+                "above_sma20": res.get("above_sma20", False),
+                "rvol": res.get("rvol", 1.0),
+                "rsi": res.get("rsi"),
+            }
+    # Rank by day change
+    ranked = sorted(sectors.items(), key=lambda x: x[1]["change_pct"], reverse=True)
+    top_sectors    = [v["name"] for _, v in ranked[:3]]
+    bottom_sectors = [v["name"] for _, v in ranked[-3:]]
     return {
-        "vix": vix,
-        "us10y": us10y,
-        "dxy": dxy,
-        "btc": btc,
+        "sectors": sectors,
+        "top_sectors": top_sectors,
+        "bottom_sectors": bottom_sectors,
+        "rotation_signal": top_sectors[0] if top_sectors else "Unknown",
+    }
+
+
+async def fetch_macro() -> Dict[str, Any]:
+    indices = {
+        "^GSPC": "SP500", "^NDX": "NDX100", "^RUT": "Russell2K",
+        "^VIX": "VIX", "^TNX": "US10Y", "DX-Y.NYB": "DXY", "BTC-USD": "BTC",
+    }
+    tasks = {alias: fetch_quote(sym) for sym, alias in indices.items()}
+    results = {alias: await coro for alias, coro in tasks.items()}
+    vix   = results.get("VIX",   {}).get("price", 18.4)
+    us10y = results.get("US10Y", {}).get("price", 4.43)
+    dxy   = results.get("DXY",   {}).get("price", 104.1)
+    btc   = results.get("BTC",   {}).get("price", 102400)
+    return {
+        "vix": vix, "us10y": us10y, "dxy": dxy, "btc": btc,
         "sp500_chg": results.get("SP500", {}).get("change_pct", 0),
-        "ndx_chg": results.get("NDX100", {}).get("change_pct", 0),
-        "regime": macro_regime,
-        "hostile": vix > 25 or us10y > 4.65,
-        "as_of": datetime.now(timezone.utc).isoformat(),
-        "indices": results,
+        "ndx_chg":   results.get("NDX100", {}).get("change_pct", 0),
+        "regime":    _classify_regime(vix, us10y, dxy),
+        "hostile":   vix > 25 or us10y > 4.65,
+        "as_of":     datetime.now(timezone.utc).isoformat(),
+        "indices":   results,
     }
 
 
@@ -119,6 +279,16 @@ def _classify_regime(vix: float, us10y: float, dxy: float) -> str:
     return "NEUTRAL"
 
 
+async def fetch_quotes(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Backward-compatible simple fetch (intraday only)."""
+    tasks = [fetch_quote(t) for t in tickers]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    return {
+        t.upper(): (r if isinstance(r, dict) else {"ticker": t.upper(), "ok": False, "error": str(r)})
+        for t, r in zip(tickers, results)
+    }
+
+
 async def fetch_news_sentiment(tickers: List[str]) -> Dict[str, List[Dict]]:
     out: Dict[str, List[Dict]] = {}
     async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_HEADERS) as client:
@@ -127,15 +297,10 @@ async def fetch_news_sentiment(tickers: List[str]) -> Dict[str, List[Dict]]:
             try:
                 r = await client.get(url)
                 root = ET.fromstring(r.text)
-                items = []
-                for item in root.findall(".//item")[:5]:
-                    title_el = item.find("title")
-                    pub_el = item.find("pubDate")
-                    items.append({
-                        "title": title_el.text if title_el is not None else "",
-                        "published": pub_el.text if pub_el is not None else "",
-                    })
-                out[ticker.upper()] = items
+                out[ticker.upper()] = [
+                    {"title": (item.findtext("title") or ""), "published": (item.findtext("pubDate") or "")}
+                    for item in root.findall(".//item")[:5]
+                ]
             except Exception:
                 out[ticker.upper()] = []
     return out
