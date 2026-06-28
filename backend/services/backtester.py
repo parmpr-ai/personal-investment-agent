@@ -258,6 +258,12 @@ def _get_score_fns():
     return _STRATEGY_SCORE_FNS
 
 
+# ── Transaction cost model ────────────────────────────────────────────────────
+# 0.05% slippage per leg (market impact) + $0.005/share commission (IB-style)
+SLIPPAGE_PCT       = 0.0005
+COMMISSION_PER_SHR = 0.005
+
+
 def simulate_strategy(
     strategy: str,
     dates: List[str],
@@ -268,6 +274,7 @@ def simulate_strategy(
     """
     Simulate one strategy on a single ticker's history.
     Returns equity curve, trade log, and performance metrics.
+    Applies 0.05% slippage + $0.005/share commission per leg.
     """
     cfg = config or {}
     min_conf = cfg.get("min_confidence", 65)
@@ -285,9 +292,11 @@ def simulate_strategy(
     equity = [capital] * warmup
     cash = capital
     position_qty = 0.0
-    entry_price = 0.0
+    entry_price = 0.0      # effective (post-slippage) entry price
     entry_bar = -1
     trades: List[Dict] = []
+    total_commission = 0.0
+    total_slippage_cost = 0.0
     macro_neutral = {"hostile": False, "regime": "NEUTRAL", "vix": 18}
 
     for i in range(warmup, len(closes)):
@@ -296,32 +305,44 @@ def simulate_strategy(
             equity.append(equity[-1])
             continue
 
-        portfolio_value = cash + position_qty * price
-
         # ── Exit logic ─────────────────────────────────────────────────────
         if position_qty != 0 and entry_price > 0:
-            pnl_pct = ((price - entry_price) / entry_price * 100
+            # Effective exit price: slippage works against us
+            if not is_short:
+                eff_exit = price * (1 - SLIPPAGE_PCT)   # sell slightly lower
+            else:
+                eff_exit = price * (1 + SLIPPAGE_PCT)   # cover slightly higher
+
+            commission = position_qty * COMMISSION_PER_SHR
+
+            pnl_pct = ((eff_exit - entry_price) / entry_price * 100
                        if not is_short
-                       else (entry_price - price) / entry_price * 100)
+                       else (entry_price - eff_exit) / entry_price * 100)
 
             should_exit = (
                 pnl_pct >= take_profit_pct or
                 pnl_pct <= -cut_loss_pct or
-                (i - entry_bar) >= 20  # max hold 20 bars
+                (i - entry_bar) >= 20
             )
             if should_exit:
-                exit_val = position_qty * price if not is_short else \
-                    entry_price * position_qty + (entry_price - price) * position_qty
-                cash = exit_val if not is_short else cash + (entry_price - price) * position_qty
-                pnl = pnl_pct
+                if not is_short:
+                    cash = position_qty * eff_exit - commission
+                else:
+                    cash = cash + (entry_price - eff_exit) * position_qty - commission
+
+                total_commission += commission
+                total_slippage_cost += abs(price - eff_exit) * position_qty
+
                 trades.append({
                     "entry_bar": entry_bar,
                     "exit_bar": i,
                     "entry_price": round(entry_price, 2),
-                    "exit_price": round(price, 2),
-                    "pnl_pct": round(pnl, 2),
+                    "exit_price": round(eff_exit, 2),
+                    "raw_exit_price": round(price, 2),
+                    "pnl_pct": round(pnl_pct, 2),
                     "bars_held": i - entry_bar,
-                    "win": pnl > 0,
+                    "win": pnl_pct > 0,
+                    "commission": round(commission * 2, 2),  # both legs
                     "date": dates[i] if i < len(dates) else "",
                 })
                 position_qty = 0.0
@@ -340,19 +361,33 @@ def simulate_strategy(
                 shares = int((cash * risk_pct) / stop_dist)
                 if shares < 1:
                     shares = 1
-                cost = shares * price
-                if cost <= cash * 0.30:  # max 30% of capital per position
-                    entry_price = price
+
+                # Effective entry: slippage works against us
+                if not is_short:
+                    eff_entry = price * (1 + SLIPPAGE_PCT)  # buy slightly higher
+                else:
+                    eff_entry = price * (1 - SLIPPAGE_PCT)  # short at slightly lower
+
+                commission = shares * COMMISSION_PER_SHR
+                cost = shares * eff_entry + commission
+
+                if cost <= cash * 0.30:
+                    total_commission += commission
+                    total_slippage_cost += abs(price - eff_entry) * shares
+                    entry_price = eff_entry
                     entry_bar = i
                     if not is_short:
                         position_qty = shares
                         cash -= cost
                     else:
-                        position_qty = shares  # short shares
-                        cash += cost  # receive cash from short sale
+                        position_qty = shares
+                        cash += shares * eff_entry - commission
 
-        current_value = cash + position_qty * price if not is_short else \
-            cash - position_qty * price + 2 * position_qty * entry_price if entry_price > 0 else cash
+        current_value = (
+            cash + position_qty * price if not is_short
+            else (cash - position_qty * price + 2 * position_qty * entry_price
+                  if entry_price > 0 else cash)
+        )
         equity.append(max(current_value, 0))
 
     return {
@@ -361,6 +396,8 @@ def simulate_strategy(
         "equity_curve": equity,
         "start_capital": 100_000.0,
         "end_capital": equity[-1] if equity else 100_000.0,
+        "total_commission": round(total_commission, 2),
+        "total_slippage_cost": round(total_slippage_cost, 2),
     }
 
 
