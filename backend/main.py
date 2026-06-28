@@ -17,7 +17,7 @@ from services.ibkr_trader import test_ibkr_paper, get_ibkr_paper_account
 from services.strategy_tracker import get_strategy_stats, get_pnl_series, get_hourly_stats, get_today_summary
 from services.regime_detector import detect_regime
 from services.institutional_signals import get_institutional_signal, get_institutional_signals_batch
-from services.backtester import run_backtest, get_latest_results, get_backtest_status
+from services.backtester import run_backtest, get_latest_results, get_backtest_status, run_walkforward_backtest, run_portfolio_backtest
 from services.ml_scorer import train_all_models, models_status, walk_forward_validate, wf_results
 load_dotenv()
 try:
@@ -380,6 +380,15 @@ async def agent_ml_walkforward(background_tasks: _BT):
 
 @app.get('/agent/ml/walkforward')
 def agent_ml_walkforward_results(): return wf_results()
+
+@app.post('/agent/backtest/walkforward')
+async def agent_backtest_wf(background_tasks: _BT):
+ background_tasks.add_task(run_walkforward_backtest)
+ return {'ok': True, 'message': 'Walk-forward backtest started. Results returned when complete (poll not needed — runs inline for now).'}
+
+@app.post('/agent/backtest/portfolio')
+async def agent_backtest_portfolio():
+ return await run_portfolio_backtest()
 
 # ── Risk Report ───────────────────────────────────────────────────────────────
 @app.get('/agent/risk/report')
