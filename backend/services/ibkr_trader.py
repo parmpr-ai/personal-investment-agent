@@ -231,3 +231,36 @@ def test_ibkr_paper(settings: Dict | None = None) -> Dict[str, Any]:
 
 def get_ibkr_paper_account(settings: Dict | None = None) -> Dict[str, Any]:
     return _trader.get_account_summary("ibkr_paper", settings)
+
+
+def cancel_ibkr_orders(settings: Dict | None = None) -> Dict[str, Any]:
+    return _trader.cancel_all("ibkr_paper", settings)
+
+
+def get_ibkr_paper_status(settings: Dict | None = None) -> Dict[str, Any]:
+    """Composite status: port reachability + account summary (if reachable)."""
+    conn = _trader.connection_test("ibkr_paper", settings)
+    params = _get_connection_params("ibkr_paper", settings)
+    result: Dict[str, Any] = {
+        "mode": "ibkr_paper",
+        "host": params["host"],
+        "port": params["port"],
+        "client_id": params["client_id"],
+        "reachable": conn["reachable"],
+        "message": conn.get("message", ""),
+    }
+    if conn["reachable"]:
+        acct = _trader.get_account_summary("ibkr_paper", settings)
+        if acct.get("ok"):
+            result["account"] = {
+                "net_liquidation": acct["net_liquidation"],
+                "cash": acct["cash"],
+                "buying_power": acct["buying_power"],
+                "unrealized_pnl": acct["unrealized_pnl"],
+                "realized_pnl": acct["realized_pnl"],
+            }
+        else:
+            result["account_error"] = acct.get("error", "unknown")
+    else:
+        result["hint"] = conn.get("hint", "")
+    return result

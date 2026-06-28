@@ -13,7 +13,7 @@ from services.manual_holdings import create_manual_holding, delete_manual_holdin
 from services.news_intelligence import get_news_intelligence
 from services.autonomous_agent import agent as autonomous_agent, get_recent_decisions, get_agent_log
 from services.paper_trading import get_portfolio_summary as paper_summary, get_trade_history, reset_book
-from services.ibkr_trader import test_ibkr_paper, get_ibkr_paper_account
+from services.ibkr_trader import test_ibkr_paper, get_ibkr_paper_account, cancel_ibkr_orders, get_ibkr_paper_status
 from services.strategy_tracker import get_strategy_stats, get_pnl_series, get_hourly_stats, get_today_summary
 from services.regime_detector import detect_regime
 from services.institutional_signals import get_institutional_signal, get_institutional_signals_batch
@@ -319,11 +319,17 @@ def paper_trades(limit:int=100): return get_trade_history(limit)
 @app.post('/agent/paper/reset')
 def paper_reset(): return reset_book()
 
+@app.get('/agent/ibkr-paper/status')
+def ibkr_paper_status(): return get_ibkr_paper_status(get_settings())
+
 @app.get('/agent/ibkr-paper/test')
 def ibkr_paper_test(): return test_ibkr_paper(get_settings())
 
 @app.get('/agent/ibkr-paper/account')
 def ibkr_paper_account(): return get_ibkr_paper_account(get_settings())
+
+@app.post('/agent/ibkr-paper/cancel_all')
+def ibkr_paper_cancel_all(): return cancel_ibkr_orders(get_settings())
 
 @app.get('/agent/analytics/pnl')
 def analytics_pnl(hours:int=24): return get_pnl_series(hours)
