@@ -17,6 +17,7 @@ import asyncio
 import json
 import pickle
 import time
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -31,7 +32,73 @@ MODEL_DIR.mkdir(exist_ok=True)
 _models: Dict[str, Any] = {}
 _model_ts: Dict[str, float] = {}
 
-RETRAIN_INTERVAL = 7 * 86400  # 7 days
+RETRAIN_INTERVAL = 7 * 86400        # 7 days (age-based retrain)
+RETRAIN_COOLDOWN = 24 * 3600        # 24h minimum between auto-retrains
+ACCURACY_RETRAIN_THRESHOLD = 0.45   # trigger retrain if rolling accuracy drops below 45%
+ACCURACY_MIN_TRADES = 10            # need at least this many trades before checking
+
+# Rolling trade accuracy tracker — {strategy: deque of 1/0 (correct/incorrect)}
+_rolling_outcomes: Dict[str, deque] = {}
+_last_auto_retrain: float = 0.0
+
+
+def record_trade_outcome(strategy: str, was_profitable: bool) -> None:
+    """
+    Record whether a completed trade was profitable.
+    Called from autonomous_agent after SELL/COVER execution.
+    Maintains a rolling window of the last 20 outcomes per strategy.
+    """
+    if strategy not in _rolling_outcomes:
+        _rolling_outcomes[strategy] = deque(maxlen=20)
+    _rolling_outcomes[strategy].append(1 if was_profitable else 0)
+
+
+def rolling_accuracy(strategy: str) -> Optional[float]:
+    """Return rolling accuracy (0-1) for the last ≤20 trades, or None if < min trades."""
+    outcomes = _rolling_outcomes.get(strategy)
+    if not outcomes or len(outcomes) < ACCURACY_MIN_TRADES:
+        return None
+    return sum(outcomes) / len(outcomes)
+
+
+def needs_retrain(strategy: str) -> bool:
+    """True if rolling accuracy is below threshold with enough sample trades."""
+    acc = rolling_accuracy(strategy)
+    return acc is not None and acc < ACCURACY_RETRAIN_THRESHOLD
+
+
+async def maybe_retrain_async() -> Optional[Dict[str, Any]]:
+    """
+    Check all strategies' rolling accuracy. If any is below
+    ACCURACY_RETRAIN_THRESHOLD and the cooldown has passed, retrain all models.
+    Returns the training result dict, or None if retrain was skipped.
+    """
+    global _last_auto_retrain
+
+    if time.time() - _last_auto_retrain < RETRAIN_COOLDOWN:
+        return None  # cooldown active
+
+    struggling = [s for s in _rolling_outcomes if needs_retrain(s)]
+    if not struggling:
+        return None  # all strategies above threshold
+
+    _last_auto_retrain = time.time()
+    result = await train_all_models()
+    result["trigger"] = "auto"
+    result["struggling_strategies"] = struggling
+    return result
+
+
+def accuracy_status() -> Dict[str, Any]:
+    """Return rolling accuracy for all tracked strategies (for /agent/ml/status endpoint)."""
+    return {
+        s: {
+            "trades_recorded": len(outcomes),
+            "rolling_accuracy": round(sum(outcomes) / len(outcomes), 3) if outcomes else None,
+            "needs_retrain": needs_retrain(s),
+        }
+        for s, outcomes in _rolling_outcomes.items()
+    }
 
 
 # ── Feature extraction ────────────────────────────────────────────────────────

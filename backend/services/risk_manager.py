@@ -405,6 +405,44 @@ class RiskManager:
             "days_analyzed": min_len,
         }
 
+    def marginal_var_per_position(
+        self,
+        open_positions: List[Dict[str, Any]],
+        returns_cache: Dict[str, List[float]],
+        portfolio_value: float,
+        confidence: float = 0.95,
+    ) -> Dict[str, float]:
+        """
+        Compute marginal CVaR contribution for each position.
+        marginal_cvar[ticker] = CVaR_full_portfolio - CVaR_without_that_position.
+        A large positive value means that position is the main driver of tail risk.
+        Returns {} if not enough data.
+        """
+        if len(open_positions) < 2 or not returns_cache or portfolio_value <= 0:
+            return {}
+
+        full = self.portfolio_cvar(open_positions, returns_cache, portfolio_value, confidence)
+        full_cvar = full.get("cvar_pct", 0.0)
+        if full_cvar == 0.0:
+            return {}
+
+        marginal: Dict[str, float] = {}
+        for pos in open_positions:
+            t = pos.get("ticker", "").upper()
+            remaining = [p for p in open_positions if p.get("ticker", "").upper() != t]
+            if not remaining:
+                marginal[t] = round(full_cvar, 2)
+                continue
+            # Remaining portfolio value excludes this position's exposure
+            pos_val = abs(float(pos.get("market_value", 0)))
+            remaining_pv = max(portfolio_value - pos_val, 1.0)
+            without = self.portfolio_cvar(remaining, returns_cache, remaining_pv, confidence)
+            without_cvar = without.get("cvar_pct", 0.0)
+            # Negative CVaR means loss; full_cvar - without_cvar = how much this pos adds to tail risk
+            marginal[t] = round(full_cvar - without_cvar, 2)
+
+        return marginal
+
     def portfolio_health(self, portfolio: Dict[str, Any], macro: Dict[str, Any]) -> Dict[str, Any]:
         total = float(portfolio.get("total_value", 1))
         cash = float(portfolio.get("cash", 0))

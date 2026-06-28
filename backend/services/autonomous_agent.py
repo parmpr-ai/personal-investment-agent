@@ -752,6 +752,7 @@ class AutonomousAgent:
         self._regime_last_fetch: float = 0.0
         self._institutional_last_fetch: float = 0.0
         self._returns_cache: Dict[str, Any] = {}  # for correlation penalty
+        self._position_strategies: Dict[str, str] = {}  # ticker → opening strategy
 
     def configure(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         self.config.update(updates)
@@ -815,8 +816,16 @@ class AutonomousAgent:
 
         # ── Time-of-day filter: avoid first 30 min and last 15 min of US session ──
         now_utc = _dt.now(_tz.utc)
-        now_et_hour = (now_utc.hour - 5) % 24  # approximate ET (UTC-5)
-        now_et_min = now_utc.minute
+        try:
+            from zoneinfo import ZoneInfo
+            now_et = now_utc.astimezone(ZoneInfo("America/New_York"))
+        except Exception:
+            from datetime import timedelta as _td
+            # Rough DST heuristic: EDT (UTC-4) March–Nov, EST (UTC-5) otherwise
+            _offset = -4 if 3 <= now_utc.month <= 10 else -5
+            now_et = now_utc + _td(hours=_offset)
+        now_et_hour = now_et.hour
+        now_et_min  = now_et.minute
         market_open = now_et_hour == 9 and now_et_min < 30    # 9:00-9:30 ET
         market_close = now_et_hour == 15 and now_et_min >= 45  # 15:45-16:00 ET
         avoid_new_entries = market_open or market_close
@@ -1045,8 +1054,22 @@ class AutonomousAgent:
                 try:
                     if action in ("BUY", "SHORT"):
                         record_entry(d.get("strategy", "unknown"), ticker, action, price, qty, cycle_id)
+                        self._position_strategies[ticker] = d.get("strategy", "unknown")
                     elif action in ("SELL", "COVER"):
                         record_exit(ticker, price, qty, cycle_id)
+                        # Record ML outcome for auto-retrain trigger
+                        opening_strategy = self._position_strategies.pop(ticker, None)
+                        if opening_strategy:
+                            pos_list = open_longs if action == "SELL" else open_shorts
+                            pos = next((p for p in pos_list if p.get("ticker") == ticker), None)
+                            if pos:
+                                avg = pos.get("avg_price", price)
+                                if action == "SELL":
+                                    pnl = (price - avg) / avg if avg else 0
+                                else:
+                                    pnl = (avg - price) / avg if avg else 0
+                                from services import ml_scorer as _mls
+                                _mls.record_trade_outcome(opening_strategy, pnl > 0)
                 except Exception as _te:
                     _log("warning", f"[{cycle_id}] Strategy tracking error: {_te}")
                 asyncio.create_task(send_trade_alert(
@@ -1073,6 +1096,14 @@ class AutonomousAgent:
             )
         except Exception as _pe:
             _log("warning", f"[{cycle_id}] P&L snapshot failed: {_pe}")
+
+        # Auto-retrain ML models if rolling accuracy drops below 45% (every 10 cycles)
+        if self._cycle_count % 10 == 0:
+            try:
+                from services import ml_scorer as _mls
+                asyncio.create_task(_mls.maybe_retrain_async())
+            except Exception:
+                pass
 
         bullish_count = sum(1 for v in news.values() if isinstance(v, dict) and v.get("direction") == "BULLISH")
         bearish_count = sum(1 for v in news.values() if isinstance(v, dict) and v.get("direction") == "BEARISH")
