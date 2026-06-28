@@ -1297,36 +1297,92 @@ function AgentLog({ log, loading }: { log: any[]; loading: boolean }) {
 function LastCycleSummary({ summary }: { summary: any }) {
   if (!summary) return null
 
+  const circuitBroken = summary.circuit_broken === true
+  const dailyPnl = summary.daily_pnl_pct ?? null
+  const totalReturn = summary.total_return_pct ?? null
+  const pv = summary.portfolio_value ?? null
+
+  // Keys to show prominently (rest shown in secondary grid)
+  const primaryKeys = ['executed', 'blocked', 'decisions', 'quotes_fetched', 'open_longs', 'open_shorts']
+  const skipKeys = new Set(['cycle_id', 'ts', 'circuit_broken', 'daily_pnl_pct', 'total_return_pct',
+    'portfolio_value', 'peak_value', 'drawdown_scale', 'top_sectors', 'news_bullish', 'news_bearish'])
+
   return (
     <Card
       style={{
         marginBottom: '20px',
-        background: 'rgba(59,130,246,0.04)',
-        borderColor: 'rgba(59,130,246,0.15)',
+        background: circuitBroken ? 'rgba(255,68,68,0.06)' : 'rgba(59,130,246,0.04)',
+        borderColor: circuitBroken ? 'rgba(255,68,68,0.3)' : 'rgba(59,130,246,0.15)',
       }}
     >
-      <SectionTitle>Last Cycle Summary</SectionTitle>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-          gap: '12px',
-        }}
-      >
-        {Object.entries(summary).map(([key, val]: any) => (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+        <SectionTitle style={{ margin: 0 }}>Last Cycle — {summary.ts ? new Date(summary.ts).toLocaleTimeString() : '—'}</SectionTitle>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Circuit breaker banner */}
+          {circuitBroken && (
+            <Badge color={C.red} bg="rgba(255,68,68,0.12)">
+              ⛔ CIRCUIT BREAKER ACTIVE
+            </Badge>
+          )}
+          {/* Daily P&L */}
+          {dailyPnl !== null && (
+            <Badge
+              color={dailyPnl >= 0 ? C.green : C.red}
+              bg={dailyPnl >= 0 ? 'rgba(0,255,136,0.08)' : 'rgba(255,68,68,0.08)'}
+            >
+              Day {dailyPnl >= 0 ? '+' : ''}{Number(dailyPnl).toFixed(2)}%
+            </Badge>
+          )}
+          {/* Total return */}
+          {totalReturn !== null && pv != null && (
+            <Badge
+              color={totalReturn >= 0 ? C.green : C.red}
+              bg={totalReturn >= 0 ? 'rgba(0,255,136,0.06)' : 'rgba(255,68,68,0.06)'}
+            >
+              {fmt$(pv)} ({totalReturn >= 0 ? '+' : ''}{Number(totalReturn).toFixed(2)}%)
+            </Badge>
+          )}
+          {/* Drawdown scale */}
+          {summary.drawdown_scale != null && summary.drawdown_scale < 0.95 && (
+            <Badge color={C.yellow} bg="rgba(245,158,11,0.08)">
+              DD scale {Number(summary.drawdown_scale).toFixed(2)}×
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      {/* Primary metrics row */}
+      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        {primaryKeys.map(key => summary[key] != null && (
           <div key={key}>
-            <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>
+            <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>
               {key.replace(/_/g, ' ')}
             </div>
-            <div style={{ color: C.textPrimary, fontSize: '13px', fontWeight: 600 }}>
-              {typeof val === 'boolean'
-                ? val ? 'Yes' : 'No'
-                : typeof val === 'number'
-                ? val.toString()
-                : String(val || '—')}
+            <div style={{ color: C.textPrimary, fontSize: '18px', fontWeight: 700 }}>
+              {summary[key]}
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Secondary grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px',
+        borderTop: `1px solid ${C.border}`, paddingTop: '10px' }}>
+        {Object.entries(summary)
+          .filter(([k]) => !primaryKeys.includes(k) && !skipKeys.has(k))
+          .map(([key, val]: any) => (
+            <div key={key}>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>
+                {key.replace(/_/g, ' ')}
+              </div>
+              <div style={{ color: C.textSecondary, fontSize: '12px', fontWeight: 600 }}>
+                {typeof val === 'boolean' ? (val ? 'Yes' : 'No')
+                  : Array.isArray(val) ? val.join(', ') || '—'
+                  : typeof val === 'number' ? val.toFixed(2)
+                  : String(val || '—')}
+              </div>
+            </div>
+          ))}
       </div>
     </Card>
   )

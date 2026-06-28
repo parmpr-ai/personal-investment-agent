@@ -22,7 +22,9 @@ from services.paper_trading import (
     get_open_longs,
     get_open_shorts,
     get_portfolio_summary,
+    INITIAL_CASH,
 )
+INITIAL_CASH_DEFAULT = INITIAL_CASH
 from services.ibkr_trader import place_ibkr_order, get_ibkr_paper_account, test_ibkr_paper
 from services.regime_detector import detect_regime, apply_regime_to_config
 from services.institutional_signals import institutional_score_delta, get_institutional_signals_batch
@@ -753,6 +755,11 @@ class AutonomousAgent:
         self._institutional_last_fetch: float = 0.0
         self._returns_cache: Dict[str, Any] = {}  # for correlation penalty
         self._position_strategies: Dict[str, str] = {}  # ticker → opening strategy
+        # Daily P&L tracking for circuit breaker
+        self._day_start_value: float = 0.0
+        self._last_day: Optional[str] = None
+        self._circuit_broken: bool = False  # True = daily loss limit hit, block new entries
+        self._last_regime_name: Optional[str] = None  # for regime-change alerts
 
     def configure(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         self.config.update(updates)
@@ -764,11 +771,15 @@ class AutonomousAgent:
         if self._running:
             return {"ok": False, "message": "Agent already running"}
         self._running = True
+        self._circuit_broken = False
         self._task = asyncio.create_task(self._run_loop())
         from services.ai_news_scorer import get_active_provider_name
         from services.finnhub_sentiment import is_available as fh_ok
         news_provider = get_active_provider_name() or ("finnhub" if fh_ok() else "keyword-only")
         _log("info", f"Agent started. Mode={self.config['mode']}, Cycle={self.config['cycle_minutes']}m, NewsProvider={news_provider}, Strategies={self.config['strategies']}")
+        asyncio.create_task(send_risk_alert(
+            f"🟢 Agent STARTED | Mode={self.config['mode']} | Cycle={self.config['cycle_minutes']}m | News={news_provider}"
+        ))
         return {"ok": True, "message": "Agent started", "config": self.config, "news_provider": news_provider}
 
     def stop(self) -> Dict[str, Any]:
@@ -777,6 +788,7 @@ class AutonomousAgent:
             self._task.cancel()
             self._task = None
         _log("info", "Agent stopped.")
+        asyncio.create_task(send_risk_alert("🔴 Agent STOPPED"))
         return {"ok": True, "message": "Agent stopped"}
 
     def status(self) -> Dict[str, Any]:
@@ -879,6 +891,13 @@ class AutonomousAgent:
             regime_name = regime_result.get("regime", "CHOPPY_RANGE")
             self._regime_cache = regime_result
             _log("info", f"[{cycle_id}] Regime={regime_name} confidence={regime_result.get('confidence')}% VIX={regime_result.get('vix')}")
+            # Alert on regime change
+            if self._last_regime_name and regime_name != self._last_regime_name:
+                asyncio.create_task(send_risk_alert(
+                    f"📊 REGIME CHANGE: {self._last_regime_name} → {regime_name}\n"
+                    f"Confidence: {regime_result.get('confidence')}% | VIX: {regime_result.get('vix')}"
+                ))
+            self._last_regime_name = regime_name
         except Exception as e:
             _log("warning", f"[{cycle_id}] Regime detection failed: {e}")
             regime_cfg = self.config
@@ -912,6 +931,30 @@ class AutonomousAgent:
         drawdown_scale = self._risk.drawdown_scalar(pv, self._peak_value)
         if drawdown_scale < 0.9:
             _log("warning", f"[{cycle_id}] Drawdown scalar={drawdown_scale:.2f} — reducing position sizes")
+
+        # ── Daily P&L tracking: reset at start of each new trading day ───────────
+        today_str = now_et.strftime("%Y-%m-%d") if hasattr(now_et, "strftime") else ""
+        if today_str and today_str != self._last_day:
+            self._day_start_value = pv if pv > 0 else INITIAL_CASH_DEFAULT
+            self._last_day = today_str
+            self._circuit_broken = False  # reset circuit breaker at day start
+            _log("info", f"[{cycle_id}] New trading day {today_str}: day_start=${self._day_start_value:,.0f}")
+        daily_pnl_pct = (
+            (pv - self._day_start_value) / self._day_start_value * 100
+            if self._day_start_value > 0 else 0.0
+        )
+
+        # ── Circuit breaker: daily loss limit ────────────────────────────────────
+        daily_limit = self.config.get("daily_loss_limit_pct", 3.0)
+        if not self._circuit_broken and daily_pnl_pct < -daily_limit:
+            self._circuit_broken = True
+            msg = (f"⛔ CIRCUIT BREAKER TRIGGERED\n"
+                   f"Daily P&L: {daily_pnl_pct:.2f}% (limit: -{daily_limit:.1f}%)\n"
+                   f"Portfolio: ${pv:,.0f} | No new entries until market open tomorrow.")
+            _log("warning", f"[{cycle_id}] {msg}")
+            asyncio.create_task(send_risk_alert(msg))
+        if self._circuit_broken:
+            _log("warning", f"[{cycle_id}] Circuit breaker active — daily P&L={daily_pnl_pct:.2f}%. Skipping new entries.")
 
         # Auto stop-loss check (hard stops before signal-based decisions)
         await self._check_stops(open_longs, open_shorts, quotes, cycle_id)
@@ -1021,11 +1064,16 @@ class AutonomousAgent:
                 qty = d.get("qty") or 1
 
             if not is_close:
+                # Block new entries if circuit breaker is active
+                if self._circuit_broken:
+                    _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": f"Circuit breaker: daily P&L {daily_pnl_pct:.2f}%"})
+                    blocked += 1
+                    continue
                 mock_portfolio = {
                     "total_value": paper["total_value"],
                     "cash": paper["cash"],
                     "positions": [{"symbol": p["ticker"], "market_value": p["market_value"], "portfolio_pct": p["market_value"] / max(paper["total_value"], 1) * 100, "qty": p["qty"]} for p in paper["positions"]],
-                    "daily_pnl_pct": 0,
+                    "daily_pnl_pct": daily_pnl_pct,
                 }
                 risk = self._risk.check_trade(action, ticker, qty, price, mock_portfolio, macro)
                 if not risk["approved"]:
@@ -1118,6 +1166,8 @@ class AutonomousAgent:
             "vix": macro.get("vix"),
             "portfolio_value": paper_after["total_value"],
             "total_return_pct": paper_after["total_return_pct"],
+            "daily_pnl_pct": round(daily_pnl_pct, 2),
+            "circuit_broken": self._circuit_broken,
             "open_longs": len(paper_after["longs"]),
             "open_shorts": len(paper_after["shorts"]),
             "news_bullish": bullish_count,

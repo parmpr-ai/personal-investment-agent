@@ -102,12 +102,12 @@ class RiskManager:
         daily_pnl_pct = float(portfolio.get("daily_pnl_pct", 0))
         vix = float(macro.get("vix", 18))
 
-        # Daily loss circuit breaker
-        if daily_pnl_pct < -self.limits["daily_loss_limit_pct"]:
+        # Daily loss circuit breaker — only blocks new entries, not exit orders
+        if action in ("BUY", "SHORT") and daily_pnl_pct < -self.limits["daily_loss_limit_pct"]:
             return {
                 "approved": False,
                 "adjusted_qty": 0,
-                "reasons": [f"Daily loss limit hit ({daily_pnl_pct:.1f}%). No new buys today."],
+                "reasons": [f"Daily loss limit hit ({daily_pnl_pct:.1f}%). No new entries today."],
             }
 
         # VIX filter

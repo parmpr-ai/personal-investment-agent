@@ -390,6 +390,27 @@ async def agent_backtest_wf(background_tasks: _BT):
 async def agent_backtest_portfolio():
  return await run_portfolio_backtest()
 
+# ── Pairs Trading ─────────────────────────────────────────────────────────────
+@app.get('/agent/kelly')
+async def kelly_report():
+ from services.strategy_tracker import kelly_diagnostics
+ strategies = ['momentum', 'mean_reversion', 'breakout', 'trend_follow', 'short_momentum', 'short_breakdown']
+ return {'ok': True, 'strategies': [kelly_diagnostics(s) for s in strategies]}
+
+@app.get('/agent/pairs/scan')
+async def pairs_scan():
+ from services.pairs_trading import scan_pairs, get_open_pairs
+ from services.market_data import fetch_quotes
+ from services.autonomous_agent import agent as _ag
+ universe = _ag.config.get('universe', [])
+ try:
+  qs = await fetch_quotes(universe)
+  prices = {t: q.get('price', 0) for t, q in qs.items()}
+ except Exception:
+  prices = {}
+ signals = await scan_pairs(prices)
+ return {'ok': True, 'signals': signals, 'open_pairs': get_open_pairs()}
+
 # ── Risk Report ───────────────────────────────────────────────────────────────
 @app.get('/agent/risk/report')
 async def agent_risk_report():

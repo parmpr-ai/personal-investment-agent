@@ -1,4 +1,5 @@
 import asyncio
+import os
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -8,12 +9,22 @@ import httpx
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; InvestAgent/6.0)"}
 _TIMEOUT = 8
 
+# Optional API keys for data source fallbacks
+_FINNHUB_KEY: str = os.environ.get("FINNHUB_API_KEY", "")
+_AV_KEY: str = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
+
 # Sector ETFs for rotation detection
 SECTOR_ETFS = {
     "XLK": "Tech", "XLF": "Financials", "XLE": "Energy",
     "XLV": "Healthcare", "XLY": "ConsumerDisc", "XLI": "Industrials",
     "XLC": "Comms", "XLRE": "RealEstate", "XLB": "Materials",
 }
+
+# Yahoo Chart hosts — tried in order; first success wins
+_YAHOO_HOSTS = [
+    "query1.finance.yahoo.com",
+    "query2.finance.yahoo.com",
+]
 
 
 async def _get(url: str, params: dict | None = None) -> dict:
@@ -23,11 +34,94 @@ async def _get(url: str, params: dict | None = None) -> dict:
         return r.json()
 
 
-async def fetch_quote(ticker: str) -> Dict[str, Any]:
-    """Fetch intraday quote + RSI, SMA20, RVOL, VWAP, Bollinger, MACD, z-score from 5m bars."""
+async def _yahoo_chart(ticker: str, params: dict) -> dict:
+    """Try query1 then query2 Yahoo Finance endpoints."""
+    last_exc: Exception = RuntimeError("no hosts")
+    for host in _YAHOO_HOSTS:
+        try:
+            url = f"https://{host}/v8/finance/chart/{ticker}"
+            return await _get(url, params)
+        except Exception as exc:
+            last_exc = exc
+    raise last_exc
+
+
+async def _finnhub_quote(ticker: str) -> Optional[Dict[str, Any]]:
+    """Finnhub real-time quote fallback (requires FINNHUB_API_KEY)."""
+    if not _FINNHUB_KEY:
+        return None
     try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-        data = await _get(url, {"range": "1d", "interval": "5m"})
+        data = await _get(
+            "https://finnhub.io/api/v1/quote",
+            {"symbol": ticker, "token": _FINNHUB_KEY},
+        )
+        c, pc = data.get("c", 0), data.get("pc", 0)
+        if not c:
+            return None
+        change_pct = round((c - pc) / pc * 100, 2) if pc else 0
+        return {
+            "ticker": ticker.upper(), "price": round(c, 2),
+            "prev_close": round(pc, 2), "change_pct": change_pct,
+            "volume": data.get("v") or 0, "rvol": 1.0,
+            "sma20": round(c, 2), "above_sma20": True,
+            "rsi": None, "52w_high": data.get("h") or c,
+            "52w_low": data.get("l") or c,
+            "pct_from_52w_high": 0, "near_52w_high": False, "near_52w_low": False,
+            "market_cap": None, "currency": "USD", "exchange": "FINNHUB",
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "source": "finnhub", "ok": True,
+            "vwap": None, "above_vwap": None, "vwap_pct": None, "zscore": None,
+        }
+    except Exception:
+        return None
+
+
+async def _av_daily(ticker: str, days: int = 60) -> Optional[Dict[str, Any]]:
+    """Alpha Vantage daily OHLCV fallback (requires ALPHA_VANTAGE_API_KEY, free = 25 req/day)."""
+    if not _AV_KEY:
+        return None
+    try:
+        data = await _get(
+            "https://www.alphavantage.co/query",
+            {"function": "TIME_SERIES_DAILY", "symbol": ticker,
+             "outputsize": "compact", "apikey": _AV_KEY},
+        )
+        ts = data.get("Time Series (Daily)", {})
+        if not ts:
+            return None
+        dates = sorted(ts.keys(), reverse=True)[:days]
+        closes = [float(ts[d]["4. close"]) for d in reversed(dates)]
+        highs  = [float(ts[d]["2. high"])  for d in reversed(dates)]
+        lows   = [float(ts[d]["3. low"])   for d in reversed(dates)]
+        if not closes:
+            return None
+        last = closes[-1]
+        sma20 = sum(closes[-20:]) / min(20, len(closes))
+        sma50 = sum(closes[-50:]) / min(50, len(closes))
+        slope = (closes[-1] - closes[-5]) / closes[-5] * 100 if len(closes) >= 5 else 0
+        adx = _compute_adx(highs, lows, closes)
+        atr = _compute_atr_last(highs, lows, closes)
+        return {
+            "ticker": ticker.upper(), "ok": True, "closes": closes,
+            "sma20_daily": round(sma20, 2), "sma50_daily": round(sma50, 2),
+            "above_sma20_daily": last > sma20, "above_sma50_daily": last > sma50,
+            "golden_cross": sma20 > sma50,
+            "trend_5d_pct": round(slope, 2),
+            "trend_direction": "UP" if slope > 1 else ("DOWN" if slope < -1 else "FLAT"),
+            "adx": adx, "strong_trend": adx is not None and adx > 25,
+            "atr": round(atr, 4) if atr else None,
+            "atr_pct": round(atr / last * 100, 2) if atr and last else None,
+            "zscore_daily": _compute_zscore(closes),
+            "source": "alphavantage",
+        }
+    except Exception:
+        return None
+
+
+async def fetch_quote(ticker: str) -> Dict[str, Any]:
+    """Fetch intraday quote + indicators. Tries Yahoo query1→query2→Finnhub fallback."""
+    try:
+        data = await _yahoo_chart(ticker, {"range": "1d", "interval": "5m"})
         result = data.get("chart", {}).get("result", [{}])[0]
         meta = result.get("meta", {})
         closes = (result.get("indicators", {}).get("quote", [{}])[0].get("close") or [])
@@ -83,14 +177,17 @@ async def fetch_quote(ticker: str) -> Dict[str, Any]:
         out.update(macd) # macd, macd_signal, macd_hist, macd_bullish, macd_crossover, macd_hist_rising
         return out
     except Exception as e:
+        # Finnhub fallback for real-time price when Yahoo is unavailable
+        fb = await _finnhub_quote(ticker)
+        if fb:
+            return fb
         return {"ticker": ticker.upper(), "ok": False, "error": str(e), "price": 0, "change_pct": 0}
 
 
 async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
-    """Fetch daily OHLCV for multi-day trend, ADX, SMA50, relative strength."""
+    """Fetch daily OHLCV for trend/ADX/SMA50. Tries Yahoo query1→query2→Alpha Vantage fallback."""
     try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-        data = await _get(url, {"range": f"{days}d", "interval": "1d"})
+        data = await _yahoo_chart(ticker, {"range": f"{days}d", "interval": "1d"})
         result = data.get("chart", {}).get("result", [{}])[0]
         q = result.get("indicators", {}).get("quote", [{}])[0]
         highs = [h for h in (q.get("high") or []) if h is not None]
@@ -135,6 +232,10 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
             out[f"{k}_daily"] = v
         return out
     except Exception as e:
+        # Alpha Vantage fallback for daily OHLCV when Yahoo is unavailable
+        av = await _av_daily(ticker, days)
+        if av:
+            return av
         return {"ticker": ticker.upper(), "ok": False, "error": str(e)}
 
 
