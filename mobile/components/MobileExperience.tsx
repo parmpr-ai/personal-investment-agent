@@ -10,6 +10,7 @@ import {
   Sparkles, Trash2, TrendingUp, Wallet, X,
 } from 'lucide-react'
 import IntelligenceBadge from './ui/IntelligenceBadge'
+import AgentDashboard from './AgentDashboard'
 import {
   WORKSPACE_REGISTRY, WORKSPACE_MAP, WIDGET_CATALOG, WIDGET_MAP,
   DEFAULT_PINNED, DEFAULT_WORKSPACE_ID,
@@ -303,85 +304,8 @@ function NewsIntelContent() {
   )
 }
 
-function AgentStatusContent({ agentStatus, backtest }: { agentStatus: any; backtest: any }) {
-  const portfolio = agentStatus?.paper_portfolio || {}
-  const running   = !!agentStatus?.running
-  const regime    = (agentStatus?.last_regime as string) || 'UNKNOWN'
-  const totalVal  = Number(portfolio.total_value || 100_000)
-  const totalRet  = Number(portfolio.total_return_pct || 0)
-  const cash      = Number(portfolio.cash || 0)
-  const longs     = Array.isArray(portfolio.longs)  ? portfolio.longs.length  : 0
-  const shorts    = Array.isArray(portfolio.shorts) ? portfolio.shorts.length : 0
-  const positions = (portfolio.positions || []).length
-  const mc        = backtest?.monte_carlo || {}
-  const bestStrat = Array.isArray(backtest?.strategies) ? backtest.strategies[0] : null
-
-  const regimeColors: Record<string, [string, string]> = {
-    BULL_TREND: ['#24d18c', 'rgba(36,209,140,.14)'], BEAR_TREND: ['#fb7185', 'rgba(251,113,133,.14)'],
-    CHOPPY_RANGE: ['#fbbf24', 'rgba(251,191,36,.14)'], CRISIS: ['#ff6375', 'rgba(255,99,117,.18)'],
-  }
-  const [rc, rb] = regimeColors[regime] ?? ['#8fa2b5', 'rgba(148,163,184,.12)']
-
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-        <div>
-          <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Autonomous Agent</div>
-          <div style={{ fontSize: '26px', fontWeight: 800, letterSpacing: '-0.5px' }}>{totalVal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}</div>
-          <div style={{ fontSize: '18px', fontWeight: 700, color: retColor(totalRet), marginTop: '4px' }}>{fmtRet(totalRet)}</div>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, background: running ? 'rgba(36,209,140,.14)' : 'rgba(148,163,184,.1)', border: `1px solid ${running ? 'rgba(36,209,140,.4)' : 'rgba(148,163,184,.25)'}`, color: running ? '#24d18c' : '#8fa2b5' }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: running ? '#24d18c' : '#8fa2b5' }} />
-            {running ? 'RUNNING' : 'STOPPED'}
-          </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, color: rc, background: rb, border: `1px solid ${rc}44` }}>
-            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: rc }} />{regime.replace(/_/g, ' ')}
-          </span>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '10px' }}>
-        {[
-          { label: 'Longs',     value: longs,     color: '#24d18c' },
-          { label: 'Positions', value: positions,  color: '#a78bfa' },
-          { label: 'Shorts',    value: shorts,     color: '#ff6375' },
-          { label: 'Cash',      value: `$${(cash / 1000).toFixed(1)}k`, color: '#8fa2b5' },
-          { label: 'Mode',      value: 'paper',    color: '#60a5fa' },
-          { label: 'Cycles',    value: agentStatus?.cycle_count ?? '—', color: '#fbbf24' },
-        ].map(c => (
-          <div key={c.label} style={{ background: '#090e14', border: '1px solid rgba(148,163,184,.12)', borderRadius: '12px', padding: '8px 4px', textAlign: 'center' }}>
-            <div style={{ fontSize: '14px', fontWeight: 800, color: c.color }}>{c.value}</div>
-            <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>{c.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {bestStrat && (
-        <div style={{ border: '1px solid rgba(148,163,184,.14)', borderRadius: '14px', padding: '10px', background: '#090e14' }}>
-          <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>Best backtest strategy</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <strong style={{ fontSize: '13px' }}>{bestStrat.name}</strong>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: retColor(bestStrat.total_return || 0) }}>{fmtRet(bestStrat.total_return || 0)}</span>
-          </div>
-          {mc.final_return_pct && (
-            <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-              {[
-                { label: 'P5', value: fmtRet(mc.final_return_pct.p5), color: '#ff6375' },
-                { label: 'P50', value: fmtRet(mc.final_return_pct.p50), color: '#eef4fb' },
-                { label: 'P95', value: fmtRet(mc.final_return_pct.p95), color: '#24d18c' },
-              ].map(s => (
-                <div key={s.label} style={{ flex: 1, textAlign: 'center', background: 'rgba(255,255,255,.04)', borderRadius: '8px', padding: '6px 2px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: s.color }}>{s.value}</div>
-                  <div style={{ fontSize: '9px', color: 'var(--muted)', marginTop: '1px' }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+function AgentStatusContent() {
+  return <AgentDashboard />
 }
 
 function PlannedWidgetContent({ widgetId }: { widgetId: WorkspaceWidgetId }) {
@@ -737,7 +661,7 @@ export default function MobileExperience() {
       case 'positions':          return <PositionsContent positions={positions} onSelect={setSelected} />
       case 'exposure-map':       return <ExposureMapContent positions={positions} />
       case 'news-intelligence':  return <NewsIntelContent />
-      case 'agent-status':       return <AgentStatusContent agentStatus={agentStatus} backtest={backtest} />
+      case 'agent-status':       return <AgentStatusContent />
       default:                   return <PlannedWidgetContent widgetId={widgetId} />
     }
   }
