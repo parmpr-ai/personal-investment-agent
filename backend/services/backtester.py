@@ -912,6 +912,316 @@ async def run_backtest(
     return summary
 
 
+async def run_portfolio_backtest(
+    tickers: Optional[List[str]] = None,
+    strategies: Optional[List[str]] = None,
+    days: int = 504,
+    max_positions: int = 6,
+    max_position_pct: float = 0.20,   # max 20% of capital per position
+    max_corr: float = 0.70,           # block entry if correlation with existing > 0.70
+) -> Dict[str, Any]:
+    """
+    Portfolio-level backtest: simulate all tickers simultaneously from a shared
+    $100k capital pool, applying cross-asset correlation limits.
+
+    Unlike run_backtest() (per-ticker isolation), here:
+      - All strategies compete for the same capital
+      - New entries are blocked when portfolio is at max_positions
+      - New entries are blocked when the new ticker correlates >max_corr
+        with any existing open position (via 30d return series)
+      - Position size = min(max_position_pct * equity, ATR-based risk)
+      - Portfolio equity curve = total mark-to-market value each bar
+
+    Returns aggregated metrics + portfolio equity curve + trade log.
+    """
+    from services.autonomous_agent import UNIVERSE, DEFAULT_CONFIG
+
+    tickers    = tickers    or UNIVERSE[:10]
+    strategies = strategies or list(DEFAULT_CONFIG["strategies"])
+    run_ts = datetime.now(timezone.utc).isoformat()
+
+    # ── Fetch historical data ─────────────────────────────────────────────────
+    fetch_tickers = list(dict.fromkeys(["SPY"] + list(tickers)))
+    sem = asyncio.Semaphore(5)
+
+    async def _fetch(t: str) -> Tuple[str, Optional[Dict]]:
+        async with sem:
+            return t, await fetch_history(t, days)
+
+    pairs = await asyncio.gather(*[_fetch(t) for t in fetch_tickers], return_exceptions=True)
+    hist_map: Dict[str, Any] = {}
+    for item in pairs:
+        if isinstance(item, tuple):
+            t, h = item
+            if isinstance(h, dict) and h:
+                hist_map[t] = h
+
+    if not hist_map:
+        return {"error": "No historical data available"}
+
+    # ── Align all tickers to a common date index ──────────────────────────────
+    # Collect all dates across all tickers; use the intersection of top-N tickers
+    all_dates_sets = [set(hist_map[t]["dates"]) for t in tickers if t in hist_map]
+    if not all_dates_sets:
+        return {"error": "No ticker data loaded"}
+    common_dates = sorted(all_dates_sets[0].intersection(*all_dates_sets[1:]))
+    if len(common_dates) < 100:
+        # Fall back to union if intersection is too sparse
+        all_dates_union: set = set()
+        for s in all_dates_sets:
+            all_dates_union.update(s)
+        common_dates = sorted(all_dates_union)
+
+    # ── Build per-ticker aligned arrays + signal arrays ───────────────────────
+    ticker_data: Dict[str, Dict[str, Any]] = {}
+    for t in tickers:
+        if t not in hist_map:
+            continue
+        h = hist_map[t]
+        date_pos = {d: i for i, d in enumerate(h["dates"])}
+        idxs = [date_pos[d] for d in common_dates if d in date_pos]
+        if len(idxs) < 100:
+            continue
+        c = h["closes"][np.array(idxs)]
+        hi = h["highs"][np.array(idxs)]
+        lo = h["lows"][np.array(idxs)]
+        vo = h["volumes"][np.array(idxs)]
+        ticker_data[t] = {
+            "closes":  c,
+            "highs":   hi,
+            "lows":    lo,
+            "volumes": vo,
+            "sigs":    compute_signal_arrays(c, vo, hi, lo),
+        }
+
+    if not ticker_data:
+        return {"error": "No aligned ticker data"}
+
+    # SPY regime series (aligned to common dates)
+    spy_regime: List[str] = []
+    if "SPY" in hist_map:
+        spy_h = hist_map["SPY"]
+        full_regimes = _classify_historical_regimes(spy_h["closes"], spy_h["volumes"])
+        spy_date_idx = {d: i for i, d in enumerate(spy_h["dates"])}
+        spy_regime = [
+            full_regimes[spy_date_idx[d]] if d in spy_date_idx and spy_date_idx[d] < len(full_regimes)
+            else "CHOPPY_RANGE"
+            for d in common_dates
+        ]
+
+    # ── Portfolio simulation ──────────────────────────────────────────────────
+    from services.regime_detector import REGIME_CONFIG
+
+    score_fns = _get_score_fns()
+    warmup = 52
+
+    capital       = 100_000.0
+    cash          = capital
+    # Positions: { ticker: { qty, entry_price, entry_bar, strategy, is_short } }
+    positions: Dict[str, Dict] = {}
+    portfolio_equity: List[float] = [capital] * warmup
+    all_trades: List[Dict] = []
+
+    # Pre-compute 30d log returns for correlation check (updated per bar)
+    def _rolling_corr(t1: str, t2: str, bar: int, window: int = 30) -> float:
+        c1 = ticker_data[t1]["closes"]
+        c2 = ticker_data[t2]["closes"]
+        start = max(1, bar - window)
+        r1 = np.diff(np.log(np.maximum(c1[start:bar + 1], 1e-10)))
+        r2 = np.diff(np.log(np.maximum(c2[start:bar + 1], 1e-10)))
+        min_len = min(len(r1), len(r2))
+        if min_len < 5:
+            return 0.0
+        r1, r2 = r1[-min_len:], r2[-min_len:]
+        std1, std2 = float(np.std(r1)), float(np.std(r2))
+        if std1 < 1e-10 or std2 < 1e-10:
+            return 0.0
+        return float(np.corrcoef(r1, r2)[0, 1])
+
+    n_bars = len(common_dates)
+    for i in range(warmup, n_bars):
+        regime = spy_regime[i] if spy_regime else "CHOPPY_RANGE"
+        regime_cfg = REGIME_CONFIG.get(regime, REGIME_CONFIG["CHOPPY_RANGE"])
+        size_mult = regime_cfg["size_multiplier"]
+        conf_bonus = regime_cfg["confidence_bonus"]
+        allowed_longs = regime_cfg["active_long_strategies"]
+        macro_bar = {"hostile": regime == "CRISIS", "regime": regime, "vix": 18}
+
+        # ── Mark existing positions to market ─────────────────────────────────
+        position_value = 0.0
+        for t, pos in list(positions.items()):
+            if t not in ticker_data:
+                continue
+            price = float(ticker_data[t]["closes"][i])
+            if pos["is_short"]:
+                unrealised = (pos["entry_price"] - price) * pos["qty"]
+                position_value += pos["cash_collateral"] + unrealised
+            else:
+                position_value += pos["qty"] * price
+
+            # Check exit conditions
+            eff_exit = price * (1 - SLIPPAGE_PCT) if not pos["is_short"] else price * (1 + SLIPPAGE_PCT)
+            if pos["is_short"]:
+                pnl_pct = (pos["entry_price"] - eff_exit) / pos["entry_price"] * 100
+            else:
+                pnl_pct = (eff_exit - pos["entry_price"]) / pos["entry_price"] * 100
+
+            bars_held = i - pos["entry_bar"]
+            should_exit = pnl_pct >= 15 or pnl_pct <= -7 or bars_held >= 20
+
+            if should_exit:
+                commission = pos["qty"] * COMMISSION_PER_SHR
+                if pos["is_short"]:
+                    realised = pos["cash_collateral"] + (pos["entry_price"] - eff_exit) * pos["qty"] - commission
+                    cash += realised
+                    position_value -= (pos["cash_collateral"] + (pos["entry_price"] - eff_exit) * pos["qty"])
+                else:
+                    proceeds = pos["qty"] * eff_exit - commission
+                    cash += proceeds
+                    position_value -= pos["qty"] * price
+
+                all_trades.append({
+                    "ticker":        t,
+                    "strategy":      pos["strategy"],
+                    "entry_bar":     pos["entry_bar"],
+                    "exit_bar":      i,
+                    "entry_price":   round(pos["entry_price"], 2),
+                    "exit_price":    round(eff_exit, 2),
+                    "pnl_pct":       round(pnl_pct, 2),
+                    "bars_held":     bars_held,
+                    "win":           pnl_pct > 0,
+                    "date":          common_dates[i],
+                    "entry_regime":  pos.get("entry_regime", ""),
+                    "is_short":      pos["is_short"],
+                })
+                del positions[t]
+
+        # ── Scan for new entries ───────────────────────────────────────────────
+        if len(positions) < max_positions and cash > 5000:
+            equity_now = cash + position_value
+            max_size   = equity_now * max_position_pct
+
+            for t, td in ticker_data.items():
+                if t in positions:
+                    continue
+                price = float(td["closes"][i])
+                if np.isnan(price) or price <= 0:
+                    continue
+
+                for strat in strategies:
+                    is_short = strat.startswith("short_")
+                    allowed_strats = regime_cfg["active_short_strategies"] if is_short else allowed_longs
+                    if spy_regime and not (bool(allowed_strats) and strat in allowed_strats):
+                        continue
+
+                    fn = score_fns.get(strat)
+                    if fn is None:
+                        continue
+
+                    features = _bar_features(td["sigs"], i, price)
+                    features["ticker"] = t
+                    score, _ = fn(features, macro_bar)
+                    confidence = min(int(score * 1.1), 99)
+                    effective_min_conf = max(50, 65 - conf_bonus)
+
+                    if confidence < effective_min_conf:
+                        continue
+
+                    # Correlation check: block if corr > max_corr with any open position
+                    too_correlated = False
+                    for open_t in positions:
+                        if open_t in ticker_data:
+                            corr = _rolling_corr(t, open_t, i)
+                            if abs(corr) > max_corr:
+                                too_correlated = True
+                                break
+                    if too_correlated:
+                        continue
+
+                    # Size: ATR-based risk, capped at max_position_pct
+                    atr = float(td["sigs"]["atr"][i]) if "atr" in td["sigs"] else price * 0.02
+                    stop_dist = max(atr * 2, price * 0.05)
+                    risk_pct = (2.0 * size_mult) / 100
+                    shares = int((equity_now * risk_pct) / stop_dist)
+                    shares = max(1, min(shares, int(max_size / price)))
+
+                    if is_short:
+                        eff_entry = price * (1 - SLIPPAGE_PCT)
+                        commission = shares * COMMISSION_PER_SHR
+                        # Short: receive proceeds, need collateral
+                        positions[t] = {
+                            "qty": shares, "entry_price": eff_entry,
+                            "entry_bar": i, "strategy": strat, "is_short": True,
+                            "cash_collateral": shares * eff_entry,
+                            "entry_regime": regime,
+                        }
+                    else:
+                        eff_entry = price * (1 + SLIPPAGE_PCT)
+                        commission = shares * COMMISSION_PER_SHR
+                        cost = shares * eff_entry + commission
+                        if cost > cash:
+                            continue
+                        cash -= cost
+                        positions[t] = {
+                            "qty": shares, "entry_price": eff_entry,
+                            "entry_bar": i, "strategy": strat, "is_short": False,
+                            "entry_regime": regime,
+                        }
+                    break  # one entry per ticker per bar
+
+        total_value = cash + sum(
+            (pos["qty"] * float(ticker_data[t]["closes"][i])
+             if not pos["is_short"]
+             else pos["cash_collateral"] + (pos["entry_price"] - float(ticker_data[t]["closes"][i])) * pos["qty"])
+            for t, pos in positions.items()
+            if t in ticker_data
+        )
+        portfolio_equity.append(max(total_value, 0))
+
+    # ── Portfolio metrics ─────────────────────────────────────────────────────
+    spy_bm = _spy_benchmark(hist_map["SPY"]["closes"]) if "SPY" in hist_map else {}
+    pf_metrics = compute_metrics(
+        {"trades": all_trades, "equity_curve": portfolio_equity, "strategy": "portfolio"},
+        common_dates,
+    )
+    pf_metrics["tickers"] = list(ticker_data.keys())
+    pf_metrics["max_positions"] = max_positions
+    pf_metrics["max_corr_limit"] = max_corr
+    pf_metrics["strategies"] = strategies
+
+    # Per-strategy breakdown
+    by_strategy: Dict[str, Dict] = {}
+    for t in all_trades:
+        s = t["strategy"]
+        if s not in by_strategy:
+            by_strategy[s] = {"trades": 0, "wins": 0, "total_pnl": 0.0}
+        by_strategy[s]["trades"] += 1
+        if t["win"]:
+            by_strategy[s]["wins"] += 1
+        by_strategy[s]["total_pnl"] += t["pnl_pct"]
+    strategy_breakdown = {
+        s: {
+            "trades": d["trades"],
+            "win_rate_pct": round(d["wins"] / d["trades"] * 100, 1) if d["trades"] else 0,
+            "avg_pnl_pct":  round(d["total_pnl"] / d["trades"], 2) if d["trades"] else 0,
+        }
+        for s, d in by_strategy.items()
+    }
+
+    return {
+        "run_ts":            run_ts,
+        "tickers_tested":    len(ticker_data),
+        "total_trades":      len(all_trades),
+        "portfolio_metrics": pf_metrics,
+        "strategy_breakdown": strategy_breakdown,
+        "equity_curve":      [round(float(v), 2) for v in portfolio_equity[::5]],
+        "spy_benchmark":     spy_bm,
+        "regime_stats":      pf_metrics.get("regime_stats", {}),
+        "regime_distribution": pf_metrics.get("regime_distribution", {}),
+        "trade_log":         all_trades[:100],
+    }
+
+
 async def run_walkforward_backtest(
     tickers: Optional[List[str]] = None,
     strategies: Optional[List[str]] = None,
