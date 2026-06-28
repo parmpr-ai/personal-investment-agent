@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from services.market_data import fetch_quotes, fetch_enhanced_quotes, fetch_macro, fetch_sector_momentum
 from services.news_scorer import score_news, sentiment_boost
+from services.fundamentals_screener import fetch_fundamentals_batch, fundamental_adj
 from services.risk_manager import RiskManager
 from services.paper_trading import (
     execute_paper_trade,
@@ -224,6 +225,11 @@ def _zscore_adj(q: Dict) -> tuple[int, str]:
     return 0, ""
 
 
+def _fundamental_adj_fn(fundamentals: Dict, ticker: str) -> tuple[int, str]:
+    """Wrap fundamental_adj for use inside scorer lambdas."""
+    return fundamental_adj(fundamentals, ticker)
+
+
 def _news_adj(q: Dict, news: Dict, ticker: str) -> tuple[int, str]:
     """Add news sentiment + catalyst bonus from pre-scored news dict."""
     delta, reason = sentiment_boost(news, ticker)
@@ -281,7 +287,7 @@ def _52w_adj(q: Dict) -> tuple[int, str]:
     return 0, ""
 
 
-def _score_momentum(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
+def _score_momentum(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = {}) -> tuple[int, str]:
     score = 0
     reasons = []
     if q.get("above_sma20"):
@@ -311,10 +317,13 @@ def _score_momentum(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
     nd, nr = _news_adj(q, news, ticker)
     score += nd
     if nr: reasons.append(nr)
+    fd, fr = _fundamental_adj_fn(fundamentals, ticker)
+    score += fd
+    if fr: reasons.append(fr)
     return score, "Momentum: " + ", ".join(reasons)
 
 
-def _score_mean_reversion(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
+def _score_mean_reversion(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = {}) -> tuple[int, str]:
     score = 0; reasons = []
     rsi = q.get("rsi")
     if rsi is None: return 0, "no RSI"
@@ -339,14 +348,17 @@ def _score_mean_reversion(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, s
     if bbr: reasons.append(bbr)
     ticker = q.get("ticker", "")
     nd, nr = _news_adj(q, news, ticker)
-    # For mean reversion, negative news confirmation is OK (oversold from bad news = buy)
-    if nd < 0: score += abs(nd) * 0.3  # small contrarian credit
+    if nd < 0: score += abs(nd) * 0.3  # contrarian credit: bad news → oversold buy
     elif nd > 0: score += nd
     if nr: reasons.append(nr)
+    # Fundamentals matter most for mean reversion: cheap P/E + FCF = real value
+    fd, fr = _fundamental_adj_fn(fundamentals, ticker)
+    score += fd
+    if fr: reasons.append(fr)
     return score, "MeanRev: " + ", ".join(reasons)
 
 
-def _score_breakout(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
+def _score_breakout(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = {}) -> tuple[int, str]:
     score = 0; reasons = []
     rvol = q.get("rvol", 1.0) or 1.0
     chg  = q.get("change_pct", 0) or 0
@@ -372,10 +384,13 @@ def _score_breakout(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
     nd, nr = _news_adj(q, news, ticker)
     score += nd
     if nr: reasons.append(nr)
+    fd, fr = _fundamental_adj_fn(fundamentals, ticker)
+    score += fd
+    if fr: reasons.append(fr)
     return score, "Breakout: " + ", ".join(reasons)
 
 
-def _score_trend_follow(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
+def _score_trend_follow(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = {}) -> tuple[int, str]:
     score = 0; reasons = []
     if not q.get("above_sma20"): return 0, "below SMA20"
     score += 20
@@ -398,6 +413,9 @@ def _score_trend_follow(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str
     nd, nr = _news_adj(q, news, ticker)
     score += nd
     if nr: reasons.append(nr)
+    fd, fr = _fundamental_adj_fn(fundamentals, ticker)
+    score += fd
+    if fr: reasons.append(fr)
     return score, "Trend: above SMA20, " + ", ".join(reasons)
 
 
@@ -564,6 +582,7 @@ def _decide_for_ticker(
     open_shorts: List[Dict],
     config: Dict,
     news: Dict = {},
+    fundamentals: Dict = {},
 ) -> List[Dict[str, Any]]:
     if not q.get("ok") or not q.get("price"):
         return []
@@ -607,7 +626,7 @@ def _decide_for_ticker(
         for strat in long_strategies:
             fn = LONG_STRATEGY_FNS.get(strat)
             if fn:
-                score, reason = fn(q, macro, news)
+                score, reason = fn(q, macro, news, fundamentals)
                 if score > best_score:
                     best_score, best_reason = score, reason
         confidence = min(int(best_score * 1.1), 99)
@@ -640,10 +659,11 @@ def generate_decisions(
     open_shorts: List[Dict],
     config: Dict,
     news: Dict = {},
+    fundamentals: Dict = {},
 ) -> List[Dict[str, Any]]:
     all_decisions = []
     for ticker, q in quotes.items():
-        all_decisions.extend(_decide_for_ticker(ticker, q, macro, open_longs, open_shorts, config, news))
+        all_decisions.extend(_decide_for_ticker(ticker, q, macro, open_longs, open_shorts, config, news, fundamentals))
     # Closes first (SELL/COVER), then new entries by confidence desc
     all_decisions.sort(key=lambda d: (_CLOSE_PRIORITY.get(d["action"], 3), -d.get("confidence", 0)))
     return all_decisions[:10]
@@ -660,7 +680,9 @@ class AutonomousAgent:
         self._last_cycle_ts: Optional[str] = None
         self._last_cycle_summary: Optional[Dict[str, Any]] = None
         self._risk = RiskManager()
-        self._peak_value: float = 0.0  # for drawdown-proportional position scaling
+        self._peak_value: float = 0.0
+        self._fundamentals_cache: Dict[str, Any] = {}
+        self._fundamentals_last_fetch: float = 0.0  # epoch seconds
 
     def configure(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         self.config.update(updates)
@@ -714,6 +736,17 @@ class AutonomousAgent:
 
         universe = self.config.get("universe", UNIVERSE)
 
+        import time as _time
+        # Refresh fundamentals every 6 hours (they don't change cycle-to-cycle)
+        if _time.time() - self._fundamentals_last_fetch > 21600:
+            try:
+                self._fundamentals_cache = await fetch_fundamentals_batch(universe)
+                self._fundamentals_last_fetch = _time.time()
+                _log("info", f"[{cycle_id}] Fundamentals refreshed for {len(self._fundamentals_cache)} tickers")
+            except Exception as e:
+                _log("warning", f"[{cycle_id}] Fundamentals fetch failed: {e}")
+        fundamentals = self._fundamentals_cache
+
         # Fetch enhanced market data + macro + news concurrently
         quotes, macro, news, sectors = await asyncio.gather(
             fetch_enhanced_quotes(universe),
@@ -754,8 +787,8 @@ class AutonomousAgent:
         open_longs = get_open_longs()
         open_shorts = get_open_shorts()
 
-        # Generate decisions via rule engine (with news + enhanced quotes)
-        decisions = generate_decisions(quotes, macro, open_longs, open_shorts, self.config, news)
+        # Generate decisions via rule engine (with news + enhanced quotes + fundamentals)
+        decisions = generate_decisions(quotes, macro, open_longs, open_shorts, self.config, news, fundamentals)
 
         executed = 0
         blocked = 0
