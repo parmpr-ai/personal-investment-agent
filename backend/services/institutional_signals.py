@@ -2,14 +2,16 @@
 Free institutional flow signals — zero API key required.
 
 Sources:
-  1. SEC EDGAR Form 4 Atom feed — insider buy/sell transactions (officers, directors, 10%+ holders)
-  2. Yahoo Finance quoteSummary  — analyst consensus, price targets, short interest
-  3. FINRA short interest proxy  — via Yahoo shortPercentOfFloat + daysToShort
-  4. Yahoo Finance options chain — unusual call/put vol/OI ratio, IV skew (options flow proxy)
-  5. Yahoo Finance 13F ownership — institutional ownership %, top holders, accumulation/distribution
+  1. SEC EDGAR Form 4 Atom feed   — insider buy/sell (officers, directors, 10%+ holders)
+  2. Yahoo Finance quoteSummary   — analyst consensus, price targets, short interest
+  3. FINRA short interest proxy   — via Yahoo shortPercentOfFloat + daysToShort
+  4. Yahoo Finance options chain  — unusual call/put vol/OI ratio, IV skew
+  5. Yahoo Finance 13F ownership  — institutional ownership %, top holders, accumulation/distribution
+  6. House Stock Watcher (STOCK Act) — congressional buy/sell disclosures (free S3 JSON)
+  7. Dark pool / block trade proxy   — OHLCV volume spike + price flat pattern (no extra API)
 
-Score range: -55 to +65 additive bonus to the rule engine.
-High-conviction signals (cluster insider buys + unusual call sweep + institutional accumulation): can add 40+.
+Score range: -70 to +90 additive bonus to the rule engine.
+High-conviction cluster (insider buys + call sweep + institutional accumulation + congress buy): can add 50+.
 """
 import asyncio
 import time
@@ -505,24 +507,231 @@ def _score_institutional(insider_trades: List[Dict], yahoo: Dict) -> Tuple[int, 
     return score, reasons
 
 
-# ── 6. Main API ───────────────────────────────────────────────────────────────
+# ── 6. House Stock Watcher — Congressional STOCK Act Disclosures ─────────────
+
+# Congressional dataset cache (file is ~3-5 MB; refreshed once per 24h per process)
+_cong_all_data: Optional[List[Dict]] = None
+_cong_all_ts: float = 0.0
+_CONG_TTL = 24 * 3600   # 24h — disclosed trades change slowly
+
+async def fetch_congressional_trades(ticker: str, days: int = 90) -> List[Dict[str, Any]]:
+    """
+    Fetch STOCK Act congressional trading disclosures for a ticker.
+    Uses House Stock Watcher free public S3 JSON (no API key required).
+    Dataset is downloaded once per process and cached for 24h.
+    Returns list of {date, politician, party, type, amount}.
+    """
+    global _cong_all_data, _cong_all_ts
+
+    # Refresh module-level cache if stale
+    if _cong_all_data is None or time.time() - _cong_all_ts > _CONG_TTL:
+        url = (
+            "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com"
+            "/data/all_transactions.json"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=15, headers=_HEADERS,
+                                         follow_redirects=True) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                _cong_all_data = r.json()
+                _cong_all_ts   = time.time()
+        except Exception:
+            _cong_all_data = _cong_all_data or []  # keep stale data on failure
+
+    trades: List[Dict[str, Any]] = []
+    if not _cong_all_data:
+        return trades
+
+    t_upper = ticker.upper()
+    cutoff  = datetime.now(timezone.utc) - timedelta(days=days)
+
+    for tx in _cong_all_data:
+        if (tx.get("ticker") or "").upper() != t_upper:
+            continue
+        date_str = tx.get("transaction_date") or tx.get("disclosure_date") or ""
+        try:
+            tx_dt = datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+        if tx_dt < cutoff:
+            continue
+        tx_type = (tx.get("type") or "").lower()
+        trades.append({
+            "date":       date_str[:10],
+            "politician": tx.get("representative") or tx.get("senator", "Unknown"),
+            "party":      tx.get("party", ""),
+            "type":       "BUY" if "purchase" in tx_type else "SELL",
+            "amount":     tx.get("amount", ""),  # e.g. "$1,001-$15,000"
+        })
+
+    return trades
+
+
+def _score_congressional(trades: List[Dict[str, Any]]) -> Tuple[int, List[str]]:
+    """
+    Convert congressional trade data into a -8..+12 score.
+    Congressional buys are bullish signals (informed traders with advance notice).
+    Cluster of sells can be a warning.
+    """
+    if not trades:
+        return 0, []
+
+    buys  = [t for t in trades if t["type"] == "BUY"]
+    sells = [t for t in trades if t["type"] == "SELL"]
+
+    score   = 0
+    reasons: List[str] = []
+
+    if len(buys) >= 2:
+        score += 12
+        names = list({t["politician"] for t in buys})[:2]
+        reasons.append(f"Congressional cluster buy ({len(buys)} politicians): {', '.join(names)}")
+    elif len(buys) == 1:
+        score += 6
+        reasons.append(f"Congressional buy: {buys[0]['politician']} ({buys[0]['amount']})")
+
+    if len(sells) >= 2:
+        score -= 8
+        names = list({t["politician"] for t in sells})[:2]
+        reasons.append(f"Congressional cluster sell ({len(sells)} politicians): {', '.join(names)}")
+    elif len(sells) == 1:
+        score -= 4
+        reasons.append(f"Congressional sell: {sells[0]['politician']} ({sells[0]['amount']})")
+
+    return score, reasons
+
+
+# ── 7. Dark Pool / Block Trade Proxy (OHLCV pattern) ─────────────────────────
+
+async def fetch_darkpool_proxy(ticker: str) -> Dict[str, Any]:
+    """
+    Infer dark pool / block trade activity from OHLCV patterns via Yahoo Finance.
+    Pattern A — Block accumulation: volume >3× 20d avg, price move <0.5%
+                (institutional accumulation via dark pool / crossing network).
+    Pattern B — Volume breakout: volume >2× avg, price move >1.5%
+                (confirmed directional move with high participation).
+    No external API key required — uses Yahoo chart endpoint.
+    """
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker.upper()}"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_HEADERS) as client:
+            r = await client.get(url, params={"interval": "1d", "range": "1mo"})
+            r.raise_for_status()
+            data = r.json()
+
+        q = data["chart"]["result"][0]["indicators"]["quote"][0]
+        raw = list(zip(
+            q.get("close",  []),
+            q.get("volume", []),
+            q.get("open",   []),
+        ))
+        records = [(c, v, o) for c, v, o in raw if c and v and o]
+
+        if len(records) < 10:
+            return {}
+
+        closes  = [r[0] for r in records]
+        volumes = [r[1] for r in records]
+        opens   = [r[2] for r in records]
+
+        avg_vol_20 = sum(volumes[-20:]) / min(len(volumes), 20)
+
+        block_days: List[Dict] = []
+        for i in range(max(0, len(records) - 5), len(records)):
+            vol       = volumes[i]
+            vol_ratio = vol / avg_vol_20 if avg_vol_20 > 0 else 1.0
+            price_move = abs(closes[i] - opens[i]) / opens[i] * 100 if opens[i] > 0 else 0.0
+
+            if vol_ratio >= 3.0 and price_move < 0.5:
+                block_days.append({
+                    "day_offset":     -(len(records) - 1 - i),  # 0=today, -1=yesterday
+                    "vol_ratio":      round(vol_ratio, 1),
+                    "price_move_pct": round(price_move, 2),
+                    "pattern":        "block_accumulation",
+                })
+            elif vol_ratio >= 2.0 and price_move > 1.5:
+                block_days.append({
+                    "day_offset":     -(len(records) - 1 - i),
+                    "vol_ratio":      round(vol_ratio, 1),
+                    "price_move_pct": round(price_move, 2),
+                    "pattern":        "volume_breakout",
+                })
+
+        recent_vol_ratio = (
+            (sum(volumes[-3:]) / 3 / avg_vol_20) if avg_vol_20 > 0 else 1.0
+        )
+
+        return {
+            "block_days":        block_days,
+            "recent_vol_ratio":  round(recent_vol_ratio, 2),
+            "avg_volume_20d":    int(avg_vol_20),
+        }
+    except Exception:
+        return {}
+
+
+def _score_darkpool(dp: Dict[str, Any]) -> Tuple[int, List[str]]:
+    """
+    Convert dark pool proxy data into a -8..+12 score.
+    Block accumulation pattern = smart money entering quietly.
+    Unusual volume without accumulation = possible distribution.
+    """
+    if not dp:
+        return 0, []
+
+    score   = 0
+    reasons: List[str] = []
+
+    block_days     = dp.get("block_days", [])
+    accumulations  = [b for b in block_days if b["pattern"] == "block_accumulation"]
+    breakouts      = [b for b in block_days if b["pattern"] == "volume_breakout"]
+
+    if len(accumulations) >= 2:
+        score += 12
+        reasons.append(f"Repeated block accumulation pattern ({len(accumulations)} days, >3× volume, <0.5% move)")
+    elif len(accumulations) == 1:
+        b = accumulations[0]
+        score += 7
+        reasons.append(f"Block trade accumulation ({b['vol_ratio']:.1f}× vol, {b['price_move_pct']:.1f}% price move)")
+
+    if breakouts:
+        score += 4
+        reasons.append(f"High-volume directional breakout ({breakouts[0]['vol_ratio']:.1f}× volume)")
+
+    # Elevated recent volume without accumulation signal = possible distribution
+    rvr = dp.get("recent_vol_ratio", 1.0)
+    if rvr > 2.5 and not accumulations:
+        score -= 6
+        reasons.append(f"Elevated volume ({rvr:.1f}× avg) without accumulation pattern (possible distribution)")
+    elif rvr > 2.0 and not accumulations and not breakouts:
+        score -= 3
+        reasons.append(f"Above-average recent volume ({rvr:.1f}×) with no directional signal")
+
+    return score, reasons
+
+
+# ── 8. Main API ───────────────────────────────────────────────────────────────
 
 async def get_institutional_signal(ticker: str) -> Dict[str, Any]:
     """
     Return institutional signal score + details for one ticker.
     Cached for 4h — these signals don't change cycle-to-cycle.
-    Sources: Form 4 insider trades, Yahoo analyst/short data, options flow, 13F ownership.
+    7 parallel sources: Form 4, Yahoo analyst, options flow, 13F, congressional, dark pool.
     """
     ticker = ticker.upper()
     cached = _cache.get(ticker)
     if cached and time.time() - cached["ts"] < _CACHE_TTL:
         return cached["data"]
 
-    insider_trades, yahoo_data, options_data, ownership_data = await asyncio.gather(
+    (insider_trades, yahoo_data, options_data,
+     ownership_data, cong_trades, darkpool_data) = await asyncio.gather(
         fetch_insider_trades(ticker, days=30),
         fetch_yahoo_institutional(ticker),
         fetch_options_flow(ticker),
         fetch_13f_ownership(ticker),
+        fetch_congressional_trades(ticker, days=90),
+        fetch_darkpool_proxy(ticker),
         return_exceptions=True,
     )
 
@@ -530,11 +739,15 @@ async def get_institutional_signal(ticker: str) -> Dict[str, Any]:
     if isinstance(yahoo_data,      Exception): yahoo_data      = {}
     if isinstance(options_data,    Exception): options_data    = {}
     if isinstance(ownership_data,  Exception): ownership_data  = {}
+    if isinstance(cong_trades,     Exception): cong_trades     = []
+    if isinstance(darkpool_data,   Exception): darkpool_data   = {}
 
     inst_score, inst_reasons  = _score_institutional(insider_trades, yahoo_data)
     opts_score, opts_reasons  = _score_options_flow(options_data)
     own_score,  own_reasons   = _score_13f_ownership(ownership_data)
-    score = inst_score + opts_score + own_score
+    cong_score, cong_reasons  = _score_congressional(cong_trades)
+    dp_score,   dp_reasons    = _score_darkpool(darkpool_data)
+    score = inst_score + opts_score + own_score + cong_score + dp_score
 
     result = {
         "ticker": ticker,
@@ -562,7 +775,17 @@ async def get_institutional_signal(ticker: str) -> Dict[str, Any]:
             "holders_decreasing": ownership_data.get("holders_decreasing", 0),
             "top_holders":        ownership_data.get("top_holders", []),
         },
-        "signals":               inst_reasons + opts_reasons + own_reasons,
+        "congressional": {
+            "buys":   [t for t in cong_trades if t["type"] == "BUY"],
+            "sells":  [t for t in cong_trades if t["type"] == "SELL"],
+            "count":  len(cong_trades),
+        },
+        "darkpool": {
+            "block_days":       darkpool_data.get("block_days", []),
+            "recent_vol_ratio": darkpool_data.get("recent_vol_ratio"),
+            "avg_volume_20d":   darkpool_data.get("avg_volume_20d"),
+        },
+        "signals":               inst_reasons + opts_reasons + own_reasons + cong_reasons + dp_reasons,
         "recent_insider_trades": insider_trades[:5],
         "ts": datetime.now(timezone.utc).isoformat(),
     }
