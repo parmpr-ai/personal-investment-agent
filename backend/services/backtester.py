@@ -264,18 +264,69 @@ SLIPPAGE_PCT       = 0.0005
 COMMISSION_PER_SHR = 0.005
 
 
+# ── Historical regime classification ─────────────────────────────────────────
+
+def _classify_historical_regimes(
+    spy_closes: np.ndarray,
+    spy_volumes: np.ndarray,
+    window: int = 60,
+) -> List[str]:
+    """
+    Compute a historical regime label for every bar in the SPY price series.
+
+    For each bar i we look back `window` bars, estimate VIX from 20-day
+    realised volatility (100 × annualised σ), then call the same _classify()
+    logic used by the live regime detector.  Returns a list of regime strings
+    the same length as spy_closes; bars inside the warm-up window get
+    'CHOPPY_RANGE' (safest default before enough data is available).
+    """
+    from services.regime_detector import _classify as _rc
+
+    n = len(spy_closes)
+    regimes: List[str] = ["CHOPPY_RANGE"] * n
+
+    # Pre-compute 20-day realised-vol VIX proxy for the full series
+    vix_proxy = np.full(n, 18.0)
+    log_ret = np.diff(np.log(np.maximum(spy_closes, 1e-10)))
+    for i in range(20, n):
+        rv = float(np.std(log_ret[i - 20:i]) * np.sqrt(252) * 100)
+        vix_proxy[i] = float(np.clip(rv, 8.0, 80.0))
+
+    for i in range(window, n):
+        w_closes  = spy_closes[i - window + 1:i + 1].tolist()
+        w_volumes = spy_volumes[i - window + 1:i + 1].tolist()
+        vix       = float(vix_proxy[i])
+        try:
+            regime, _, _ = _rc({"closes": w_closes, "volumes": w_volumes}, vix)
+        except Exception:
+            regime = "CHOPPY_RANGE"
+        regimes[i] = regime
+
+    return regimes
+
+
 def simulate_strategy(
     strategy: str,
     dates: List[str],
     closes: np.ndarray,
     sigs: Dict[str, np.ndarray],
     config: Optional[Dict] = None,
+    regime_series: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Simulate one strategy on a single ticker's history.
     Returns equity curve, trade log, and performance metrics.
     Applies 0.05% slippage + $0.005/share commission per leg.
+
+    regime_series: optional list of regime strings aligned to closes (from
+    _classify_historical_regimes). When provided:
+      - entries are gated by the regime's active_long/short_strategies list
+      - position sizing is scaled by the regime's size_multiplier
+      - confidence threshold is adjusted by confidence_bonus
+      - each trade is tagged with its entry regime for post-analysis
     """
+    from services.regime_detector import REGIME_CONFIG
+
     cfg = config or {}
     min_conf = cfg.get("min_confidence", 65)
     take_profit_pct = cfg.get("take_profit_pct", 15.0)
@@ -294,10 +345,11 @@ def simulate_strategy(
     position_qty = 0.0
     entry_price = 0.0      # effective (post-slippage) entry price
     entry_bar = -1
+    entry_regime = ""
     trades: List[Dict] = []
     total_commission = 0.0
     total_slippage_cost = 0.0
-    macro_neutral = {"hostile": False, "regime": "NEUTRAL", "vix": 18}
+    regime_bars: Dict[str, int] = {}
 
     for i in range(warmup, len(closes)):
         price = closes[i]
@@ -305,13 +357,26 @@ def simulate_strategy(
             equity.append(equity[-1])
             continue
 
-        # ── Exit logic ─────────────────────────────────────────────────────
+        # ── Regime at this bar ─────────────────────────────────────────────
+        regime = (regime_series[i]
+                  if regime_series and i < len(regime_series)
+                  else "CHOPPY_RANGE")
+        regime_bars[regime] = regime_bars.get(regime, 0) + 1
+
+        regime_cfg     = REGIME_CONFIG.get(regime, REGIME_CONFIG["CHOPPY_RANGE"])
+        size_mult      = regime_cfg.get("size_multiplier", 1.0)
+        conf_bonus     = regime_cfg.get("confidence_bonus", 0)
+        allowed_longs  = regime_cfg.get("active_long_strategies", [])
+        allowed_shorts = regime_cfg.get("active_short_strategies", [])
+
+        macro_bar = {"hostile": regime == "CRISIS", "regime": regime, "vix": 18}
+
+        # ── Exit logic (always runs — regime does not block exits) ─────────
         if position_qty != 0 and entry_price > 0:
-            # Effective exit price: slippage works against us
             if not is_short:
-                eff_exit = price * (1 - SLIPPAGE_PCT)   # sell slightly lower
+                eff_exit = price * (1 - SLIPPAGE_PCT)
             else:
-                eff_exit = price * (1 + SLIPPAGE_PCT)   # cover slightly higher
+                eff_exit = price * (1 + SLIPPAGE_PCT)
 
             commission = position_qty * COMMISSION_PER_SHR
 
@@ -342,46 +407,64 @@ def simulate_strategy(
                     "pnl_pct": round(pnl_pct, 2),
                     "bars_held": i - entry_bar,
                     "win": pnl_pct > 0,
-                    "commission": round(commission * 2, 2),  # both legs
+                    "commission": round(commission * 2, 2),
                     "date": dates[i] if i < len(dates) else "",
+                    "entry_regime": entry_regime,
                 })
                 position_qty = 0.0
                 entry_price = 0.0
+                entry_regime = ""
 
-        # ── Entry logic ─────────────────────────────────────────────────────
+        # ── Entry logic: gated by regime ───────────────────────────────────
         if position_qty == 0 and cash > 1000:
-            features = _bar_features(sigs, i, price)
-            features["ticker"] = "BACKTEST"
-            score, _ = fn(features, macro_neutral)
-            confidence = min(int(score * 1.1), 99)
-            if confidence >= min_conf:
-                risk_pct = 2.0 / 100
-                atr = sigs["atr"][i] if "atr" in sigs else price * 0.02
-                stop_dist = max(atr * 2, price * 0.05)
-                shares = int((cash * risk_pct) / stop_dist)
-                if shares < 1:
-                    shares = 1
-
-                # Effective entry: slippage works against us
-                if not is_short:
-                    eff_entry = price * (1 + SLIPPAGE_PCT)  # buy slightly higher
+            # Check if this strategy is active in the current regime.
+            # An empty allowed list means the regime blocks ALL entries of that side
+            # (e.g. CRISIS blocks all longs; BULL blocks all shorts).
+            if regime_series:
+                if is_short:
+                    entry_allowed = bool(allowed_shorts) and strategy in allowed_shorts
                 else:
-                    eff_entry = price * (1 - SLIPPAGE_PCT)  # short at slightly lower
+                    entry_allowed = bool(allowed_longs) and strategy in allowed_longs
+            else:
+                entry_allowed = True  # no regime data → no filtering
 
-                commission = shares * COMMISSION_PER_SHR
-                cost = shares * eff_entry + commission
+            if entry_allowed:
+                features = _bar_features(sigs, i, price)
+                features["ticker"] = "BACKTEST"
+                score, _ = fn(features, macro_bar)
+                confidence = min(int(score * 1.1), 99)
 
-                if cost <= cash * 0.30:
-                    total_commission += commission
-                    total_slippage_cost += abs(price - eff_entry) * shares
-                    entry_price = eff_entry
-                    entry_bar = i
+                # Regime confidence adjustment: bear/crisis raise the bar
+                effective_min_conf = max(50, min_conf - conf_bonus)
+
+                if confidence >= effective_min_conf:
+                    risk_pct = (2.0 * size_mult) / 100
+                    atr = sigs["atr"][i] if "atr" in sigs else price * 0.02
+                    stop_dist = max(atr * 2, price * 0.05)
+                    shares = int((cash * risk_pct) / stop_dist)
+                    if shares < 1:
+                        shares = 1
+
                     if not is_short:
-                        position_qty = shares
-                        cash -= cost
+                        eff_entry = price * (1 + SLIPPAGE_PCT)
                     else:
-                        position_qty = shares
-                        cash += shares * eff_entry - commission
+                        eff_entry = price * (1 - SLIPPAGE_PCT)
+
+                    commission = shares * COMMISSION_PER_SHR
+                    cost = shares * eff_entry + commission
+
+                    if cost <= cash * 0.30:
+                        total_commission += commission
+                        total_slippage_cost += abs(price - eff_entry) * shares
+                        entry_price = eff_entry
+                        entry_bar = i
+                        entry_regime = regime
+                        if not is_short:
+                            position_qty = shares
+                            cash -= cost
+                        else:
+                            position_qty = shares
+                            cash += shares * eff_entry - commission
 
         current_value = (
             cash + position_qty * price if not is_short
@@ -389,6 +472,13 @@ def simulate_strategy(
                   if entry_price > 0 else cash)
         )
         equity.append(max(current_value, 0))
+
+    total_bars = sum(regime_bars.values()) or 1
+    regime_distribution = {
+        r: round(cnt / total_bars * 100, 1)
+        for r, cnt in sorted(regime_bars.items())
+        if cnt > 0
+    }
 
     return {
         "strategy": strategy,
@@ -398,6 +488,7 @@ def simulate_strategy(
         "end_capital": equity[-1] if equity else 100_000.0,
         "total_commission": round(total_commission, 2),
         "total_slippage_cost": round(total_slippage_cost, 2),
+        "regime_distribution": regime_distribution,
     }
 
 
@@ -444,6 +535,22 @@ def compute_metrics(result: Dict[str, Any], dates: List[str]) -> Dict[str, Any]:
     win_rate = len(wins) / len(trades) * 100 if trades else 0.0
     avg_return = float(np.mean([t["pnl_pct"] for t in trades])) if trades else 0.0
 
+    # Regime breakdown: win rate + avg P&L per regime from trade log
+    regime_stats: Dict[str, Any] = {}
+    for t in trades:
+        r = t.get("entry_regime") or "unknown"
+        if r not in regime_stats:
+            regime_stats[r] = {"trades": 0, "wins": 0, "total_pnl": 0.0}
+        regime_stats[r]["trades"] += 1
+        if t.get("win"):
+            regime_stats[r]["wins"] += 1
+        regime_stats[r]["total_pnl"] += float(t.get("pnl_pct", 0))
+    for r, s in regime_stats.items():
+        n = s["trades"]
+        s["win_rate_pct"] = round(s["wins"] / n * 100, 1) if n else 0
+        s["avg_pnl_pct"]  = round(s["total_pnl"] / n, 2) if n else 0
+        del s["wins"], s["total_pnl"]
+
     return {
         "strategy": result.get("strategy", ""),
         "total_trades": len(trades),
@@ -455,8 +562,10 @@ def compute_metrics(result: Dict[str, Any], dates: List[str]) -> Dict[str, Any]:
         "total_return_pct": round(total_return_pct, 1),
         "avg_return_pct": round(avg_return, 2),
         "cagr_pct": round(cagr, 1),
-        "equity_curve_sampled": [round(float(v), 2) for v in equity[::5]],  # every 5 bars
+        "equity_curve_sampled": [round(float(v), 2) for v in equity[::5]],
         "trade_count_per_month": round(len(trades) / max(len(equity) / 21, 1), 1),
+        "regime_stats": regime_stats,
+        "regime_distribution": result.get("regime_distribution", {}),
     }
 
 
@@ -675,10 +784,23 @@ async def run_backtest(
             if isinstance(h, dict) and h:
                 hist_map[t] = h
 
-    # Compute SPY benchmark before strategy loop
+    # Compute SPY benchmark + historical regime series
     spy_benchmark: Dict[str, Any] = {}
+    spy_regime_series: List[str] = []
+    spy_date_index: Dict[str, int] = {}
+
     if "SPY" in hist_map:
-        spy_benchmark = _spy_benchmark(hist_map["SPY"]["closes"])
+        spy_hist = hist_map["SPY"]
+        spy_benchmark = _spy_benchmark(spy_hist["closes"])
+        spy_regime_series = _classify_historical_regimes(
+            spy_hist["closes"], spy_hist["volumes"]
+        )
+        spy_date_index = {d: i for i, d in enumerate(spy_hist["dates"])}
+
+    # Overall regime distribution during the test window
+    overall_regime_dist: Dict[str, int] = {}
+    for r in spy_regime_series:
+        overall_regime_dist[r] = overall_regime_dist.get(r, 0) + 1
 
     all_metrics: List[Dict] = []
     strategy_summary: Dict[str, List] = {}
@@ -694,9 +816,21 @@ async def run_backtest(
 
         sigs = compute_signal_arrays(closes, volumes, highs, lows)
 
+        # Align SPY regime series to this ticker's dates
+        if spy_regime_series and spy_date_index:
+            ticker_regime_series = [
+                spy_regime_series[spy_date_index[d]]
+                if d in spy_date_index and spy_date_index[d] < len(spy_regime_series)
+                else "CHOPPY_RANGE"
+                for d in dates
+            ]
+        else:
+            ticker_regime_series = []
+
         for strat in strategies:
             try:
-                sim = simulate_strategy(strat, dates, closes, sigs)
+                sim = simulate_strategy(strat, dates, closes, sigs,
+                                        regime_series=ticker_regime_series)
                 if "error" in sim:
                     continue
                 metrics = compute_metrics(sim, dates)
@@ -748,6 +882,7 @@ async def run_backtest(
         mc_result["strategy"] = best_strat
 
     mock_count = sum(1 for h in hist_map.values() if h.get("mock"))
+    total_spy_bars = sum(overall_regime_dist.values()) or 1
     summary = {
         "run_ts": run_ts,
         "tickers_tested": len(hist_map) - (1 if "SPY" in hist_map else 0),
@@ -759,6 +894,12 @@ async def run_backtest(
         "mock_data": mock_count > 0,
         "mock_ticker_count": mock_count,
         "monte_carlo": mc_result,
+        "regime_distribution": {
+            r: round(cnt / total_spy_bars * 100, 1)
+            for r, cnt in sorted(overall_regime_dist.items())
+            if cnt > 0
+        },
+        "regime_aware": bool(spy_regime_series),
     }
 
     # Update run status
