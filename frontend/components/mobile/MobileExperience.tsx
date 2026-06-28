@@ -254,13 +254,26 @@ function MomentumBar({ value }: { value: number }) {
   )
 }
 
-function MobileBottomNav({ active, setActive }: { active: string; setActive: (value: string) => void }) {
+function MobileBottomNav({ active, setActive, agentRunning }: { active: string; setActive: (value: string) => void; agentRunning?: boolean }) {
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile sections">
       {navItems.map(([id, label, Icon]) => (
-        <button key={id} className={active === id ? 'active' : ''} onClick={() => setActive(id)}>
+        <button key={id} className={active === id ? 'active' : ''} onClick={() => setActive(id)}
+          style={{ position: 'relative' }}>
           <Icon size={20} />
           <span>{label}</span>
+          {id === 'agent' && (
+            <span style={{
+              position: 'absolute',
+              top: '6px',
+              right: '18px',
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: agentRunning ? '#24d18c' : '#374151',
+              boxShadow: agentRunning ? '0 0 6px #24d18c' : 'none',
+            }} />
+          )}
         </button>
       ))}
     </nav>
@@ -671,8 +684,143 @@ function McStatBox({ label, value, color }: { label: string; value: string; colo
   )
 }
 
-function AgentView() {
-  const { agentStatus, backtest } = useAgentData()
+function AgentQuickCard({ agentStatus, onTap }: { agentStatus: any; onTap: () => void }) {
+  const running     = !!agentStatus?.running
+  const port        = agentStatus?.paper_portfolio || {}
+  const totalValue  = Number(port.total_value || 0)
+  const totalRet    = Number(port.total_return_pct || 0)
+  const summary     = agentStatus?.last_cycle_summary || {}
+  const executed    = summary.executed ?? null
+  const decisions   = summary.decisions ?? null
+  const dailyPnl    = summary.daily_pnl_pct ?? null
+  const circuitBroken = summary.circuit_broken === true
+  const regime      = (agentStatus?.last_regime as string) || null
+  const lastCycle   = agentStatus?.last_cycle
+  const retColor    = totalRet >= 0 ? '#24d18c' : '#ff6375'
+
+  const colors: Record<string, [string, string]> = {
+    BULL_TREND:   ['#24d18c', 'rgba(36,209,140,0.14)'],
+    BEAR_TREND:   ['#fb7185', 'rgba(251,113,133,0.14)'],
+    CHOPPY_RANGE: ['#fbbf24', 'rgba(251,191,36,0.14)'],
+    CRISIS:       ['#ff6375', 'rgba(255,99,117,0.18)'],
+  }
+  const [regimeColor, regimeBg] = (regime && colors[regime]) ? colors[regime] : ['#8fa2b5', 'rgba(148,163,184,0.12)']
+
+  return (
+    <section className="mobile-section">
+      <div className="mobile-section-title">
+        <h2>AI Agent</h2>
+        <Bot size={18} />
+      </div>
+      <button
+        onClick={onTap}
+        style={{
+          width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+        }}
+      >
+        <article className="mobile-visual-card" style={{
+          border: circuitBroken
+            ? '1px solid rgba(255,99,117,0.45)'
+            : running
+            ? '1px solid rgba(36,209,140,0.22)'
+            : '1px solid rgba(148,163,184,0.14)',
+        }}>
+          {/* Top row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+            <div>
+              {totalValue > 0 ? (
+                <>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '3px' }}>Paper Portfolio</div>
+                  <div style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-0.5px' }}>
+                    {totalValue.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: retColor, marginTop: '2px' }}>
+                    {totalRet >= 0 ? '+' : ''}{totalRet.toFixed(2)}% total
+                    {dailyPnl !== null && (
+                      <span style={{ marginLeft: '8px', fontSize: '12px', color: Number(dailyPnl) >= 0 ? '#22c55e' : '#ef4444' }}>
+                        Day: {Number(dailyPnl) >= 0 ? '+' : ''}{Number(dailyPnl).toFixed(2)}%
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
+                  {agentStatus === null ? 'Connecting…' : 'No data yet'}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 700,
+                background: running ? 'rgba(36,209,140,0.14)' : 'rgba(148,163,184,0.1)',
+                border: `1px solid ${running ? 'rgba(36,209,140,0.4)' : 'rgba(148,163,184,0.25)'}`,
+                color: running ? '#24d18c' : '#8fa2b5',
+              }}>
+                <span style={{
+                  width: '6px', height: '6px', borderRadius: '50%',
+                  background: running ? '#24d18c' : '#8fa2b5',
+                  boxShadow: running ? '0 0 6px #24d18c' : 'none',
+                }} />
+                {running ? 'RUNNING' : 'STOPPED'}
+              </span>
+              {circuitBroken && (
+                <span style={{
+                  fontSize: '11px', fontWeight: 700, color: '#ff6375',
+                  background: 'rgba(255,99,117,0.12)', padding: '3px 8px', borderRadius: '999px',
+                  border: '1px solid rgba(255,99,117,0.3)',
+                }}>
+                  ⛔ Circuit Breaker
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Stats row */}
+          {(executed !== null || decisions !== null || regime) && (
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {decisions !== null && (
+                <div style={{ textAlign: 'center', minWidth: '44px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#60a5fa' }}>{decisions}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--muted)' }}>Decisions</div>
+                </div>
+              )}
+              {executed !== null && (
+                <div style={{ textAlign: 'center', minWidth: '44px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#24d18c' }}>{executed}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--muted)' }}>Executed</div>
+                </div>
+              )}
+              {regime && (
+                <span style={{
+                  marginLeft: 'auto',
+                  display: 'inline-flex', alignItems: 'center', gap: '5px',
+                  padding: '3px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+                  color: regimeColor, background: regimeBg, border: `1px solid ${regimeColor}44`,
+                }}>
+                  {regime.replace(/_/g, ' ')}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Footer */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(148,163,184,0.1)' }}>
+            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+              {lastCycle
+                ? `Last cycle: ${(() => { try { return new Date(lastCycle).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) } catch { return lastCycle } })()}`
+                : 'No cycles yet'}
+            </span>
+            <span style={{ fontSize: '12px', color: '#60a5fa', fontWeight: 600 }}>View Agent →</span>
+          </div>
+        </article>
+      </button>
+    </section>
+  )
+}
+
+function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any }) {
 
   const portfolio  = agentStatus?.paper_portfolio || {}
   const running    = !!agentStatus?.running
@@ -893,18 +1041,20 @@ function AgentView() {
 
 export default function MobileExperience() {
   const dashboard = useMobileDashboard()
+  const { agentStatus, backtest } = useAgentData()
   const [active, setActive] = useState('home')
   const [selected, setSelected] = useState<any>(null)
 
   const portfolio = dashboard?.portfolio || {}
   const positions = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
   const scanner = dashboard?.scanner || scannerFallback
+  const agentRunning = agentStatus?.running === true
 
   return (
     <main className="mobile-shell">
       <header className="mobile-top">
         <div>
-          <span>Mitsos - PIA</span>
+          <span>PIA</span>
           <h1>Mobile Command</h1>
         </div>
         <button aria-label="Notifications">
@@ -916,6 +1066,7 @@ export default function MobileExperience() {
       {active === 'home' && (
         <>
           <MarketPulse items={dashboard?.macros?.market_strip || []} />
+          <AgentQuickCard agentStatus={agentStatus} onTap={() => setActive('agent')} />
           <PortfolioInsights portfolio={portfolio} positions={positions} />
           <UrgentAlerts portfolio={portfolio} />
           <DailyBrief portfolio={portfolio} />
@@ -925,11 +1076,11 @@ export default function MobileExperience() {
       )}
 
       {active === 'portfolio' && <PositionCards rows={positions} onSelect={setSelected} />}
-      {active === 'agent'     && <AgentView />}
+      {active === 'agent'     && <AgentView agentStatus={agentStatus} backtest={backtest} />}
       {active === 'scanner'   && <ScannerSetups scanner={scanner} onSelect={setSelected} />}
       {active === 'settings'  && <PlaceholderPanel title="Settings" />}
 
-      <MobileBottomNav active={active} setActive={setActive} />
+      <MobileBottomNav active={active} setActive={setActive} agentRunning={agentRunning} />
       {selected && <MobileDetailView position={selected} onClose={() => setSelected(null)} />}
     </main>
   )
