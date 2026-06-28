@@ -14,3 +14,5 @@ backend/Scripts/
 backend/Include/
 backend/pyvenv.cfg
 backend/*.sqlite3
+mobile/.next/
+mobile/node_modules
