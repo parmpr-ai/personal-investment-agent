@@ -664,13 +664,24 @@ def _decide_for_ticker(
     if not (macro.get("hostile") and vix_too_high):
         long_strategies = config.get("strategies", ["momentum", "mean_reversion"])
         best_score, best_reason, best_strat = 0, "", "unknown"
+        all_long_scores: Dict[str, int] = {}
         for strat in long_strategies:
             fn = LONG_STRATEGY_FNS.get(strat)
             if fn:
                 score, reason = fn(q, macro, news, fundamentals)
+                all_long_scores[strat] = min(int(score * 1.1), 99)
                 if score > best_score:
                     best_score, best_reason, best_strat = score, reason, strat
         confidence = min(int(best_score * 1.1), 99)
+        # Cross-strategy consensus boost
+        try:
+            from services.ml_scorer import cross_strategy_consensus_boost
+            bonus, bonus_reason = cross_strategy_consensus_boost(all_long_scores, is_short=False)
+            if bonus:
+                confidence = min(99, confidence + bonus)
+                best_reason = f"{best_reason} | {bonus_reason}"
+        except Exception:
+            pass
         if confidence >= config.get("min_confidence", 65):
             decisions.append({"action": "BUY", "ticker": ticker, "qty": None, "price": price,
                               "confidence": confidence, "reasoning": best_reason, "strategy": best_strat})
@@ -679,13 +690,24 @@ def _decide_for_ticker(
     if config.get("allow_shorts", True):
         short_strategies = config.get("short_strategies", ["short_momentum", "short_breakdown"])
         best_score, best_reason, best_strat = 0, "", "unknown"
+        all_short_scores: Dict[str, int] = {}
         for strat in short_strategies:
             fn = SHORT_STRATEGY_FNS.get(strat)
             if fn:
                 score, reason = fn(q, macro, news)
+                all_short_scores[strat] = min(int(score * 1.1), 99)
                 if score > best_score:
                     best_score, best_reason, best_strat = score, reason, strat
         confidence = min(int(best_score * 1.1), 99)
+        # Cross-strategy consensus boost for shorts
+        try:
+            from services.ml_scorer import cross_strategy_consensus_boost
+            bonus, bonus_reason = cross_strategy_consensus_boost(all_short_scores, is_short=True)
+            if bonus:
+                confidence = min(99, confidence + bonus)
+                best_reason = f"{best_reason} | {bonus_reason}"
+        except Exception:
+            pass
         if confidence >= config.get("min_short_confidence", 68):
             decisions.append({"action": "SHORT", "ticker": ticker, "qty": None, "price": price,
                               "confidence": confidence, "reasoning": best_reason, "strategy": best_strat})

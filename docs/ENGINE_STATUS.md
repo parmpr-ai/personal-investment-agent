@@ -9,13 +9,13 @@
 ## Progress Overview
 
 ```
-1. Backtesting Engine          ██████████████░░░░░░  65%  (+10)
-2. ML Signal Combination       ██████████████░░░░░░  70%
-3. Regime Detection            ████████████████░░░░  78%  (+10)
+1. Backtesting Engine          ██████████████░░░░░░  65%
+2. ML Signal Combination       ████████████████░░░░  83%  (+13)
+3. Regime Detection            ████████████████░░░░  78%
 4. Correlation-Aware Sizing    ████████████████░░░░  80%
 5. Institutional Signals       ███████░░░░░░░░░░░░░  35%
 ─────────────────────────────────────────────────────
-Overall Tier 1 Engine          ██████████████░░░░░░  66%  (+4)
+Overall Tier 1 Engine          ███████████████░░░░░  68%  (+2)
 ```
 
 ---
@@ -55,12 +55,9 @@ Overall Tier 1 Engine          ██████████████░░�
 - `ml_confidence_boost()` — adds ±15 pts to rule-engine score
 
 ### ❌ Missing
-- [ ] **Calibrated probabilities** — `predict_proba` not used; only class label returned
-  - Target: `CalibratedClassifierCV` wrapper, return probability as boost magnitude
-- [ ] **Cross-strategy signal combination** — when momentum + breakout both fire → no synergy boost
-  - Target: +10 confidence when ≥2 strategies agree on same ticker/direction
-- [ ] **SHORT-specific training** — comment in code: "long signals only for simplicity"
-  - Target: separate training dataset for short strategies with inverted features
+- [x] **Calibrated probabilities** — ✅ DONE: `CalibratedClassifierCV(cv='prefit', method='sigmoid')` wraps GBC; 70/30 split reserves calibration set
+- [x] **Cross-strategy signal combination** — ✅ DONE: `cross_strategy_consensus_boost()` adds +8 (2 agree) / +15 (3+); wired into `autonomous_agent._decide_for_ticker`
+- [x] **SHORT-specific training** — ✅ DONE: `extract_features(for_short=True)` inverts RSI, trend, SMA position, BB bands; `build_dataset(for_short=True)` labels price-fall as positive
 - [ ] **Auto-retrain trigger** — accuracy drop doesn't trigger retraining
   - Target: retrain if rolling 20-trade accuracy < 45%
 
@@ -162,3 +159,4 @@ Priority order based on impact vs effort:
 | 2026-06-28 | — | Initial source of truth created | — |
 | 2026-06-28 | Backtesting | Slippage 0.05% + commission $0.005/share per leg | 65% |
 | 2026-06-28 | Regime | RSI(14) + volume_ratio + 2-cycle hysteresis | 78% |
+| 2026-06-28 | ML | CalibratedClassifierCV + cross-strategy consensus (+8/+15) + short-inverted features | 83% |

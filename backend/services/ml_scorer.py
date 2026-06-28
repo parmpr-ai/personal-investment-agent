@@ -46,9 +46,19 @@ FEATURE_NAMES = [
 ]
 
 
-def extract_features(bar: Dict[str, Any], price: float) -> Optional[np.ndarray]:
+def extract_features(
+    bar: Dict[str, Any],
+    price: float,
+    for_short: bool = False,
+) -> Optional[np.ndarray]:
     """
     Extract a fixed-length feature vector from a signal bar dict.
+    When for_short=True, features are inverted to represent short-friendly signals:
+      - RSI: high RSI (overbought) is a short signal → inverted to (100 - rsi)
+      - change_pct / trend_5d_pct: positive momentum is bad for shorts → negated
+      - above_sma20/sma50: below MA is short-friendly → flipped
+      - BB: near upper band = overbought (short signal) ↔ near lower band
+      - 52w: near 52w high = potential short; near 52w low = avoid
     Returns None if critical features are missing.
     """
     def _b(key: str) -> float:
@@ -70,26 +80,59 @@ def extract_features(bar: Dict[str, Any], price: float) -> Optional[np.ndarray]:
     atr = _b("atr") or _b("atr_daily")
     atr_pct = atr / price * 100 if price > 0 and atr > 0 else 2.0
 
-    features = np.array([
-        rsi,
-        _b("rvol"),
-        _b("change_pct"),
-        _b("trend_5d_pct"),
-        1.0 if bar.get("above_sma20") else 0.0,
-        1.0 if bar.get("golden_cross") else 0.0,
-        1.0 if bar.get("above_sma50_daily") or bar.get("above_sma50") else 0.0,
-        1.0 if bar.get("macd_bullish_daily") or bar.get("macd_bullish") else 0.0,
-        1.0 if bar.get("macd_crossover_daily") or bar.get("macd_crossover") else 0.0,
-        1.0 if bar.get("macd_hist_rising_daily") or bar.get("macd_hist_rising") else 0.0,
-        1.0 if bar.get("near_bb_lower_daily") or bar.get("near_bb_lower") else 0.0,
-        1.0 if bar.get("near_bb_upper_daily") or bar.get("near_bb_upper") else 0.0,
-        1.0 if bar.get("above_bb_upper_daily") or bar.get("above_bb_upper") else 0.0,
-        _b("zscore_daily") or _b("zscore"),
-        atr_pct,
-        1.0 if bar.get("near_52w_high") else 0.0,
-        1.0 if bar.get("near_52w_low") else 0.0,
-        _b("pct_from_52w_high"),
-    ], dtype=np.float32)
+    if not for_short:
+        features = np.array([
+            rsi,
+            _b("rvol"),
+            _b("change_pct"),
+            _b("trend_5d_pct"),
+            1.0 if bar.get("above_sma20") else 0.0,
+            1.0 if bar.get("golden_cross") else 0.0,
+            1.0 if bar.get("above_sma50_daily") or bar.get("above_sma50") else 0.0,
+            1.0 if bar.get("macd_bullish_daily") or bar.get("macd_bullish") else 0.0,
+            1.0 if bar.get("macd_crossover_daily") or bar.get("macd_crossover") else 0.0,
+            1.0 if bar.get("macd_hist_rising_daily") or bar.get("macd_hist_rising") else 0.0,
+            1.0 if bar.get("near_bb_lower_daily") or bar.get("near_bb_lower") else 0.0,
+            1.0 if bar.get("near_bb_upper_daily") or bar.get("near_bb_upper") else 0.0,
+            1.0 if bar.get("above_bb_upper_daily") or bar.get("above_bb_upper") else 0.0,
+            _b("zscore_daily") or _b("zscore"),
+            atr_pct,
+            1.0 if bar.get("near_52w_high") else 0.0,
+            1.0 if bar.get("near_52w_low") else 0.0,
+            _b("pct_from_52w_high"),
+        ], dtype=np.float32)
+    else:
+        # Short-specific: invert directional features so the model sees
+        # "high signal value = good short opportunity"
+        above_sma20 = 1.0 if bar.get("above_sma20") else 0.0
+        above_sma50 = 1.0 if bar.get("above_sma50_daily") or bar.get("above_sma50") else 0.0
+        near_bb_lower = 1.0 if bar.get("near_bb_lower_daily") or bar.get("near_bb_lower") else 0.0
+        near_bb_upper = 1.0 if bar.get("near_bb_upper_daily") or bar.get("near_bb_upper") else 0.0
+        above_bb_upper = 1.0 if bar.get("above_bb_upper_daily") or bar.get("above_bb_upper") else 0.0
+        near_52w_high = 1.0 if bar.get("near_52w_high") else 0.0
+        near_52w_low  = 1.0 if bar.get("near_52w_low") else 0.0
+        zscore = _b("zscore_daily") or _b("zscore")
+
+        features = np.array([
+            100.0 - rsi,                         # overbought RSI → short signal
+            _b("rvol"),                           # high volume = conviction (same)
+            -_b("change_pct"),                   # negative momentum → short
+            -_b("trend_5d_pct"),                 # downtrend → short
+            1.0 - above_sma20,                   # below SMA20 → short-friendly
+            1.0 if bar.get("golden_cross") else 0.0,  # golden cross = no short (keep)
+            1.0 - above_sma50,                   # below SMA50 → short-friendly
+            1.0 if bar.get("macd_bullish_daily") or bar.get("macd_bullish") else 0.0,
+            1.0 if bar.get("macd_crossover_daily") or bar.get("macd_crossover") else 0.0,
+            1.0 if bar.get("macd_hist_rising_daily") or bar.get("macd_hist_rising") else 0.0,
+            near_bb_upper,                        # near upper BB = overbought = short
+            near_bb_lower,                        # near lower BB = not a short
+            above_bb_upper,                       # above upper BB = extreme overextension
+            -zscore,                              # high positive z-score = overbought
+            atr_pct,
+            near_52w_high,                        # near 52w high = potential short
+            near_52w_low,                         # near 52w low = avoid short
+            -_b("pct_from_52w_high"),             # less pct from high = closer to peak
+        ], dtype=np.float32)
 
     return features
 
@@ -101,10 +144,13 @@ def build_dataset(
     closes_per_ticker: Dict[str, np.ndarray],
     forward_days: int = 5,
     target_return_pct: float = 2.0,
+    for_short: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Build (X, y) pairs from historical signal arrays.
-    y = 1 if forward return in `forward_days` > `target_return_pct`.
+    Long:  y=1 if forward_return > +target_return_pct (price rises).
+    Short: y=1 if forward_return < -target_return_pct (price falls).
+    Uses short-inverted features when for_short=True.
     """
     from services.backtester import _bar_features
 
@@ -123,16 +169,19 @@ def build_dataset(
                 continue
 
             bar = _bar_features(sigs, i, price)
-            feats = extract_features(bar, price)
+            feats = extract_features(bar, price, for_short=for_short)
             if feats is None:
                 continue
 
-            # Forward return label
             future_price = closes[i + forward_days]
             if future_price <= 0 or np.isnan(future_price):
                 continue
             fwd_return = (future_price - price) / price * 100
-            label = 1 if fwd_return > target_return_pct else 0
+
+            if not for_short:
+                label = 1 if fwd_return > target_return_pct else 0
+            else:
+                label = 1 if fwd_return < -target_return_pct else 0
 
             X_rows.append(feats)
             y_rows.append(label)
@@ -147,7 +196,9 @@ def build_dataset(
 
 def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
     """
-    Train a GradientBoostingClassifier and save it to disk.
+    Train a GradientBoostingClassifier wrapped in CalibratedClassifierCV.
+    Calibration uses the held-out test set (cv='prefit') with Platt scaling
+    so that predict_proba() outputs reliable probabilities, not just scores.
     Returns training metrics.
     """
     if len(X) < 100:
@@ -155,19 +206,19 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
 
     try:
         from sklearn.ensemble import GradientBoostingClassifier
-        from sklearn.model_selection import cross_val_score
+        from sklearn.calibration import CalibratedClassifierCV
         from sklearn.preprocessing import StandardScaler
     except ImportError:
         return {"error": "scikit-learn not installed. Run: pip install scikit-learn"}
 
-    # Simple 80/20 time-series split (no shuffling to avoid lookahead)
-    split = int(len(X) * 0.8)
-    X_train, X_test = X[:split], X[split:]
-    y_train, y_test = y[:split], y[split:]
+    # 70/30 time-series split — reserve 30% for calibration + OOS eval
+    split = int(len(X) * 0.70)
+    X_train, X_cal = X[:split], X[split:]
+    y_train, y_cal = y[:split], y[split:]
 
     scaler = StandardScaler()
     X_train_s = scaler.fit_transform(X_train)
-    X_test_s = scaler.transform(X_test)
+    X_cal_s   = scaler.transform(X_cal)
 
     clf = GradientBoostingClassifier(
         n_estimators=150,
@@ -179,28 +230,44 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
     )
     clf.fit(X_train_s, y_train)
 
-    # Out-of-sample accuracy
-    test_acc = clf.score(X_test_s, y_test)
+    # Wrap with Platt scaling calibration on the held-out calibration set
+    calibrated: Any = clf  # fallback if calibration fails
+    calibrated_ok = False
+    try:
+        cal = CalibratedClassifierCV(clf, cv="prefit", method="sigmoid")
+        cal.fit(X_cal_s, y_cal)
+        calibrated = cal
+        calibrated_ok = True
+    except Exception:
+        pass  # keep raw clf if calibration fails (e.g. all same class)
 
-    # Feature importance
+    # Out-of-sample accuracy on calibration set
+    test_acc = float(calibrated.score(X_cal_s, y_cal))
+
+    # Feature importance (from underlying GBC — calibration wrapper doesn't expose it)
     importance = dict(zip(FEATURE_NAMES, clf.feature_importances_.tolist()))
     top_features = sorted(importance.items(), key=lambda x: x[1], reverse=True)[:5]
 
-    # Save model + scaler
+    # Save calibrated model + scaler
     model_path = MODEL_DIR / f"model_{strategy}.pkl"
     with open(model_path, "wb") as f:
-        pickle.dump({"clf": clf, "scaler": scaler, "ts": time.time()}, f)
+        pickle.dump({
+            "clf": calibrated,
+            "scaler": scaler,
+            "calibrated": calibrated_ok,
+            "ts": time.time(),
+        }, f)
 
-    # Update in-memory cache
-    _models[strategy] = {"clf": clf, "scaler": scaler}
+    _models[strategy] = {"clf": calibrated, "scaler": scaler}
     _model_ts[strategy] = time.time()
 
     return {
         "strategy": strategy,
         "samples": len(X),
         "train_samples": len(X_train),
-        "test_samples": len(X_test),
+        "calibration_samples": len(X_cal),
         "test_accuracy": round(test_acc, 3),
+        "calibrated": calibrated_ok,
         "positive_rate": round(float(np.mean(y)), 3),
         "top_features": top_features,
         "model_path": str(model_path),
@@ -237,14 +304,16 @@ def ml_confidence_boost(
 ) -> Tuple[int, str]:
     """
     Return (adjusted_confidence, reason).
-    Adjusts base_confidence by -20..+20 based on ML model output.
+    Adjusts base_confidence by -20..+20 based on calibrated ML probability.
+    Uses short-specific inverted features for short_* strategies.
     If no model available, returns (base_confidence, "").
     """
     model = _load_model(strategy)
     if model is None:
         return base_confidence, ""
 
-    feats = extract_features(bar_features, price)
+    is_short = strategy.startswith("short_")
+    feats = extract_features(bar_features, price, for_short=is_short)
     if feats is None:
         return base_confidence, ""
 
@@ -253,16 +322,39 @@ def ml_confidence_boost(
         proba = model["clf"].predict_proba(X)[0]
         positive_prob = float(proba[1]) if len(proba) > 1 else 0.5
 
-        # Map probability to confidence adjustment: 0.5 → 0, 0.8 → +15, 0.2 → -15
+        # Map calibrated probability to confidence delta: 0.5 → 0, 0.8 → +15, 0.2 → -15
         delta = round((positive_prob - 0.5) * 40)
         delta = max(-20, min(20, delta))
         adjusted = max(0, min(99, base_confidence + delta))
 
         direction = "↑" if delta > 0 else "↓"
-        reason = f"ML {strategy}: p={positive_prob:.2f} {direction}{abs(delta)}"
+        reason = f"ML({strategy}) p={positive_prob:.2f} {direction}{abs(delta)}"
         return adjusted, reason
     except Exception:
         return base_confidence, ""
+
+
+def cross_strategy_consensus_boost(
+    strategy_scores: Dict[str, int],
+    is_short: bool = False,
+) -> Tuple[int, str]:
+    """
+    Return (bonus, reason) when multiple strategies agree on direction.
+    Counts strategies that cleared the min_confidence threshold (≥65 long / ≥68 short).
+    Bonus: +8 for 2 agreeing strategies, +15 for 3+.
+    Only strategies of the same direction (long vs short) are counted.
+    """
+    min_thresh = 68 if is_short else 65
+    direction  = "SHORT" if is_short else "LONG"
+    agreeing   = [s for s, conf in strategy_scores.items() if conf >= min_thresh]
+
+    if len(agreeing) >= 3:
+        names = ", ".join(agreeing[:3])
+        return 15, f"Consensus {direction}: {len(agreeing)} strategies agree ({names})"
+    elif len(agreeing) >= 2:
+        names = " + ".join(agreeing[:2])
+        return 8, f"Consensus {direction}: {names} agree"
+    return 0, ""
 
 
 def models_status() -> List[Dict[str, Any]]:
@@ -334,44 +426,13 @@ async def train_all_models(
 
     results: List[Dict] = []
     for strategy in strategies:
-        # Short strategies: invert target — look for down moves
-        fwd_days = 5
-        target = 2.0 if not strategy.startswith("short_") else -2.0
-
-        if strategy.startswith("short_"):
-            # For short strategies, label = 1 if price FALLS > 2% in 5 days
-            X, y = build_dataset(sigs_map, closes_map, fwd_days, 0)
-            # Re-label: drop >-2% as positive
-            if len(X):
-                # Need to rebuild with negative target — use a wrapper
-                X_rows, y_rows = [], []
-                from services.backtester import _bar_features
-                for ticker, sigs in sigs_map.items():
-                    closes = closes_map.get(ticker)
-                    if closes is None:
-                        continue
-                    n = len(closes) - fwd_days
-                    for i in range(52, n):
-                        price = closes[i]
-                        if price <= 0 or np.isnan(price):
-                            continue
-                        bar = _bar_features(sigs, i, price)
-                        feats = extract_features(bar, price)
-                        if feats is None:
-                            continue
-                        future = closes[i + fwd_days]
-                        if future <= 0 or np.isnan(future):
-                            continue
-                        fwd_ret = (future - price) / price * 100
-                        label = 1 if fwd_ret < -2.0 else 0  # price falls = short wins
-                        X_rows.append(feats)
-                        y_rows.append(label)
-                if X_rows:
-                    X = np.array(X_rows, dtype=np.float32)
-                    y = np.array(y_rows, dtype=np.int32)
-        else:
-            X, y = build_dataset(sigs_map, closes_map, fwd_days, 2.0)
-
+        is_short = strategy.startswith("short_")
+        X, y = build_dataset(
+            sigs_map, closes_map,
+            forward_days=5,
+            target_return_pct=2.0,
+            for_short=is_short,
+        )
         r = train_model(X, y, strategy)
         results.append(r)
 
