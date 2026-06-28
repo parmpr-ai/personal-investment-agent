@@ -1,3 +1,8 @@
+"""
+Paper trading engine.
+Actions: BUY, SELL (close long), SHORT (open short), COVER (close short).
+Short P&L = (entry_price - current_price) * qty  — profit when price falls.
+"""
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -7,6 +12,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = BASE_DIR / "paper_trading.sqlite3"
 
 INITIAL_CASH = 100_000.0
+VALID_ACTIONS = ("BUY", "SELL", "SHORT", "COVER")
 
 
 def _connect():
@@ -71,8 +77,9 @@ def execute_paper_trade(
     reason: str = "",
     confidence: int = 50,
 ) -> Dict[str, Any]:
-    if action not in ("BUY", "SELL", "SHORT"):
-        return {"ok": False, "error": f"Unknown action: {action}"}
+    action = action.upper()
+    if action not in VALID_ACTIONS:
+        return {"ok": False, "error": f"Unknown action: {action}. Valid: {VALID_ACTIONS}"}
     if qty <= 0 or price <= 0:
         return {"ok": False, "error": "Invalid qty or price"}
 
@@ -81,26 +88,28 @@ def execute_paper_trade(
         cash = _get_cash(conn)
         ts = datetime.now(timezone.utc).isoformat()
 
+        # ── LONG: open ──────────────────────────────────────────────────────
         if action == "BUY":
             cost = qty * price
             if cost > cash:
-                return {"ok": False, "error": f"Insufficient paper cash: need ${cost:.2f}, have ${cash:.2f}"}
+                return {"ok": False, "error": f"Insufficient cash: need ${cost:.2f}, have ${cash:.2f}"}
             _set_cash(conn, cash - cost)
             conn.execute(
                 "INSERT INTO paper_book(ticker,action,qty,price,stop_loss,target,reason,confidence,ts) VALUES(?,?,?,?,?,?,?,?,?)",
-                (ticker, action, qty, price, stop_loss, target, reason, confidence, ts),
+                (ticker, "BUY", qty, price, stop_loss, target, reason, confidence, ts),
             )
             conn.commit()
-            return {"ok": True, "action": action, "ticker": ticker, "qty": qty, "price": price,
+            return {"ok": True, "action": "BUY", "ticker": ticker, "qty": qty, "price": price,
                     "cost": round(cost, 2), "cash_remaining": round(cash - cost, 2)}
 
+        # ── LONG: close ─────────────────────────────────────────────────────
         elif action == "SELL":
             open_buys = conn.execute(
                 "SELECT id, qty, price FROM paper_book WHERE ticker=? AND action='BUY' AND closed=0 ORDER BY ts ASC",
                 (ticker,),
             ).fetchall()
             if not open_buys:
-                return {"ok": False, "error": f"No open BUY position for {ticker}"}
+                return {"ok": False, "error": f"No open long position for {ticker}"}
             remaining = qty
             total_pnl = 0.0
             for row in open_buys:
@@ -118,35 +127,101 @@ def execute_paper_trade(
                 else:
                     conn.execute("UPDATE paper_book SET qty=qty-? WHERE id=?", (sell_qty, row["id"]))
                     conn.execute(
-                        "INSERT INTO paper_book(ticker,action,qty,price,stop_loss,target,reason,confidence,ts,closed,close_price,close_ts,pnl) VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?)",
-                        (ticker, "BUY", sell_qty, row["price"], None, None, f"Partial close", confidence, row["ts"], price, ts, round(pnl, 2)),
+                        "INSERT INTO paper_book(ticker,action,qty,price,ts,closed,close_price,close_ts,pnl,confidence,reason) VALUES(?,?,?,?,?,1,?,?,?,?,?)",
+                        (ticker, "BUY", sell_qty, row["price"], row["ts"], price, ts, round(pnl, 2), confidence, "Partial close"),
                     )
             _set_cash(conn, cash + qty * price)
             conn.commit()
-            return {"ok": True, "action": action, "ticker": ticker, "qty": qty, "price": price,
+            return {"ok": True, "action": "SELL", "ticker": ticker, "qty": qty, "price": price,
                     "pnl": round(total_pnl, 2), "cash_remaining": round(cash + qty * price, 2)}
+
+        # ── SHORT: open ─────────────────────────────────────────────────────
+        elif action == "SHORT":
+            # Need margin: reserve 100% of notional as collateral
+            collateral = qty * price
+            if collateral > cash:
+                return {"ok": False, "error": f"Insufficient cash for short collateral: need ${collateral:.2f}, have ${cash:.2f}"}
+            # Deduct collateral from cash; short proceeds added back on COVER
+            _set_cash(conn, cash - collateral)
+            conn.execute(
+                "INSERT INTO paper_book(ticker,action,qty,price,stop_loss,target,reason,confidence,ts) VALUES(?,?,?,?,?,?,?,?,?)",
+                (ticker, "SHORT", qty, price, stop_loss, target, reason, confidence, ts),
+            )
+            conn.commit()
+            return {"ok": True, "action": "SHORT", "ticker": ticker, "qty": qty, "price": price,
+                    "collateral": round(collateral, 2), "cash_remaining": round(cash - collateral, 2),
+                    "note": "Profit when price falls. Close with COVER."}
+
+        # ── SHORT: close ────────────────────────────────────────────────────
+        elif action == "COVER":
+            open_shorts = conn.execute(
+                "SELECT id, qty, price FROM paper_book WHERE ticker=? AND action='SHORT' AND closed=0 ORDER BY ts ASC",
+                (ticker,),
+            ).fetchall()
+            if not open_shorts:
+                return {"ok": False, "error": f"No open short position for {ticker}"}
+            remaining = qty
+            total_pnl = 0.0
+            total_collateral = 0.0
+            for row in open_shorts:
+                if remaining <= 0:
+                    break
+                cover_qty = min(remaining, row["qty"])
+                # Short P&L: profit when price fell (entry - exit) * qty
+                pnl = (row["price"] - price) * cover_qty
+                total_pnl += pnl
+                total_collateral += row["price"] * cover_qty
+                remaining -= cover_qty
+                if cover_qty >= row["qty"]:
+                    conn.execute(
+                        "UPDATE paper_book SET closed=1, close_price=?, close_ts=?, pnl=? WHERE id=?",
+                        (price, ts, round(pnl, 2), row["id"]),
+                    )
+                else:
+                    conn.execute("UPDATE paper_book SET qty=qty-? WHERE id=?", (cover_qty, row["id"]))
+                    conn.execute(
+                        "INSERT INTO paper_book(ticker,action,qty,price,ts,closed,close_price,close_ts,pnl,confidence,reason) VALUES(?,?,?,?,?,1,?,?,?,?,?)",
+                        (ticker, "SHORT", cover_qty, row["price"], row["ts"], price, ts, round(pnl, 2), confidence, "Partial cover"),
+                    )
+            # Return collateral + P&L
+            net_return = total_collateral + total_pnl
+            _set_cash(conn, cash + net_return)
+            conn.commit()
+            return {"ok": True, "action": "COVER", "ticker": ticker, "qty": qty, "price": price,
+                    "pnl": round(total_pnl, 2), "cash_remaining": round(cash + net_return, 2)}
+
     finally:
         conn.close()
     return {"ok": False, "error": "Unknown error"}
 
 
 def get_open_positions() -> List[Dict[str, Any]]:
+    """Returns all open longs (action=BUY) and shorts (action=SHORT)."""
     conn = _connect()
     try:
         rows = conn.execute(
-            "SELECT ticker, SUM(qty) as qty, AVG(price) as avg_price, MIN(stop_loss) as stop_loss, MAX(target) as target FROM paper_book WHERE action='BUY' AND closed=0 GROUP BY ticker"
+            """SELECT action, ticker, SUM(qty) as qty, AVG(price) as avg_price,
+               MIN(stop_loss) as stop_loss, MAX(target) as target
+               FROM paper_book WHERE action IN ('BUY','SHORT') AND closed=0
+               GROUP BY action, ticker""",
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
 
 
+def get_open_longs() -> List[Dict[str, Any]]:
+    return [p for p in get_open_positions() if p["action"] == "BUY"]
+
+
+def get_open_shorts() -> List[Dict[str, Any]]:
+    return [p for p in get_open_positions() if p["action"] == "SHORT"]
+
+
 def get_trade_history(limit: int = 100) -> List[Dict[str, Any]]:
     conn = _connect()
     try:
-        rows = conn.execute(
-            "SELECT * FROM paper_book ORDER BY ts DESC LIMIT ?", (limit,)
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM paper_book ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -159,37 +234,67 @@ def get_portfolio_summary(current_prices: Dict[str, float] | None = None) -> Dic
         cash = _get_cash(conn)
     finally:
         conn.close()
+
     current_prices = current_prices or {}
-    positions_value = 0.0
+    longs_value = 0.0
+    shorts_exposure = 0.0
     positions_out = []
+
     for p in open_pos:
         ticker = p["ticker"]
+        side = p["action"]  # "BUY" or "SHORT"
         cp = current_prices.get(ticker, p["avg_price"])
-        mv = p["qty"] * cp
         cost = p["qty"] * p["avg_price"]
-        unrealized = mv - cost
-        positions_value += mv
-        positions_out.append({
-            "ticker": ticker,
-            "qty": round(p["qty"], 4),
-            "avg_price": round(p["avg_price"], 2),
-            "current_price": round(cp, 2),
-            "market_value": round(mv, 2),
-            "unrealized_pnl": round(unrealized, 2),
-            "unrealized_pct": round(unrealized / cost * 100, 2) if cost else 0,
-            "stop_loss": p.get("stop_loss"),
-            "target": p.get("target"),
-        })
-    total_value = cash + positions_value
+
+        if side == "BUY":
+            mv = p["qty"] * cp
+            unrealized = mv - cost
+            longs_value += mv
+            positions_out.append({
+                "ticker": ticker,
+                "side": "LONG",
+                "qty": round(p["qty"], 4),
+                "avg_price": round(p["avg_price"], 2),
+                "current_price": round(cp, 2),
+                "market_value": round(mv, 2),
+                "unrealized_pnl": round(unrealized, 2),
+                "unrealized_pct": round(unrealized / cost * 100, 2) if cost else 0,
+                "stop_loss": p.get("stop_loss"),
+                "target": p.get("target"),
+            })
+        else:  # SHORT
+            # Short P&L: (entry - current) * qty
+            unrealized = (p["avg_price"] - cp) * p["qty"]
+            notional = p["qty"] * cp
+            shorts_exposure += notional
+            positions_out.append({
+                "ticker": ticker,
+                "side": "SHORT",
+                "qty": round(p["qty"], 4),
+                "avg_price": round(p["avg_price"], 2),
+                "current_price": round(cp, 2),
+                "market_value": round(notional, 2),
+                "unrealized_pnl": round(unrealized, 2),
+                "unrealized_pct": round(unrealized / cost * 100, 2) if cost else 0,
+                "stop_loss": p.get("stop_loss"),
+                "target": p.get("target"),
+            })
+
     closed = [t for t in get_trade_history(500) if t.get("closed") and t.get("pnl") is not None]
     realized_pnl = sum(t.get("pnl", 0) for t in closed)
+    unrealized_total = sum(p["unrealized_pnl"] for p in positions_out)
+    total_value = cash + longs_value + unrealized_total  # cash includes short collateral
+
     return {
         "total_value": round(total_value, 2),
         "cash": round(cash, 2),
-        "positions_value": round(positions_value, 2),
+        "longs_value": round(longs_value, 2),
+        "shorts_exposure": round(shorts_exposure, 2),
         "positions": positions_out,
+        "longs": [p for p in positions_out if p["side"] == "LONG"],
+        "shorts": [p for p in positions_out if p["side"] == "SHORT"],
         "realized_pnl": round(realized_pnl, 2),
-        "unrealized_pnl": round(sum(p["unrealized_pnl"] for p in positions_out), 2),
+        "unrealized_pnl": round(unrealized_total, 2),
         "total_return_pct": round((total_value - INITIAL_CASH) / INITIAL_CASH * 100, 2),
         "trade_count": len(closed),
         "initial_cash": INITIAL_CASH,

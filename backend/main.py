@@ -51,6 +51,13 @@ class AgentConfigRequest(BaseModel):
  min_confidence: int|None=None
  auto_stop_loss: bool|None=None
  auto_take_profit: bool|None=None
+ take_profit_pct: float|None=None
+ cut_loss_pct: float|None=None
+ allow_shorts: bool|None=None
+ short_strategies: list[str]|None=None
+ short_stop_pct: float|None=None
+ short_profit_pct: float|None=None
+ min_short_confidence: int|None=None
 
 THESIS_STORE={}
 TRANSACTIONS=[]

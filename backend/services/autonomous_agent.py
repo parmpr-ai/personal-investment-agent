@@ -15,6 +15,8 @@ from services.risk_manager import RiskManager
 from services.paper_trading import (
     execute_paper_trade,
     get_open_positions,
+    get_open_longs,
+    get_open_shorts,
     get_portfolio_summary,
 )
 
@@ -41,6 +43,12 @@ DEFAULT_CONFIG = {
     "auto_take_profit": True,
     "take_profit_pct": 15.0,
     "cut_loss_pct": 7.0,
+    # Short selling
+    "allow_shorts": True,
+    "short_strategies": ["short_momentum", "short_breakdown"],
+    "short_stop_pct": 8.0,       # cut if price rises 8% above short entry
+    "short_profit_pct": 12.0,    # cover when price falls 12% (take profit)
+    "min_short_confidence": 68,
 }
 
 
@@ -250,79 +258,200 @@ def _score_trend_follow(q: Dict, macro: Dict) -> tuple[int, str]:
     return score, "Trend: above SMA20, " + ", ".join(reasons) if reasons else "Trend: above SMA20"
 
 
+# ── Short signal scorers ──────────────────────────────────────────────────────
+
+def _score_short_momentum(q: Dict, macro: Dict) -> tuple[int, str]:
+    """Short momentum: overbought RSI + negative day + elevated volume."""
+    score = 0
+    reasons = []
+    rsi = q.get("rsi") or 50
+    chg = q.get("change_pct", 0) or 0
+    rvol = q.get("rvol", 1.0) or 1.0
+
+    if rsi >= 78:
+        score += 35
+        reasons.append(f"RSI={rsi} extremely overbought")
+    elif rsi >= 72:
+        score += 20
+        reasons.append(f"RSI={rsi} overbought")
+    else:
+        return 0, "RSI not overbought"
+
+    if chg <= -1.5:
+        score += 25
+        reasons.append(f"{chg:.1f}% reversal day")
+    elif chg <= -0.5:
+        score += 12
+        reasons.append(f"{chg:.1f}% negative day")
+
+    if rvol >= 1.5:
+        score += 15
+        reasons.append(f"RVOL={rvol:.1f} high volume")
+
+    if not q.get("above_sma20"):
+        score += 10
+        reasons.append("broke below SMA20")
+
+    regime = macro.get("regime", "NEUTRAL")
+    if "RISK_OFF" in regime:
+        score += 15
+        reasons.append(f"regime={regime}")
+    elif "RISK_ON_STRONG" in regime:
+        score -= 20
+        reasons.append("strong bull regime — penalized")
+
+    return score, "SHORT-Momentum: " + ", ".join(reasons)
+
+
+def _score_short_breakdown(q: Dict, macro: Dict) -> tuple[int, str]:
+    """Short breakdown: price breaks below SMA20 with volume + macro risk-off."""
+    score = 0
+    reasons = []
+    chg = q.get("change_pct", 0) or 0
+    rvol = q.get("rvol", 1.0) or 1.0
+    rsi = q.get("rsi") or 50
+
+    if q.get("above_sma20"):
+        return 0, "still above SMA20"
+
+    score += 20
+    reasons.append("below SMA20 breakdown")
+
+    if chg <= -2.0:
+        score += 25
+        reasons.append(f"{chg:.1f}% strong sell-off")
+    elif chg <= -0.8:
+        score += 12
+        reasons.append(f"{chg:.1f}% negative day")
+
+    if rvol >= 1.8:
+        score += 20
+        reasons.append(f"RVOL={rvol:.1f} volume confirms")
+
+    if rsi <= 45:
+        score += 10
+        reasons.append(f"RSI={rsi} weak momentum")
+
+    regime = macro.get("regime", "NEUTRAL")
+    if "RISK_OFF" in regime:
+        score += 20
+        reasons.append(f"regime={regime}")
+    elif macro.get("hostile"):
+        score += 15
+        reasons.append("hostile macro")
+
+    vix = macro.get("vix", 18)
+    if vix > 22:
+        score += 10
+        reasons.append(f"VIX={vix} elevated fear")
+
+    return score, "SHORT-Breakdown: " + ", ".join(reasons)
+
+
+LONG_STRATEGY_FNS = {
+    "momentum": _score_momentum,
+    "mean_reversion": _score_mean_reversion,
+    "breakout": _score_breakout,
+    "trend_follow": _score_trend_follow,
+}
+
+SHORT_STRATEGY_FNS = {
+    "short_momentum": _score_short_momentum,
+    "short_breakdown": _score_short_breakdown,
+}
+
+_CLOSE_PRIORITY = {"SELL": 0, "COVER": 0, "BUY": 1, "SHORT": 2}
+
+
 def _decide_for_ticker(
     ticker: str,
     q: Dict,
     macro: Dict,
-    open_positions: List[Dict],
+    open_longs: List[Dict],
+    open_shorts: List[Dict],
     config: Dict,
-    strategies: List[str],
-) -> Optional[Dict[str, Any]]:
+) -> List[Dict[str, Any]]:
     if not q.get("ok") or not q.get("price"):
-        return None
+        return []
     price = q["price"]
+    decisions = []
 
-    # Check open position for this ticker — manage existing first
-    pos = next((p for p in open_positions if p["ticker"] == ticker), None)
-    if pos:
-        avg = pos.get("avg_price", price)
+    # ── Manage open LONG ──────────────────────────────────────────────────────
+    long_pos = next((p for p in open_longs if p["ticker"] == ticker), None)
+    if long_pos:
+        avg = long_pos.get("avg_price", price)
         pnl_pct = (price - avg) / avg * 100 if avg else 0
-        take_profit = config.get("take_profit_pct", 15.0)
-        cut_loss = config.get("cut_loss_pct", 7.0)
-        if pnl_pct >= take_profit:
-            return {"action": "SELL", "ticker": ticker, "qty": pos["qty"], "price": price,
-                    "confidence": 85, "reasoning": f"Take profit: +{pnl_pct:.1f}% >= {take_profit}%"}
-        if pnl_pct <= -cut_loss:
-            return {"action": "SELL", "ticker": ticker, "qty": pos["qty"], "price": price,
-                    "confidence": 92, "reasoning": f"Cut loss: {pnl_pct:.1f}% <= -{cut_loss}%"}
-        return None  # hold existing
+        if pnl_pct >= config.get("take_profit_pct", 15.0):
+            decisions.append({"action": "SELL", "ticker": ticker, "qty": long_pos["qty"], "price": price,
+                              "confidence": 85, "reasoning": f"Long take-profit: +{pnl_pct:.1f}%"})
+        elif pnl_pct <= -config.get("cut_loss_pct", 7.0):
+            decisions.append({"action": "SELL", "ticker": ticker, "qty": long_pos["qty"], "price": price,
+                              "confidence": 93, "reasoning": f"Long cut-loss: {pnl_pct:.1f}%"})
 
-    # No open position — look for entry
-    if macro.get("hostile") and macro.get("vix", 0) > config.get("vix_pause_threshold", 27):
-        return None
+    # ── Manage open SHORT ─────────────────────────────────────────────────────
+    short_pos = next((p for p in open_shorts if p["ticker"] == ticker), None)
+    if short_pos:
+        avg = short_pos.get("avg_price", price)
+        # Short P&L: profit when price falls below entry
+        pnl_pct = (avg - price) / avg * 100 if avg else 0
+        if pnl_pct >= config.get("short_profit_pct", 12.0):
+            decisions.append({"action": "COVER", "ticker": ticker, "qty": short_pos["qty"], "price": price,
+                              "confidence": 85, "reasoning": f"Short take-profit: +{pnl_pct:.1f}% (price fell)"})
+        elif pnl_pct <= -config.get("short_stop_pct", 8.0):
+            decisions.append({"action": "COVER", "ticker": ticker, "qty": short_pos["qty"], "price": price,
+                              "confidence": 95, "reasoning": f"Short stop-loss: {pnl_pct:.1f}% (price rose against us)"})
 
-    best_score = 0
-    best_reason = ""
+    # If already managing this ticker, don't open new entries
+    if long_pos or short_pos:
+        return decisions
 
-    strategy_fns = {
-        "momentum": _score_momentum,
-        "mean_reversion": _score_mean_reversion,
-        "breakout": _score_breakout,
-        "trend_follow": _score_trend_follow,
-    }
+    # ── Look for new LONG entry ───────────────────────────────────────────────
+    vix_too_high = macro.get("vix", 0) > config.get("vix_pause_threshold", 27)
+    if not (macro.get("hostile") and vix_too_high):
+        long_strategies = config.get("strategies", ["momentum", "mean_reversion"])
+        best_score, best_reason = 0, ""
+        for strat in long_strategies:
+            fn = LONG_STRATEGY_FNS.get(strat)
+            if fn:
+                score, reason = fn(q, macro)
+                if score > best_score:
+                    best_score, best_reason = score, reason
+        confidence = min(int(best_score * 1.1), 99)
+        if confidence >= config.get("min_confidence", 65):
+            decisions.append({"action": "BUY", "ticker": ticker, "qty": None, "price": price,
+                              "confidence": confidence, "reasoning": best_reason})
 
-    for strat in strategies:
-        fn = strategy_fns.get(strat)
-        if fn:
-            score, reason = fn(q, macro)
-            if score > best_score:
-                best_score = score
-                best_reason = reason
+    # ── Look for new SHORT entry ──────────────────────────────────────────────
+    if config.get("allow_shorts", True):
+        short_strategies = config.get("short_strategies", ["short_momentum", "short_breakdown"])
+        best_score, best_reason = 0, ""
+        for strat in short_strategies:
+            fn = SHORT_STRATEGY_FNS.get(strat)
+            if fn:
+                score, reason = fn(q, macro)
+                if score > best_score:
+                    best_score, best_reason = score, reason
+        confidence = min(int(best_score * 1.1), 99)
+        if confidence >= config.get("min_short_confidence", 68):
+            decisions.append({"action": "SHORT", "ticker": ticker, "qty": None, "price": price,
+                              "confidence": confidence, "reasoning": best_reason})
 
-    # Map score (0-100+) → confidence (0-100)
-    confidence = min(int(best_score * 1.1), 99)
-
-    if confidence >= config.get("min_confidence", 65):
-        return {"action": "BUY", "ticker": ticker, "qty": None, "price": price,
-                "confidence": confidence, "reasoning": best_reason}
-    return None
+    return decisions
 
 
 def generate_decisions(
     quotes: Dict[str, Dict],
     macro: Dict,
-    open_positions: List[Dict],
+    open_longs: List[Dict],
+    open_shorts: List[Dict],
     config: Dict,
 ) -> List[Dict[str, Any]]:
-    strategies = config.get("strategies", ["momentum", "mean_reversion"])
-    decisions = []
+    all_decisions = []
     for ticker, q in quotes.items():
-        decision = _decide_for_ticker(ticker, q, macro, open_positions, config, strategies)
-        if decision:
-            decisions.append(decision)
-    # Sort: SELLs first (risk management), then BUYs by confidence desc
-    decisions.sort(key=lambda d: (d["action"] != "SELL", -d.get("confidence", 0)))
-    return decisions[:8]  # cap at 8 per cycle
+        all_decisions.extend(_decide_for_ticker(ticker, q, macro, open_longs, open_shorts, config))
+    # Closes first (SELL/COVER), then new entries by confidence desc
+    all_decisions.sort(key=lambda d: (_CLOSE_PRIORITY.get(d["action"], 3), -d.get("confidence", 0)))
+    return all_decisions[:10]
 
 
 # ── Agent loop ────────────────────────────────────────────────────────────────
@@ -389,14 +518,19 @@ class AutonomousAgent:
 
         universe = self.config.get("universe", UNIVERSE)
         quotes, macro = await asyncio.gather(fetch_quotes(universe), fetch_macro())
-        open_positions = get_open_positions()
+        open_longs = get_open_longs()
+        open_shorts = get_open_shorts()
         paper = get_portfolio_summary({t: q.get("price", 0) for t, q in quotes.items()})
 
-        # Auto stop-loss check
-        await self._check_stops(open_positions, quotes, cycle_id)
+        # Auto stop-loss check (hard stops before signal-based decisions)
+        await self._check_stops(open_longs, open_shorts, quotes, cycle_id)
+
+        # Refresh positions after stops
+        open_longs = get_open_longs()
+        open_shorts = get_open_shorts()
 
         # Generate decisions via rule engine
-        decisions = generate_decisions(quotes, macro, open_positions, self.config)
+        decisions = generate_decisions(quotes, macro, open_longs, open_shorts, self.config)
 
         executed = 0
         blocked = 0
@@ -407,23 +541,33 @@ class AutonomousAgent:
             price = d.get("price") or quotes.get(ticker, {}).get("price", 0)
             qty = d.get("qty") or self._risk.position_size_shares(ticker, price, paper["total_value"], self.config.get("risk_per_trade_pct", 2.0))
 
-            mock_portfolio = {
-                "total_value": paper["total_value"],
-                "cash": paper["cash"],
-                "positions": [{"symbol": p["ticker"], "market_value": p["market_value"], "portfolio_pct": p["market_value"] / max(paper["total_value"], 1) * 100, "qty": p["qty"]} for p in paper["positions"]],
-                "daily_pnl_pct": 0,
-            }
-            risk = self._risk.check_trade(action, ticker, qty, price, mock_portfolio, macro)
+            # COVER/SELL use qty from existing position — skip risk sizing
+            is_close = action in ("SELL", "COVER")
 
-            if not risk["approved"]:
-                _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": "; ".join(risk["reasons"])})
-                blocked += 1
-                _log("warning", f"[{cycle_id}] {action} {ticker} BLOCKED: {risk['reasons']}")
-                continue
+            if not is_close:
+                mock_portfolio = {
+                    "total_value": paper["total_value"],
+                    "cash": paper["cash"],
+                    "positions": [{"symbol": p["ticker"], "market_value": p["market_value"], "portfolio_pct": p["market_value"] / max(paper["total_value"], 1) * 100, "qty": p["qty"]} for p in paper["positions"]],
+                    "daily_pnl_pct": 0,
+                }
+                risk = self._risk.check_trade(action, ticker, qty, price, mock_portfolio, macro)
+                if not risk["approved"]:
+                    _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": "; ".join(risk["reasons"])})
+                    blocked += 1
+                    _log("warning", f"[{cycle_id}] {action} {ticker} BLOCKED: {risk['reasons']}")
+                    continue
+                qty = risk["adjusted_qty"]
 
-            qty = risk["adjusted_qty"]
-            stop = self._risk.compute_stop_loss(price) if self.config.get("auto_stop_loss") else None
-            target = round(price * (1 + self.config.get("take_profit_pct", 15) / 100), 2) if self.config.get("auto_take_profit") else None
+            # Compute stops/targets for new entries
+            if action == "BUY":
+                stop = self._risk.compute_stop_loss(price, "BUY") if self.config.get("auto_stop_loss") else None
+                target = round(price * (1 + self.config.get("take_profit_pct", 15) / 100), 2) if self.config.get("auto_take_profit") else None
+            elif action == "SHORT":
+                stop = self._risk.compute_stop_loss(price, "SELL") if self.config.get("auto_stop_loss") else None
+                target = round(price * (1 - self.config.get("short_profit_pct", 12) / 100), 2) if self.config.get("auto_take_profit") else None
+            else:
+                stop = target = None
 
             if self.config["mode"] == "paper":
                 result = execute_paper_trade(ticker=ticker, action=action, qty=qty, price=price, stop_loss=stop, target=target, reason=d.get("reasoning", "")[:400], confidence=confidence)
@@ -437,6 +581,7 @@ class AutonomousAgent:
             else:
                 _log("warning", f"[{cycle_id}] FAILED {action} {ticker}: {result.get('error')}")
 
+        paper_after = get_portfolio_summary({t: q.get("price", 0) for t, q in quotes.items()})
         summary = {
             "cycle_id": cycle_id,
             "ts": datetime.now(timezone.utc).isoformat(),
@@ -446,23 +591,40 @@ class AutonomousAgent:
             "blocked": blocked,
             "macro_regime": macro.get("regime"),
             "vix": macro.get("vix"),
-            "portfolio_value": paper["total_value"],
-            "total_return_pct": paper["total_return_pct"],
+            "portfolio_value": paper_after["total_value"],
+            "total_return_pct": paper_after["total_return_pct"],
+            "open_longs": len(paper_after["longs"]),
+            "open_shorts": len(paper_after["shorts"]),
         }
         self._last_cycle_ts = summary["ts"]
         self._last_cycle_summary = summary
         _log("info", f"[{cycle_id}] Done: executed={executed}, blocked={blocked}, regime={macro.get('regime')}, portfolio=${paper['total_value']:,.0f} ({paper['total_return_pct']:+.2f}%)")
 
-    async def _check_stops(self, open_positions: List[Dict], quotes: Dict, cycle_id: str):
-        for pos in open_positions:
+    async def _check_stops(self, open_longs: List[Dict], open_shorts: List[Dict], quotes: Dict, cycle_id: str):
+        # Long stop: sell if price falls 8%+ below entry
+        for pos in open_longs:
             ticker = pos["ticker"]
             price = quotes.get(ticker, {}).get("price", 0)
             if not price:
                 continue
             if self._risk.should_trigger_stop(pos, price):
-                _log("warning", f"[{cycle_id}] STOP-LOSS: {ticker} @ ${price:.2f} (avg ${pos['avg_price']:.2f})")
-                result = execute_paper_trade(ticker=ticker, action="SELL", qty=pos["qty"], price=price, reason="AUTO STOP-LOSS", confidence=99)
-                _save_decision(cycle_id, {"ticker": ticker, "action": "SELL", "qty": pos["qty"], "price": price, "confidence": 99, "reasoning": "Auto stop-loss triggered", "executed": result.get("ok", False), "execution_result": result})
+                _log("warning", f"[{cycle_id}] LONG STOP: {ticker} @ ${price:.2f} (avg ${pos['avg_price']:.2f})")
+                result = execute_paper_trade(ticker=ticker, action="SELL", qty=pos["qty"], price=price, reason="AUTO LONG STOP-LOSS", confidence=99)
+                _save_decision(cycle_id, {"ticker": ticker, "action": "SELL", "qty": pos["qty"], "price": price, "confidence": 99, "reasoning": "Auto long stop-loss", "executed": result.get("ok", False), "execution_result": result})
+
+        # Short stop: cover if price rises 8%+ above entry
+        short_stop_pct = self.config.get("short_stop_pct", 8.0)
+        for pos in open_shorts:
+            ticker = pos["ticker"]
+            price = quotes.get(ticker, {}).get("price", 0)
+            if not price:
+                continue
+            avg = pos.get("avg_price", price)
+            rise_pct = (price - avg) / avg * 100 if avg else 0
+            if rise_pct >= short_stop_pct:
+                _log("warning", f"[{cycle_id}] SHORT STOP: {ticker} @ ${price:.2f} rose +{rise_pct:.1f}% vs entry ${avg:.2f}")
+                result = execute_paper_trade(ticker=ticker, action="COVER", qty=pos["qty"], price=price, reason="AUTO SHORT STOP-LOSS", confidence=99)
+                _save_decision(cycle_id, {"ticker": ticker, "action": "COVER", "qty": pos["qty"], "price": price, "confidence": 99, "reasoning": f"Auto short stop: price +{rise_pct:.1f}%", "executed": result.get("ok", False), "execution_result": result})
 
 
 agent = AutonomousAgent()
