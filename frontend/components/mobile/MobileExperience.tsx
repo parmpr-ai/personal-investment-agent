@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import {
+  Activity,
   AlertTriangle,
   BarChart3,
   Bell,
+  Bot,
   BriefcaseBusiness,
   ChevronRight,
   Gauge,
@@ -15,6 +17,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  TrendingUp,
   Wallet,
   X,
 } from 'lucide-react'
@@ -108,8 +111,8 @@ const scannerFallback = [
 const navItems = [
   ['home', 'Home', Home],
   ['portfolio', 'Portfolio', Wallet],
+  ['agent', 'Agent', Bot],
   ['scanner', 'Scanner', Sparkles],
-  ['markets', 'Markets', BarChart3],
   ['settings', 'Settings', Settings],
 ] as const
 
@@ -602,6 +605,292 @@ function PlaceholderPanel({ title }: { title: string }) {
   )
 }
 
+// ─── Agent tab data ───────────────────────────────────────────────────────────
+
+function useAgentData() {
+  const [agentStatus, setAgentStatus] = useState<any>(null)
+  const [backtest, setBacktest] = useState<any>(null)
+
+  useEffect(() => {
+    const fetchAll = () => {
+      fetch(`${API}/agent/status`).then(r => r.json()).then(setAgentStatus).catch(() => {})
+    }
+    fetchAll()
+    fetch(`${API}/agent/backtest/status`).then(r => r.json()).then(d => {
+      if (d?.status === 'completed') setBacktest(d)
+    }).catch(() => {})
+
+    const timer = setInterval(fetchAll, 30_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return { agentStatus, backtest }
+}
+
+function RegimePill({ regime }: { regime: string }) {
+  const colors: Record<string, [string, string]> = {
+    BULL_TREND:   ['#24d18c', 'rgba(36,209,140,0.14)'],
+    BEAR_TREND:   ['#fb7185', 'rgba(251,113,133,0.14)'],
+    CHOPPY_RANGE: ['#fbbf24', 'rgba(251,191,36,0.14)'],
+    CRISIS:       ['#ff6375', 'rgba(255,99,117,0.18)'],
+  }
+  const [color, bg] = colors[regime] ?? ['#8fa2b5', 'rgba(148,163,184,0.12)']
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '5px',
+      padding: '3px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+      color, background: bg, border: `1px solid ${color}44`,
+    }}>
+      <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: color, flexShrink: 0 }} />
+      {regime.replace(/_/g, ' ')}
+    </span>
+  )
+}
+
+function StatChip({ label, value, color }: { label: string; value: React.ReactNode; color: string }) {
+  return (
+    <div style={{
+      background: '#0b1119', border: '1px solid rgba(148,163,184,0.14)',
+      borderRadius: '14px', padding: '10px 6px', textAlign: 'center',
+    }}>
+      <div style={{ fontSize: '16px', fontWeight: 800, color, lineHeight: 1.15 }}>{value}</div>
+      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '3px', lineHeight: 1.3 }}>{label}</div>
+    </div>
+  )
+}
+
+function McStatBox({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{
+      flex: '1', textAlign: 'center', padding: '9px 4px',
+      background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
+    }}>
+      <div style={{ fontSize: '13px', fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>{label}</div>
+    </div>
+  )
+}
+
+function AgentView() {
+  const { agentStatus, backtest } = useAgentData()
+
+  const portfolio  = agentStatus?.paper_portfolio || {}
+  const running    = !!agentStatus?.running
+  const regime     = (agentStatus?.last_regime as string) || 'UNKNOWN'
+  const vix        = Number(agentStatus?.last_vix || 0)
+  const totalValue = Number(portfolio.total_value || 100_000)
+  const totalRet   = Number(portfolio.total_return_pct || 0)
+  const cash       = Number(portfolio.cash || 0)
+  const longs      = Array.isArray(portfolio.longs) ? portfolio.longs.length : 0
+  const shorts     = Array.isArray(portfolio.shorts) ? portfolio.shorts.length : 0
+  const positions  = (portfolio.positions || []).length
+
+  const mc          = backtest?.monte_carlo || {}
+  const bestStrat   = Array.isArray(backtest?.strategies) ? backtest.strategies[0] : null
+  const spyBm       = backtest?.spy_benchmark || {}
+
+  const retColor = (v: number) => (v >= 0 ? '#24d18c' : '#ff6375')
+  const fmtRet   = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`
+
+  return (
+    <>
+      {/* ── Hero status card ── */}
+      <article className="mobile-visual-card" style={{ marginBottom: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+          <div>
+            <span style={{ display: 'block', color: 'var(--muted)', fontSize: '12px', marginBottom: '4px' }}>
+              Autonomous Agent
+            </span>
+            <strong style={{ fontSize: '28px', fontWeight: 800, letterSpacing: '-0.5px' }}>
+              {totalValue.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+            </strong>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', paddingTop: '2px' }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+              background: running ? 'rgba(36,209,140,0.14)' : 'rgba(148,163,184,0.1)',
+              border: `1px solid ${running ? 'rgba(36,209,140,0.4)' : 'rgba(148,163,184,0.25)'}`,
+              color: running ? '#24d18c' : '#8fa2b5',
+            }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: running ? '#24d18c' : '#8fa2b5' }} />
+              {running ? 'RUNNING' : 'STOPPED'}
+            </span>
+            <RegimePill regime={regime} />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+          <span style={{ fontSize: '22px', fontWeight: 700, color: retColor(totalRet) }}>
+            {fmtRet(totalRet)}
+          </span>
+          <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+            total return · VIX {vix.toFixed(1)}
+          </span>
+        </div>
+      </article>
+
+      {/* ── 6-chip stats grid ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '18px' }}>
+        <StatChip label="Open Longs"  value={longs}     color="#24d18c" />
+        <StatChip label="Positions"   value={positions} color="#a78bfa" />
+        <StatChip label="Open Shorts" value={shorts}    color="#ff6375" />
+        <StatChip label="Cash"        value={`$${(cash / 1000).toFixed(1)}k`}  color="#8fa2b5" />
+        <StatChip label="Mode"        value="paper"     color="#60a5fa" />
+        <StatChip label="Cycles"      value={agentStatus?.cycle_count ?? '—'} color="#fbbf24" />
+      </div>
+
+      {/* ── Backtest + Monte Carlo swipe rail ── */}
+      {bestStrat ? (
+        <SwipeRail
+          title="Backtest · 2-year"
+          icon={<TrendingUp size={18} />}
+          items={[
+            { _type: 'strategy' },
+            ...(mc.final_return_pct ? [{ _type: 'mc' }] : []),
+          ]}
+          render={(item: any) => {
+            if (item._type === 'mc') {
+              const ret = mc.final_return_pct as Record<string, number>
+              const dd  = mc.max_drawdown_pct  as Record<string, number>
+              return (
+                <article className="mobile-visual-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <span style={{ display: 'block', color: 'var(--muted)', fontSize: '12px' }}>Monte Carlo</span>
+                      <strong style={{ fontSize: '14px', fontWeight: 700 }}>1 000 bootstrap paths</strong>
+                    </div>
+                    <span style={{
+                      fontSize: '11px', fontWeight: 700,
+                      color: (mc.prob_loss_pct ?? 0) > 25 ? '#ff6375' : '#24d18c',
+                    }}>
+                      P(loss) {(mc.prob_loss_pct ?? 0).toFixed(1)}%
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+                    <McStatBox label="Worst (P5)"  value={fmtRet(ret.p5)}  color="#ff6375" />
+                    <McStatBox label="Median (P50)" value={fmtRet(ret.p50)} color="#eef4fb" />
+                    <McStatBox label="Best (P95)"  value={fmtRet(ret.p95)} color="#24d18c" />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '16px', marginTop: '10px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                      Worst DD:&nbsp;
+                      <span style={{ color: '#ff6375', fontWeight: 600 }}>{dd?.p5_worst?.toFixed(1)}%</span>
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                      Median DD:&nbsp;
+                      <span style={{ color: '#fbbf24', fontWeight: 600 }}>{dd?.median?.toFixed(1)}%</span>
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                      {mc.strategy}
+                    </span>
+                  </div>
+                </article>
+              )
+            }
+
+            // Best strategy card
+            const s = bestStrat
+            const alpha = (s.total_return || 0) - (spyBm?.total_return_pct || 0)
+            const beating = alpha > 0
+            return (
+              <article className="mobile-visual-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <span style={{ display: 'block', color: 'var(--muted)', fontSize: '12px' }}>Best Strategy</span>
+                    <strong style={{ fontSize: '16px', fontWeight: 800 }}>{s.name}</strong>
+                  </div>
+                  <IntelligenceBadge
+                    label={fmtRet(s.total_return || 0)}
+                    tone={(s.total_return || 0) >= 0 ? 'good' : 'bad'}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+                  <McStatBox label="Sharpe"   value={(s.sharpe || 0).toFixed(2)} color={(s.sharpe || 0) >= 1 ? '#24d18c' : '#fbbf24'} />
+                  <McStatBox label="Win Rate" value={`${(s.win_rate || 0).toFixed(0)}%`} color={(s.win_rate || 0) >= 50 ? '#24d18c' : '#ff6375'} />
+                  <McStatBox label="Max DD"   value={`${(s.max_dd || 0).toFixed(1)}%`} color="#ff6375" />
+                </div>
+
+                <div style={{ marginTop: '10px', fontSize: '11px', color: 'var(--muted)' }}>
+                  {s.trades} trades&nbsp;·&nbsp;vs SPY&nbsp;
+                  <span style={{ color: beating ? '#24d18c' : '#ff6375', fontWeight: 700 }}>
+                    {beating ? `+${alpha.toFixed(1)}% alpha` : `${alpha.toFixed(1)}% vs SPY`}
+                  </span>
+                  &nbsp;·&nbsp;Calmar {(s.calmar || 0).toFixed(2)}
+                </div>
+              </article>
+            )
+          }}
+        />
+      ) : (
+        <section className="mobile-section">
+          <div className="mobile-section-title">
+            <h2>Backtest</h2>
+            <TrendingUp size={18} />
+          </div>
+          <div style={{ border: '1px dashed rgba(148,163,184,0.22)', borderRadius: '18px', padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
+            No backtest data — run backtest from the desktop Agent tab.
+          </div>
+        </section>
+      )}
+
+      {/* ── Open positions mini list ── */}
+      {(portfolio.positions || []).length > 0 && (
+        <section className="mobile-section">
+          <div className="mobile-section-title">
+            <h2>Open Positions</h2>
+            <Activity size={18} />
+          </div>
+          <div style={{ display: 'grid', gap: '8px' }}>
+            {(portfolio.positions as any[]).slice(0, 5).map((p: any, i: number) => {
+              const pnl = Number(p.unrealized_pnl || 0)
+              const pct2 = Number(p.pnl_pct || 0)
+              const isLong = (p.side || '').toUpperCase() === 'LONG'
+              return (
+                <div key={`${p.ticker}-${i}`} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 12px', background: '#0b1119',
+                  border: '1px solid rgba(148,163,184,0.14)', borderRadius: '14px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{
+                      width: '36px', height: '36px', borderRadius: '10px',
+                      background: isLong ? 'rgba(36,209,140,0.12)' : 'rgba(255,99,117,0.12)',
+                      border: `1px solid ${isLong ? 'rgba(36,209,140,0.3)' : 'rgba(255,99,117,0.3)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '11px', fontWeight: 700,
+                      color: isLong ? '#24d18c' : '#ff6375', flexShrink: 0,
+                    }}>
+                      {(p.ticker || '?').slice(0, 4)}
+                    </span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '14px' }}>{p.ticker}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                        {p.qty} · {isLong ? 'LONG' : 'SHORT'} · entry ${(p.avg_price || 0).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontWeight: 700, fontSize: '14px', color: retColor(pnl) }}>
+                      {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(0)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: retColor(pct2) }}>
+                      {fmtRet(pct2)}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+    </>
+  )
+}
+
 export default function MobileExperience() {
   const dashboard = useMobileDashboard()
   const [active, setActive] = useState('home')
@@ -636,14 +925,9 @@ export default function MobileExperience() {
       )}
 
       {active === 'portfolio' && <PositionCards rows={positions} onSelect={setSelected} />}
-      {active === 'scanner' && <ScannerSetups scanner={scanner} onSelect={setSelected} />}
-      {active === 'markets' && (
-        <>
-          <MarketPulse items={dashboard?.macros?.market_strip || []} />
-          <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} />
-        </>
-      )}
-      {active === 'settings' && <PlaceholderPanel title="Settings" />}
+      {active === 'agent'     && <AgentView />}
+      {active === 'scanner'   && <ScannerSetups scanner={scanner} onSelect={setSelected} />}
+      {active === 'settings'  && <PlaceholderPanel title="Settings" />}
 
       <MobileBottomNav active={active} setActive={setActive} />
       {selected && <MobileDetailView position={selected} onClose={() => setSelected(null)} />}
