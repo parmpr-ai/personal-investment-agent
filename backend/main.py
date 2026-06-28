@@ -268,10 +268,7 @@ def qa_checklist():
 def agent_status(): return autonomous_agent.status()
 
 @app.post('/agent/start')
-def agent_start():
- if not os.getenv('ANTHROPIC_API_KEY'):
-  raise HTTPException(status_code=400, detail='ANTHROPIC_API_KEY not set. Add it to backend/.env')
- return autonomous_agent.start()
+def agent_start(): return autonomous_agent.start()
 
 @app.post('/agent/stop')
 def agent_stop(): return autonomous_agent.stop()
@@ -283,8 +280,6 @@ def agent_config(req:AgentConfigRequest):
 
 @app.post('/agent/cycle')
 async def agent_cycle_once():
- if not os.getenv('ANTHROPIC_API_KEY'):
-  raise HTTPException(status_code=400, detail='ANTHROPIC_API_KEY not set.')
  await autonomous_agent._run_cycle()
  return autonomous_agent.status()
 
