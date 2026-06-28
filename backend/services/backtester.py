@@ -716,10 +716,23 @@ async def run_backtest(
     return summary
 
 
+def _np_default(obj):
+    """JSON encoder helper for numpy scalar types."""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Not serializable: {type(obj)}")
+
+
 def _save_result(ticker, strategy, metrics, equity_curve, trades, ts):
     # Normalize equity to 1.0 base so frontend formula (v*100-100) gives % return
-    start = equity_curve[0] if equity_curve else 100_000.0
-    norm = [round(v / start, 6) for v in equity_curve[::5]] if equity_curve else []
+    start = float(equity_curve[0]) if equity_curve else 100_000.0
+    norm = [round(float(v) / start, 6) for v in equity_curve[::5]] if equity_curve else []
     conn = _conn()
     try:
         conn.execute("""
@@ -728,12 +741,12 @@ def _save_result(ticker, strategy, metrics, equity_curve, trades, ts):
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             ts, strategy, ticker,
-            metrics["total_trades"], metrics["win_rate"],
-            metrics["sharpe"], metrics["sortino"],
-            metrics["max_dd_pct"], metrics["calmar"],
-            metrics["total_return_pct"], metrics["avg_return_pct"],
+            int(metrics["total_trades"]), float(metrics["win_rate"]),
+            float(metrics["sharpe"]), float(metrics["sortino"]),
+            float(metrics["max_dd_pct"]), float(metrics["calmar"]),
+            float(metrics["total_return_pct"]), float(metrics["avg_return_pct"]),
             json.dumps(norm),
-            json.dumps(trades[:50]),
+            json.dumps(trades[:50], default=_np_default),
         ))
         conn.commit()
     finally:
@@ -745,10 +758,11 @@ def _build_frontend_result(run_d: Dict, conn) -> Dict[str, Any]:
     summary = json.loads(run_d.get("summary") or "{}")
     spy_bm = summary.get("spy_benchmark", {})
 
-    # Per-ticker rows: pick best Sharpe per strategy for equity curve display
+    # Per-ticker rows: pick best Sharpe per strategy (rows with trades ranked first)
     rows = conn.execute(
         "SELECT strategy, ticker, sharpe, win_rate, total_return_pct, max_dd, calmar, total_trades, equity_curve "
-        "FROM backtest_results WHERE ts=? ORDER BY sharpe DESC",
+        "FROM backtest_results WHERE ts=? "
+        "ORDER BY CASE WHEN total_trades > 0 THEN 1 ELSE 0 END DESC, sharpe DESC",
         (run_d["ts"],)
     ).fetchall()
 
