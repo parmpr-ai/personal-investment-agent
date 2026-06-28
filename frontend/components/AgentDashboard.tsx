@@ -1,0 +1,1577 @@
+'use client'
+
+import React, { useEffect, useRef, useState, useCallback } from 'react'
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  Cell,
+} from 'recharts'
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+const API = 'http://127.0.0.1:8000'
+
+const C = {
+  bg: '#0a0a0a',
+  card: 'rgba(255,255,255,0.04)',
+  border: 'rgba(255,255,255,0.08)',
+  green: '#00ff88',
+  greenDim: '#22c55e',
+  red: '#ff4444',
+  redDim: '#ef4444',
+  yellow: '#f59e0b',
+  blue: '#3b82f6',
+  purple: '#a855f7',
+  textPrimary: '#ffffff',
+  textSecondary: '#9ca3af',
+  textMuted: '#6b7280',
+  radius: '12px',
+  radiusSm: '8px',
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const fmt$ = (v: any) =>
+  Number(v || 0).toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+
+const fmtPct = (v: any, sign = true) => {
+  const n = Number(v || 0)
+  return `${sign && n > 0 ? '+' : ''}${n.toFixed(2)}%`
+}
+
+const fmtTime = (ts: string) => {
+  if (!ts) return '—'
+  try {
+    return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  } catch {
+    return ts
+  }
+}
+
+const fmtDatetime = (ts: string) => {
+  if (!ts) return '—'
+  try {
+    return new Date(ts).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return ts
+  }
+}
+
+async function apiFetch(path: string, init?: RequestInit) {
+  const res = await fetch(`${API}${path}`, init)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw body
+  return body
+}
+
+function useInterval(fn: () => void, ms: number | null) {
+  const ref = useRef(fn)
+  ref.current = fn
+  useEffect(() => {
+    if (ms === null) return
+    const id = setInterval(() => ref.current(), ms)
+    return () => clearInterval(id)
+  }, [ms])
+}
+
+// ─── Shared sub-components ───────────────────────────────────────────────────
+
+function Card({
+  children,
+  style,
+  className,
+}: {
+  children: React.ReactNode
+  style?: React.CSSProperties
+  className?: string
+}) {
+  return (
+    <div
+      style={{
+        background: C.card,
+        border: `1px solid ${C.border}`,
+        borderRadius: C.radius,
+        padding: '20px',
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+function SectionTitle({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return (
+    <h3
+      style={{
+        color: C.textSecondary,
+        fontSize: '11px',
+        fontWeight: 600,
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        margin: '0 0 16px 0',
+        ...style,
+      }}
+    >
+      {children}
+    </h3>
+  )
+}
+
+function Badge({
+  children,
+  color = C.textSecondary,
+  bg = 'rgba(255,255,255,0.06)',
+}: {
+  children: React.ReactNode
+  color?: string
+  bg?: string
+}) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        padding: '3px 8px',
+        borderRadius: '20px',
+        background: bg,
+        color,
+        fontSize: '11px',
+        fontWeight: 600,
+        border: `1px solid ${color}33`,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+function Dot({ color }: { color: string }) {
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        width: '7px',
+        height: '7px',
+        borderRadius: '50%',
+        background: color,
+        flexShrink: 0,
+      }}
+    />
+  )
+}
+
+function PctLabel({ value, style }: { value: number; style?: React.CSSProperties }) {
+  const color = value >= 0 ? C.green : C.red
+  return (
+    <span style={{ color, fontWeight: 600, ...style }}>
+      {fmtPct(value)}
+    </span>
+  )
+}
+
+function EmptyState({ message = 'No data available' }: { message?: string }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '120px',
+        color: C.textMuted,
+        fontSize: '13px',
+      }}
+    >
+      {message}
+    </div>
+  )
+}
+
+function Spinner() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '80px',
+        color: C.textMuted,
+        fontSize: '13px',
+        gap: '8px',
+      }}
+    >
+      <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
+      Loading...
+    </div>
+  )
+}
+
+// ─── Section A: Live Status Bar ───────────────────────────────────────────────
+
+function LiveStatusBar({ status, onToggle, toggling }: { status: any; onToggle: () => void; toggling: boolean }) {
+  const running = status?.running
+  const portfolio = status?.paper_portfolio || {}
+  const totalReturn = portfolio.total_return_pct ?? 0
+  const totalValue = portfolio.total_value ?? 0
+
+  return (
+    <Card
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: '16px',
+        padding: '16px 20px',
+        marginBottom: '20px',
+      }}
+    >
+      {/* Toggle */}
+      <button
+        onClick={onToggle}
+        disabled={toggling}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 16px',
+          borderRadius: '8px',
+          border: 'none',
+          background: running ? 'rgba(255,68,68,0.15)' : 'rgba(0,255,136,0.15)',
+          color: running ? C.red : C.green,
+          fontWeight: 700,
+          fontSize: '13px',
+          cursor: toggling ? 'wait' : 'pointer',
+          transition: 'all 0.2s',
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            background: running ? C.red : C.green,
+            boxShadow: running ? `0 0 8px ${C.red}` : `0 0 8px ${C.green}`,
+            animation: running ? 'pulse 2s infinite' : 'none',
+          }}
+        />
+        {toggling ? 'Working...' : running ? 'STOP AGENT' : 'START AGENT'}
+      </button>
+
+      {/* Divider */}
+      <div style={{ width: '1px', height: '32px', background: C.border }} />
+
+      {/* Status chips */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', flex: 1 }}>
+        <Badge color={running ? C.green : C.textMuted} bg={running ? 'rgba(0,255,136,0.08)' : undefined}>
+          <Dot color={running ? C.green : C.textMuted} />
+          {running ? 'RUNNING' : 'STOPPED'}
+        </Badge>
+
+        {status?.mode && (
+          <Badge color={C.blue} bg="rgba(59,130,246,0.08)">
+            {status.mode}
+          </Badge>
+        )}
+
+        {status?.config?.news_provider && (
+          <Badge color={C.purple} bg="rgba(168,85,247,0.08)">
+            News: {status.config.news_provider}
+          </Badge>
+        )}
+
+        {status?.cycle_count != null && (
+          <Badge>Cycle #{status.cycle_count}</Badge>
+        )}
+
+        {status?.last_cycle && (
+          <Badge>Last: {fmtTime(status.last_cycle)}</Badge>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div style={{ width: '1px', height: '32px', background: C.border }} />
+
+      {/* Portfolio value */}
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div style={{ fontSize: '20px', fontWeight: 700, color: C.textPrimary, lineHeight: 1.2 }}>
+          {fmt$(totalValue)}
+        </div>
+        <div style={{ fontSize: '12px', marginTop: '2px' }}>
+          <PctLabel value={totalReturn} />
+          <span style={{ color: C.textMuted, marginLeft: '6px' }}>total return</span>
+        </div>
+      </div>
+
+      {/* VIX / regime from /macros */}
+      {status?.macros && (
+        <>
+          <div style={{ width: '1px', height: '32px', background: C.border }} />
+          <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+            {status.macros.vix != null && (
+              <Badge
+                color={status.macros.vix > 30 ? C.red : status.macros.vix > 20 ? C.yellow : C.green}
+                bg={status.macros.vix > 30 ? 'rgba(255,68,68,0.08)' : status.macros.vix > 20 ? 'rgba(245,158,11,0.08)' : 'rgba(0,255,136,0.08)'}
+              >
+                VIX {Number(status.macros.vix).toFixed(1)}
+              </Badge>
+            )}
+            {status.macros.regime && (
+              <Badge color={status.macros.hostile ? C.red : C.green}>
+                {status.macros.regime}
+              </Badge>
+            )}
+          </div>
+        </>
+      )}
+    </Card>
+  )
+}
+
+// ─── Section B: P&L Chart ────────────────────────────────────────────────────
+
+function PnlChart({ data, loading }: { data: any[]; loading: boolean }) {
+  const last = data[data.length - 1]
+  const returnPct = last?.return_pct ?? 0
+  const isPositive = returnPct >= 0
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null
+    return (
+      <div
+        style={{
+          background: '#1a1a1a',
+          border: `1px solid ${C.border}`,
+          borderRadius: '8px',
+          padding: '10px 14px',
+          fontSize: '12px',
+        }}
+      >
+        <div style={{ color: C.textMuted, marginBottom: '4px' }}>{label}</div>
+        {payload.map((p: any) => (
+          <div key={p.name} style={{ color: p.color, fontWeight: 600 }}>
+            {p.name === 'portfolio_value' ? fmt$(p.value) : fmtPct(p.value)}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+        <div>
+          <SectionTitle style={{ margin: 0 }}>Portfolio P&L — Last 24h</SectionTitle>
+          <p style={{ color: C.textMuted, fontSize: '12px', margin: '4px 0 0' }}>
+            Portfolio value over time · auto-refreshes every 30s
+          </p>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '22px', fontWeight: 700, color: isPositive ? C.green : C.red }}>
+            {fmtPct(returnPct)}
+          </div>
+          <div style={{ color: C.textMuted, fontSize: '11px' }}>Total Return</div>
+        </div>
+      </div>
+
+      {loading ? (
+        <Spinner />
+      ) : data.length === 0 ? (
+        <EmptyState message="No P&L data yet — agent needs to run at least one cycle." />
+      ) : (
+        <div style={{ height: '240px' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+              <defs>
+                <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={isPositive ? C.green : C.red} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={isPositive ? C.green : C.red} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis
+                dataKey="ts"
+                tickFormatter={(v) => {
+                  try {
+                    return new Date(v).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                  } catch {
+                    return v
+                  }
+                }}
+                tick={{ fill: C.textMuted, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                yAxisId="value"
+                tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                tick={{ fill: C.textMuted, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                width={55}
+              />
+              <YAxis
+                yAxisId="pct"
+                orientation="right"
+                tickFormatter={(v) => `${v.toFixed(1)}%`}
+                tick={{ fill: C.textMuted, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                width={45}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Area
+                yAxisId="value"
+                type="monotone"
+                dataKey="portfolio_value"
+                name="portfolio_value"
+                stroke={isPositive ? C.green : C.red}
+                strokeWidth={2}
+                fill="url(#pnlGrad)"
+              />
+              <Area
+                yAxisId="pct"
+                type="monotone"
+                dataKey="return_pct"
+                name="return_pct"
+                stroke={C.blue}
+                strokeWidth={1.5}
+                strokeDasharray="4 2"
+                fill="none"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Section C: Today's Activity Summary ─────────────────────────────────────
+
+function ActivitySummary({ status, decisions }: { status: any; decisions: any[] }) {
+  const portfolio = status?.paper_portfolio || {}
+  const today = new Date().toDateString()
+
+  const todayDecisions = decisions.filter((d) => {
+    try {
+      return new Date(d.ts).toDateString() === today
+    } catch {
+      return false
+    }
+  })
+
+  const executed = todayDecisions.filter((d) => d.executed)
+  const blocked = todayDecisions.filter((d) => d.blocked_reason)
+  const wins = executed.filter((d) => (d.pnl ?? 0) > 0)
+  const winRate = executed.length > 0 ? (wins.length / executed.length) * 100 : 0
+
+  const stats = [
+    { label: 'Decisions Today', value: todayDecisions.length, color: C.blue },
+    { label: 'Trades Executed', value: executed.length, color: C.green },
+    { label: 'Trades Blocked', value: blocked.length, color: C.yellow },
+    { label: 'Win Rate', value: `${winRate.toFixed(0)}%`, color: winRate >= 50 ? C.green : C.red },
+    { label: 'Open Longs', value: portfolio.longs ?? 0, color: C.green },
+    { label: 'Open Shorts', value: portfolio.shorts ?? 0, color: C.red },
+  ]
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(6, 1fr)',
+        gap: '12px',
+        marginBottom: '20px',
+      }}
+    >
+      {stats.map((s) => (
+        <Card
+          key={s.label}
+          style={{
+            padding: '16px',
+            textAlign: 'center',
+            borderColor: `${s.color}22`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: '28px',
+              fontWeight: 800,
+              color: s.color,
+              lineHeight: 1.1,
+              marginBottom: '6px',
+            }}
+          >
+            {s.value}
+          </div>
+          <div style={{ fontSize: '11px', color: C.textMuted, fontWeight: 500 }}>{s.label}</div>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+// ─── Section D: Open Positions Table ─────────────────────────────────────────
+
+function OpenPositionsTable({ portfolio, loading }: { portfolio: any; loading: boolean }) {
+  const positions = portfolio?.positions || []
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <SectionTitle style={{ margin: 0 }}>Open Positions</SectionTitle>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {portfolio?.total_value != null && (
+            <span style={{ color: C.textSecondary, fontSize: '13px', fontWeight: 600 }}>
+              Total: {fmt$(portfolio.total_value)}
+            </span>
+          )}
+          {portfolio?.cash != null && (
+            <Badge color={C.textMuted}>Cash: {fmt$(portfolio.cash)}</Badge>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <Spinner />
+      ) : positions.length === 0 ? (
+        <EmptyState message="No open positions" />
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr>
+                {['Ticker', 'Side', 'Qty', 'Entry', 'Current', 'P&L $', 'P&L %', 'Stop', 'Target'].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      color: C.textMuted,
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                      textAlign: h === 'Ticker' ? 'left' : 'right',
+                      padding: '8px 10px',
+                      borderBottom: `1px solid ${C.border}`,
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map((p: any, i: number) => {
+                const pnl = p.unrealized_pnl ?? 0
+                const pnlPct = p.pnl_pct ?? 0
+                const isProfit = pnl >= 0
+                const isLong = (p.side || '').toUpperCase() === 'LONG'
+
+                return (
+                  <tr
+                    key={`${p.ticker}-${i}`}
+                    style={{
+                      background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
+                      transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)')}
+                  >
+                    <td style={{ padding: '10px 10px', fontWeight: 700, color: C.textPrimary }}>{p.ticker}</td>
+                    <td style={{ padding: '10px 10px', textAlign: 'right' }}>
+                      <Badge color={isLong ? C.green : C.red} bg={isLong ? 'rgba(0,255,136,0.1)' : 'rgba(255,68,68,0.1)'}>
+                        {p.side || '—'}
+                      </Badge>
+                    </td>
+                    <td style={{ padding: '10px 10px', textAlign: 'right', color: C.textSecondary }}>{p.qty ?? '—'}</td>
+                    <td style={{ padding: '10px 10px', textAlign: 'right', color: C.textSecondary }}>{fmt$(p.avg_price)}</td>
+                    <td style={{ padding: '10px 10px', textAlign: 'right', color: C.textPrimary, fontWeight: 600 }}>
+                      {fmt$(p.market_value / (p.qty || 1))}
+                    </td>
+                    <td style={{ padding: '10px 10px', textAlign: 'right', color: isProfit ? C.green : C.red, fontWeight: 600 }}>
+                      {fmt$(pnl)}
+                    </td>
+                    <td style={{ padding: '10px 10px', textAlign: 'right', color: isProfit ? C.green : C.red }}>
+                      {fmtPct(pnlPct)}
+                    </td>
+                    <td style={{ padding: '10px 10px', textAlign: 'right', color: C.red }}>
+                      {p.stop_loss ? fmt$(p.stop_loss) : '—'}
+                    </td>
+                    <td style={{ padding: '10px 10px', textAlign: 'right', color: C.green }}>
+                      {p.target ? fmt$(p.target) : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Section E: Strategy Performance ─────────────────────────────────────────
+
+function StrategyPerformance({ data, loading }: { data: any[]; loading: boolean }) {
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null
+    return (
+      <div
+        style={{
+          background: '#1a1a1a',
+          border: `1px solid ${C.border}`,
+          borderRadius: '8px',
+          padding: '10px 14px',
+          fontSize: '12px',
+        }}
+      >
+        <div style={{ color: C.textPrimary, fontWeight: 600, marginBottom: '4px' }}>{label}</div>
+        {payload.map((p: any) => (
+          <div key={p.name} style={{ color: p.fill, marginTop: '2px' }}>
+            {p.name}: {typeof p.value === 'number' && p.name === 'win_rate' ? `${p.value.toFixed(1)}%` : p.value}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <SectionTitle>Strategy Performance</SectionTitle>
+
+      {loading ? (
+        <Spinner />
+      ) : data.length === 0 ? (
+        <EmptyState message="No strategy data yet" />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          {/* Table */}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr>
+                  {['Strategy', 'Trades', 'Win Rate', 'Avg Return', 'Total P&L', 'Status'].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        color: C.textMuted,
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        textAlign: h === 'Strategy' ? 'left' : 'right',
+                        padding: '6px 8px',
+                        borderBottom: `1px solid ${C.border}`,
+                        letterSpacing: '0.06em',
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((s: any, i: number) => {
+                  const wr = s.win_rate ?? 0
+                  const totalPnl = s.total_pnl ?? 0
+
+                  return (
+                    <tr
+                      key={s.strategy || i}
+                      style={{ borderBottom: `1px solid ${C.border}22` }}
+                    >
+                      <td style={{ padding: '8px 8px', color: C.textPrimary, fontWeight: 600 }}>
+                        {s.strategy || '—'}
+                      </td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right', color: C.textSecondary }}>
+                        {s.total_trades ?? 0}
+                      </td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right', color: wr >= 50 ? C.green : C.red }}>
+                        {wr.toFixed(1)}%
+                      </td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right' }}>
+                        <PctLabel value={s.avg_return_pct ?? 0} />
+                      </td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right', color: totalPnl >= 0 ? C.green : C.red, fontWeight: 600 }}>
+                        {fmt$(totalPnl)}
+                      </td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right' }}>
+                        <Badge
+                          color={s.status === 'active' ? C.green : C.yellow}
+                          bg={s.status === 'active' ? 'rgba(0,255,136,0.08)' : 'rgba(245,158,11,0.08)'}
+                        >
+                          {s.status || 'active'}
+                        </Badge>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Bar chart */}
+          <div style={{ height: '200px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                <XAxis
+                  dataKey="strategy"
+                  tick={{ fill: C.textMuted, fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  tickFormatter={(v) => `${v}%`}
+                  tick={{ fill: C.textMuted, fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="win_rate" name="win_rate" radius={[4, 4, 0, 0]}>
+                  {data.map((entry: any, index: number) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={(entry.win_rate ?? 0) >= 50 ? C.green : C.red}
+                      fillOpacity={0.8}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Section F: Live Decision Log ────────────────────────────────────────────
+
+const ACTION_COLORS: Record<string, string> = {
+  BUY: '#00ff88',
+  SELL: '#f59e0b',
+  SHORT: '#ff4444',
+  COVER: '#3b82f6',
+  BLOCKED: '#6b7280',
+  HOLD: '#9ca3af',
+}
+
+function DecisionLog({ decisions, loading }: { decisions: any[]; loading: boolean }) {
+  const [tooltip, setTooltip] = useState<{ idx: number; text: string } | null>(null)
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <SectionTitle style={{ margin: 0 }}>Live Decision Log</SectionTitle>
+        <Badge color={C.blue}>Refreshes every 15s</Badge>
+      </div>
+
+      {loading ? (
+        <Spinner />
+      ) : decisions.length === 0 ? (
+        <EmptyState message="No decisions recorded yet" />
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <thead>
+              <tr>
+                {['Time', 'Ticker', 'Action', 'Confidence', 'Reasoning', 'Result'].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      color: C.textMuted,
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                      textAlign: h === 'Reasoning' ? 'left' : h === 'Time' || h === 'Ticker' ? 'left' : 'center',
+                      padding: '6px 10px',
+                      borderBottom: `1px solid ${C.border}`,
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {decisions.map((d: any, i: number) => {
+                const actionKey = (d.action || '').toUpperCase()
+                const actionColor = ACTION_COLORS[actionKey] || C.textSecondary
+                const reasoning = d.reasoning || ''
+                const truncated = reasoning.length > 60 ? reasoning.slice(0, 60) + '…' : reasoning
+                const isBlocked = !!d.blocked_reason
+                const result = isBlocked ? 'BLOCKED' : d.executed ? 'EXECUTED' : 'SKIPPED'
+                const resultColor = isBlocked ? C.yellow : d.executed ? C.green : C.textMuted
+
+                return (
+                  <tr
+                    key={d.id || i}
+                    style={{
+                      borderBottom: `1px solid ${C.border}22`,
+                      background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
+                    }}
+                  >
+                    <td style={{ padding: '8px 10px', color: C.textMuted, whiteSpace: 'nowrap' }}>
+                      {fmtDatetime(d.ts)}
+                    </td>
+                    <td style={{ padding: '8px 10px', fontWeight: 700, color: C.textPrimary }}>{d.ticker || '—'}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                      <Badge color={actionColor} bg={`${actionColor}15`}>
+                        {d.action || '—'}
+                      </Badge>
+                    </td>
+                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                      {d.confidence != null ? (
+                        <span
+                          style={{
+                            color: d.confidence >= 0.7 ? C.green : d.confidence >= 0.4 ? C.yellow : C.red,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {(d.confidence * 100).toFixed(0)}%
+                        </span>
+                      ) : (
+                        <span style={{ color: C.textMuted }}>—</span>
+                      )}
+                    </td>
+                    <td
+                      style={{ padding: '8px 10px', color: C.textSecondary, position: 'relative' }}
+                      onMouseEnter={() => reasoning.length > 60 && setTooltip({ idx: i, text: reasoning })}
+                      onMouseLeave={() => setTooltip(null)}
+                    >
+                      {truncated}
+                      {tooltip?.idx === i && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            zIndex: 100,
+                            background: '#1f1f1f',
+                            border: `1px solid ${C.border}`,
+                            borderRadius: '8px',
+                            padding: '10px 14px',
+                            fontSize: '12px',
+                            color: C.textPrimary,
+                            maxWidth: '360px',
+                            lineHeight: 1.5,
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                          }}
+                        >
+                          {tooltip.text}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                      <Badge color={resultColor} bg={`${resultColor}10`}>
+                        {result}
+                      </Badge>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Section G: Hourly Breakdown ──────────────────────────────────────────────
+
+function HourlyBreakdown({ data, loading }: { data: any[]; loading: boolean }) {
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null
+    return (
+      <div
+        style={{
+          background: '#1a1a1a',
+          border: `1px solid ${C.border}`,
+          borderRadius: '8px',
+          padding: '10px 14px',
+          fontSize: '12px',
+        }}
+      >
+        <div style={{ color: C.textMuted, marginBottom: '6px' }}>Hour {label}:00</div>
+        {payload.map((p: any) => (
+          <div key={p.name} style={{ color: p.fill || p.color, marginTop: '2px' }}>
+            {p.name === 'pnl' ? `P&L: ${fmt$(p.value)}` : `${p.name}: ${p.value}`}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <SectionTitle>Hourly Breakdown — Today</SectionTitle>
+
+      {loading ? (
+        <Spinner />
+      ) : data.length === 0 ? (
+        <EmptyState message="No hourly data yet" />
+      ) : (
+        <div style={{ height: '200px' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis
+                dataKey="hour"
+                tickFormatter={(v) => `${v}h`}
+                tick={{ fill: C.textMuted, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                yAxisId="trades"
+                tick={{ fill: C.textMuted, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                width={30}
+              />
+              <YAxis
+                yAxisId="pnl"
+                orientation="right"
+                tickFormatter={(v) => `$${v >= 0 ? '' : '-'}${Math.abs(v).toFixed(0)}`}
+                tick={{ fill: C.textMuted, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                width={50}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend
+                wrapperStyle={{ fontSize: '11px', color: C.textMuted }}
+              />
+              <Bar
+                yAxisId="trades"
+                dataKey="trades"
+                name="decisions"
+                fill={C.blue}
+                fillOpacity={0.7}
+                radius={[3, 3, 0, 0]}
+              />
+              <Bar
+                yAxisId="trades"
+                dataKey="executed"
+                name="executed"
+                fill={C.green}
+                fillOpacity={0.7}
+                radius={[3, 3, 0, 0]}
+              />
+              <Bar
+                yAxisId="pnl"
+                dataKey="pnl"
+                name="pnl"
+                radius={[3, 3, 0, 0]}
+              >
+                {data.map((entry: any, index: number) => (
+                  <Cell key={`cell-${index}`} fill={(entry.pnl ?? 0) >= 0 ? C.green : C.red} fillOpacity={0.6} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Section H: Quick Config Panel ───────────────────────────────────────────
+
+function QuickConfigPanel({ config, onSave }: { config: any; onSave: (updates: any) => Promise<void> }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState<any>({})
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (config) {
+      setForm({
+        cycle_minutes: config.cycle_minutes ?? '',
+        min_confidence: config.min_confidence ?? '',
+        max_position_pct: config.max_position_pct ?? '',
+        allow_shorts: config.allow_shorts ?? false,
+        universe: Array.isArray(config.universe) ? config.universe.join(', ') : config.universe ?? '',
+      })
+    }
+  }, [config])
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      const payload: any = {
+        cycle_minutes: form.cycle_minutes !== '' ? Number(form.cycle_minutes) : undefined,
+        min_confidence: form.min_confidence !== '' ? Number(form.min_confidence) : undefined,
+        max_position_pct: form.max_position_pct !== '' ? Number(form.max_position_pct) : undefined,
+        allow_shorts: form.allow_shorts,
+        universe: form.universe
+          ? form.universe
+              .split(',')
+              .map((s: string) => s.trim().toUpperCase())
+              .filter(Boolean)
+          : undefined,
+      }
+      await onSave(payload)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    background: 'rgba(255,255,255,0.06)',
+    border: `1px solid ${C.border}`,
+    borderRadius: '6px',
+    padding: '7px 10px',
+    color: C.textPrimary,
+    fontSize: '13px',
+    width: '100%',
+    outline: 'none',
+  }
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: '11px',
+    color: C.textMuted,
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    display: 'block',
+    marginBottom: '5px',
+  }
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          padding: 0,
+        }}
+      >
+        <SectionTitle style={{ margin: 0 }}>Quick Config</SectionTitle>
+        <span style={{ color: C.textMuted, fontSize: '16px', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: '16px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: '14px',
+              marginBottom: '16px',
+            }}
+          >
+            <div>
+              <label style={labelStyle}>Cycle Minutes</label>
+              <input
+                type="number"
+                style={inputStyle}
+                value={form.cycle_minutes}
+                onChange={(e) => setForm((f: any) => ({ ...f, cycle_minutes: e.target.value }))}
+                placeholder="e.g. 30"
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Min Confidence (0–1)</label>
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="1"
+                style={inputStyle}
+                value={form.min_confidence}
+                onChange={(e) => setForm((f: any) => ({ ...f, min_confidence: e.target.value }))}
+                placeholder="e.g. 0.6"
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Max Position %</label>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                max="100"
+                style={inputStyle}
+                value={form.max_position_pct}
+                onChange={(e) => setForm((f: any) => ({ ...f, max_position_pct: e.target.value }))}
+                placeholder="e.g. 10"
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Allow Shorts</label>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  cursor: 'pointer',
+                  marginTop: '8px',
+                }}
+              >
+                <div
+                  onClick={() => setForm((f: any) => ({ ...f, allow_shorts: !f.allow_shorts }))}
+                  style={{
+                    width: '40px',
+                    height: '22px',
+                    borderRadius: '11px',
+                    background: form.allow_shorts ? C.green : 'rgba(255,255,255,0.1)',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    border: `1px solid ${form.allow_shorts ? C.green : C.border}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '2px',
+                      left: form.allow_shorts ? '20px' : '2px',
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '50%',
+                      background: '#fff',
+                      transition: 'left 0.2s',
+                    }}
+                  />
+                </div>
+                <span style={{ color: form.allow_shorts ? C.green : C.textMuted, fontSize: '13px', fontWeight: 600 }}>
+                  {form.allow_shorts ? 'Yes' : 'No'}
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>Universe (comma-separated tickers)</label>
+            <input
+              type="text"
+              style={inputStyle}
+              value={form.universe}
+              onChange={(e) => setForm((f: any) => ({ ...f, universe: e.target.value }))}
+              placeholder="AAPL, MSFT, TSLA, NVDA..."
+            />
+          </div>
+
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              padding: '9px 20px',
+              borderRadius: '8px',
+              border: 'none',
+              background: saved ? 'rgba(0,255,136,0.15)' : 'rgba(59,130,246,0.15)',
+              color: saved ? C.green : C.blue,
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: saving ? 'wait' : 'pointer',
+              transition: 'all 0.2s',
+              border: `1px solid ${saved ? C.green : C.blue}44`,
+            } as any}
+          >
+            {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Config'}
+          </button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Agent Log Viewer ─────────────────────────────────────────────────────────
+
+function AgentLog({ log, loading }: { log: any[]; loading: boolean }) {
+  const levelColor = (level: string) => {
+    switch ((level || '').toUpperCase()) {
+      case 'ERROR': return C.red
+      case 'WARNING': case 'WARN': return C.yellow
+      case 'INFO': return C.blue
+      case 'DEBUG': return C.textMuted
+      default: return C.textSecondary
+    }
+  }
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <SectionTitle>Agent Log (last 50)</SectionTitle>
+      {loading ? (
+        <Spinner />
+      ) : log.length === 0 ? (
+        <EmptyState message="No log entries yet" />
+      ) : (
+        <div
+          style={{
+            maxHeight: '240px',
+            overflowY: 'auto',
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            lineHeight: '1.6',
+          }}
+        >
+          {log.map((entry: any, i: number) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                gap: '10px',
+                padding: '3px 0',
+                borderBottom: `1px solid ${C.border}22`,
+              }}
+            >
+              <span style={{ color: C.textMuted, flexShrink: 0 }}>{fmtDatetime(entry.ts)}</span>
+              <span style={{ color: levelColor(entry.level), flexShrink: 0, fontWeight: 700, minWidth: '50px' }}>
+                {(entry.level || '').toUpperCase()}
+              </span>
+              <span style={{ color: C.textSecondary }}>{entry.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Last Cycle Summary ───────────────────────────────────────────────────────
+
+function LastCycleSummary({ summary }: { summary: any }) {
+  if (!summary) return null
+
+  return (
+    <Card
+      style={{
+        marginBottom: '20px',
+        background: 'rgba(59,130,246,0.04)',
+        borderColor: 'rgba(59,130,246,0.15)',
+      }}
+    >
+      <SectionTitle>Last Cycle Summary</SectionTitle>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+          gap: '12px',
+        }}
+      >
+        {Object.entries(summary).map(([key, val]: any) => (
+          <div key={key}>
+            <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>
+              {key.replace(/_/g, ' ')}
+            </div>
+            <div style={{ color: C.textPrimary, fontSize: '13px', fontWeight: 600 }}>
+              {typeof val === 'boolean'
+                ? val ? 'Yes' : 'No'
+                : typeof val === 'number'
+                ? val.toString()
+                : String(val || '—')}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+// ─── Main AgentDashboard Component ───────────────────────────────────────────
+
+export default function AgentDashboard() {
+  // Status data
+  const [status, setStatus] = useState<any>(null)
+  const [statusLoading, setStatusLoading] = useState(true)
+  const [statusError, setStatusError] = useState('')
+
+  // Individual data states
+  const [decisions, setDecisions] = useState<any[]>([])
+  const [decisionsLoading, setDecisionsLoading] = useState(true)
+
+  const [portfolio, setPortfolio] = useState<any>(null)
+  const [portfolioLoading, setPortfolioLoading] = useState(true)
+
+  const [pnlData, setPnlData] = useState<any[]>([])
+  const [pnlLoading, setPnlLoading] = useState(true)
+
+  const [strategies, setStrategies] = useState<any[]>([])
+  const [strategiesLoading, setStrategiesLoading] = useState(true)
+
+  const [hourly, setHourly] = useState<any[]>([])
+  const [hourlyLoading, setHourlyLoading] = useState(true)
+
+  const [agentLog, setAgentLog] = useState<any[]>([])
+  const [logLoading, setLogLoading] = useState(true)
+
+  const [toggling, setToggling] = useState(false)
+  const [toggleMsg, setToggleMsg] = useState('')
+
+  // Fetch functions
+  const fetchStatus = useCallback(async () => {
+    try {
+      const [statusData, macrosData] = await Promise.allSettled([
+        apiFetch('/agent/status'),
+        apiFetch('/macros'),
+      ])
+      const s = statusData.status === 'fulfilled' ? statusData.value : null
+      const m = macrosData.status === 'fulfilled' ? macrosData.value : null
+      setStatus(s ? { ...s, macros: m } : null)
+      setStatusError(s ? '' : 'Agent status unavailable')
+    } catch {
+      setStatusError('Failed to connect to agent')
+    } finally {
+      setStatusLoading(false)
+    }
+  }, [])
+
+  const fetchDecisions = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/decisions?limit=20')
+      setDecisions(Array.isArray(data) ? data : [])
+    } catch {
+      setDecisions([])
+    } finally {
+      setDecisionsLoading(false)
+    }
+  }, [])
+
+  const fetchPortfolio = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/paper/portfolio')
+      setPortfolio(data)
+    } catch {
+      setPortfolio(null)
+    } finally {
+      setPortfolioLoading(false)
+    }
+  }, [])
+
+  const fetchPnl = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/analytics/pnl')
+      setPnlData(Array.isArray(data) ? data : [])
+    } catch {
+      setPnlData([])
+    } finally {
+      setPnlLoading(false)
+    }
+  }, [])
+
+  const fetchStrategies = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/analytics/strategies')
+      setStrategies(Array.isArray(data) ? data : [])
+    } catch {
+      setStrategies([])
+    } finally {
+      setStrategiesLoading(false)
+    }
+  }, [])
+
+  const fetchHourly = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/analytics/hourly')
+      setHourly(Array.isArray(data) ? data : [])
+    } catch {
+      setHourly([])
+    } finally {
+      setHourlyLoading(false)
+    }
+  }, [])
+
+  const fetchLog = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/log?limit=50')
+      setAgentLog(Array.isArray(data) ? data : [])
+    } catch {
+      setAgentLog([])
+    } finally {
+      setLogLoading(false)
+    }
+  }, [])
+
+  // Initial load
+  useEffect(() => {
+    fetchStatus()
+    fetchDecisions()
+    fetchPortfolio()
+    fetchPnl()
+    fetchStrategies()
+    fetchHourly()
+    fetchLog()
+  }, [])
+
+  // Auto-refresh intervals
+  useInterval(fetchStatus, 5000)
+  useInterval(fetchDecisions, 15000)
+  useInterval(fetchPortfolio, 15000)
+  useInterval(fetchPnl, 30000)
+  useInterval(fetchStrategies, 60000)
+  useInterval(fetchHourly, 60000)
+  useInterval(fetchLog, 30000)
+
+  async function handleToggle() {
+    if (!status) return
+    setToggling(true)
+    setToggleMsg('')
+    try {
+      const endpoint = status.running ? '/agent/stop' : '/agent/start'
+      const res = await apiFetch(endpoint, { method: 'POST' })
+      setToggleMsg(res?.message || (status.running ? 'Agent stopped' : 'Agent started'))
+      await fetchStatus()
+    } catch (err: any) {
+      setToggleMsg(err?.detail || err?.message || 'Toggle failed')
+    } finally {
+      setToggling(false)
+    }
+  }
+
+  async function handleSaveConfig(updates: any) {
+    await apiFetch('/agent/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    })
+    await fetchStatus()
+  }
+
+  // Merge portfolio: prefer dedicated endpoint, fall back to status
+  const activePortfolio = portfolio ?? status?.paper_portfolio ?? null
+
+  return (
+    <div
+      style={{
+        background: C.bg,
+        minHeight: '100%',
+        padding: '0',
+        color: C.textPrimary,
+        fontFamily: 'inherit',
+      }}
+    >
+      {/* Keyframe styles injected inline */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 4px' }}>
+        {/* Header row */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '20px',
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: C.textPrimary }}>
+              Agent Workspace
+            </h2>
+            <p style={{ margin: '4px 0 0', fontSize: '13px', color: C.textMuted }}>
+              Autonomous trading agent — real-time monitoring, decisions & analytics
+            </p>
+          </div>
+          {toggleMsg && (
+            <div
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                background: 'rgba(59,130,246,0.1)',
+                border: `1px solid rgba(59,130,246,0.2)`,
+                color: C.blue,
+                fontSize: '13px',
+                fontWeight: 600,
+              }}
+            >
+              {toggleMsg}
+            </div>
+          )}
+        </div>
+
+        {/* A. Live Status Bar */}
+        {statusLoading ? (
+          <Card style={{ marginBottom: '20px' }}><Spinner /></Card>
+        ) : statusError ? (
+          <Card style={{ marginBottom: '20px', borderColor: `${C.red}33`, background: 'rgba(255,68,68,0.04)' }}>
+            <div style={{ color: C.red, fontSize: '13px', fontWeight: 600 }}>{statusError}</div>
+            <div style={{ color: C.textMuted, fontSize: '12px', marginTop: '4px' }}>
+              Backend may be offline. Retrying every 5 seconds.
+            </div>
+          </Card>
+        ) : (
+          <LiveStatusBar status={status} onToggle={handleToggle} toggling={toggling} />
+        )}
+
+        {/* Last Cycle Summary */}
+        {status?.last_summary && <LastCycleSummary summary={status.last_summary} />}
+
+        {/* C. Activity Summary */}
+        <ActivitySummary status={status} decisions={decisions} />
+
+        {/* B. P&L Chart */}
+        <PnlChart data={pnlData} loading={pnlLoading} />
+
+        {/* Two-column layout for positions + strategies */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '0' }}>
+          {/* D. Open Positions */}
+          <div>
+            <OpenPositionsTable portfolio={activePortfolio} loading={portfolioLoading && !activePortfolio} />
+          </div>
+
+          {/* E. Strategy Performance */}
+          <div>
+            <StrategyPerformance data={strategies} loading={strategiesLoading} />
+          </div>
+        </div>
+
+        {/* F. Decision Log */}
+        <DecisionLog decisions={decisions} loading={decisionsLoading} />
+
+        {/* G. Hourly Breakdown */}
+        <HourlyBreakdown data={hourly} loading={hourlyLoading} />
+
+        {/* H. Quick Config */}
+        <QuickConfigPanel config={status?.config} onSave={handleSaveConfig} />
+
+        {/* Agent Log */}
+        <AgentLog log={agentLog} loading={logLoading} />
+      </div>
+    </div>
+  )
+}

@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional
 from services.market_data import fetch_quotes, fetch_enhanced_quotes, fetch_macro, fetch_sector_momentum
 from services.news_scorer import score_news_best, sentiment_boost
 from services.fundamentals_screener import fetch_fundamentals_batch, fundamental_adj
+from services.earnings_calendar import refresh_calendar, should_avoid_entry, pead_signal, pre_earnings_signal
+from services.strategy_tracker import save_pnl_snapshot, record_entry, record_exit, kelly_scale
 from services.risk_manager import RiskManager
 from services.paper_trading import (
     execute_paper_trade,
@@ -225,6 +227,21 @@ def _zscore_adj(q: Dict) -> tuple[int, str]:
     return 0, ""
 
 
+def _earnings_adj(ticker: str) -> tuple[int, str]:
+    """Pre-earnings drift bonus + post-earnings PEAD bonus."""
+    score = 0
+    reasons = []
+    ps, pr = pre_earnings_signal(ticker)
+    if ps:
+        score += ps
+        reasons.append(pr)
+    pd, pdr = pead_signal(ticker)
+    if pd:
+        score += pd
+        reasons.append(pdr)
+    return score, ", ".join(reasons)
+
+
 def _fundamental_adj_fn(fundamentals: Dict, ticker: str) -> tuple[int, str]:
     """Wrap fundamental_adj for use inside scorer lambdas."""
     return fundamental_adj(fundamentals, ticker)
@@ -320,6 +337,9 @@ def _score_momentum(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = 
     fd, fr = _fundamental_adj_fn(fundamentals, ticker)
     score += fd
     if fr: reasons.append(fr)
+    ed, er = _earnings_adj(ticker)
+    score += ed
+    if er: reasons.append(er)
     return score, "Momentum: " + ", ".join(reasons)
 
 
@@ -622,32 +642,32 @@ def _decide_for_ticker(
     vix_too_high = macro.get("vix", 0) > config.get("vix_pause_threshold", 27)
     if not (macro.get("hostile") and vix_too_high):
         long_strategies = config.get("strategies", ["momentum", "mean_reversion"])
-        best_score, best_reason = 0, ""
+        best_score, best_reason, best_strat = 0, "", "unknown"
         for strat in long_strategies:
             fn = LONG_STRATEGY_FNS.get(strat)
             if fn:
                 score, reason = fn(q, macro, news, fundamentals)
                 if score > best_score:
-                    best_score, best_reason = score, reason
+                    best_score, best_reason, best_strat = score, reason, strat
         confidence = min(int(best_score * 1.1), 99)
         if confidence >= config.get("min_confidence", 65):
             decisions.append({"action": "BUY", "ticker": ticker, "qty": None, "price": price,
-                              "confidence": confidence, "reasoning": best_reason})
+                              "confidence": confidence, "reasoning": best_reason, "strategy": best_strat})
 
     # ── Look for new SHORT entry ──────────────────────────────────────────────
     if config.get("allow_shorts", True):
         short_strategies = config.get("short_strategies", ["short_momentum", "short_breakdown"])
-        best_score, best_reason = 0, ""
+        best_score, best_reason, best_strat = 0, "", "unknown"
         for strat in short_strategies:
             fn = SHORT_STRATEGY_FNS.get(strat)
             if fn:
                 score, reason = fn(q, macro, news)
                 if score > best_score:
-                    best_score, best_reason = score, reason
+                    best_score, best_reason, best_strat = score, reason, strat
         confidence = min(int(best_score * 1.1), 99)
         if confidence >= config.get("min_short_confidence", 68):
             decisions.append({"action": "SHORT", "ticker": ticker, "qty": None, "price": price,
-                              "confidence": confidence, "reasoning": best_reason})
+                              "confidence": confidence, "reasoning": best_reason, "strategy": best_strat})
 
     return decisions
 
@@ -682,7 +702,9 @@ class AutonomousAgent:
         self._risk = RiskManager()
         self._peak_value: float = 0.0
         self._fundamentals_cache: Dict[str, Any] = {}
-        self._fundamentals_last_fetch: float = 0.0  # epoch seconds
+        self._fundamentals_last_fetch: float = 0.0
+        self._earnings_last_fetch: float = 0.0
+        self._trailing_stops: Dict[str, float] = {}  # ticker → highest price seen since entry
 
     def configure(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         self.config.update(updates)
@@ -740,6 +762,18 @@ class AutonomousAgent:
         universe = self.config.get("universe", UNIVERSE)
 
         import time as _time
+        from datetime import datetime as _dt, timezone as _tz
+
+        # ── Time-of-day filter: avoid first 30 min and last 15 min of US session ──
+        now_utc = _dt.now(_tz.utc)
+        now_et_hour = (now_utc.hour - 5) % 24  # approximate ET (UTC-5)
+        now_et_min = now_utc.minute
+        market_open = now_et_hour == 9 and now_et_min < 30    # 9:00-9:30 ET
+        market_close = now_et_hour == 15 and now_et_min >= 45  # 15:45-16:00 ET
+        avoid_new_entries = market_open or market_close
+        if avoid_new_entries:
+            _log("info", f"[{cycle_id}] Time filter: avoiding new entries (open/close window)")
+
         # Refresh fundamentals every 6 hours (they don't change cycle-to-cycle)
         if _time.time() - self._fundamentals_last_fetch > 21600:
             try:
@@ -768,6 +802,15 @@ class AutonomousAgent:
         if isinstance(sectors, Exception):
             _log("warning", f"[{cycle_id}] fetch_sector_momentum failed: {sectors}"); sectors = {}
 
+        # Refresh earnings calendar every 6 hours
+        if _time.time() - self._earnings_last_fetch > 21600:
+            try:
+                await refresh_calendar(universe)
+                self._earnings_last_fetch = _time.time()
+                _log("info", f"[{cycle_id}] Earnings calendar refreshed")
+            except Exception as e:
+                _log("warning", f"[{cycle_id}] Earnings calendar failed: {e}")
+
         if sectors:
             _log("info", f"[{cycle_id}] Sector rotation: top={sectors.get('top_sectors')}, bottom={sectors.get('bottom_sectors')}")
 
@@ -790,6 +833,36 @@ class AutonomousAgent:
         open_longs = get_open_longs()
         open_shorts = get_open_shorts()
 
+        # ── Cross-sectional ranking: tag top/bottom of universe ─────────────────
+        scored_universe = []
+        for t, q in quotes.items():
+            if q.get("ok") and q.get("price"):
+                composite = (
+                    (q.get("change_pct") or 0) * 2
+                    + (q.get("trend_5d_pct") or 0)
+                    + ((q.get("rs_vs_spy") or 1) - 1) * 20
+                    + (1 if q.get("macd_bullish_daily") else -1) * 5
+                )
+                scored_universe.append((t, composite))
+        scored_universe.sort(key=lambda x: x[1], reverse=True)
+        n = len(scored_universe)
+        top_quintile = {t for t, _ in scored_universe[:max(1, n // 5)]}
+        bottom_quintile = {t for t, _ in scored_universe[max(0, n - n // 5):]}
+        for t in top_quintile:
+            if t in quotes: quotes[t]["_rank_leader"] = True
+        for t in bottom_quintile:
+            if t in quotes: quotes[t]["_rank_laggard"] = True
+        _log("info", f"[{cycle_id}] Cross-sectional leaders={list(top_quintile)[:5]} laggards={list(bottom_quintile)[:5]}")
+
+        # ── Portfolio heat check: total open risk ≤ 15% of portfolio ────────────
+        total_heat_pct = sum(
+            abs(p.get("market_value", 0)) / max(paper.get("total_value", 1), 1) * 100
+            for p in paper.get("positions", [])
+        )
+        portfolio_too_hot = total_heat_pct > 85.0  # > 85% deployed = no new entries
+        if portfolio_too_hot:
+            _log("warning", f"[{cycle_id}] Portfolio heat {total_heat_pct:.1f}% — blocking new entries")
+
         # Generate decisions via rule engine (with news + enhanced quotes + fundamentals)
         decisions = generate_decisions(quotes, macro, open_longs, open_shorts, self.config, news, fundamentals)
 
@@ -801,14 +874,40 @@ class AutonomousAgent:
             confidence = d.get("confidence", 50)
             price = d.get("price") or quotes.get(ticker, {}).get("price", 0)
             atr = quotes.get(ticker, {}).get("atr")
-            qty = d.get("qty") or self._risk.position_size_shares(
-                ticker, price, paper["total_value"],
-                self.config.get("risk_per_trade_pct", 2.0),
-                atr=atr, drawdown_scale=drawdown_scale,
-            )
 
             # COVER/SELL use qty from existing position — skip risk sizing
             is_close = action in ("SELL", "COVER")
+
+            # ── Guard: block new entries during restricted windows ─────────────
+            if not is_close:
+                if avoid_new_entries:
+                    _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": "Time filter: market open/close window"})
+                    blocked += 1
+                    continue
+                if portfolio_too_hot:
+                    _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": f"Portfolio heat {total_heat_pct:.1f}% > 85%"})
+                    blocked += 1
+                    continue
+                avoid_entry, entry_reason = should_avoid_entry(ticker)
+                if avoid_entry:
+                    _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": entry_reason})
+                    blocked += 1
+                    _log("info", f"[{cycle_id}] {action} {ticker} BLOCKED: {entry_reason}")
+                    continue
+
+            # Kelly-scaled position sizing for new entries
+            if not is_close:
+                kelly_risk_pct = kelly_scale(
+                    d.get("strategy", "unknown"),
+                    paper["total_value"],
+                    self.config.get("risk_per_trade_pct", 2.0),
+                )
+                qty = d.get("qty") or self._risk.position_size_shares(
+                    ticker, price, paper["total_value"],
+                    kelly_risk_pct, atr=atr, drawdown_scale=drawdown_scale,
+                )
+            else:
+                qty = d.get("qty") or 1
 
             if not is_close:
                 mock_portfolio = {
@@ -841,10 +940,32 @@ class AutonomousAgent:
             if result.get("ok"):
                 executed += 1
                 _log("info", f"[{cycle_id}] {action} {qty:.1f}x {ticker} @ ${price:.2f} | {d.get('reasoning','')}")
+                try:
+                    if action in ("BUY", "SHORT"):
+                        record_entry(d.get("strategy", "unknown"), ticker, action, price, qty, cycle_id)
+                    elif action in ("SELL", "COVER"):
+                        record_exit(ticker, price, qty, cycle_id)
+                except Exception as _te:
+                    _log("warning", f"[{cycle_id}] Strategy tracking error: {_te}")
             else:
                 _log("warning", f"[{cycle_id}] FAILED {action} {ticker}: {result.get('error')}")
 
         paper_after = get_portfolio_summary({t: q.get("price", 0) for t, q in quotes.items()})
+
+        # Persist P&L snapshot for time-series chart
+        try:
+            save_pnl_snapshot(
+                portfolio_value=paper_after["total_value"],
+                cash=paper_after.get("cash", 0),
+                longs_value=sum(p.get("market_value", 0) for p in paper_after.get("longs", [])),
+                shorts_exposure=sum(abs(p.get("market_value", 0)) for p in paper_after.get("shorts", [])),
+                total_return_pct=paper_after.get("total_return_pct", 0),
+                open_longs=len(paper_after.get("longs", [])),
+                open_shorts=len(paper_after.get("shorts", [])),
+            )
+        except Exception as _pe:
+            _log("warning", f"[{cycle_id}] P&L snapshot failed: {_pe}")
+
         bullish_count = sum(1 for v in news.values() if isinstance(v, dict) and v.get("direction") == "BULLISH")
         bearish_count = sum(1 for v in news.values() if isinstance(v, dict) and v.get("direction") == "BEARISH")
         summary = {
@@ -888,16 +1009,47 @@ class AutonomousAgent:
             return {"ok": False, "error": f"Mode '{mode}' not enabled for execution"}
 
     async def _check_stops(self, open_longs: List[Dict], open_shorts: List[Dict], quotes: Dict, cycle_id: str):
-        # Long stop: sell if price falls 8%+ below entry
+        # Long stops: fixed stop-loss + trailing stop (5% from peak, activates after 3% profit)
         for pos in open_longs:
             ticker = pos["ticker"]
             price = quotes.get(ticker, {}).get("price", 0)
             if not price:
                 continue
+            avg = pos.get("avg_price", price)
+
+            # Update trailing high watermark
+            trailing_high = self._trailing_stops.get(ticker, avg)
+            if price > trailing_high:
+                self._trailing_stops[ticker] = price
+                trailing_high = price
+
+            # Fixed stop-loss (8%+ below entry)
             if self._risk.should_trigger_stop(pos, price):
-                _log("warning", f"[{cycle_id}] LONG STOP: {ticker} @ ${price:.2f} (avg ${pos['avg_price']:.2f})")
+                _log("warning", f"[{cycle_id}] LONG STOP: {ticker} @ ${price:.2f} (avg ${avg:.2f})")
                 result = self._execute("SELL", ticker, pos["qty"], price, None, None, "AUTO LONG STOP-LOSS", 99)
-                _save_decision(cycle_id, {"ticker": ticker, "action": "SELL", "qty": pos["qty"], "price": price, "confidence": 99, "reasoning": "Auto long stop-loss", "executed": result.get("ok", False), "execution_result": result})
+                _save_decision(cycle_id, {"ticker": ticker, "action": "SELL", "qty": pos["qty"], "price": price,
+                                          "confidence": 99, "reasoning": "Auto long stop-loss",
+                                          "executed": result.get("ok", False), "execution_result": result})
+                if result.get("ok"):
+                    self._trailing_stops.pop(ticker, None)
+                    try: record_exit(ticker, price, pos["qty"], cycle_id)
+                    except Exception: pass
+                continue
+
+            # Trailing stop: only activate after 3% profit to avoid whipsaw near entry
+            profit_pct = (trailing_high - avg) / avg * 100 if avg else 0
+            if profit_pct >= 3.0:
+                drop_pct = (trailing_high - price) / trailing_high * 100 if trailing_high else 0
+                if drop_pct >= 5.0:
+                    _log("warning", f"[{cycle_id}] TRAILING STOP: {ticker} @ ${price:.2f} ({drop_pct:.1f}% below peak ${trailing_high:.2f})")
+                    result = self._execute("SELL", ticker, pos["qty"], price, None, None, f"TRAILING STOP: {drop_pct:.1f}% below peak ${trailing_high:.2f}", 99)
+                    _save_decision(cycle_id, {"ticker": ticker, "action": "SELL", "qty": pos["qty"], "price": price,
+                                              "confidence": 99, "reasoning": f"Trailing stop: {drop_pct:.1f}% below peak ${trailing_high:.2f}",
+                                              "executed": result.get("ok", False), "execution_result": result})
+                    if result.get("ok"):
+                        self._trailing_stops.pop(ticker, None)
+                        try: record_exit(ticker, price, pos["qty"], cycle_id)
+                        except Exception: pass
 
         # Short stop: cover if price rises 8%+ above entry
         short_stop_pct = self.config.get("short_stop_pct", 8.0)
@@ -911,7 +1063,12 @@ class AutonomousAgent:
             if rise_pct >= short_stop_pct:
                 _log("warning", f"[{cycle_id}] SHORT STOP: {ticker} @ ${price:.2f} rose +{rise_pct:.1f}% vs entry ${avg:.2f}")
                 result = self._execute("COVER", ticker, pos["qty"], price, None, None, f"AUTO SHORT STOP: +{rise_pct:.1f}%", 99)
-                _save_decision(cycle_id, {"ticker": ticker, "action": "COVER", "qty": pos["qty"], "price": price, "confidence": 99, "reasoning": f"Auto short stop: price +{rise_pct:.1f}%", "executed": result.get("ok", False), "execution_result": result})
+                _save_decision(cycle_id, {"ticker": ticker, "action": "COVER", "qty": pos["qty"], "price": price,
+                                          "confidence": 99, "reasoning": f"Auto short stop: price +{rise_pct:.1f}%",
+                                          "executed": result.get("ok", False), "execution_result": result})
+                if result.get("ok"):
+                    try: record_exit(ticker, price, pos["qty"], cycle_id)
+                    except Exception: pass
 
 
 agent = AutonomousAgent()

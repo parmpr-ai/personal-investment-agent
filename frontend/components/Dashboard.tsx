@@ -6,6 +6,7 @@ import {
   Activity,
   BarChart3,
   BookOpen,
+  Bot,
   Brain,
   Database,
   Eye,
@@ -27,6 +28,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
+import AgentDashboard from './AgentDashboard'
 import GlowCard from './ui/GlowCard'
 import SectionHeader from './ui/SectionHeader'
 import IntelligenceBadge from './ui/IntelligenceBadge'
@@ -62,6 +64,7 @@ const nav = [
   ['trades', 'Trade Radar', Target],
   ['risk', 'Risk', Shield],
   ['tax', 'Tax Center', FileText],
+  ['agent', 'Agent', Bot],
   ['about', 'About', BookOpen],
   ['settings', 'Settings', Settings],
 ] as any[]
@@ -72,6 +75,7 @@ const privateNavLabels: Record<string, string> = {
   trades: 'Activity',
   risk: 'Controls',
   tax: 'Documents',
+  agent: 'Workspace',
   about: 'Info',
   settings: 'Settings',
 }
@@ -295,6 +299,7 @@ export default function Dashboard() {
         {active === 'trades' && <TradeRadar d={dashboard} hidden={privacyHidden} />}
         {active === 'risk' && <RiskPage d={dashboard} hidden={privacyHidden} />}
         {active === 'tax' && <TaxPage hidden={privacyHidden} />}
+        {active === 'agent' && <AgentDashboard />}
         {active === 'about' && <AboutPage hidden={privacyHidden} />}
         {active === 'settings' && <SettingsPage hidden={privacyHidden} />}
       </main>

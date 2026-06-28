@@ -14,6 +14,7 @@ from services.news_intelligence import get_news_intelligence
 from services.autonomous_agent import agent as autonomous_agent, get_recent_decisions, get_agent_log
 from services.paper_trading import get_portfolio_summary as paper_summary, get_trade_history, reset_book
 from services.ibkr_trader import test_ibkr_paper, get_ibkr_paper_account
+from services.strategy_tracker import get_strategy_stats, get_pnl_series, get_hourly_stats, get_today_summary
 load_dotenv()
 try:
  from services.ibkr_service import get_ibkr_portfolio
@@ -319,6 +320,18 @@ def ibkr_paper_test(): return test_ibkr_paper(get_settings())
 
 @app.get('/agent/ibkr-paper/account')
 def ibkr_paper_account(): return get_ibkr_paper_account(get_settings())
+
+@app.get('/agent/analytics/pnl')
+def analytics_pnl(hours:int=24): return get_pnl_series(hours)
+
+@app.get('/agent/analytics/strategies')
+def analytics_strategies(): return get_strategy_stats()
+
+@app.get('/agent/analytics/hourly')
+def analytics_hourly(hours:int=24): return get_hourly_stats(hours)
+
+@app.get('/agent/analytics/summary')
+def analytics_summary(): return get_today_summary()
 
 @app.websocket('/ws')
 async def ws(ws:WebSocket):
