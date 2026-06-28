@@ -141,6 +141,89 @@ def get_agent_log(limit: int = 100) -> List[Dict[str, Any]]:
 
 # ── Rule-based signal engine ──────────────────────────────────────────────────
 
+def _macd_adj(q: Dict) -> tuple[int, str]:
+    """MACD crossover + histogram direction."""
+    score = 0
+    reasons = []
+    if q.get("macd_bullish_daily"):
+        score += 10
+        reasons.append("MACD bullish daily")
+    if q.get("macd_crossover_daily"):
+        score += 18
+        reasons.append("MACD daily bullish crossover")
+    elif q.get("macd_crossunder_daily"):
+        score -= 18
+        reasons.append("MACD daily bearish crossunder")
+    if q.get("macd_hist_rising_daily"):
+        score += 8
+        reasons.append("MACD hist rising")
+    # Intraday MACD confirmation
+    if q.get("macd_bullish") and q.get("macd_hist_rising"):
+        score += 8
+        reasons.append("MACD intraday bullish+rising")
+    elif q.get("macd_crossover"):
+        score += 12
+        reasons.append("MACD intraday crossover")
+    return score, ", ".join(reasons)
+
+
+def _bb_adj(q: Dict) -> tuple[int, str]:
+    """Bollinger Band position — breakout vs. mean-reversion signals."""
+    score = 0
+    reasons = []
+    # Daily Bollinger
+    if q.get("bb_squeeze_daily"):
+        score += 8
+        reasons.append("BB squeeze (breakout loading)")
+    if q.get("near_bb_lower_daily"):
+        score += 10
+        reasons.append("near daily lower BB (oversold zone)")
+    if q.get("near_bb_upper_daily"):
+        score -= 8
+        reasons.append("near daily upper BB (extended)")
+    if q.get("above_bb_upper_daily"):
+        score -= 15
+        reasons.append("above daily BB upper (overextended)")
+    # Intraday Bollinger
+    if q.get("bb_squeeze"):
+        score += 5
+        reasons.append("intraday BB squeeze")
+    return score, ", ".join(reasons)
+
+
+def _vwap_adj(q: Dict) -> tuple[int, str]:
+    """VWAP position: above = institutional buying, below = selling pressure."""
+    above = q.get("above_vwap")
+    pct = q.get("vwap_pct", 0) or 0
+    if above is None:
+        return 0, ""
+    if above and pct >= 0.3:
+        return 12, f"above VWAP +{pct:.1f}%"
+    if above:
+        return 5, "above VWAP"
+    if not above and pct <= -0.3:
+        return -10, f"below VWAP {pct:.1f}%"
+    return -4, "below VWAP"
+
+
+def _zscore_adj(q: Dict) -> tuple[int, str]:
+    """Z-score mean-reversion signal: extreme values suggest price will revert."""
+    zd = q.get("zscore_daily")
+    zi = q.get("zscore")
+    z = zd if zd is not None else zi
+    if z is None:
+        return 0, ""
+    if z <= -2.0:
+        return 20, f"z={z:.1f} deeply oversold (mean-rev buy)"
+    if z <= -1.5:
+        return 12, f"z={z:.1f} oversold"
+    if z >= 2.0:
+        return -15, f"z={z:.1f} deeply overbought"
+    if z >= 1.5:
+        return -8, f"z={z:.1f} extended"
+    return 0, ""
+
+
 def _news_adj(q: Dict, news: Dict, ticker: str) -> tuple[int, str]:
     """Add news sentiment + catalyst bonus from pre-scored news dict."""
     delta, reason = sentiment_boost(news, ticker)
@@ -217,7 +300,10 @@ def _score_momentum(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
         elif rsi > 75:      score -= 20; reasons.append(f"RSI={rsi} overbought")
     if not macro.get("hostile"):
         score += 10; reasons.append("macro OK")
-    for adj_fn in [lambda: _multi_tf_adj(q), lambda: _rs_adj(q), lambda: _52w_adj(q)]:
+    for adj_fn in [
+        lambda: _multi_tf_adj(q), lambda: _rs_adj(q), lambda: _52w_adj(q),
+        lambda: _macd_adj(q), lambda: _vwap_adj(q),
+    ]:
         d, r = adj_fn()
         score += d
         if r: reasons.append(r)
@@ -243,6 +329,14 @@ def _score_mean_reversion(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, s
     if q.get("near_52w_low"): score += 10; reasons.append("near 52w low — high reversion potential")
     rs = q.get("rs_vs_spy")
     if rs is not None and rs > 0.8: score += 8; reasons.append("RS holding vs SPY")
+    # Z-score is core to mean reversion
+    zd, zr = _zscore_adj(q)
+    score += zd
+    if zr: reasons.append(zr)
+    # Near lower Bollinger Band = strong oversold confirmation
+    bbd, bbr = _bb_adj(q)
+    score += bbd
+    if bbr: reasons.append(bbr)
     ticker = q.get("ticker", "")
     nd, nr = _news_adj(q, news, ticker)
     # For mean reversion, negative news confirmation is OK (oversold from bad news = buy)
@@ -267,6 +361,11 @@ def _score_breakout(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str]:
     if q.get("strong_trend") and q.get("trend_direction") == "UP":
         score += 12; reasons.append(f"ADX={q.get('adx',0):.0f} trend confirming")
     if q.get("near_52w_high"): score += 10; reasons.append("near 52w high breakout")
+    if q.get("bb_squeeze") or q.get("bb_squeeze_daily"):
+        score += 10; reasons.append("BB squeeze — volume breakout setup")
+    if q.get("macd_crossover") or q.get("macd_crossover_daily"):
+        score += 15; reasons.append("MACD crossover confirms breakout")
+    if q.get("above_vwap"): score += 8; reasons.append("above VWAP")
     d, r = _rs_adj(q); score += d
     if r: reasons.append(r)
     ticker = q.get("ticker", "")
@@ -289,7 +388,10 @@ def _score_trend_follow(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, str
     regime = macro.get("regime", "NEUTRAL")
     if "RISK_ON" in regime:   score += 15; reasons.append(f"regime={regime}")
     elif "RISK_OFF" in regime: score -= 25; reasons.append("risk-off")
-    for adj_fn in [lambda: _multi_tf_adj(q), lambda: _rs_adj(q)]:
+    for adj_fn in [
+        lambda: _multi_tf_adj(q), lambda: _rs_adj(q),
+        lambda: _macd_adj(q), lambda: _vwap_adj(q),
+    ]:
         d, r = adj_fn(); score += d
         if r: reasons.append(r)
     ticker = q.get("ticker", "")
@@ -558,6 +660,7 @@ class AutonomousAgent:
         self._last_cycle_ts: Optional[str] = None
         self._last_cycle_summary: Optional[Dict[str, Any]] = None
         self._risk = RiskManager()
+        self._peak_value: float = 0.0  # for drawdown-proportional position scaling
 
     def configure(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         self.config.update(updates)
@@ -636,6 +739,14 @@ class AutonomousAgent:
         open_shorts = get_open_shorts()
         paper = get_portfolio_summary({t: q.get("price", 0) for t, q in quotes.items()})
 
+        # Track all-time peak for drawdown-proportional sizing
+        pv = paper.get("total_value", 0)
+        if pv > self._peak_value:
+            self._peak_value = pv
+        drawdown_scale = self._risk.drawdown_scalar(pv, self._peak_value)
+        if drawdown_scale < 0.9:
+            _log("warning", f"[{cycle_id}] Drawdown scalar={drawdown_scale:.2f} — reducing position sizes")
+
         # Auto stop-loss check (hard stops before signal-based decisions)
         await self._check_stops(open_longs, open_shorts, quotes, cycle_id)
 
@@ -653,7 +764,12 @@ class AutonomousAgent:
             ticker = d["ticker"].upper()
             confidence = d.get("confidence", 50)
             price = d.get("price") or quotes.get(ticker, {}).get("price", 0)
-            qty = d.get("qty") or self._risk.position_size_shares(ticker, price, paper["total_value"], self.config.get("risk_per_trade_pct", 2.0))
+            atr = quotes.get(ticker, {}).get("atr")
+            qty = d.get("qty") or self._risk.position_size_shares(
+                ticker, price, paper["total_value"],
+                self.config.get("risk_per_trade_pct", 2.0),
+                atr=atr, drawdown_scale=drawdown_scale,
+            )
 
             # COVER/SELL use qty from existing position — skip risk sizing
             is_close = action in ("SELL", "COVER")
@@ -675,10 +791,10 @@ class AutonomousAgent:
 
             # Compute stops/targets for new entries
             if action == "BUY":
-                stop = self._risk.compute_stop_loss(price, "BUY") if self.config.get("auto_stop_loss") else None
+                stop = self._risk.compute_stop_loss(price, "BUY", atr) if self.config.get("auto_stop_loss") else None
                 target = round(price * (1 + self.config.get("take_profit_pct", 15) / 100), 2) if self.config.get("auto_take_profit") else None
             elif action == "SHORT":
-                stop = self._risk.compute_stop_loss(price, "SELL") if self.config.get("auto_stop_loss") else None
+                stop = self._risk.compute_stop_loss(price, "SELL", atr) if self.config.get("auto_stop_loss") else None
                 target = round(price * (1 - self.config.get("short_profit_pct", 12) / 100), 2) if self.config.get("auto_take_profit") else None
             else:
                 stop = target = None
@@ -711,6 +827,8 @@ class AutonomousAgent:
             "news_bullish": bullish_count,
             "news_bearish": bearish_count,
             "top_sectors": sectors.get("top_sectors", []) if isinstance(sectors, dict) else [],
+            "drawdown_scale": drawdown_scale,
+            "peak_value": self._peak_value,
         }
         self._last_cycle_ts = summary["ts"]
         self._last_cycle_summary = summary

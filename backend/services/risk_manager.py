@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional  # noqa: F401
 
 DEFAULT_LIMITS = {
     "max_position_pct": 25.0,
@@ -113,14 +113,30 @@ class RiskManager:
 
         return {"approved": approved, "adjusted_qty": qty, "reasons": reasons}
 
-    def compute_stop_loss(self, price: float, action: str = "BUY") -> float:
+    def compute_stop_loss(self, price: float, action: str = "BUY", atr: Optional[float] = None) -> float:
+        """ATR-based stop (2× ATR) when available, else fixed % fallback."""
+        if atr and atr > 0:
+            distance = atr * 2.0
+        else:
+            distance = price * self.limits["stop_loss_pct"] / 100
         if action == "BUY":
-            return round(price * (1 - self.limits["stop_loss_pct"] / 100), 2)
-        return round(price * (1 + self.limits["stop_loss_pct"] / 100), 2)
+            return round(price - distance, 2)
+        return round(price + distance, 2)
 
-    def position_size_shares(self, ticker: str, price: float, portfolio_value: float, risk_pct: float = 2.0) -> int:
-        dollar_risk = portfolio_value * risk_pct / 100
-        stop_distance = price * self.limits["stop_loss_pct"] / 100
+    def drawdown_scalar(self, portfolio_value: float, peak_value: float) -> float:
+        """Position size multiplier: scales down as portfolio draws down from peak.
+        At 0% drawdown → 1.0x, at 10% drawdown → 0.5x, at 20%+ drawdown → 0.25x."""
+        if peak_value <= 0:
+            return 1.0
+        dd_pct = max(0.0, (peak_value - portfolio_value) / peak_value * 100)
+        scalar = max(0.25, 1.0 - dd_pct / 13.3)  # 7.5% dd → ~0.44x, 20% dd → 0.25x
+        return round(scalar, 3)
+
+    def position_size_shares(self, ticker: str, price: float, portfolio_value: float,
+                              risk_pct: float = 2.0, atr: Optional[float] = None,
+                              drawdown_scale: float = 1.0) -> int:
+        dollar_risk = portfolio_value * risk_pct / 100 * drawdown_scale
+        stop_distance = (atr * 2.0) if (atr and atr > 0) else (price * self.limits["stop_loss_pct"] / 100)
         if stop_distance <= 0 or price <= 0:
             return 0
         shares = dollar_risk / stop_distance

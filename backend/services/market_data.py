@@ -24,7 +24,7 @@ async def _get(url: str, params: dict | None = None) -> dict:
 
 
 async def fetch_quote(ticker: str) -> Dict[str, Any]:
-    """Fetch intraday quote + derive RSI, SMA, RVOL from 5m bars."""
+    """Fetch intraday quote + RSI, SMA20, RVOL, VWAP, Bollinger, MACD, z-score from 5m bars."""
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
         data = await _get(url, {"range": "1d", "interval": "5m"})
@@ -44,10 +44,14 @@ async def fetch_quote(ticker: str) -> Dict[str, Any]:
         rsi = _compute_rsi(valid_closes)
         w52_high = meta.get("fiftyTwoWeekHigh") or last
         w52_low = meta.get("fiftyTwoWeekLow") or last
-        # How far from 52w high (0% = at high, 100% = at low)
         w52_range = w52_high - w52_low
         pct_from_high = round((w52_high - last) / w52_range * 100, 1) if w52_range else 0
-        return {
+        # Intraday technicals from 5m bars
+        vwap = _compute_vwap(valid_closes, valid_volumes)
+        bb = _compute_bollinger(valid_closes)
+        macd = _compute_macd(valid_closes)
+        zscore = _compute_zscore(valid_closes)
+        out = {
             "ticker": ticker.upper(),
             "price": round(last, 2),
             "prev_close": round(prev_close, 2),
@@ -68,7 +72,16 @@ async def fetch_quote(ticker: str) -> Dict[str, Any]:
             "as_of": datetime.now(timezone.utc).isoformat(),
             "source": "yahoo",
             "ok": True,
+            # VWAP
+            "vwap": vwap,
+            "above_vwap": (last > vwap) if vwap else None,
+            "vwap_pct": round((last - vwap) / vwap * 100, 2) if vwap else None,
+            # Z-score (intraday)
+            "zscore": zscore,
         }
+        out.update(bb)   # bb_upper, bb_lower, bb_pct, bb_width, bb_squeeze, near_bb_lower, near_bb_upper
+        out.update(macd) # macd, macd_signal, macd_hist, macd_bullish, macd_crossover, macd_hist_rising
+        return out
     except Exception as e:
         return {"ticker": ticker.upper(), "ok": False, "error": str(e), "price": 0, "change_pct": 0}
 
@@ -94,7 +107,11 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
         else:
             slope = 0
         adx = _compute_adx(highs, lows, closes)
-        return {
+        atr = _compute_atr_last(highs, lows, closes)
+        bb_daily = _compute_bollinger(closes)
+        macd_daily = _compute_macd(closes)
+        zscore_daily = _compute_zscore(closes)
+        out = {
             "ticker": ticker.upper(),
             "ok": True,
             "closes": closes,
@@ -102,14 +119,115 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
             "sma50_daily": round(sma50, 2),
             "above_sma20_daily": last > sma20,
             "above_sma50_daily": last > sma50,
-            "golden_cross": sma20 > sma50,  # SMA20 > SMA50 = bullish
+            "golden_cross": sma20 > sma50,
             "trend_5d_pct": round(slope, 2),
             "trend_direction": "UP" if slope > 1 else ("DOWN" if slope < -1 else "FLAT"),
             "adx": adx,
             "strong_trend": adx is not None and adx > 25,
+            "atr": round(atr, 4) if atr else None,
+            "atr_pct": round(atr / last * 100, 2) if atr and last else None,
+            "zscore_daily": zscore_daily,
         }
+        # prefix daily Bollinger/MACD keys to avoid clash with intraday
+        for k, v in bb_daily.items():
+            out[f"{k}_daily"] = v
+        for k, v in macd_daily.items():
+            out[f"{k}_daily"] = v
+        return out
     except Exception as e:
         return {"ticker": ticker.upper(), "ok": False, "error": str(e)}
+
+
+def _compute_macd(closes: list, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict[str, Any]:
+    """MACD line, signal line, histogram, crossover flags."""
+    if len(closes) < slow + signal:
+        return {}
+    def ema(data: list, period: int) -> list:
+        k = 2 / (period + 1)
+        r = [data[0]]
+        for v in data[1:]:
+            r.append(v * k + r[-1] * (1 - k))
+        return r
+    ef = ema(closes, fast)
+    es = ema(closes, slow)
+    macd_line = [f - s for f, s in zip(ef[slow - 1:], es[slow - 1:])]
+    if len(macd_line) < signal:
+        return {}
+    sig_line = ema(macd_line, signal)
+    hist = [m - s for m, s in zip(macd_line, sig_line)]
+    lm, ls, lh = macd_line[-1], sig_line[-1], hist[-1]
+    ph = hist[-2] if len(hist) >= 2 else 0
+    pm, ps = macd_line[-2] if len(macd_line) >= 2 else lm, sig_line[-2] if len(sig_line) >= 2 else ls
+    return {
+        "macd": round(lm, 4),
+        "macd_signal": round(ls, 4),
+        "macd_hist": round(lh, 4),
+        "macd_bullish": lm > ls,
+        "macd_crossover": lm > ls and pm <= ps,   # just crossed bullish
+        "macd_crossunder": lm < ls and pm >= ps,  # just crossed bearish
+        "macd_hist_rising": lh > ph,
+    }
+
+
+def _compute_bollinger(closes: list, period: int = 20, std_mult: float = 2.0) -> Dict[str, Any]:
+    """Bollinger Bands: SMA ± 2*std. Returns band position (bb_pct), width, squeeze flag."""
+    if len(closes) < period:
+        return {}
+    window = closes[-period:]
+    sma = sum(window) / period
+    std = (sum((c - sma) ** 2 for c in window) / period) ** 0.5
+    upper = sma + std_mult * std
+    lower = sma - std_mult * std
+    last = closes[-1]
+    band_width = (upper - lower) / sma if sma else 0
+    bb_pct = (last - lower) / (upper - lower) if upper != lower else 0.5
+    return {
+        "bb_upper": round(upper, 2),
+        "bb_lower": round(lower, 2),
+        "bb_mid": round(sma, 2),
+        "bb_width": round(band_width * 100, 2),
+        "bb_pct": round(bb_pct, 3),      # 0=at lower band, 1=at upper band
+        "bb_squeeze": band_width < 0.04,  # tight bands → breakout likely
+        "above_bb_upper": last > upper,
+        "below_bb_lower": last < lower,
+        "near_bb_lower": bb_pct < 0.15,
+        "near_bb_upper": bb_pct > 0.85,
+    }
+
+
+def _compute_vwap(closes: list, volumes: list) -> Optional[float]:
+    """VWAP = Σ(price × volume) / Σ(volume) across all intraday bars."""
+    pairs = [(c, v) for c, v in zip(closes, volumes) if c is not None and v and v > 0]
+    if not pairs:
+        return None
+    total_vol = sum(v for _, v in pairs)
+    return round(sum(c * v for c, v in pairs) / total_vol, 2) if total_vol else None
+
+
+def _compute_zscore(closes: list, period: int = 20) -> Optional[float]:
+    """Z-score: how many std deviations is price from its SMA (mean-reversion signal)."""
+    if len(closes) < period:
+        return None
+    window = closes[-period:]
+    sma = sum(window) / period
+    std = (sum((c - sma) ** 2 for c in window) / period) ** 0.5
+    return round((closes[-1] - sma) / std, 2) if std else 0.0
+
+
+def _compute_atr_last(highs: list, lows: list, closes: list, period: int = 14) -> Optional[float]:
+    """Return the most recent ATR value (absolute price units)."""
+    n = min(len(highs), len(lows), len(closes))
+    if n < period + 1:
+        return None
+    highs, lows, closes = highs[-n:], lows[-n:], closes[-n:]
+    tr_list = [
+        max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        for i in range(1, n)
+    ]
+    atr = sum(tr_list[:period])
+    for v in tr_list[period:]:
+        atr = atr - atr / period + v
+    return atr / period  # Wilder smoothing approximation
 
 
 def _compute_rsi(closes: list, period: int = 14) -> Optional[float]:
@@ -204,16 +322,34 @@ async def fetch_enhanced_quotes(tickers: List[str]) -> Dict[str, Dict[str, Any]]
         d    = daily.get(t, {})
         if d.get("ok"):
             base.update({
-                "sma20_daily":       d.get("sma20_daily"),
-                "sma50_daily":       d.get("sma50_daily"),
-                "above_sma20_daily": d.get("above_sma20_daily"),
-                "above_sma50_daily": d.get("above_sma50_daily"),
-                "golden_cross":      d.get("golden_cross"),
-                "trend_5d_pct":      d.get("trend_5d_pct"),
-                "trend_direction":   d.get("trend_direction"),
-                "adx":               d.get("adx"),
-                "strong_trend":      d.get("strong_trend"),
-                "rs_vs_spy":         _relative_strength(d.get("closes", []), spy_closes),
+                "sma20_daily":          d.get("sma20_daily"),
+                "sma50_daily":          d.get("sma50_daily"),
+                "above_sma20_daily":    d.get("above_sma20_daily"),
+                "above_sma50_daily":    d.get("above_sma50_daily"),
+                "golden_cross":         d.get("golden_cross"),
+                "trend_5d_pct":         d.get("trend_5d_pct"),
+                "trend_direction":      d.get("trend_direction"),
+                "adx":                  d.get("adx"),
+                "strong_trend":         d.get("strong_trend"),
+                "rs_vs_spy":            _relative_strength(d.get("closes", []), spy_closes),
+                # New: ATR, daily Bollinger, daily MACD, daily z-score
+                "atr":                  d.get("atr"),
+                "atr_pct":              d.get("atr_pct"),
+                "zscore_daily":         d.get("zscore_daily"),
+                "bb_upper_daily":       d.get("bb_upper_daily"),
+                "bb_lower_daily":       d.get("bb_lower_daily"),
+                "bb_pct_daily":         d.get("bb_pct_daily"),
+                "bb_width_daily":       d.get("bb_width_daily"),
+                "bb_squeeze_daily":     d.get("bb_squeeze_daily"),
+                "near_bb_lower_daily":  d.get("near_bb_lower_daily"),
+                "near_bb_upper_daily":  d.get("near_bb_upper_daily"),
+                "macd_daily":           d.get("macd_daily"),
+                "macd_signal_daily":    d.get("macd_signal_daily"),
+                "macd_hist_daily":      d.get("macd_hist_daily"),
+                "macd_bullish_daily":   d.get("macd_bullish_daily"),
+                "macd_crossover_daily": d.get("macd_crossover_daily"),
+                "macd_crossunder_daily":d.get("macd_crossunder_daily"),
+                "macd_hist_rising_daily":d.get("macd_hist_rising_daily"),
             })
         out[t] = base
     return out
