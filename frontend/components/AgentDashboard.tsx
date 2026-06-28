@@ -1538,20 +1538,12 @@ function BacktestPanel() {
         try {
           const s = await apiFetch('/agent/backtest/status')
           setStatusMsg(s?.status || 'Running...')
-          if (s?.done || s?.status === 'done' || s?.status === 'complete' || s?.status === 'completed') {
+          if (s?.status === 'completed' || s?.done) {
             stopPoll()
             setRunning(false)
             setLastRunAt(new Date())
-            if (s?.result) setResult(s.result)
-            else {
-              // Try fetching result directly
-              try {
-                const r = await apiFetch('/agent/backtest/result')
-                setResult(r)
-              } catch {
-                setResult(s)
-              }
-            }
+            // Status endpoint now returns full results when completed
+            setResult(s)
           } else if (s?.status === 'error' || s?.error) {
             stopPoll()
             setRunning(false)
@@ -1667,6 +1659,33 @@ function BacktestPanel() {
 
       {result && strategies.length > 0 && (
         <>
+          {/* SPY benchmark summary bar */}
+          {result.spy_benchmark && Object.keys(result.spy_benchmark).length > 0 && (() => {
+            const spy = result.spy_benchmark
+            const spyRet = spy.total_return_pct ?? 0
+            const bestAgent = strategies.reduce((best: any, s: any) => (s.total_return ?? 0) > (best?.total_return ?? -Infinity) ? s : best, null)
+            const agentBest = bestAgent?.total_return ?? 0
+            const beating = agentBest > spyRet
+            return (
+              <div style={{
+                padding: '10px 14px', borderRadius: '10px', marginBottom: '16px',
+                background: beating ? 'rgba(0,255,136,0.06)' : 'rgba(255,68,68,0.06)',
+                border: `1px solid ${beating ? C.green : C.red}33`,
+                display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'center',
+              }}>
+                <span style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>SPY Buy-and-Hold</span>
+                <span style={{ color: spyRet >= 0 ? C.green : C.red, fontWeight: 700, fontSize: '14px' }}>
+                  {spyRet >= 0 ? '+' : ''}{spyRet.toFixed(1)}%
+                </span>
+                <span style={{ color: C.textMuted, fontSize: '12px' }}>Sharpe: <b style={{ color: C.textSecondary }}>{spy.sharpe ?? '—'}</b></span>
+                <span style={{ color: C.textMuted, fontSize: '12px' }}>Max DD: <b style={{ color: C.red }}>{spy.max_dd_pct?.toFixed(1) ?? '—'}%</b></span>
+                <span style={{ color: beating ? C.green : C.red, fontWeight: 700, fontSize: '12px' }}>
+                  {beating ? `Best strategy beats SPY by +${(agentBest - spyRet).toFixed(1)}%` : `SPY outperforms best by +${(spyRet - agentBest).toFixed(1)}%`}
+                </span>
+              </div>
+            )
+          })()}
+
           {/* Table */}
           <div style={{ overflowX: 'auto', marginBottom: '20px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -1769,6 +1788,198 @@ function BacktestPanel() {
                   )}
                 </LineChart>
               </ResponsiveContainer>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  )
+}
+
+// ─── Section J2: Walk-Forward Validation Panel ───────────────────────────────
+
+function WalkForwardPanel() {
+  const [data, setData] = useState<any>(null)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState('')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  function stopPoll() {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+  }
+  useEffect(() => () => stopPoll(), [])
+
+  // Load existing results on mount
+  useEffect(() => {
+    apiFetch('/agent/ml/walkforward').then(d => {
+      if (d?.status === 'completed') setData(d)
+    }).catch(() => {})
+  }, [])
+
+  async function handleRun() {
+    setRunning(true)
+    setError('')
+    try {
+      await apiFetch('/agent/ml/walkforward', { method: 'POST' })
+      stopPoll()
+      pollRef.current = setInterval(async () => {
+        try {
+          const d = await apiFetch('/agent/ml/walkforward')
+          if (d?.status === 'completed') {
+            stopPoll()
+            setRunning(false)
+            setData(d)
+          } else if (d?.status === 'error') {
+            stopPoll()
+            setRunning(false)
+            setError(d.error || 'Validation failed')
+          }
+        } catch { /* keep polling */ }
+      }, 3000)
+    } catch (e: any) {
+      setRunning(false)
+      setError(e?.detail || 'Failed to start')
+    }
+  }
+
+  const folds: any[] = data?.folds || []
+  const topFeatures: any[] = data?.top_features || []
+  const oos = data?.overall_oos_accuracy
+  const baseline = data?.baseline_accuracy
+  const lift = data?.lift_over_baseline
+  const f1 = data?.overall_oos_f1
+
+  const featureChartData = topFeatures.map(f => ({
+    name: f.feature.replace(/_/g, ' '),
+    value: Math.round(f.importance * 1000) / 10,
+  }))
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <SectionTitle style={{ margin: 0 }}>ML Walk-Forward Validation</SectionTitle>
+        <button
+          onClick={handleRun}
+          disabled={running}
+          style={{
+            padding: '7px 16px', borderRadius: '8px',
+            border: `1px solid ${C.purple}44`,
+            background: running ? 'rgba(168,85,247,0.08)' : 'rgba(168,85,247,0.15)',
+            color: C.purple, fontWeight: 700, fontSize: '13px',
+            cursor: running ? 'wait' : 'pointer', transition: 'all 0.2s',
+          }}
+        >
+          {running ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
+              Validating...
+            </span>
+          ) : data ? 'Re-Run Validation' : 'Run Walk-Forward'}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ color: C.red, fontSize: '13px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,68,68,0.08)', marginBottom: '16px' }}>
+          {error}
+        </div>
+      )}
+
+      {!data && !running && !error && (
+        <EmptyState message="No validation run yet — click 'Run Walk-Forward' to validate the ML model out-of-sample" />
+      )}
+
+      {running && !data && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '80px', color: C.textMuted, fontSize: '13px', gap: '8px' }}>
+          <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
+          Training {data?.n_splits || 5} expanding-window folds...
+        </div>
+      )}
+
+      {data && (
+        <>
+          {/* Summary badges */}
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '20px' }}>
+            <div style={{ padding: '10px 16px', borderRadius: '10px', background: 'rgba(168,85,247,0.1)', border: `1px solid ${C.purple}33` }}>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>OOS Accuracy</div>
+              <div style={{ color: C.purple, fontSize: '24px', fontWeight: 700, fontFamily: 'monospace' }}>
+                {oos !== undefined ? `${(oos * 100).toFixed(1)}%` : '—'}
+              </div>
+            </div>
+            <div style={{ padding: '10px 16px', borderRadius: '10px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}` }}>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Baseline</div>
+              <div style={{ color: C.textSecondary, fontSize: '24px', fontWeight: 700, fontFamily: 'monospace' }}>
+                {baseline !== undefined ? `${(baseline * 100).toFixed(1)}%` : '—'}
+              </div>
+            </div>
+            <div style={{ padding: '10px 16px', borderRadius: '10px', background: lift > 0 ? 'rgba(0,255,136,0.08)' : 'rgba(255,68,68,0.08)', border: `1px solid ${lift > 0 ? C.green : C.red}33` }}>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Lift</div>
+              <div style={{ color: lift > 0 ? C.green : C.red, fontSize: '24px', fontWeight: 700, fontFamily: 'monospace' }}>
+                {lift !== undefined ? `${lift > 0 ? '+' : ''}${(lift * 100).toFixed(1)}%` : '—'}
+              </div>
+            </div>
+            <div style={{ padding: '10px 16px', borderRadius: '10px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}` }}>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>OOS F1</div>
+              <div style={{ color: C.blue, fontSize: '24px', fontWeight: 700, fontFamily: 'monospace' }}>
+                {f1 !== undefined ? f1.toFixed(3) : '—'}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            {/* Fold table */}
+            <div>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>
+                Per-Fold OOS Results
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead>
+                  <tr>
+                    {['Fold', 'Train', 'Test', 'Accuracy', 'Precision', 'F1'].map(h => (
+                      <th key={h} style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', textAlign: h === 'Fold' ? 'left' : 'right', padding: '4px 8px', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {folds.map((f, i) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${C.border}22` }}>
+                      <td style={{ padding: '6px 8px', color: C.textSecondary, fontWeight: 600 }}>#{f.fold}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: C.textMuted }}>{f.train_samples.toLocaleString()}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: C.textMuted }}>{f.test_samples.toLocaleString()}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: f.accuracy > (baseline || 0.5) ? C.green : C.red, fontWeight: 700 }}>
+                        {(f.accuracy * 100).toFixed(1)}%
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: C.textSecondary }}>{(f.precision * 100).toFixed(1)}%</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: C.blue }}>{f.f1.toFixed(3)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Feature importance bar chart */}
+            {featureChartData.length > 0 && (
+              <div>
+                <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>
+                  Top Signal Features (avg importance ×1000)
+                </div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={featureChartData} layout="vertical" margin={{ top: 0, right: 10, left: 90, bottom: 0 }}>
+                    <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="name" tick={{ fill: C.textSecondary, fontSize: 10 }} axisLine={false} tickLine={false} width={90} />
+                    <Tooltip
+                      contentStyle={{ background: '#1a1a1a', border: `1px solid ${C.border}`, borderRadius: '8px', fontSize: '12px' }}
+                      formatter={(v: any) => [`${v}‰`, 'Importance']}
+                    />
+                    <Bar dataKey="value" fill={C.purple} radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {data.ts && (
+            <div style={{ color: C.textMuted, fontSize: '11px', marginTop: '12px' }}>
+              Validated {fmtDatetime(data.ts)} · {data.total_samples?.toLocaleString()} total samples · {data.n_splits} folds
             </div>
           )}
         </>
@@ -2335,8 +2546,11 @@ export default function AgentDashboard() {
         {/* I. Regime Panel */}
         <RegimePanel data={regimeData} loading={regimeLoading} />
 
-        {/* J. Backtest Panel */}
+        {/* J. Backtest Panel (with SPY benchmark) */}
         <BacktestPanel />
+
+        {/* J2. ML Walk-Forward Validation */}
+        <WalkForwardPanel />
 
         {/* K. Institutional Signals */}
         <InstitutionalPanel data={institutionalData} loading={institutionalLoading} />

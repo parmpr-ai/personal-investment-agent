@@ -18,7 +18,7 @@ from services.strategy_tracker import get_strategy_stats, get_pnl_series, get_ho
 from services.regime_detector import detect_regime
 from services.institutional_signals import get_institutional_signal, get_institutional_signals_batch
 from services.backtester import run_backtest, get_latest_results, get_backtest_status
-from services.ml_scorer import train_all_models, models_status
+from services.ml_scorer import train_all_models, models_status, walk_forward_validate, wf_results
 load_dotenv()
 try:
  from services.ibkr_service import get_ibkr_portfolio
@@ -372,6 +372,14 @@ async def agent_ml_train():
 
 @app.get('/agent/ml/status')
 def agent_ml_status(): return models_status()
+
+@app.post('/agent/ml/walkforward')
+async def agent_ml_walkforward(background_tasks: _BT):
+ background_tasks.add_task(walk_forward_validate)
+ return {'ok': True, 'message': 'Walk-forward validation started. Poll GET /agent/ml/walkforward for results.'}
+
+@app.get('/agent/ml/walkforward')
+def agent_ml_walkforward_results(): return wf_results()
 
 # ── Risk Report ───────────────────────────────────────────────────────────────
 @app.get('/agent/risk/report')

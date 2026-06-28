@@ -381,3 +381,155 @@ async def train_all_models(
         "results": results,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ── Walk-Forward Validation ───────────────────────────────────────────────────
+
+_wf_cache: Dict[str, Any] = {}
+
+
+def wf_results() -> Dict[str, Any]:
+    """Return cached walk-forward validation results."""
+    return _wf_cache or {"status": "not_run", "message": "POST /agent/ml/walkforward to start"}
+
+
+async def walk_forward_validate(
+    tickers: Optional[List[str]] = None,
+    n_splits: int = 5,
+    days: int = 504,
+) -> Dict[str, Any]:
+    """
+    Walk-forward (expanding window) cross-validation for the ML signal model.
+
+    For each fold k (k=1..n_splits):
+      train on first  (40% + k * step)  of chronological samples
+      test  on next   step              of samples
+    where step = (total - 40%) / n_splits
+
+    Returns per-fold OOS accuracy, precision, recall, F1
+    plus aggregated feature importances.
+    """
+    global _wf_cache
+
+    _wf_cache = {"status": "running", "ts": datetime.now(timezone.utc).isoformat()}
+
+    try:
+        from sklearn.ensemble import GradientBoostingClassifier
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+    except ImportError:
+        _wf_cache = {"status": "error", "error": "scikit-learn not installed"}
+        return _wf_cache
+
+    from services.autonomous_agent import UNIVERSE, DEFAULT_CONFIG
+    from services.backtester import fetch_history, compute_signal_arrays
+
+    tickers = tickers or UNIVERSE
+    sem = asyncio.Semaphore(5)
+
+    async def _fetch(t):
+        async with sem:
+            return t, await fetch_history(t, days)
+
+    pairs = await asyncio.gather(*[_fetch(t) for t in tickers], return_exceptions=True)
+
+    sigs_map: Dict[str, Dict] = {}
+    closes_map: Dict[str, np.ndarray] = {}
+    for item in pairs:
+        if not isinstance(item, tuple):
+            continue
+        t, hist = item
+        if not isinstance(hist, dict) or not hist:
+            continue
+        sigs_map[t] = compute_signal_arrays(hist["closes"], hist["volumes"], hist["highs"], hist["lows"])
+        closes_map[t] = hist["closes"]
+
+    if not sigs_map:
+        _wf_cache = {"status": "error", "error": "No historical data"}
+        return _wf_cache
+
+    # Build combined dataset (all tickers, long signals only for simplicity)
+    X, y = build_dataset(sigs_map, closes_map, forward_days=5, target_return_pct=2.0)
+    if len(X) < 200:
+        _wf_cache = {"status": "error", "error": f"Not enough samples: {len(X)}"}
+        return _wf_cache
+
+    n = len(X)
+    # Expanding window: initial train = 40%, each fold tests next (60%/n_splits)
+    min_train = int(n * 0.40)
+    test_chunk = max(20, (n - min_train) // n_splits)
+
+    folds: List[Dict] = []
+    importances_sum = np.zeros(len(FEATURE_NAMES))
+    importances_count = 0
+
+    for k in range(n_splits):
+        train_end = min_train + k * test_chunk
+        test_start = train_end
+        test_end = min(test_start + test_chunk, n)
+        if test_start >= n or test_end - test_start < 10:
+            break
+
+        X_train, y_train = X[:train_end], y[:train_end]
+        X_test, y_test = X[test_start:test_end], y[test_start:test_end]
+
+        scaler = StandardScaler()
+        X_tr_s = scaler.fit_transform(X_train)
+        X_te_s = scaler.transform(X_test)
+
+        clf = GradientBoostingClassifier(
+            n_estimators=100, learning_rate=0.05, max_depth=3,
+            min_samples_leaf=10, subsample=0.8, random_state=42 + k,
+        )
+        clf.fit(X_tr_s, y_train)
+        y_pred = clf.predict(X_te_s)
+
+        acc = float(accuracy_score(y_test, y_pred))
+        prec = float(precision_score(y_test, y_pred, zero_division=0))
+        rec = float(recall_score(y_test, y_pred, zero_division=0))
+        f1 = float(f1_score(y_test, y_pred, zero_division=0))
+
+        folds.append({
+            "fold": k + 1,
+            "train_samples": train_end,
+            "test_samples": test_end - test_start,
+            "accuracy": round(acc, 3),
+            "precision": round(prec, 3),
+            "recall": round(rec, 3),
+            "f1": round(f1, 3),
+        })
+
+        importances_sum += clf.feature_importances_
+        importances_count += 1
+
+    if not folds:
+        _wf_cache = {"status": "error", "error": "No folds completed"}
+        return _wf_cache
+
+    avg_imp = importances_sum / importances_count if importances_count else importances_sum
+    top_features = sorted(
+        zip(FEATURE_NAMES, avg_imp.tolist()),
+        key=lambda x: x[1], reverse=True
+    )[:8]
+
+    overall_acc = float(np.mean([f["accuracy"] for f in folds]))
+    overall_f1 = float(np.mean([f["f1"] for f in folds]))
+
+    # Baseline: always predict majority class
+    pos_rate = float(np.mean(y))
+    baseline_acc = max(pos_rate, 1 - pos_rate)
+
+    _wf_cache = {
+        "status": "completed",
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "n_splits": len(folds),
+        "total_samples": n,
+        "overall_oos_accuracy": round(overall_acc, 3),
+        "overall_oos_f1": round(overall_f1, 3),
+        "baseline_accuracy": round(baseline_acc, 3),
+        "lift_over_baseline": round(overall_acc - baseline_acc, 3),
+        "positive_rate": round(pos_rate, 3),
+        "folds": folds,
+        "top_features": [{"feature": f, "importance": round(imp, 4)} for f, imp in top_features],
+    }
+    return _wf_cache

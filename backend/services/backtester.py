@@ -477,13 +477,44 @@ async def fetch_history(ticker: str, days: int = 504) -> Optional[Dict[str, Any]
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
+def _spy_benchmark(spy_closes: np.ndarray) -> Dict[str, Any]:
+    """Compute buy-and-hold SPY metrics over the given close series."""
+    closes = spy_closes[~np.isnan(spy_closes)]
+    if len(closes) < 10:
+        return {}
+    equity = np.ones(len(closes))
+    for i in range(1, len(closes)):
+        equity[i] = equity[i - 1] * (closes[i] / closes[i - 1])
+    returns = np.diff(equity) / equity[:-1]
+    mean_r = float(np.mean(returns))
+    std_r = float(np.std(returns)) or 1e-10
+    sharpe = (mean_r / std_r) * np.sqrt(252)
+    down_r = returns[returns < 0]
+    down_std = float(np.std(down_r)) if len(down_r) > 1 else std_r
+    sortino = (mean_r / down_std) * np.sqrt(252) if down_std > 1e-10 else 0.0
+    peak = np.maximum.accumulate(equity)
+    max_dd = float(np.min((equity - peak) / peak)) * 100
+    total_return = (equity[-1] - 1) * 100
+    n_years = len(equity) / 252
+    cagr = ((equity[-1]) ** (1 / n_years) - 1) * 100 if n_years > 0 else 0.0
+    sampled = [round(float(v), 4) for v in equity[::5]]
+    return {
+        "sharpe": round(sharpe, 2),
+        "sortino": round(sortino, 2),
+        "max_dd_pct": round(max_dd, 1),
+        "total_return_pct": round(total_return, 1),
+        "cagr_pct": round(cagr, 1),
+        "equity_sampled": sampled,  # normalized to 1.0 base
+    }
+
+
 async def run_backtest(
     tickers: Optional[List[str]] = None,
     strategies: Optional[List[str]] = None,
     days: int = 504,
 ) -> Dict[str, Any]:
     """
-    Run full backtest for all tickers × strategies.
+    Run full backtest for all tickers × strategies + SPY buy-and-hold benchmark.
     Saves results to SQLite. Returns summary dict.
     """
     from services.autonomous_agent import UNIVERSE, DEFAULT_CONFIG
@@ -501,20 +532,26 @@ async def run_backtest(
     conn.commit()
     conn.close()
 
-    # Fetch historical data concurrently
+    # Fetch historical data concurrently (always include SPY for benchmark)
+    fetch_tickers = list(dict.fromkeys(["SPY"] + list(tickers)))
     sem = asyncio.Semaphore(5)
 
     async def _fetch(t):
         async with sem:
             return t, await fetch_history(t, days)
 
-    pairs = await asyncio.gather(*[_fetch(t) for t in tickers], return_exceptions=True)
+    pairs = await asyncio.gather(*[_fetch(t) for t in fetch_tickers], return_exceptions=True)
     hist_map: Dict[str, Any] = {}
     for item in pairs:
         if isinstance(item, tuple):
             t, h = item
             if isinstance(h, dict) and h:
                 hist_map[t] = h
+
+    # Compute SPY benchmark before strategy loop
+    spy_benchmark: Dict[str, Any] = {}
+    if "SPY" in hist_map:
+        spy_benchmark = _spy_benchmark(hist_map["SPY"]["closes"])
 
     all_metrics: List[Dict] = []
     strategy_summary: Dict[str, List] = {}
@@ -568,11 +605,12 @@ async def run_backtest(
 
     summary = {
         "run_ts": run_ts,
-        "tickers_tested": len(hist_map),
+        "tickers_tested": len(hist_map) - (1 if "SPY" in hist_map else 0),
         "strategies_tested": len(strategies),
         "days": days,
         "aggregated_by_strategy": aggregated,
         "total_results": len(all_metrics),
+        "spy_benchmark": spy_benchmark,
     }
 
     # Update run status
@@ -586,6 +624,9 @@ async def run_backtest(
 
 
 def _save_result(ticker, strategy, metrics, equity_curve, trades, ts):
+    # Normalize equity to 1.0 base so frontend formula (v*100-100) gives % return
+    start = equity_curve[0] if equity_curve else 100_000.0
+    norm = [round(v / start, 6) for v in equity_curve[::5]] if equity_curve else []
     conn = _conn()
     try:
         conn.execute("""
@@ -598,12 +639,62 @@ def _save_result(ticker, strategy, metrics, equity_curve, trades, ts):
             metrics["sharpe"], metrics["sortino"],
             metrics["max_dd_pct"], metrics["calmar"],
             metrics["total_return_pct"], metrics["avg_return_pct"],
-            json.dumps(metrics.get("equity_curve_sampled", [])),
+            json.dumps(norm),
             json.dumps(trades[:50]),
         ))
         conn.commit()
     finally:
         conn.close()
+
+
+def _build_frontend_result(run_d: Dict, conn) -> Dict[str, Any]:
+    """Build the result shape the frontend BacktestPanel expects."""
+    summary = json.loads(run_d.get("summary") or "{}")
+    spy_bm = summary.get("spy_benchmark", {})
+
+    # Per-ticker rows: pick best Sharpe per strategy for equity curve display
+    rows = conn.execute(
+        "SELECT strategy, ticker, sharpe, win_rate, total_return_pct, max_dd, calmar, total_trades, equity_curve "
+        "FROM backtest_results WHERE ts=? ORDER BY sharpe DESC",
+        (run_d["ts"],)
+    ).fetchall()
+
+    # Best row per strategy (already sorted by sharpe desc)
+    best: Dict[str, Dict] = {}
+    for r in rows:
+        d = dict(r)
+        if d["strategy"] not in best:
+            try:
+                d["equity_curve"] = json.loads(d.get("equity_curve") or "[]")
+            except Exception:
+                d["equity_curve"] = []
+            best[d["strategy"]] = d
+
+    strategies_out = []
+    for strat, d in best.items():
+        strategies_out.append({
+            "name": strat,
+            "trades": d.get("total_trades", 0),
+            "win_rate": d.get("win_rate", 0),
+            "sharpe": d.get("sharpe", 0),
+            "max_dd": d.get("max_dd", 0),
+            "calmar": d.get("calmar", 0),
+            "total_return": d.get("total_return_pct", 0),
+            "equity": d.get("equity_curve", []),
+        })
+    # Sort by sharpe desc
+    strategies_out.sort(key=lambda x: x["sharpe"], reverse=True)
+
+    return {
+        "status": "completed",
+        "run_ts": run_d["ts"],
+        "days": run_d.get("days", 504),
+        "tickers": json.loads(run_d.get("tickers") or "[]"),
+        "summary": summary,
+        "strategies": strategies_out,
+        "spy_equity": spy_bm.get("equity_sampled", []),
+        "spy_benchmark": spy_bm,
+    }
 
 
 def get_latest_results() -> Dict[str, Any]:
@@ -615,40 +706,13 @@ def get_latest_results() -> Dict[str, Any]:
         ).fetchone()
         if not run:
             return {"status": "no_results", "message": "No backtest run yet. POST /agent/backtest to start."}
-
-        run_d = dict(run)
-        summary = json.loads(run_d.get("summary") or "{}")
-
-        # Load per-ticker rows for equity curves
-        rows = conn.execute(
-            "SELECT strategy, ticker, sharpe, win_rate, total_return_pct, max_dd, calmar, equity_curve "
-            "FROM backtest_results WHERE ts=? ORDER BY sharpe DESC",
-            (run_d["ts"],)
-        ).fetchall()
-
-        detail = []
-        for r in rows[:50]:
-            d = dict(r)
-            try:
-                d["equity_curve"] = json.loads(d.get("equity_curve") or "[]")
-            except Exception:
-                d["equity_curve"] = []
-            detail.append(d)
-
-        return {
-            "status": "completed",
-            "run_ts": run_d["ts"],
-            "days": run_d.get("days", 504),
-            "tickers": json.loads(run_d.get("tickers") or "[]"),
-            "summary": summary,
-            "detail": detail,
-        }
+        return _build_frontend_result(dict(run), conn)
     finally:
         conn.close()
 
 
 def get_backtest_status() -> Dict[str, Any]:
-    """Return status of the most recent backtest run."""
+    """Return status of the most recent run; includes full results when completed."""
     conn = _conn()
     try:
         run = conn.execute(
@@ -657,6 +721,8 @@ def get_backtest_status() -> Dict[str, Any]:
         if not run:
             return {"status": "idle"}
         d = dict(run)
+        if d["status"] == "completed":
+            return _build_frontend_result(d, conn)
         return {"status": d["status"], "ts": d["ts"], "days": d.get("days")}
     finally:
         conn.close()
