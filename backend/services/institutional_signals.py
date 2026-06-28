@@ -2,13 +2,14 @@
 Free institutional flow signals — zero API key required.
 
 Sources:
-  1. SEC EDGAR Form 4 RSS    — insider buy/sell transactions (officers, directors, 10%+ holders)
-  2. Yahoo Finance quoteSummary — analyst consensus, price targets, short interest
-  3. FINRA short interest proxy — via Yahoo shortPercentOfFloat + daysToShort
+  1. SEC EDGAR Form 4 Atom feed — insider buy/sell transactions (officers, directors, 10%+ holders)
+  2. Yahoo Finance quoteSummary  — analyst consensus, price targets, short interest
+  3. FINRA short interest proxy  — via Yahoo shortPercentOfFloat + daysToShort
   4. Yahoo Finance options chain — unusual call/put vol/OI ratio, IV skew (options flow proxy)
+  5. Yahoo Finance 13F ownership — institutional ownership %, top holders, accumulation/distribution
 
-Score range: -45 to +50 additive bonus to the rule engine.
-High-conviction signals (cluster insider buys + unusual call sweep): can add 30+.
+Score range: -55 to +65 additive bonus to the rule engine.
+High-conviction signals (cluster insider buys + unusual call sweep + institutional accumulation): can add 40+.
 """
 import asyncio
 import time
@@ -350,7 +351,95 @@ def _score_options_flow(opts: Dict[str, Any]) -> Tuple[int, List[str]]:
     return score, reasons
 
 
-# ── 4. Scoring function ───────────────────────────────────────────────────────
+# ── 4. Yahoo Finance 13F — Institutional Ownership + Accumulation/Distribution ─
+
+async def fetch_13f_ownership(ticker: str) -> Dict[str, Any]:
+    """
+    Fetch institutional ownership % and top holders from Yahoo Finance quoteSummary.
+    Uses free Yahoo endpoints — no API key required.
+    Returns ownership%, institution count, top-5 holders with any pct_change data.
+    """
+    url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker.upper()}"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_HEADERS) as client:
+            r = await client.get(url, params={"modules": "institutionOwnership,majorHoldersBreakdown"})
+            r.raise_for_status()
+            data = r.json()
+        result = data.get("quoteSummary", {}).get("result", [{}])[0]
+    except Exception:
+        return {}
+
+    out: Dict[str, Any] = {}
+
+    # Total institutional ownership (from majorHoldersBreakdown)
+    mhb = result.get("majorHoldersBreakdown", {})
+    inst_pct = mhb.get("institutionsPercentHeld", {}).get("raw")
+    inst_count = mhb.get("numberOfInstitutionsHeld", {}).get("raw")
+    if inst_pct is not None:
+        out["institutions_pct"] = round(inst_pct * 100, 1)
+    if inst_count is not None:
+        out["institution_count"] = int(inst_count)
+
+    # Individual top institutional holders with position change data
+    holders_raw = result.get("institutionOwnership", {}).get("ownershipList", [])
+    top_holders: List[Dict] = []
+    for h in holders_raw[:5]:
+        pct_held   = (h.get("pctHeld", {}) or {}).get("raw")
+        pct_change = (h.get("pctChange", {}) or {}).get("raw")   # None if no prior period
+        top_holders.append({
+            "name":       h.get("organization", ""),
+            "pct_held":   round(pct_held   * 100, 2) if pct_held   is not None else None,
+            "pct_change": round(pct_change * 100, 2) if pct_change is not None else None,
+        })
+    out["top_holders"] = top_holders
+
+    # Detect accumulation vs distribution from pct_change data
+    changers    = [h for h in top_holders if h["pct_change"] is not None]
+    increasing  = sum(1 for h in changers if h["pct_change"] >  0.5)
+    decreasing  = sum(1 for h in changers if h["pct_change"] < -0.5)
+    out["holders_increasing"] = increasing
+    out["holders_decreasing"] = decreasing
+
+    return out
+
+
+def _score_13f_ownership(ownership: Dict[str, Any]) -> Tuple[int, List[str]]:
+    """
+    Convert institutional ownership data into a -10..+12 score.
+    Signals: total institutional %, accumulation/distribution from pct_change.
+    """
+    if not ownership:
+        return 0, []
+
+    score   = 0
+    reasons: List[str] = []
+
+    inst_pct = ownership.get("institutions_pct")
+    if inst_pct is not None:
+        if inst_pct >= 80:
+            score += 8
+            reasons.append(f"High institutional ownership ({inst_pct:.0f}%)")
+        elif inst_pct >= 60:
+            score += 4
+            reasons.append(f"Moderate institutional ownership ({inst_pct:.0f}%)")
+        elif 0 < inst_pct < 20:
+            score -= 5
+            reasons.append(f"Low institutional ownership ({inst_pct:.0f}%)")
+
+    increasing = ownership.get("holders_increasing", 0)
+    decreasing = ownership.get("holders_decreasing", 0)
+
+    if increasing >= 2 and increasing > decreasing:
+        score += min(increasing * 2, 6)   # up to +6 for 3+ holders adding
+        reasons.append(f"Institutional accumulation ({increasing} top holders increasing positions)")
+    elif decreasing >= 2 and decreasing > increasing:
+        score -= min(decreasing * 2, 6)   # down to -6 for 3+ holders cutting
+        reasons.append(f"Institutional distribution ({decreasing} top holders reducing positions)")
+
+    return score, reasons
+
+
+# ── 5. Scoring function ───────────────────────────────────────────────────────
 
 def _score_institutional(insider_trades: List[Dict], yahoo: Dict) -> Tuple[int, List[str]]:
     """
@@ -416,56 +505,64 @@ def _score_institutional(insider_trades: List[Dict], yahoo: Dict) -> Tuple[int, 
     return score, reasons
 
 
-# ── 4. Main API ───────────────────────────────────────────────────────────────
+# ── 6. Main API ───────────────────────────────────────────────────────────────
 
 async def get_institutional_signal(ticker: str) -> Dict[str, Any]:
     """
     Return institutional signal score + details for one ticker.
     Cached for 4h — these signals don't change cycle-to-cycle.
+    Sources: Form 4 insider trades, Yahoo analyst/short data, options flow, 13F ownership.
     """
     ticker = ticker.upper()
     cached = _cache.get(ticker)
     if cached and time.time() - cached["ts"] < _CACHE_TTL:
         return cached["data"]
 
-    insider_trades, yahoo_data, options_data = await asyncio.gather(
+    insider_trades, yahoo_data, options_data, ownership_data = await asyncio.gather(
         fetch_insider_trades(ticker, days=30),
         fetch_yahoo_institutional(ticker),
         fetch_options_flow(ticker),
+        fetch_13f_ownership(ticker),
         return_exceptions=True,
     )
 
-    if isinstance(insider_trades, Exception):
-        insider_trades = []
-    if isinstance(yahoo_data, Exception):
-        yahoo_data = {}
-    if isinstance(options_data, Exception):
-        options_data = {}
+    if isinstance(insider_trades,  Exception): insider_trades  = []
+    if isinstance(yahoo_data,      Exception): yahoo_data      = {}
+    if isinstance(options_data,    Exception): options_data    = {}
+    if isinstance(ownership_data,  Exception): ownership_data  = {}
 
-    inst_score, inst_reasons = _score_institutional(insider_trades, yahoo_data)
-    opts_score, opts_reasons = _score_options_flow(options_data)
-    score = inst_score + opts_score
+    inst_score, inst_reasons  = _score_institutional(insider_trades, yahoo_data)
+    opts_score, opts_reasons  = _score_options_flow(options_data)
+    own_score,  own_reasons   = _score_13f_ownership(ownership_data)
+    score = inst_score + opts_score + own_score
 
     result = {
         "ticker": ticker,
         "score": score,
-        "insider_buys": len([t for t in insider_trades if t["type"] == "BUY"]),
-        "insider_sells": len([t for t in insider_trades if t["type"] == "SELL"]),
-        "analyst_consensus": yahoo_data.get("analyst_consensus", "N/A"),
-        "analyst_buy_pct": yahoo_data.get("analyst_buy_pct"),
-        "price_target_upside_pct": yahoo_data.get("price_target_upside_pct"),
-        "short_float_pct": yahoo_data.get("short_float_pct"),
-        "short_squeeze_candidate": yahoo_data.get("short_squeeze_candidate", False),
-        "yahoo_recommendation": yahoo_data.get("yahoo_recommendation", ""),
+        "insider_buys":             len([t for t in insider_trades if t["type"] == "BUY"]),
+        "insider_sells":            len([t for t in insider_trades if t["type"] == "SELL"]),
+        "analyst_consensus":        yahoo_data.get("analyst_consensus", "N/A"),
+        "analyst_buy_pct":          yahoo_data.get("analyst_buy_pct"),
+        "price_target_upside_pct":  yahoo_data.get("price_target_upside_pct"),
+        "short_float_pct":          yahoo_data.get("short_float_pct"),
+        "short_squeeze_candidate":  yahoo_data.get("short_squeeze_candidate", False),
+        "yahoo_recommendation":     yahoo_data.get("yahoo_recommendation", ""),
         "options_flow": {
-            "call_put_ratio":       options_data.get("call_put_vol_ratio"),
-            "unusual_calls":        options_data.get("unusual_calls_count", 0),
-            "unusual_puts":         options_data.get("unusual_puts_count",  0),
-            "iv_skew":              options_data.get("iv_skew"),
-            "top_unusual_calls":    options_data.get("unusual_calls", []),
-            "top_unusual_puts":     options_data.get("unusual_puts",  []),
+            "call_put_ratio":    options_data.get("call_put_vol_ratio"),
+            "unusual_calls":     options_data.get("unusual_calls_count", 0),
+            "unusual_puts":      options_data.get("unusual_puts_count",  0),
+            "iv_skew":           options_data.get("iv_skew"),
+            "top_unusual_calls": options_data.get("unusual_calls", []),
+            "top_unusual_puts":  options_data.get("unusual_puts",  []),
         },
-        "signals": inst_reasons + opts_reasons,
+        "institutional_ownership": {
+            "institutions_pct":   ownership_data.get("institutions_pct"),
+            "institution_count":  ownership_data.get("institution_count"),
+            "holders_increasing": ownership_data.get("holders_increasing", 0),
+            "holders_decreasing": ownership_data.get("holders_decreasing", 0),
+            "top_holders":        ownership_data.get("top_holders", []),
+        },
+        "signals":               inst_reasons + opts_reasons + own_reasons,
         "recent_insider_trades": insider_trades[:5],
         "ts": datetime.now(timezone.utc).isoformat(),
     }

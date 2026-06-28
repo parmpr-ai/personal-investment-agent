@@ -912,6 +912,195 @@ async def run_backtest(
     return summary
 
 
+async def run_walkforward_backtest(
+    tickers: Optional[List[str]] = None,
+    strategies: Optional[List[str]] = None,
+    train_days: int = 126,   # ~6 months IS window
+    test_days: int = 63,     # ~3 months OOS window
+    days: int = 504,          # ~2 years total history
+) -> Dict[str, Any]:
+    """
+    Walk-forward out-of-sample validation.
+
+    For each ticker × strategy, slides a train_days → test_days window
+    across the full history (non-overlapping OOS periods → unbiased OOS estimate):
+
+      Window k IS  : [win_start .. win_start + train_days)
+      Window k OOS : [win_start + train_days .. win_start + train_days + test_days)
+      Step         : test_days  (next OOS starts where previous OOS ended)
+
+    Each slice includes SIM_WARMUP extra bars prepended so simulate_strategy
+    gets proper indicator warmup without contaminating the evaluation period.
+
+    Returns per-window IS/OOS metrics + aggregated OOS statistics per strategy.
+    The is_oos_sharpe_ratio (OOS Sharpe / IS Sharpe) measures generalisation;
+    a ratio < 0.7 indicates significant in-sample overfitting.
+    """
+    from services.autonomous_agent import UNIVERSE, DEFAULT_CONFIG
+
+    tickers   = tickers   or UNIVERSE[:10]  # limit default for speed
+    strategies = strategies or list(DEFAULT_CONFIG["strategies"])
+    run_ts = datetime.now(timezone.utc).isoformat()
+
+    # ── Fetch historical data ─────────────────────────────────────────────────
+    fetch_tickers = list(dict.fromkeys(["SPY"] + list(tickers)))
+    sem = asyncio.Semaphore(5)
+
+    async def _fetch(t: str) -> Tuple[str, Optional[Dict]]:
+        async with sem:
+            return t, await fetch_history(t, days)
+
+    pairs = await asyncio.gather(*[_fetch(t) for t in fetch_tickers], return_exceptions=True)
+    hist_map: Dict[str, Any] = {}
+    for item in pairs:
+        if isinstance(item, tuple):
+            t, h = item
+            if isinstance(h, dict) and h:
+                hist_map[t] = h
+
+    # ── SPY regime series ─────────────────────────────────────────────────────
+    spy_regime_series: List[str] = []
+    spy_date_index: Dict[str, int] = {}
+    if "SPY" in hist_map:
+        spy_hist = hist_map["SPY"]
+        spy_regime_series = _classify_historical_regimes(spy_hist["closes"], spy_hist["volumes"])
+        spy_date_index = {d: i for i, d in enumerate(spy_hist["dates"])}
+
+    # ── Walk-forward windows ──────────────────────────────────────────────────
+    SIM_WARMUP = 52   # must match warmup constant in simulate_strategy
+    min_bars   = SIM_WARMUP + train_days + test_days
+
+    results_by_strategy: Dict[str, Dict[str, Any]] = {}
+
+    for ticker, hist in hist_map.items():
+        if ticker == "SPY":
+            continue
+
+        closes  = hist["closes"]
+        highs   = hist["highs"]
+        lows    = hist["lows"]
+        volumes = hist["volumes"]
+        dates   = hist["dates"]
+        n       = len(closes)
+
+        if n < min_bars:
+            continue
+
+        sigs = compute_signal_arrays(closes, volumes, highs, lows)
+
+        ticker_regime: List[str] = (
+            [spy_regime_series[spy_date_index[d]]
+             if d in spy_date_index and spy_date_index[d] < len(spy_regime_series)
+             else "CHOPPY_RANGE"
+             for d in dates]
+            if spy_regime_series and spy_date_index else []
+        )
+
+        for strat in strategies:
+            windows: List[Dict] = []
+            win_start = SIM_WARMUP   # first IS period starts after warmup
+
+            while win_start + train_days + test_days <= n:
+                is_end  = win_start + train_days
+                oos_end = is_end + test_days
+
+                # Prepend SIM_WARMUP bars so simulate_strategy has proper warmup
+                is_s0  = win_start - SIM_WARMUP   # = 0 for first window
+                oos_s0 = is_end    - SIM_WARMUP
+
+                def _sl(arr, a: int, b: int):
+                    return arr[a:b] if isinstance(arr, list) else arr[a:b]
+
+                is_sigs  = {k: v[is_s0:is_end]  for k, v in sigs.items()}
+                oos_sigs = {k: v[oos_s0:oos_end] for k, v in sigs.items()}
+
+                is_r   = _sl(ticker_regime, is_s0,  is_end)  if ticker_regime else []
+                oos_r  = _sl(ticker_regime, oos_s0, oos_end) if ticker_regime else []
+
+                try:
+                    is_sim  = simulate_strategy(strat, dates[is_s0:is_end],
+                                                closes[is_s0:is_end],   is_sigs,  regime_series=is_r)
+                    oos_sim = simulate_strategy(strat, dates[oos_s0:oos_end],
+                                                closes[oos_s0:oos_end], oos_sigs, regime_series=oos_r)
+
+                    if "error" in is_sim or "error" in oos_sim:
+                        win_start += test_days
+                        continue
+
+                    is_m  = compute_metrics(is_sim,  dates[is_s0:is_end])
+                    oos_m = compute_metrics(oos_sim, dates[oos_s0:oos_end])
+
+                    windows.append({
+                        "window_start": dates[win_start],
+                        "is_end":       dates[is_end  - 1] if is_end  <= n else "",
+                        "oos_end":      dates[oos_end - 1] if oos_end <= n else "",
+                        "is":  {
+                            "sharpe":           is_m["sharpe"],
+                            "win_rate":         is_m["win_rate"],
+                            "total_return_pct": is_m["total_return_pct"],
+                            "trades":           is_m["total_trades"],
+                        },
+                        "oos": {
+                            "sharpe":           oos_m["sharpe"],
+                            "win_rate":         oos_m["win_rate"],
+                            "total_return_pct": oos_m["total_return_pct"],
+                            "trades":           oos_m["total_trades"],
+                        },
+                    })
+                except Exception:
+                    pass
+
+                win_start += test_days
+
+            if windows:
+                if strat not in results_by_strategy:
+                    results_by_strategy[strat] = {"windows": [], "tickers": []}
+                results_by_strategy[strat]["windows"].extend(windows)
+                results_by_strategy[strat]["tickers"].append(ticker)
+
+    # ── Aggregate OOS metrics per strategy ────────────────────────────────────
+    aggregated: List[Dict] = []
+    for strat, data in results_by_strategy.items():
+        wins = data["windows"]
+        if not wins:
+            continue
+        oos_sharpes = [w["oos"]["sharpe"] for w in wins]
+        oos_wr      = [w["oos"]["win_rate"] for w in wins]
+        oos_rets    = [w["oos"]["total_return_pct"] for w in wins]
+        is_sharpes  = [w["is"]["sharpe"] for w in wins]
+
+        avg_is  = float(np.mean(is_sharpes))
+        avg_oos = float(np.mean(oos_sharpes))
+        # OOS/IS Sharpe ratio: 1.0 = no decay, <0.7 = significant overfitting
+        oos_ratio = avg_oos / avg_is if abs(avg_is) > 0.1 else 0.0
+
+        aggregated.append({
+            "strategy":             strat,
+            "tickers_tested":       len(set(data["tickers"])),
+            "n_windows":            len(wins),
+            "avg_is_sharpe":        round(avg_is,  2),
+            "avg_oos_sharpe":       round(avg_oos, 2),
+            "avg_oos_win_rate":     round(float(np.mean(oos_wr)),   1),
+            "avg_oos_return_pct":   round(float(np.mean(oos_rets)), 1),
+            "is_oos_sharpe_ratio":  round(oos_ratio, 2),
+            "pct_windows_oos_pos":  round(
+                sum(1 for s in oos_sharpes if s > 0) / len(oos_sharpes) * 100, 1
+            ),
+        })
+
+    aggregated.sort(key=lambda x: x["avg_oos_sharpe"], reverse=True)
+
+    return {
+        "run_ts":             run_ts,
+        "train_days":         train_days,
+        "test_days":          test_days,
+        "tickers_tested":     len([t for t in hist_map if t != "SPY"]),
+        "strategies":         strategies,
+        "aggregated_by_strategy": aggregated,
+        "total_windows":      sum(a["n_windows"] for a in aggregated),
+    }
+
+
 def _np_default(obj):
     """JSON encoder helper for numpy scalar types."""
     if isinstance(obj, np.integer):
