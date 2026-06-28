@@ -517,8 +517,8 @@ function ActivitySummary({ status, decisions }: { status: any; decisions: any[] 
     { label: 'Trades Executed', value: executed.length, color: C.green },
     { label: 'Trades Blocked', value: blocked.length, color: C.yellow },
     { label: 'Win Rate', value: `${winRate.toFixed(0)}%`, color: winRate >= 50 ? C.green : C.red },
-    { label: 'Open Longs', value: portfolio.longs ?? 0, color: C.green },
-    { label: 'Open Shorts', value: portfolio.shorts ?? 0, color: C.red },
+    { label: 'Open Longs', value: Array.isArray(portfolio.longs) ? portfolio.longs.length : (portfolio.longs ?? 0), color: C.green },
+    { label: 'Open Shorts', value: Array.isArray(portfolio.shorts) ? portfolio.shorts.length : (portfolio.shorts ?? 0), color: C.red },
   ]
 
   return (
@@ -1520,6 +1520,16 @@ function BacktestPanel() {
   }
 
   useEffect(() => () => stopPoll(), [])
+
+  // Load previous results on mount
+  useEffect(() => {
+    apiFetch('/agent/backtest/status').then(s => {
+      if (s?.status === 'completed') {
+        setResult(s)
+        setLastRunAt(s.run_ts ? new Date(s.run_ts) : null)
+      }
+    }).catch(() => {})
+  }, [])
 
   async function handleRunBacktest() {
     setRunning(true)
