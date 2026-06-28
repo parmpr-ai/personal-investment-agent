@@ -2,12 +2,13 @@
 Free institutional flow signals — zero API key required.
 
 Sources:
-  1. SEC EDGAR Form 4 RSS  — insider buy/sell transactions (officers, directors, 10%+ holders)
+  1. SEC EDGAR Form 4 RSS    — insider buy/sell transactions (officers, directors, 10%+ holders)
   2. Yahoo Finance quoteSummary — analyst consensus, price targets, short interest
   3. FINRA short interest proxy — via Yahoo shortPercentOfFloat + daysToShort
+  4. Yahoo Finance options chain — unusual call/put vol/OI ratio, IV skew (options flow proxy)
 
-Score range: -30 to +35 additive bonus to the rule engine.
-High-conviction signals (cluster insider buys, strong analyst upgrade): can add 20+.
+Score range: -45 to +50 additive bonus to the rule engine.
+High-conviction signals (cluster insider buys + unusual call sweep): can add 30+.
 """
 import asyncio
 import time
@@ -168,7 +169,176 @@ async def fetch_yahoo_institutional(ticker: str) -> Dict[str, Any]:
     return out
 
 
-# ── 3. Scoring function ───────────────────────────────────────────────────────
+# ── 3. Yahoo Finance Options Chain — Unusual Activity Proxy ──────────────────
+
+async def fetch_options_flow(ticker: str) -> Dict[str, Any]:
+    """
+    Fetch the front two expirations from Yahoo Finance options chain and detect
+    unusual activity: OTM contracts with volume/OI ratio > 1.5× and vol > 200.
+    Also computes call/put volume ratio and IV skew (put_iv / call_iv).
+
+    No API key required — same Yahoo endpoint used elsewhere in this module.
+    """
+    url = f"https://query1.finance.yahoo.com/v7/finance/options/{ticker.upper()}"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_HEADERS) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
+
+        chain_result = data.get("optionChain", {}).get("result", [])
+        if not chain_result:
+            return {}
+
+        chain = chain_result[0]
+        current_price: float = chain.get("quote", {}).get("regularMarketPrice", 0) or 0
+        options_list = chain.get("options", [])
+        if not options_list:
+            return {}
+
+        total_call_vol = 0
+        total_put_vol = 0
+        unusual_calls: List[Dict] = []
+        unusual_puts: List[Dict] = []
+        atm_call_iv: Optional[float] = None
+        atm_put_iv: Optional[float] = None
+
+        for exp_data in options_list[:2]:   # front two expirations
+            calls = exp_data.get("calls", [])
+            puts  = exp_data.get("puts",  [])
+
+            # ATM call IV = lowest-strike OTM call (strikes sorted ascending in Yahoo response)
+            otm_calls = sorted(
+                [c for c in calls if not c.get("inTheMoney", False) and c.get("impliedVolatility")],
+                key=lambda x: x.get("strike", 0),
+            )
+            if otm_calls and atm_call_iv is None:
+                atm_call_iv = otm_calls[0].get("impliedVolatility")
+
+            # ATM put IV = highest-strike OTM put (highest OTM strike closest to price)
+            otm_puts = sorted(
+                [p for p in puts if not p.get("inTheMoney", False) and p.get("impliedVolatility")],
+                key=lambda x: x.get("strike", 0),
+                reverse=True,
+            )
+            if otm_puts and atm_put_iv is None:
+                atm_put_iv = otm_puts[0].get("impliedVolatility")
+
+            for c in calls:
+                vol = c.get("volume") or 0
+                oi  = c.get("openInterest") or 0
+                total_call_vol += vol
+                if not c.get("inTheMoney", False) and vol > 200 and oi > 0 and vol / oi > 1.5:
+                    unusual_calls.append({
+                        "strike":        c.get("strike"),
+                        "volume":        vol,
+                        "open_interest": oi,
+                        "vol_oi_ratio":  round(vol / oi, 2),
+                        "iv":            round(c["impliedVolatility"], 3) if c.get("impliedVolatility") else None,
+                    })
+
+            for p in puts:
+                vol = p.get("volume") or 0
+                oi  = p.get("openInterest") or 0
+                total_put_vol += vol
+                if not p.get("inTheMoney", False) and vol > 200 and oi > 0 and vol / oi > 1.5:
+                    unusual_puts.append({
+                        "strike":        p.get("strike"),
+                        "volume":        vol,
+                        "open_interest": oi,
+                        "vol_oi_ratio":  round(vol / oi, 2),
+                        "iv":            round(p["impliedVolatility"], 3) if p.get("impliedVolatility") else None,
+                    })
+
+        unusual_calls.sort(key=lambda x: x["vol_oi_ratio"], reverse=True)
+        unusual_puts.sort(key=lambda x: x["vol_oi_ratio"], reverse=True)
+
+        cp_ratio = round(total_call_vol / total_put_vol, 2) if total_put_vol > 0 else None
+        iv_skew  = round(atm_put_iv / atm_call_iv, 2) if atm_call_iv and atm_put_iv and atm_call_iv > 0 else None
+
+        return {
+            "total_call_vol":        total_call_vol,
+            "total_put_vol":         total_put_vol,
+            "call_put_vol_ratio":    cp_ratio,       # >1.8 bullish, <0.6 bearish
+            "unusual_calls_count":   len(unusual_calls),
+            "unusual_puts_count":    len(unusual_puts),
+            "unusual_calls":         unusual_calls[:3],
+            "unusual_puts":          unusual_puts[:3],
+            "atm_call_iv":           round(atm_call_iv, 3) if atm_call_iv else None,
+            "atm_put_iv":            round(atm_put_iv, 3)  if atm_put_iv  else None,
+            "iv_skew":               iv_skew,         # put_iv/call_iv; >1.2 = fear premium
+            "current_price":         current_price,
+        }
+    except Exception:
+        return {}
+
+
+def _score_options_flow(opts: Dict[str, Any]) -> Tuple[int, List[str]]:
+    """
+    Convert options flow data into a -15..+15 score adjustment.
+    Signals: unusual OTM call/put sweeps, call/put volume ratio, IV skew.
+    """
+    if not opts:
+        return 0, []
+
+    score = 0
+    reasons: List[str] = []
+
+    unusual_calls = opts.get("unusual_calls_count", 0)
+    unusual_puts  = opts.get("unusual_puts_count",  0)
+    cp_ratio      = opts.get("call_put_vol_ratio")
+    iv_skew       = opts.get("iv_skew")
+
+    # Unusual OTM call buying — smart money positioning long
+    if unusual_calls >= 5:
+        score += 15
+        reasons.append(f"Heavy unusual call sweeps ({unusual_calls} OTM strikes, vol/OI >1.5×)")
+    elif unusual_calls >= 3:
+        score += 10
+        reasons.append(f"Unusual call buying ({unusual_calls} OTM strikes)")
+    elif unusual_calls >= 1:
+        score += 5
+        reasons.append(f"Some unusual call activity ({unusual_calls} strike)")
+
+    # Unusual OTM put buying — hedging / directional short bet
+    if unusual_puts >= 5:
+        score -= 15
+        reasons.append(f"Heavy unusual put sweeps ({unusual_puts} OTM strikes)")
+    elif unusual_puts >= 3:
+        score -= 10
+        reasons.append(f"Unusual put buying ({unusual_puts} OTM strikes)")
+    elif unusual_puts >= 1:
+        score -= 5
+        reasons.append(f"Some unusual put activity ({unusual_puts} strike)")
+
+    # Call/put volume ratio
+    if cp_ratio is not None:
+        if cp_ratio >= 2.5:
+            score += 8
+            reasons.append(f"Strong bullish options flow (C/P={cp_ratio:.1f}×)")
+        elif cp_ratio >= 1.8:
+            score += 4
+            reasons.append(f"Bullish options flow (C/P={cp_ratio:.1f}×)")
+        elif cp_ratio <= 0.4:
+            score -= 8
+            reasons.append(f"Strong bearish options flow (P/C={1/cp_ratio:.1f}×)")
+        elif cp_ratio <= 0.6:
+            score -= 4
+            reasons.append(f"Bearish options flow (C/P={cp_ratio:.1f}×)")
+
+    # IV skew: puts trading richer than calls = market pricing downside protection
+    if iv_skew is not None:
+        if iv_skew >= 1.3:
+            score -= 5
+            reasons.append(f"Bearish IV skew {iv_skew:.2f}× (put premium elevated)")
+        elif iv_skew <= 0.9:
+            score += 3
+            reasons.append(f"Low IV skew {iv_skew:.2f}× (calls favoured)")
+
+    return score, reasons
+
+
+# ── 4. Scoring function ───────────────────────────────────────────────────────
 
 def _score_institutional(insider_trades: List[Dict], yahoo: Dict) -> Tuple[int, List[str]]:
     """
@@ -246,9 +416,10 @@ async def get_institutional_signal(ticker: str) -> Dict[str, Any]:
     if cached and time.time() - cached["ts"] < _CACHE_TTL:
         return cached["data"]
 
-    insider_trades, yahoo_data = await asyncio.gather(
+    insider_trades, yahoo_data, options_data = await asyncio.gather(
         fetch_insider_trades(ticker, days=30),
         fetch_yahoo_institutional(ticker),
+        fetch_options_flow(ticker),
         return_exceptions=True,
     )
 
@@ -256,8 +427,12 @@ async def get_institutional_signal(ticker: str) -> Dict[str, Any]:
         insider_trades = []
     if isinstance(yahoo_data, Exception):
         yahoo_data = {}
+    if isinstance(options_data, Exception):
+        options_data = {}
 
-    score, reasons = _score_institutional(insider_trades, yahoo_data)
+    inst_score, inst_reasons = _score_institutional(insider_trades, yahoo_data)
+    opts_score, opts_reasons = _score_options_flow(options_data)
+    score = inst_score + opts_score
 
     result = {
         "ticker": ticker,
@@ -270,7 +445,15 @@ async def get_institutional_signal(ticker: str) -> Dict[str, Any]:
         "short_float_pct": yahoo_data.get("short_float_pct"),
         "short_squeeze_candidate": yahoo_data.get("short_squeeze_candidate", False),
         "yahoo_recommendation": yahoo_data.get("yahoo_recommendation", ""),
-        "signals": reasons,
+        "options_flow": {
+            "call_put_ratio":       options_data.get("call_put_vol_ratio"),
+            "unusual_calls":        options_data.get("unusual_calls_count", 0),
+            "unusual_puts":         options_data.get("unusual_puts_count",  0),
+            "iv_skew":              options_data.get("iv_skew"),
+            "top_unusual_calls":    options_data.get("unusual_calls", []),
+            "top_unusual_puts":     options_data.get("unusual_puts",  []),
+        },
+        "signals": inst_reasons + opts_reasons,
         "recent_insider_trades": insider_trades[:5],
         "ts": datetime.now(timezone.utc).isoformat(),
     }
