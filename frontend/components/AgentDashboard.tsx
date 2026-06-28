@@ -1222,14 +1222,13 @@ function QuickConfigPanel({ config, onSave }: { config: any; onSave: (updates: a
             style={{
               padding: '9px 20px',
               borderRadius: '8px',
-              border: 'none',
+              border: `1px solid ${saved ? C.green : C.blue}44`,
               background: saved ? 'rgba(0,255,136,0.15)' : 'rgba(59,130,246,0.15)',
               color: saved ? C.green : C.blue,
               fontWeight: 700,
               fontSize: '13px',
               cursor: saving ? 'wait' : 'pointer',
               transition: 'all 0.2s',
-              border: `1px solid ${saved ? C.green : C.blue}44`,
             } as any}
           >
             {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Config'}

@@ -14,8 +14,8 @@ import time
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+import re
 import httpx
-import feedparser  # already in requirements
 
 _TIMEOUT = 8
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; InvestAgent/6.0; institutional-signals)"}
@@ -49,29 +49,31 @@ async def fetch_insider_trades(ticker: str, days: int = 30) -> List[Dict[str, An
             r.raise_for_status()
             feed_text = r.text
 
-        feed = feedparser.parse(feed_text)
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
-        for entry in feed.entries[:15]:
+        # Parse RSS with regex (avoids feedparser/sgmllib dependency)
+        items = re.findall(r'<entry>(.*?)</entry>', feed_text, re.DOTALL)
+        for item_xml in items[:15]:
             try:
-                filed = entry.get("updated", "") or entry.get("published", "")
-                title = entry.get("title", "")
-                summary = entry.get("summary", "")
+                def _tag(tag: str) -> str:
+                    m = re.search(rf'<{tag}[^>]*>(.*?)</{tag}>', item_xml, re.DOTALL)
+                    return (m.group(1) if m else "").strip()
 
-                # Parse date
+                title = re.sub(r'<[^>]+>', '', _tag("title"))
+                summary = re.sub(r'<[^>]+>', '', _tag("summary"))
+                updated = _tag("updated") or _tag("published")
+
                 try:
-                    filed_dt = datetime.fromisoformat(filed.replace("Z", "+00:00")) if filed else None
+                    filed_dt = datetime.fromisoformat(updated.replace("Z", "+00:00")) if updated else None
                 except Exception:
                     filed_dt = None
 
                 if filed_dt and filed_dt < cutoff:
                     continue
 
-                # Determine buy vs sell from title/summary
-                is_buy = any(w in title.lower() + summary.lower()
-                             for w in ["purchase", "acquisition", "bought", "a - acquisition"])
-                is_sell = any(w in title.lower() + summary.lower()
-                              for w in ["sale", "disposed", "sold", "d - disposition"])
+                combined = (title + " " + summary).lower()
+                is_buy = any(w in combined for w in ["purchase", "acquisition", "bought", "a - acquisition"])
+                is_sell = any(w in combined for w in ["sale", "disposed", "sold", "d - disposition"])
 
                 if not is_buy and not is_sell:
                     continue
