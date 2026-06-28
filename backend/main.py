@@ -15,6 +15,10 @@ from services.autonomous_agent import agent as autonomous_agent, get_recent_deci
 from services.paper_trading import get_portfolio_summary as paper_summary, get_trade_history, reset_book
 from services.ibkr_trader import test_ibkr_paper, get_ibkr_paper_account
 from services.strategy_tracker import get_strategy_stats, get_pnl_series, get_hourly_stats, get_today_summary
+from services.regime_detector import detect_regime
+from services.institutional_signals import get_institutional_signal, get_institutional_signals_batch
+from services.backtester import run_backtest, get_latest_results, get_backtest_status
+from services.ml_scorer import train_all_models, models_status
 load_dotenv()
 try:
  from services.ibkr_service import get_ibkr_portfolio
@@ -332,6 +336,42 @@ def analytics_hourly(hours:int=24): return get_hourly_stats(hours)
 
 @app.get('/agent/analytics/summary')
 def analytics_summary(): return get_today_summary()
+
+# ── Regime ──────────────────────────────────────────────────────────────────
+@app.get('/agent/regime')
+async def agent_regime(): return await detect_regime()
+
+# ── Institutional signals ────────────────────────────────────────────────────
+@app.get('/agent/institutional')
+async def agent_institutional_all():
+ from services.autonomous_agent import UNIVERSE
+ return await get_institutional_signals_batch(UNIVERSE)
+
+@app.get('/agent/institutional/{ticker}')
+async def agent_institutional(ticker:str): return await get_institutional_signal(ticker.upper())
+
+# ── Backtest ─────────────────────────────────────────────────────────────────
+from fastapi import BackgroundTasks as _BT
+@app.post('/agent/backtest')
+async def agent_backtest_run(background_tasks:_BT):
+ async def _run():
+  await run_backtest()
+ background_tasks.add_task(_run)
+ return {'ok':True,'message':'Backtest started in background. Poll /agent/backtest/status.'}
+
+@app.get('/agent/backtest/status')
+def agent_backtest_status(): return get_backtest_status()
+
+@app.get('/agent/backtest/results')
+def agent_backtest_results(): return get_latest_results()
+
+# ── ML ───────────────────────────────────────────────────────────────────────
+@app.post('/agent/ml/train')
+async def agent_ml_train():
+ return await train_all_models()
+
+@app.get('/agent/ml/status')
+def agent_ml_status(): return models_status()
 
 @app.websocket('/ws')
 async def ws(ws:WebSocket):

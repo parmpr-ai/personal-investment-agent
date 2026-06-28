@@ -1,4 +1,12 @@
-from typing import Any, Dict, List, Optional  # noqa: F401
+from typing import Any, Dict, List, Optional, Tuple  # noqa: F401
+import asyncio
+import time
+import numpy as np
+
+# Rolling returns cache for correlation / CVaR: {ticker: [daily_returns]}
+_returns_cache: Dict[str, List[float]] = {}
+_returns_cache_ts: float = 0.0
+_RETURNS_CACHE_TTL = 3600  # 1h
 
 DEFAULT_LIMITS = {
     "max_position_pct": 25.0,
@@ -149,6 +157,125 @@ class RiskManager:
             return False
         loss_pct = (current_price - avg_price) / avg_price * 100
         return loss_pct < -self.limits["stop_loss_pct"]
+
+    # ── Correlation-aware sizing ───────────────────────────────────────────────
+
+    @staticmethod
+    async def _fetch_returns(tickers: List[str], days: int = 30) -> Dict[str, List[float]]:
+        """Fetch 30-day daily returns for correlation computation."""
+        global _returns_cache, _returns_cache_ts
+        if _returns_cache and time.time() - _returns_cache_ts < _RETURNS_CACHE_TTL:
+            return _returns_cache
+
+        import httpx
+        _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; InvestAgent/6.0)"}
+        result: Dict[str, List[float]] = {}
+        sem = asyncio.Semaphore(6)
+
+        async def _get(t: str):
+            async with sem:
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{t.upper()}"
+                try:
+                    async with httpx.AsyncClient(timeout=8, headers=_HEADERS) as c:
+                        r = await c.get(url, params={"interval": "1d", "range": "2mo"})
+                        r.raise_for_status()
+                        closes = r.json()["chart"]["result"][0]["indicators"]["quote"][0]["close"]
+                        closes = [x for x in closes if x is not None][-days - 1:]
+                        if len(closes) >= 2:
+                            rets = [(closes[i] - closes[i-1]) / closes[i-1]
+                                    for i in range(1, len(closes))]
+                            result[t.upper()] = rets
+                except Exception:
+                    pass
+
+        await asyncio.gather(*[_get(t) for t in tickers], return_exceptions=True)
+        _returns_cache = result
+        _returns_cache_ts = time.time()
+        return result
+
+    def correlation_penalty(
+        self,
+        new_ticker: str,
+        open_positions: List[Dict[str, Any]],
+        returns_cache: Dict[str, List[float]],
+    ) -> Tuple[float, str]:
+        """
+        Returns (size_multiplier, reason).
+        Reduces position size if the new ticker is highly correlated (>0.7)
+        with existing open positions to avoid doubling up on the same risk.
+        """
+        new_rets = returns_cache.get(new_ticker.upper())
+        if not new_rets or not open_positions:
+            return 1.0, ""
+
+        max_corr = 0.0
+        max_corr_ticker = ""
+        arr_new = np.array(new_rets)
+
+        for pos in open_positions:
+            t = pos.get("ticker", "").upper()
+            if t == new_ticker.upper():
+                continue
+            pos_rets = returns_cache.get(t)
+            if not pos_rets:
+                continue
+            min_len = min(len(arr_new), len(pos_rets))
+            if min_len < 10:
+                continue
+            corr = float(np.corrcoef(arr_new[-min_len:], np.array(pos_rets[-min_len:]))[0, 1])
+            if abs(corr) > max_corr:
+                max_corr = abs(corr)
+                max_corr_ticker = t
+
+        if max_corr >= 0.85:
+            return 0.5, f"High correlation {max_corr:.2f} with {max_corr_ticker} — size ×0.5"
+        if max_corr >= 0.70:
+            return 0.75, f"Moderate correlation {max_corr:.2f} with {max_corr_ticker} — size ×0.75"
+        return 1.0, ""
+
+    def portfolio_cvar(
+        self,
+        open_positions: List[Dict[str, Any]],
+        returns_cache: Dict[str, List[float]],
+        portfolio_value: float,
+        confidence: float = 0.95,
+    ) -> Dict[str, Any]:
+        """
+        Historical CVaR (Expected Shortfall) at 95% confidence.
+        Uses position weights × returns to simulate portfolio daily P&L distribution.
+        Returns {cvar_pct, var_pct, worst_day_pct}.
+        """
+        if not open_positions or not returns_cache or portfolio_value <= 0:
+            return {"cvar_pct": 0.0, "var_pct": 0.0, "worst_day_pct": 0.0}
+
+        # Build weighted portfolio returns
+        min_len = min(
+            (len(returns_cache.get(p["ticker"].upper(), [])) for p in open_positions),
+            default=0,
+        )
+        if min_len < 10:
+            return {"cvar_pct": 0.0, "var_pct": 0.0, "worst_day_pct": 0.0}
+
+        portfolio_rets = np.zeros(min_len)
+        for pos in open_positions:
+            t = pos.get("ticker", "").upper()
+            rets = returns_cache.get(t, [])
+            if not rets:
+                continue
+            weight = abs(float(pos.get("market_value", 0))) / portfolio_value
+            portfolio_rets += weight * np.array(rets[-min_len:])
+
+        sorted_rets = np.sort(portfolio_rets)
+        var_idx = int((1 - confidence) * len(sorted_rets))
+        var_pct = float(sorted_rets[var_idx]) * 100 if var_idx < len(sorted_rets) else 0
+        cvar_pct = float(np.mean(sorted_rets[:max(1, var_idx)])) * 100
+
+        return {
+            "cvar_pct": round(cvar_pct, 2),      # average loss in worst 5% of days
+            "var_pct": round(var_pct, 2),          # loss threshold at 95% confidence
+            "worst_day_pct": round(float(sorted_rets[0]) * 100, 2),
+            "days_analyzed": min_len,
+        }
 
     def portfolio_health(self, portfolio: Dict[str, Any], macro: Dict[str, Any]) -> Dict[str, Any]:
         total = float(portfolio.get("total_value", 1))

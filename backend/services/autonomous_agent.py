@@ -24,6 +24,9 @@ from services.paper_trading import (
     get_portfolio_summary,
 )
 from services.ibkr_trader import place_ibkr_order, get_ibkr_paper_account, test_ibkr_paper
+from services.regime_detector import detect_regime, apply_regime_to_config
+from services.institutional_signals import institutional_score_delta, get_institutional_signals_batch
+from services.ml_scorer import ml_confidence_boost, models_status
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +256,11 @@ def _news_adj(q: Dict, news: Dict, ticker: str) -> tuple[int, str]:
     return delta, reason
 
 
+def _institutional_adj(ticker: str) -> tuple[int, str]:
+    """Institutional flow signal: insider buys, analyst consensus, short squeeze."""
+    return institutional_score_delta(ticker)
+
+
 def _multi_tf_adj(q: Dict) -> tuple[int, str]:
     """Multi-timeframe: daily trend + ADX + golden cross."""
     score = 0
@@ -340,6 +348,9 @@ def _score_momentum(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = 
     ed, er = _earnings_adj(ticker)
     score += ed
     if er: reasons.append(er)
+    isd, isr = _institutional_adj(ticker)
+    score += isd
+    if isr: reasons.append(isr)
     return score, "Momentum: " + ", ".join(reasons)
 
 
@@ -375,6 +386,9 @@ def _score_mean_reversion(q: Dict, macro: Dict, news: Dict = {}, fundamentals: D
     fd, fr = _fundamental_adj_fn(fundamentals, ticker)
     score += fd
     if fr: reasons.append(fr)
+    isd, isr = _institutional_adj(ticker)
+    score += isd
+    if isr: reasons.append(isr)
     return score, "MeanRev: " + ", ".join(reasons)
 
 
@@ -407,6 +421,9 @@ def _score_breakout(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = 
     fd, fr = _fundamental_adj_fn(fundamentals, ticker)
     score += fd
     if fr: reasons.append(fr)
+    isd, isr = _institutional_adj(ticker)
+    score += isd
+    if isr: reasons.append(isr)
     return score, "Breakout: " + ", ".join(reasons)
 
 
@@ -436,6 +453,9 @@ def _score_trend_follow(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dic
     fd, fr = _fundamental_adj_fn(fundamentals, ticker)
     score += fd
     if fr: reasons.append(fr)
+    isd, isr = _institutional_adj(ticker)
+    score += isd
+    if isr: reasons.append(isr)
     return score, "Trend: above SMA20, " + ", ".join(reasons)
 
 
@@ -705,6 +725,10 @@ class AutonomousAgent:
         self._fundamentals_last_fetch: float = 0.0
         self._earnings_last_fetch: float = 0.0
         self._trailing_stops: Dict[str, float] = {}  # ticker → highest price seen since entry
+        self._regime_cache: Optional[Dict[str, Any]] = None
+        self._regime_last_fetch: float = 0.0
+        self._institutional_last_fetch: float = 0.0
+        self._returns_cache: Dict[str, Any] = {}  # for correlation penalty
 
     def configure(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         self.config.update(updates)
@@ -735,12 +759,14 @@ class AutonomousAgent:
         return {
             "running": self._running,
             "mode": self.config["mode"],
-            "engine": "rule-based (zero API cost)",
+            "engine": "rule-based + ML + regime-aware",
             "cycle_count": self._cycle_count,
             "last_cycle": self._last_cycle_ts,
             "last_summary": self._last_cycle_summary,
             "config": self.config,
             "paper_portfolio": get_portfolio_summary(),
+            "ml_models": models_status(),
+            "regime": self._regime_cache,
         }
 
     async def _run_loop(self):
@@ -814,6 +840,35 @@ class AutonomousAgent:
         if sectors:
             _log("info", f"[{cycle_id}] Sector rotation: top={sectors.get('top_sectors')}, bottom={sectors.get('bottom_sectors')}")
 
+        # ── Regime detection (every 15 min, cached internally) ────────────────
+        try:
+            regime_result = await detect_regime()
+            regime_cfg = apply_regime_to_config(self.config, regime_result)
+            regime_name = regime_result.get("regime", "CHOPPY_RANGE")
+            self._regime_cache = regime_result
+            _log("info", f"[{cycle_id}] Regime={regime_name} confidence={regime_result.get('confidence')}% VIX={regime_result.get('vix')}")
+        except Exception as e:
+            _log("warning", f"[{cycle_id}] Regime detection failed: {e}")
+            regime_cfg = self.config
+            regime_name = "UNKNOWN"
+
+        # ── Institutional signals (every 4h, cached internally) ───────────────
+        if _time.time() - self._institutional_last_fetch > 14400:
+            try:
+                await get_institutional_signals_batch(universe)
+                self._institutional_last_fetch = _time.time()
+                _log("info", f"[{cycle_id}] Institutional signals refreshed")
+            except Exception as e:
+                _log("warning", f"[{cycle_id}] Institutional signals failed: {e}")
+
+        # ── Returns cache for correlation penalty (every 1h) ─────────────────
+        if not self._returns_cache or _time.time() - getattr(self, '_returns_cache_ts', 0) > 3600:
+            try:
+                self._returns_cache = await self._risk._fetch_returns(universe, days=30)
+                self._returns_cache_ts = _time.time()
+            except Exception:
+                pass
+
         open_longs = get_open_longs()
         open_shorts = get_open_shorts()
         paper = get_portfolio_summary({t: q.get("price", 0) for t, q in quotes.items()})
@@ -863,8 +918,8 @@ class AutonomousAgent:
         if portfolio_too_hot:
             _log("warning", f"[{cycle_id}] Portfolio heat {total_heat_pct:.1f}% — blocking new entries")
 
-        # Generate decisions via rule engine (with news + enhanced quotes + fundamentals)
-        decisions = generate_decisions(quotes, macro, open_longs, open_shorts, self.config, news, fundamentals)
+        # Generate decisions via rule engine using regime-adjusted config
+        decisions = generate_decisions(quotes, macro, open_longs, open_shorts, regime_cfg, news, fundamentals)
 
         executed = 0
         blocked = 0
@@ -895,6 +950,28 @@ class AutonomousAgent:
                     _log("info", f"[{cycle_id}] {action} {ticker} BLOCKED: {entry_reason}")
                     continue
 
+            # ── ML confidence boost: adjust confidence based on learned model ──
+            if not is_close:
+                q_features = quotes.get(ticker, {})
+                ml_conf, ml_reason = ml_confidence_boost(q_features, price, d.get("strategy", "unknown"), confidence)
+                if ml_reason:
+                    _log("info", f"[{cycle_id}] ML adj {ticker}: {ml_reason}")
+                    d = {**d, "confidence": ml_conf, "reasoning": d.get("reasoning", "") + f" | {ml_reason}"}
+                    confidence = ml_conf
+
+            # ── Regime size multiplier ──────────────────────────────────────
+            regime_size_mult = regime_cfg.get("_regime_size_mult", 1.0) if not is_close else 1.0
+
+            # ── Correlation penalty: reduce size if correlated with open pos ─
+            corr_mult = 1.0
+            corr_reason = ""
+            if not is_close and self._returns_cache:
+                corr_mult, corr_reason = self._risk.correlation_penalty(
+                    ticker, paper.get("positions", []), self._returns_cache
+                )
+                if corr_reason:
+                    _log("info", f"[{cycle_id}] Correlation penalty {ticker}: {corr_reason}")
+
             # Kelly-scaled position sizing for new entries
             if not is_close:
                 kelly_risk_pct = kelly_scale(
@@ -904,7 +981,9 @@ class AutonomousAgent:
                 )
                 qty = d.get("qty") or self._risk.position_size_shares(
                     ticker, price, paper["total_value"],
-                    kelly_risk_pct, atr=atr, drawdown_scale=drawdown_scale,
+                    kelly_risk_pct,
+                    atr=atr,
+                    drawdown_scale=drawdown_scale * regime_size_mult * corr_mult,
                 )
             else:
                 qty = d.get("qty") or 1

@@ -6,6 +6,8 @@ import {
   Area,
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -226,7 +228,7 @@ function Spinner() {
 
 // ─── Section A: Live Status Bar ───────────────────────────────────────────────
 
-function LiveStatusBar({ status, onToggle, toggling }: { status: any; onToggle: () => void; toggling: boolean }) {
+function LiveStatusBar({ status, onToggle, toggling, regimeData }: { status: any; onToggle: () => void; toggling: boolean; regimeData: any }) {
   const running = status?.running
   const portfolio = status?.paper_portfolio || {}
   const totalReturn = portfolio.total_return_pct ?? 0
@@ -342,6 +344,32 @@ function LiveStatusBar({ status, onToggle, toggling }: { status: any; onToggle: 
           </div>
         </>
       )}
+
+      {/* Regime badge from /agent/regime */}
+      {regimeData?.regime && (() => {
+        const r = regimeData.regime as string
+        const regimeColor = r === 'BULL_TREND' ? C.green : r === 'BEAR_TREND' ? C.red : r === 'CRISIS' ? C.red : C.yellow
+        const regimeBg = r === 'BULL_TREND' ? 'rgba(0,255,136,0.08)' : r === 'BEAR_TREND' ? 'rgba(255,68,68,0.08)' : r === 'CRISIS' ? 'rgba(255,68,68,0.12)' : 'rgba(245,158,11,0.08)'
+        return (
+          <>
+            <div style={{ width: '1px', height: '32px', background: C.border }} />
+            <Badge color={regimeColor} bg={regimeBg}>
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: regimeColor,
+                  animation: r === 'CRISIS' ? 'pulseCrisis 1.2s infinite' : 'none',
+                  flexShrink: 0,
+                }}
+              />
+              {r.replace(/_/g, ' ')}
+            </Badge>
+          </>
+        )
+      })()}
     </Card>
   )
 }
@@ -1305,6 +1333,561 @@ function LastCycleSummary({ summary }: { summary: any }) {
   )
 }
 
+// ─── Section I: Regime Panel ──────────────────────────────────────────────────
+
+const REGIME_STRATEGY_COLORS = [C.green, C.blue, C.purple, C.yellow, C.greenDim, C.redDim]
+
+function RegimePanel({ data, loading }: { data: any; loading: boolean }) {
+  if (loading) return (
+    <Card style={{ marginBottom: '20px' }}>
+      <SectionTitle>Market Regime</SectionTitle>
+      <Spinner />
+    </Card>
+  )
+
+  if (!data) return (
+    <Card style={{ marginBottom: '20px' }}>
+      <SectionTitle>Market Regime</SectionTitle>
+      <EmptyState message="Regime data unavailable" />
+    </Card>
+  )
+
+  const regime = (data.regime || 'UNKNOWN') as string
+  const confidence = data.confidence ?? null
+  const daysInRegime = data.days_in_regime ?? null
+  const vix = data.vix ?? null
+  const activeStrategies: string[] = Array.isArray(data.active_strategies) ? data.active_strategies : []
+  const pausedStrategies: string[] = Array.isArray(data.paused_strategies) ? data.paused_strategies : []
+  const history: { regime: string; date: string }[] = Array.isArray(data.history) ? data.history.slice(0, 5) : []
+
+  const regimeColor = regime === 'BULL_TREND' ? C.green
+    : regime === 'BEAR_TREND' ? C.red
+    : regime === 'CRISIS' ? C.red
+    : C.yellow
+  const regimeBg = regime === 'BULL_TREND' ? 'rgba(0,255,136,0.1)'
+    : regime === 'BEAR_TREND' ? 'rgba(255,68,68,0.1)'
+    : regime === 'CRISIS' ? 'rgba(255,68,68,0.15)'
+    : 'rgba(245,158,11,0.1)'
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <SectionTitle>Market Regime</SectionTitle>
+
+      {/* Top row: badge + stats */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'flex-start', marginBottom: '20px' }}>
+        {/* Regime badge */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '12px 20px',
+            borderRadius: C.radius,
+            background: regimeBg,
+            border: `1px solid ${regimeColor}44`,
+            animation: regime === 'CRISIS' ? 'pulseCrisis 1.2s infinite' : 'none',
+          }}
+        >
+          <span style={{ fontSize: '22px', fontWeight: 800, color: regimeColor, letterSpacing: '0.04em' }}>
+            {regime.replace(/_/g, ' ')}
+          </span>
+        </div>
+
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+          {confidence !== null && (
+            <div>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '3px' }}>
+                Confidence
+              </div>
+              <div style={{ color: regimeColor, fontSize: '20px', fontWeight: 700 }}>
+                {(Number(confidence) * 100).toFixed(1)}%
+              </div>
+            </div>
+          )}
+          {daysInRegime !== null && (
+            <div>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '3px' }}>
+                Days in Regime
+              </div>
+              <div style={{ color: C.textPrimary, fontSize: '20px', fontWeight: 700 }}>{daysInRegime}</div>
+            </div>
+          )}
+          {vix !== null && (
+            <div>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '3px' }}>
+                VIX
+              </div>
+              <div style={{
+                color: Number(vix) > 30 ? C.red : Number(vix) > 20 ? C.yellow : C.green,
+                fontSize: '20px',
+                fontWeight: 700,
+              }}>
+                {Number(vix).toFixed(1)}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Strategies */}
+      {(activeStrategies.length > 0 || pausedStrategies.length > 0) && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>
+              Active Strategies
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {activeStrategies.length > 0
+                ? activeStrategies.map((s, i) => (
+                    <Badge key={s} color={REGIME_STRATEGY_COLORS[i % REGIME_STRATEGY_COLORS.length]} bg={`${REGIME_STRATEGY_COLORS[i % REGIME_STRATEGY_COLORS.length]}18`}>
+                      ● {s}
+                    </Badge>
+                  ))
+                : <span style={{ color: C.textMuted, fontSize: '12px' }}>None</span>
+              }
+            </div>
+          </div>
+          {pausedStrategies.length > 0 && (
+            <div>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>
+                Paused Strategies
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {pausedStrategies.map((s) => (
+                  <Badge key={s} color={C.textMuted} bg="rgba(255,255,255,0.04)">
+                    ⏸ {s}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Regime history timeline */}
+      {history.length > 0 && (
+        <div>
+          <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+            Regime History (last 5)
+          </div>
+          <div style={{ display: 'flex', gap: '0', alignItems: 'stretch' }}>
+            {history.map((h, i) => {
+              const hColor = h.regime === 'BULL_TREND' ? C.green
+                : h.regime === 'BEAR_TREND' ? C.red
+                : h.regime === 'CRISIS' ? C.red
+                : C.yellow
+              return (
+                <div key={i} style={{ flex: 1, position: 'relative' }}>
+                  <div style={{
+                    height: '6px',
+                    background: hColor,
+                    opacity: 0.3 + 0.14 * i,
+                    borderRadius: i === 0 ? '4px 0 0 4px' : i === history.length - 1 ? '0 4px 4px 0' : '0',
+                  }} />
+                  <div style={{ marginTop: '6px', fontSize: '9px', color: hColor, fontWeight: 600, textAlign: 'center', lineHeight: 1.3 }}>
+                    {h.regime.replace(/_/g, ' ')}
+                  </div>
+                  {h.date && (
+                    <div style={{ fontSize: '9px', color: C.textMuted, textAlign: 'center' }}>{h.date}</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Section J: Backtest Panel ────────────────────────────────────────────────
+
+const BACKTEST_LINE_COLORS = [C.green, C.blue, C.purple, C.yellow, C.greenDim, C.redDim]
+
+function BacktestPanel() {
+  const [result, setResult] = useState<any>(null)
+  const [running, setRunning] = useState(false)
+  const [statusMsg, setStatusMsg] = useState('')
+  const [lastRunAt, setLastRunAt] = useState<Date | null>(null)
+  const [error, setError] = useState('')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  function stopPoll() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  useEffect(() => () => stopPoll(), [])
+
+  async function handleRunBacktest() {
+    setRunning(true)
+    setError('')
+    setStatusMsg('Starting backtest...')
+    setResult(null)
+    try {
+      await apiFetch('/agent/backtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days: 504 }),
+      })
+      // Poll status
+      stopPoll()
+      pollRef.current = setInterval(async () => {
+        try {
+          const s = await apiFetch('/agent/backtest/status')
+          setStatusMsg(s?.status || 'Running...')
+          if (s?.done || s?.status === 'done' || s?.status === 'complete' || s?.status === 'completed') {
+            stopPoll()
+            setRunning(false)
+            setLastRunAt(new Date())
+            if (s?.result) setResult(s.result)
+            else {
+              // Try fetching result directly
+              try {
+                const r = await apiFetch('/agent/backtest/result')
+                setResult(r)
+              } catch {
+                setResult(s)
+              }
+            }
+          } else if (s?.status === 'error' || s?.error) {
+            stopPoll()
+            setRunning(false)
+            setError(s?.error || 'Backtest failed')
+          }
+        } catch {
+          // keep polling
+        }
+      }, 3000)
+    } catch (e: any) {
+      setRunning(false)
+      setError(e?.detail || e?.message || 'Failed to start backtest')
+    }
+  }
+
+  const minutesAgo = lastRunAt
+    ? Math.floor((Date.now() - lastRunAt.getTime()) / 60000)
+    : null
+
+  // Build equity curve data for recharts
+  // result.equity_curves: { [strategy]: number[] } or result.strategies[].equity_curve
+  let strategies: { name: string; trades: number; win_rate: number; sharpe: number; max_dd: number; calmar: number; total_return: number; equity: number[] }[] = []
+  let equityChartData: any[] = []
+  let spyEquity: number[] = []
+
+  if (result) {
+    if (Array.isArray(result.strategies)) {
+      strategies = result.strategies
+    } else if (result.equity_curves) {
+      const curves = result.equity_curves as Record<string, number[]>
+      strategies = Object.entries(curves).map(([name, equity]) => ({
+        name,
+        trades: result[name]?.trades ?? 0,
+        win_rate: result[name]?.win_rate ?? 0,
+        sharpe: result[name]?.sharpe ?? 0,
+        max_dd: result[name]?.max_dd ?? 0,
+        calmar: result[name]?.calmar ?? 0,
+        total_return: result[name]?.total_return ?? (equity[equity.length - 1] - 1) * 100,
+        equity,
+      }))
+    }
+    spyEquity = result.spy_equity || []
+
+    // Align all equity curves to same length
+    const maxLen = Math.max(...strategies.map((s) => (s.equity || []).length), spyEquity.length)
+    if (maxLen > 0) {
+      const step = Math.max(1, Math.floor(maxLen / 100))
+      const indices = Array.from({ length: Math.ceil(maxLen / step) }, (_, i) => i * step)
+      equityChartData = indices.map((idx) => {
+        const pt: any = { idx }
+        strategies.forEach((s) => {
+          pt[s.name] = s.equity?.[idx] != null ? Number((s.equity[idx] * 100 - 100).toFixed(2)) : null
+        })
+        if (spyEquity.length > 0) {
+          pt['SPY (B&H)'] = spyEquity[idx] != null ? Number((spyEquity[idx] * 100 - 100).toFixed(2)) : null
+        }
+        return pt
+      })
+    }
+  }
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <SectionTitle style={{ margin: 0 }}>Backtest (2-year)</SectionTitle>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {minutesAgo !== null && (
+            <span style={{ color: C.textMuted, fontSize: '12px' }}>
+              last run: {minutesAgo === 0 ? 'just now' : `${minutesAgo}m ago`}
+            </span>
+          )}
+          <button
+            onClick={handleRunBacktest}
+            disabled={running}
+            style={{
+              padding: '7px 16px',
+              borderRadius: '8px',
+              border: `1px solid ${C.blue}44`,
+              background: running ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.15)',
+              color: C.blue,
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: running ? 'wait' : 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            {running ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
+                {statusMsg || 'Running...'}
+              </span>
+            ) : 'Run Backtest'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{ color: C.red, fontSize: '13px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,68,68,0.08)', marginBottom: '16px' }}>
+          {error}
+        </div>
+      )}
+
+      {!result && !running && !error && (
+        <EmptyState message="No backtest run yet — click 'Run Backtest' to start" />
+      )}
+
+      {running && !result && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '80px', color: C.textMuted, fontSize: '13px', gap: '8px' }}>
+          <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
+          {statusMsg || 'Running backtest...'}
+        </div>
+      )}
+
+      {result && strategies.length > 0 && (
+        <>
+          {/* Table */}
+          <div style={{ overflowX: 'auto', marginBottom: '20px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr>
+                  {['Strategy', 'Trades', 'Win Rate', 'Sharpe', 'Max DD', 'Calmar', 'Total Return'].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        color: C.textMuted,
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.07em',
+                        textAlign: h === 'Strategy' ? 'left' : 'right',
+                        padding: '6px 10px',
+                        borderBottom: `1px solid ${C.border}`,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {strategies.map((s, i) => {
+                  const ret = s.total_return ?? 0
+                  const wr = s.win_rate ?? 0
+                  return (
+                    <tr key={s.name || i} style={{ borderBottom: `1px solid ${C.border}22` }}>
+                      <td style={{ padding: '8px 10px', fontWeight: 700, color: BACKTEST_LINE_COLORS[i % BACKTEST_LINE_COLORS.length] }}>
+                        {s.name || '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', color: C.textSecondary }}>{s.trades ?? '—'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', color: wr >= 50 ? C.green : C.red, fontWeight: 600 }}>
+                        {typeof wr === 'number' ? `${wr.toFixed(1)}%` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', color: (s.sharpe ?? 0) >= 1 ? C.green : C.yellow }}>
+                        {typeof s.sharpe === 'number' ? s.sharpe.toFixed(2) : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', color: C.red }}>
+                        {typeof s.max_dd === 'number' ? `${s.max_dd.toFixed(1)}%` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', color: (s.calmar ?? 0) >= 1 ? C.green : C.yellow }}>
+                        {typeof s.calmar === 'number' ? s.calmar.toFixed(2) : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', color: ret >= 0 ? C.green : C.red, fontWeight: 700 }}>
+                        {typeof ret === 'number' ? `${ret >= 0 ? '+' : ''}${ret.toFixed(2)}%` : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Equity curves chart */}
+          {equityChartData.length > 0 && (
+            <div style={{ height: '260px' }}>
+              <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>
+                Equity Curves (% return)
+              </div>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={equityChartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="idx" tick={false} axisLine={false} tickLine={false} />
+                  <YAxis
+                    tickFormatter={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`}
+                    tick={{ fill: C.textMuted, fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={50}
+                  />
+                  <Tooltip
+                    contentStyle={{ background: '#1a1a1a', border: `1px solid ${C.border}`, borderRadius: '8px', fontSize: '12px' }}
+                    formatter={(v: any, name: string) => [`${Number(v).toFixed(2)}%`, name]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '11px', color: C.textMuted }} />
+                  {strategies.map((s, i) => (
+                    <Line
+                      key={s.name}
+                      type="monotone"
+                      dataKey={s.name}
+                      stroke={BACKTEST_LINE_COLORS[i % BACKTEST_LINE_COLORS.length]}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                    />
+                  ))}
+                  {spyEquity.length > 0 && (
+                    <Line
+                      type="monotone"
+                      dataKey="SPY (B&H)"
+                      stroke="#9ca3af"
+                      strokeWidth={1.5}
+                      strokeDasharray="6 3"
+                      dot={false}
+                      connectNulls
+                    />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  )
+}
+
+// ─── Section K: Institutional Panel ──────────────────────────────────────────
+
+function InstitutionalPanel({ data, loading }: { data: any[]; loading: boolean }) {
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <SectionTitle style={{ margin: 0 }}>Institutional Signals</SectionTitle>
+        <Badge color={C.textMuted}>Refreshes every 60s</Badge>
+      </div>
+
+      {loading ? (
+        <Spinner />
+      ) : data.length === 0 ? (
+        <EmptyState message="No institutional signal data available" />
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <thead>
+              <tr>
+                {['Ticker', 'Inst. Score', 'Insider Activity', 'Analyst', 'Short %', 'Key Signals'].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      color: C.textMuted,
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.07em',
+                      textAlign: h === 'Ticker' || h === 'Key Signals' ? 'left' : 'center',
+                      padding: '6px 10px',
+                      borderBottom: `1px solid ${C.border}`,
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row: any, i: number) => {
+                const score = row.score ?? 0
+                const scoreColor = score > 10 ? C.green : score < -10 ? C.red : C.yellow
+                const shortPct = row.short_interest_pct ?? 0
+                const shortColor = shortPct > 20 ? C.red : shortPct > 10 ? C.yellow : C.textMuted
+                const insiderBuys: number = row.insider_buys ?? 0
+                const insiderSells: number = row.insider_sells ?? 0
+                const signals: string[] = Array.isArray(row.signals) ? row.signals : []
+
+                return (
+                  <tr
+                    key={row.ticker || i}
+                    style={{
+                      borderBottom: `1px solid ${C.border}22`,
+                      background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)')}
+                  >
+                    <td style={{ padding: '9px 10px', fontWeight: 700, color: C.textPrimary }}>{row.ticker || '—'}</td>
+                    <td style={{ padding: '9px 10px', textAlign: 'center' }}>
+                      <span style={{ color: scoreColor, fontWeight: 700, fontSize: '13px' }}>
+                        {score > 0 ? `+${score}` : score}
+                      </span>
+                    </td>
+                    <td style={{ padding: '9px 10px', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        {insiderBuys > 0 && (
+                          <span style={{ color: C.green, fontWeight: 700, fontSize: '12px' }}>
+                            ▲ {insiderBuys}
+                          </span>
+                        )}
+                        {insiderSells > 0 && (
+                          <span style={{ color: C.red, fontWeight: 700, fontSize: '12px' }}>
+                            ▼ {insiderSells}
+                          </span>
+                        )}
+                        {insiderBuys === 0 && insiderSells === 0 && (
+                          <span style={{ color: C.textMuted }}>—</span>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ padding: '9px 10px', textAlign: 'center', color: C.textSecondary }}>
+                      {row.analyst_rating || '—'}
+                    </td>
+                    <td style={{ padding: '9px 10px', textAlign: 'center', color: shortColor, fontWeight: 600 }}>
+                      {typeof shortPct === 'number' ? `${shortPct.toFixed(1)}%` : '—'}
+                    </td>
+                    <td style={{ padding: '9px 10px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {signals.length > 0
+                          ? signals.map((sig, si) => (
+                              <Badge key={si} color={C.purple} bg="rgba(168,85,247,0.1)">
+                                {sig}
+                              </Badge>
+                            ))
+                          : <span style={{ color: C.textMuted }}>—</span>
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 // ─── Main AgentDashboard Component ───────────────────────────────────────────
 
 export default function AgentDashboard() {
@@ -1331,6 +1914,12 @@ export default function AgentDashboard() {
 
   const [agentLog, setAgentLog] = useState<any[]>([])
   const [logLoading, setLogLoading] = useState(true)
+
+  const [regimeData, setRegimeData] = useState<any>(null)
+  const [regimeLoading, setRegimeLoading] = useState(true)
+
+  const [institutionalData, setInstitutionalData] = useState<any[]>([])
+  const [institutionalLoading, setInstitutionalLoading] = useState(true)
 
   const [toggling, setToggling] = useState(false)
   const [toggleMsg, setToggleMsg] = useState('')
@@ -1419,6 +2008,28 @@ export default function AgentDashboard() {
     }
   }, [])
 
+  const fetchRegime = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/regime')
+      setRegimeData(data || null)
+    } catch {
+      setRegimeData(null)
+    } finally {
+      setRegimeLoading(false)
+    }
+  }, [])
+
+  const fetchInstitutional = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/institutional')
+      setInstitutionalData(Array.isArray(data) ? data : [])
+    } catch {
+      setInstitutionalData([])
+    } finally {
+      setInstitutionalLoading(false)
+    }
+  }, [])
+
   // Initial load
   useEffect(() => {
     fetchStatus()
@@ -1428,6 +2039,8 @@ export default function AgentDashboard() {
     fetchStrategies()
     fetchHourly()
     fetchLog()
+    fetchRegime()
+    fetchInstitutional()
   }, [])
 
   // Auto-refresh intervals
@@ -1438,6 +2051,8 @@ export default function AgentDashboard() {
   useInterval(fetchStrategies, 60000)
   useInterval(fetchHourly, 60000)
   useInterval(fetchLog, 30000)
+  useInterval(fetchRegime, 30000)
+  useInterval(fetchInstitutional, 60000)
 
   async function handleToggle() {
     if (!status) return
@@ -1487,6 +2102,10 @@ export default function AgentDashboard() {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
+        @keyframes pulseCrisis {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(255,68,68,0.7); }
+          50% { box-shadow: 0 0 0 8px rgba(255,68,68,0); }
+        }
       `}</style>
 
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 4px' }}>
@@ -1535,7 +2154,7 @@ export default function AgentDashboard() {
             </div>
           </Card>
         ) : (
-          <LiveStatusBar status={status} onToggle={handleToggle} toggling={toggling} />
+          <LiveStatusBar status={status} onToggle={handleToggle} toggling={toggling} regimeData={regimeData} />
         )}
 
         {/* Last Cycle Summary */}
@@ -1571,6 +2190,15 @@ export default function AgentDashboard() {
 
         {/* Agent Log */}
         <AgentLog log={agentLog} loading={logLoading} />
+
+        {/* I. Regime Panel */}
+        <RegimePanel data={regimeData} loading={regimeLoading} />
+
+        {/* J. Backtest Panel */}
+        <BacktestPanel />
+
+        {/* K. Institutional Signals */}
+        <InstitutionalPanel data={institutionalData} loading={institutionalLoading} />
       </div>
     </div>
   )
