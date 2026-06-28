@@ -425,8 +425,98 @@ def compute_metrics(result: Dict[str, Any], dates: List[str]) -> Dict[str, Any]:
 
 # ── Historical data fetching ──────────────────────────────────────────────────
 
+# Approximate current price anchors for demo/mock data generation
+_MOCK_PRICES = {
+    "SPY": 510.0, "QQQ": 445.0, "IWM": 205.0, "DIA": 395.0,
+    "AAPL": 195.0, "MSFT": 420.0, "NVDA": 950.0, "AMZN": 210.0,
+    "TSLA": 245.0, "META": 605.0, "GOOGL": 175.0, "AMD": 165.0,
+    "NFLX": 1050.0, "ORCL": 165.0, "CRM": 295.0, "ADBE": 440.0,
+    "INTC": 25.0, "QCOM": 175.0, "AVGO": 1800.0, "MU": 120.0,
+    "PANW": 390.0, "CRWD": 380.0, "SNOW": 165.0, "ZS": 215.0,
+    "JPM": 230.0, "BAC": 44.0, "GS": 530.0, "MS": 118.0,
+    "XLK": 238.0, "XLF": 48.0, "XLE": 88.0, "XLV": 148.0,
+    "XLY": 198.0, "XLI": 138.0, "XLC": 88.0, "XLRE": 38.0, "XLB": 88.0,
+}
+_MOCK_VOL_ANNUAL = {
+    "SPY": 0.14, "QQQ": 0.18, "NVDA": 0.50, "TSLA": 0.55, "AMD": 0.45,
+    "AAPL": 0.22, "MSFT": 0.22, "AMZN": 0.28, "META": 0.32, "GOOGL": 0.25,
+}
+
+
+def _generate_mock_history(ticker: str, days: int = 504) -> Dict[str, Any]:
+    """Generate synthetic OHLCV data via Geometric Brownian Motion for demo/offline use."""
+    import random
+    t = ticker.upper()
+    seed = sum(ord(c) * (i + 1) for i, c in enumerate(t))
+    rng_state = random.Random(seed)
+    np_rng = np.random.default_rng(seed)
+
+    s0 = _MOCK_PRICES.get(t, 100.0)
+    sigma_annual = _MOCK_VOL_ANNUAL.get(t, 0.28)
+    mu_annual = 0.09  # mild upward drift
+    dt = 1.0 / 252
+    sigma_dt = sigma_annual * (dt ** 0.5)
+    drift = (mu_annual - 0.5 * sigma_annual ** 2) * dt
+
+    # Simulate total_days + 30 extra bars then trim to `days`
+    total = days + 30
+    z = np_rng.standard_normal(total)
+    log_returns = drift + sigma_dt * z
+    prices = s0 * np.exp(np.cumsum(np.insert(log_returns, 0, 0.0)))
+    prices = prices[30:][:days]  # warmup then trim
+
+    # Build OHLC from close using realistic intrabar ranges (~ATR ≈ 0.8 * sigma_daily * price)
+    sigma_daily = sigma_annual / (252 ** 0.5)
+    n = len(prices)
+    highs = np.zeros(n)
+    lows = np.zeros(n)
+    opens = np.zeros(n)
+    vol_base = 30_000_000 if t in ("SPY", "QQQ") else 10_000_000
+
+    for i in range(n):
+        c = prices[i]
+        rng_f = rng_state.gauss(0, sigma_daily * c * 0.6)
+        o = max(c * 0.98, c + rng_f)
+        hl_range = abs(rng_state.gauss(0, sigma_daily * c * 1.5)) + c * 0.003
+        highs[i] = max(c, o) + hl_range * 0.6
+        lows[i]  = min(c, o) - hl_range * 0.4
+        opens[i] = o
+
+    # Volume: log-normal random walk
+    raw_vol = np_rng.lognormal(mean=0, sigma=0.3, size=n)
+    volumes = (raw_vol / float(np.mean(raw_vol))) * vol_base
+
+    # Build date strings (skip weekends, ending on today)
+    import datetime as _dt
+    end_date = _dt.date.today()
+    dates = []
+    d = end_date
+    while len(dates) < n:
+        if d.weekday() < 5:
+            dates.append(d.strftime("%Y-%m-%d"))
+        d -= _dt.timedelta(days=1)
+    dates = list(reversed(dates))
+
+    records = [
+        {"date": dates[i], "open": round(opens[i], 2), "high": round(highs[i], 2),
+         "low": round(lows[i], 2), "close": round(prices[i], 2), "volume": int(volumes[i])}
+        for i in range(n)
+    ]
+
+    return {
+        "ticker": t,
+        "records": records,
+        "closes": prices,
+        "highs": highs,
+        "lows": lows,
+        "volumes": volumes,
+        "dates": dates,
+        "mock": True,
+    }
+
+
 async def fetch_history(ticker: str, days: int = 504) -> Optional[Dict[str, Any]]:
-    """Fetch daily OHLCV from Yahoo Finance v8 chart."""
+    """Fetch daily OHLCV from Yahoo Finance v8 chart; falls back to synthetic demo data."""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker.upper()}"
     rng = "2y" if days > 365 else "1y"
     try:
@@ -460,7 +550,7 @@ async def fetch_history(ticker: str, days: int = 504) -> Optional[Dict[str, Any]
 
         records = records[-days:]
         if len(records) < 60:
-            return None
+            return _generate_mock_history(ticker, days)
 
         return {
             "ticker": ticker.upper(),
@@ -472,7 +562,7 @@ async def fetch_history(ticker: str, days: int = 504) -> Optional[Dict[str, Any]
             "dates": [r["date"] for r in records],
         }
     except Exception:
-        return None
+        return _generate_mock_history(ticker, days)
 
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
@@ -603,6 +693,7 @@ async def run_backtest(
 
     aggregated.sort(key=lambda x: x["avg_sharpe"], reverse=True)
 
+    mock_count = sum(1 for h in hist_map.values() if h.get("mock"))
     summary = {
         "run_ts": run_ts,
         "tickers_tested": len(hist_map) - (1 if "SPY" in hist_map else 0),
@@ -611,6 +702,8 @@ async def run_backtest(
         "aggregated_by_strategy": aggregated,
         "total_results": len(all_metrics),
         "spy_benchmark": spy_benchmark,
+        "mock_data": mock_count > 0,
+        "mock_ticker_count": mock_count,
     }
 
     # Update run status

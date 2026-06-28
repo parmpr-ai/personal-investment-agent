@@ -435,6 +435,7 @@ async def walk_forward_validate(
 
     sigs_map: Dict[str, Dict] = {}
     closes_map: Dict[str, np.ndarray] = {}
+    mock_count = 0
     for item in pairs:
         if not isinstance(item, tuple):
             continue
@@ -443,6 +444,8 @@ async def walk_forward_validate(
             continue
         sigs_map[t] = compute_signal_arrays(hist["closes"], hist["volumes"], hist["highs"], hist["lows"])
         closes_map[t] = hist["closes"]
+        if hist.get("mock"):
+            mock_count += 1
 
     if not sigs_map:
         _wf_cache = {"status": "error", "error": "No historical data"}
@@ -531,5 +534,7 @@ async def walk_forward_validate(
         "positive_rate": round(pos_rate, 3),
         "folds": folds,
         "top_features": [{"feature": f, "importance": round(imp, 4)} for f, imp in top_features],
+        "mock_data": mock_count > 0,
+        "mock_ticker_count": mock_count,
     }
     return _wf_cache

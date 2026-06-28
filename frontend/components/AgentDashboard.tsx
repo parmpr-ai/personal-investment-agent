@@ -1657,6 +1657,12 @@ function BacktestPanel() {
         </div>
       )}
 
+      {result?.summary?.mock_data && (
+        <div style={{ padding: '8px 12px', borderRadius: '8px', marginBottom: '12px', background: 'rgba(245,158,11,0.08)', border: `1px solid ${C.yellow}33`, fontSize: '12px', color: C.yellow }}>
+          Demo mode — using synthetic price data (Yahoo Finance unavailable in this environment). Results are illustrative; run on your local machine for live data.
+        </div>
+      )}
+
       {result && strategies.length > 0 && (
         <>
           {/* SPY benchmark summary bar */}
@@ -1892,6 +1898,12 @@ function WalkForwardPanel() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '80px', color: C.textMuted, fontSize: '13px', gap: '8px' }}>
           <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
           Training {data?.n_splits || 5} expanding-window folds...
+        </div>
+      )}
+
+      {data?.mock_data && (
+        <div style={{ padding: '8px 12px', borderRadius: '8px', marginBottom: '12px', background: 'rgba(245,158,11,0.08)', border: `1px solid ${C.yellow}33`, fontSize: '12px', color: C.yellow }}>
+          Demo mode — trained on synthetic price data. Metrics show model structure, not real predictive power. Run locally for live data.
         </div>
       )}
 
