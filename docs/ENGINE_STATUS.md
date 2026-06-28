@@ -2,7 +2,7 @@
 
 > Last updated: 2026-06-28  
 > Branch: `claude/autonomous-trading-agent-ct0nji`  
-> Overall Tier 1 Engine: **62%**
+> Overall Tier 1 Engine: **70%**
 
 ---
 
@@ -12,10 +12,10 @@
 1. Backtesting Engine          ██████████████░░░░░░  65%
 2. ML Signal Combination       ████████████████░░░░  83%  (+13)
 3. Regime Detection            ████████████████░░░░  78%
-4. Correlation-Aware Sizing    ████████████████░░░░  80%
+4. Correlation-Aware Sizing    ██████████████████░░  92%  (+12)
 5. Institutional Signals       ███████░░░░░░░░░░░░░  35%
 ─────────────────────────────────────────────────────
-Overall Tier 1 Engine          ███████████████░░░░░  68%  (+2)
+Overall Tier 1 Engine          ██████████████░░░░░░  70%  (+2)
 ```
 
 ---
@@ -86,7 +86,7 @@ Overall Tier 1 Engine          ███████████████░�
 
 ---
 
-## 4. Correlation-Aware Sizing — 80%
+## 4. Correlation-Aware Sizing — 92%
 
 **File:** `backend/services/risk_manager.py`
 
@@ -97,14 +97,12 @@ Overall Tier 1 Engine          ███████████████░�
 - `drawdown_scalar()` — reduces size proportional to drawdown from peak
 - `position_size_shares()` — ATR-based stop distance sizing
 - 1-hour returns cache to avoid redundant fetches
+- [x] **CVaR enforcement for SHORT positions** — ✅ DONE: `correlation_penalty(is_short=True)` inverts direction; `portfolio_cvar` applies `direction=-1` for short positions in weighted returns
+- [x] **Sector concentration limit** — ✅ DONE: `SECTOR_MAP` (65 tickers, 11 GICS sectors); `sector_concentration_check()` blocks/caps trades that would push any sector above 40%; `portfolio_health()` exposes `sector_exposure_pct`; `DEFAULT_LIMITS["max_sector_pct"]=40.0`
 
 ### ❌ Missing
-- [ ] **CVaR enforcement for SHORT positions** — `correlation_penalty` uses longs only
-  - Target: include short positions in correlation matrix with inverted returns
 - [ ] **VaR contribution per position** — no per-position risk budget tracking
   - Target: expose marginal VaR so agent avoids breaching portfolio risk budget
-- [ ] **Sector concentration limit** — multiple TECH positions not capped
-  - Target: max 40% exposure per GICS sector
 
 ---
 
@@ -160,3 +158,4 @@ Priority order based on impact vs effort:
 | 2026-06-28 | Backtesting | Slippage 0.05% + commission $0.005/share per leg | 65% |
 | 2026-06-28 | Regime | RSI(14) + volume_ratio + 2-cycle hysteresis | 78% |
 | 2026-06-28 | ML | CalibratedClassifierCV + cross-strategy consensus (+8/+15) + short-inverted features | 83% |
+| 2026-06-28 | Correlation | CVaR for shorts (inverted returns) + sector concentration limit (40% / GICS, 65 tickers) | 92% |

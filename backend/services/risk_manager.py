@@ -8,6 +8,63 @@ _returns_cache: Dict[str, List[float]] = {}
 _returns_cache_ts: float = 0.0
 _RETURNS_CACHE_TTL = 3600  # 1h
 
+# GICS sector mapping — used for 40% per-sector concentration cap
+SECTOR_MAP: Dict[str, str] = {
+    # Technology
+    "AAPL": "Technology", "MSFT": "Technology", "NVDA": "Technology",
+    "GOOGL": "Technology", "GOOG": "Technology", "META": "Technology",
+    "AMZN": "Technology", "AMD": "Technology", "INTC": "Technology",
+    "CRM": "Technology", "ORCL": "Technology", "ADBE": "Technology",
+    "QCOM": "Technology", "AVGO": "Technology", "MU": "Technology",
+    "TXN": "Technology", "NOW": "Technology", "SNOW": "Technology",
+    "PLTR": "Technology", "UBER": "Technology", "LYFT": "Technology",
+    # Consumer Discretionary
+    "TSLA": "Consumer Discretionary", "NFLX": "Consumer Discretionary",
+    "HD": "Consumer Discretionary", "LOW": "Consumer Discretionary",
+    "MCD": "Consumer Discretionary", "SBUX": "Consumer Discretionary",
+    "NKE": "Consumer Discretionary", "TGT": "Consumer Discretionary",
+    "BKNG": "Consumer Discretionary", "F": "Consumer Discretionary",
+    "GM": "Consumer Discretionary", "RIVN": "Consumer Discretionary",
+    # Consumer Staples
+    "WMT": "Consumer Staples", "COST": "Consumer Staples",
+    "PG": "Consumer Staples", "KO": "Consumer Staples",
+    "PEP": "Consumer Staples", "PM": "Consumer Staples",
+    # Financials
+    "JPM": "Financials", "BAC": "Financials", "GS": "Financials",
+    "MS": "Financials", "WFC": "Financials", "C": "Financials",
+    "V": "Financials", "MA": "Financials", "AXP": "Financials",
+    "BLK": "Financials", "SPGI": "Financials", "BRK.B": "Financials",
+    "SCHW": "Financials", "ICE": "Financials",
+    # Healthcare
+    "JNJ": "Healthcare", "PFE": "Healthcare", "UNH": "Healthcare",
+    "ABBV": "Healthcare", "MRK": "Healthcare", "ABT": "Healthcare",
+    "LLY": "Healthcare", "TMO": "Healthcare", "AMGN": "Healthcare",
+    "GILD": "Healthcare", "CVS": "Healthcare", "MDT": "Healthcare",
+    "ISRG": "Healthcare", "VRTX": "Healthcare", "REGN": "Healthcare",
+    # Energy
+    "XOM": "Energy", "CVX": "Energy", "COP": "Energy",
+    "EOG": "Energy", "SLB": "Energy", "MPC": "Energy",
+    "PSX": "Energy", "VLO": "Energy", "OXY": "Energy",
+    # Industrials
+    "BA": "Industrials", "CAT": "Industrials", "HON": "Industrials",
+    "UPS": "Industrials", "FDX": "Industrials", "RTX": "Industrials",
+    "GE": "Industrials", "LMT": "Industrials", "DE": "Industrials",
+    "MMM": "Industrials", "NOC": "Industrials",
+    # Materials
+    "FCX": "Materials", "NEM": "Materials", "AA": "Materials",
+    "CLF": "Materials", "NUE": "Materials",
+    # Utilities
+    "NEE": "Utilities", "DUK": "Utilities", "SO": "Utilities",
+    "AEP": "Utilities", "EXC": "Utilities",
+    # Communication Services
+    "T": "Communication Services", "VZ": "Communication Services",
+    "DIS": "Communication Services", "CMCSA": "Communication Services",
+    "NFLX": "Communication Services",
+    # Real Estate
+    "AMT": "Real Estate", "PLD": "Real Estate", "EQIX": "Real Estate",
+    "CCI": "Real Estate", "DLR": "Real Estate",
+}
+
 DEFAULT_LIMITS = {
     "max_position_pct": 25.0,
     "max_single_trade_pct": 8.0,
@@ -18,6 +75,7 @@ DEFAULT_LIMITS = {
     "max_open_positions": 12,
     "min_cash_reserve_pct": 10.0,
     "max_leverage": 1.0,
+    "max_sector_pct": 40.0,         # max % of portfolio in any single GICS sector
 }
 
 
@@ -99,6 +157,27 @@ class RiskManager:
             qty = max_trade_value / price
             reasons.append(f"Single trade capped at {self.limits['max_single_trade_pct']}% of portfolio")
 
+        # Sector concentration cap (max 40% per GICS sector)
+        if action == "BUY":
+            sec_ok, sec_reason = self.sector_concentration_check(
+                ticker, trade_value, positions, total
+            )
+            if not sec_ok:
+                allowed_sector = self.limits.get("max_sector_pct", 40.0) / 100 * total
+                sector = SECTOR_MAP.get(ticker.upper(), "Unknown")
+                current_sector_val = sum(
+                    abs(float(p.get("market_value", 0)))
+                    for p in positions
+                    if SECTOR_MAP.get(
+                        p.get("ticker", p.get("symbol", "")).upper().split()[0], ""
+                    ) == sector
+                )
+                headroom = allowed_sector - current_sector_val
+                if headroom <= 0:
+                    return {"approved": False, "adjusted_qty": 0, "reasons": [sec_reason]}
+                qty = min(qty, headroom / price)
+                reasons.append(sec_reason.replace("would bring", "capped;"))
+
         # Max open positions
         if action == "BUY" and not existing_pos:
             open_count = len([p for p in positions if float(p.get("qty", 0)) > 0])
@@ -158,6 +237,38 @@ class RiskManager:
         loss_pct = (current_price - avg_price) / avg_price * 100
         return loss_pct < -self.limits["stop_loss_pct"]
 
+    def sector_concentration_check(
+        self,
+        ticker: str,
+        trade_value: float,
+        open_positions: List[Dict[str, Any]],
+        portfolio_value: float,
+    ) -> Tuple[bool, str]:
+        """
+        Returns (ok, reason). Blocks if adding trade_value would push any single
+        GICS sector above max_sector_pct (default 40%) of portfolio.
+        Tickers not in SECTOR_MAP are silently allowed (Unknown sector).
+        """
+        sector = SECTOR_MAP.get(ticker.upper(), "Unknown")
+        if sector == "Unknown":
+            return True, ""
+
+        current_sector_val = sum(
+            abs(float(p.get("market_value", 0)))
+            for p in open_positions
+            if SECTOR_MAP.get(
+                p.get("ticker", p.get("symbol", "")).upper().split()[0], ""
+            ) == sector
+        )
+        new_pct = (current_sector_val + trade_value) / portfolio_value * 100
+        limit = self.limits.get("max_sector_pct", 40.0)
+        if new_pct > limit:
+            return (
+                False,
+                f"{ticker} ({sector}) would bring sector to {new_pct:.1f}% (max {limit:.0f}%)",
+            )
+        return True, ""
+
     # ── Correlation-aware sizing ───────────────────────────────────────────────
 
     @staticmethod
@@ -198,19 +309,25 @@ class RiskManager:
         new_ticker: str,
         open_positions: List[Dict[str, Any]],
         returns_cache: Dict[str, List[float]],
+        is_short: bool = False,
     ) -> Tuple[float, str]:
         """
         Returns (size_multiplier, reason).
         Reduces position size if the new ticker is highly correlated (>0.7)
         with existing open positions to avoid doubling up on the same risk.
+
+        Short positions use inverted returns so that a short on NVDA is treated
+        as negatively correlated with a long on NVDA (correct risk offset).
         """
         new_rets = returns_cache.get(new_ticker.upper())
         if not new_rets or not open_positions:
             return 1.0, ""
 
+        # Invert returns for the incoming short (its P&L moves opposite to price)
+        arr_new = np.array(new_rets) * (-1 if is_short else 1)
+
         max_corr = 0.0
         max_corr_ticker = ""
-        arr_new = np.array(new_rets)
 
         for pos in open_positions:
             t = pos.get("ticker", "").upper()
@@ -219,10 +336,16 @@ class RiskManager:
             pos_rets = returns_cache.get(t)
             if not pos_rets:
                 continue
-            min_len = min(len(arr_new), len(pos_rets))
+            # Invert returns for existing short positions too
+            pos_is_short = (
+                float(pos.get("qty", 0)) < 0
+                or str(pos.get("side", "")).lower() == "short"
+            )
+            rets_arr = np.array(pos_rets) * (-1 if pos_is_short else 1)
+            min_len = min(len(arr_new), len(rets_arr))
             if min_len < 10:
                 continue
-            corr = float(np.corrcoef(arr_new[-min_len:], np.array(pos_rets[-min_len:]))[0, 1])
+            corr = float(np.corrcoef(arr_new[-min_len:], rets_arr[-min_len:])[0, 1])
             if abs(corr) > max_corr:
                 max_corr = abs(corr)
                 max_corr_ticker = t
@@ -248,7 +371,7 @@ class RiskManager:
         if not open_positions or not returns_cache or portfolio_value <= 0:
             return {"cvar_pct": 0.0, "var_pct": 0.0, "worst_day_pct": 0.0}
 
-        # Build weighted portfolio returns
+        # Build weighted portfolio returns — short positions use inverted returns
         min_len = min(
             (len(returns_cache.get(p["ticker"].upper(), [])) for p in open_positions),
             default=0,
@@ -262,8 +385,13 @@ class RiskManager:
             rets = returns_cache.get(t, [])
             if not rets:
                 continue
+            is_short = (
+                float(pos.get("qty", 0)) < 0
+                or str(pos.get("side", "")).lower() == "short"
+            )
+            direction = -1 if is_short else 1
             weight = abs(float(pos.get("market_value", 0))) / portfolio_value
-            portfolio_rets += weight * np.array(rets[-min_len:])
+            portfolio_rets += weight * direction * np.array(rets[-min_len:])
 
         sorted_rets = np.sort(portfolio_rets)
         var_idx = int((1 - confidence) * len(sorted_rets))
@@ -294,6 +422,23 @@ class RiskManager:
             pct = float(p.get("portfolio_pct", 0))
             if pct > self.limits["max_position_pct"]:
                 alerts.append({"level": "warning", "msg": f"{p['symbol']} at {pct:.1f}% - over max concentration"})
+
+        # Sector concentration alerts
+        sector_exposure: Dict[str, float] = {}
+        for p in positions:
+            sym = p.get("ticker", p.get("symbol", "")).upper().split()[0]
+            sector = SECTOR_MAP.get(sym, "Unknown")
+            if sector == "Unknown":
+                continue
+            sector_exposure[sector] = sector_exposure.get(sector, 0.0) + abs(
+                float(p.get("market_value", 0))
+            )
+        max_sector_pct = self.limits.get("max_sector_pct", 40.0)
+        sector_pcts = {s: round(v / total * 100, 1) for s, v in sector_exposure.items()}
+        for sector, pct in sector_pcts.items():
+            if pct > max_sector_pct:
+                alerts.append({"level": "warning", "msg": f"{sector} sector at {pct:.1f}% — over {max_sector_pct:.0f}% cap"})
+
         return {
             "ok": len([a for a in alerts if a["level"] == "danger"]) == 0,
             "alerts": alerts,
@@ -301,4 +446,5 @@ class RiskManager:
             "position_count": len(positions),
             "daily_pnl_pct": daily_pnl_pct,
             "vix": vix,
+            "sector_exposure_pct": sector_pcts,
         }
