@@ -645,6 +645,8 @@ async def run_backtest(
 
     all_metrics: List[Dict] = []
     strategy_summary: Dict[str, List] = {}
+    # Track best equity curve per strategy (highest Sharpe, must have trades)
+    best_ec_by_strat: Dict[str, Tuple[float, List[float]]] = {}
 
     for ticker, hist in hist_map.items():
         closes = hist["closes"]
@@ -667,6 +669,13 @@ async def run_backtest(
                 if strat not in strategy_summary:
                     strategy_summary[strat] = []
                 strategy_summary[strat].append(metrics)
+
+                # Track best equity curve for Monte Carlo (needs real trades)
+                if metrics.get("total_trades", 0) > 0:
+                    sharpe = metrics.get("sharpe", -999)
+                    prev_sharpe = best_ec_by_strat.get(strat, (-999, []))[0]
+                    if sharpe > prev_sharpe:
+                        best_ec_by_strat[strat] = (sharpe, sim.get("equity_curve", []))
 
                 # Persist per-ticker result
                 _save_result(ticker, strat, metrics, sim.get("equity_curve", []), sim.get("trades", []), run_ts)
@@ -693,6 +702,14 @@ async def run_backtest(
 
     aggregated.sort(key=lambda x: x["avg_sharpe"], reverse=True)
 
+    # Monte Carlo on the best overall strategy
+    mc_result: Dict[str, Any] = {}
+    if best_ec_by_strat:
+        best_strat = max(best_ec_by_strat, key=lambda s: best_ec_by_strat[s][0])
+        _, best_ec = best_ec_by_strat[best_strat]
+        mc_result = monte_carlo_simulation(best_ec, n_paths=1000)
+        mc_result["strategy"] = best_strat
+
     mock_count = sum(1 for h in hist_map.values() if h.get("mock"))
     summary = {
         "run_ts": run_ts,
@@ -704,6 +721,7 @@ async def run_backtest(
         "spy_benchmark": spy_benchmark,
         "mock_data": mock_count > 0,
         "mock_ticker_count": mock_count,
+        "monte_carlo": mc_result,
     }
 
     # Update run status
@@ -727,6 +745,86 @@ def _np_default(obj):
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     raise TypeError(f"Not serializable: {type(obj)}")
+
+
+# ── Monte Carlo simulation ─────────────────────────────────────────────────────
+
+def monte_carlo_simulation(
+    equity_curve: List[float],
+    n_paths: int = 1000,
+    seed: int = 42,
+) -> Dict[str, Any]:
+    """
+    Bootstrap Monte Carlo: resample daily returns 1000× to estimate the
+    distribution of outcomes and worst-case drawdowns for a strategy.
+
+    Returns percentile stats + 3 representative paths (P5/P50/P95) for
+    the fan-chart visualisation.
+    """
+    equity = np.array(equity_curve, dtype=float)
+    equity = equity[np.isfinite(equity) & (equity > 0)]
+    if len(equity) < 20:
+        return {}
+
+    returns = np.diff(equity) / equity[:-1]
+    returns = returns[np.isfinite(returns)]
+    n_bars = len(returns)
+
+    rng = np.random.default_rng(seed)
+    # Bootstrap: for each path draw n_bars returns with replacement
+    idx = rng.integers(0, n_bars, size=(n_paths, n_bars))
+    sampled = returns[idx]  # (n_paths, n_bars)
+
+    # Build equity paths starting at 1.0
+    log_ret = np.log1p(np.clip(sampled, -0.99, 5.0))
+    paths = np.concatenate(
+        [np.ones((n_paths, 1)), np.exp(np.cumsum(log_ret, axis=1))],
+        axis=1,
+    )  # (n_paths, n_bars+1)
+
+    final = paths[:, -1]
+    final_ret_pct = (final - 1.0) * 100
+
+    # Max drawdown per path
+    peaks = np.maximum.accumulate(paths, axis=1)
+    max_dds = np.min((paths - peaks) / peaks, axis=1) * 100  # negative
+
+    pct = np.percentile(final_ret_pct, [5, 25, 50, 75, 95]).tolist()
+    dd_p5 = float(np.percentile(max_dds, 5))
+    dd_median = float(np.median(max_dds))
+    prob_loss = float(np.mean(final < 1.0)) * 100
+
+    # Representative paths for fan chart (downsampled to ≤80 points)
+    sorted_idx = np.argsort(final)
+    p5_i  = sorted_idx[max(0, int(0.05 * n_paths))]
+    p50_i = sorted_idx[int(0.50 * n_paths)]
+    p95_i = sorted_idx[min(n_paths - 1, int(0.95 * n_paths))]
+    step = max(1, paths.shape[1] // 80)
+
+    def _path(i: int) -> List[float]:
+        return [round(float(v) * 100 - 100, 2) for v in paths[i, ::step]]
+
+    return {
+        "n_paths": n_paths,
+        "n_bars": n_bars,
+        "final_return_pct": {
+            "p5":  round(pct[0], 1),
+            "p25": round(pct[1], 1),
+            "p50": round(pct[2], 1),
+            "p75": round(pct[3], 1),
+            "p95": round(pct[4], 1),
+        },
+        "max_drawdown_pct": {
+            "p5_worst": round(dd_p5, 1),
+            "median":   round(dd_median, 1),
+        },
+        "prob_loss_pct": round(prob_loss, 1),
+        "paths": {
+            "p5":  _path(p5_i),
+            "p50": _path(p50_i),
+            "p95": _path(p95_i),
+        },
+    }
 
 
 def _save_result(ticker, strategy, metrics, equity_curve, trades, ts):
@@ -801,6 +899,7 @@ def _build_frontend_result(run_d: Dict, conn) -> Dict[str, Any]:
         "strategies": strategies_out,
         "spy_equity": spy_bm.get("equity_sampled", []),
         "spy_benchmark": spy_bm,
+        "monte_carlo": summary.get("monte_carlo", {}),
     }
 
 

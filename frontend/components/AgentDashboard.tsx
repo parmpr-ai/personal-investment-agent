@@ -1806,6 +1806,81 @@ function BacktestPanel() {
               </ResponsiveContainer>
             </div>
           )}
+
+          {/* Monte Carlo fan chart */}
+          {result?.monte_carlo?.paths && (() => {
+            const mc = result.monte_carlo
+            const paths = mc.paths as { p5: number[]; p50: number[]; p95: number[] }
+            const ret = mc.final_return_pct as { p5: number; p25: number; p50: number; p75: number; p95: number }
+            const dd = mc.max_drawdown_pct as { p5_worst: number; median: number }
+            const probLoss = mc.prob_loss_pct as number
+            const strat = mc.strategy as string
+
+            const len = Math.max(paths.p5.length, paths.p50.length, paths.p95.length)
+            const chartData = Array.from({ length: len }, (_, i) => ({
+              i,
+              'P95 (best)': paths.p95[i] ?? null,
+              'P50 (median)': paths.p50[i] ?? null,
+              'P5 (worst)': paths.p5[i] ?? null,
+            }))
+
+            const statChip = (label: string, value: string, color: string) => (
+              <div key={label} style={{
+                background: 'rgba(255,255,255,0.04)', borderRadius: '8px',
+                padding: '10px 14px', minWidth: '110px', flex: '1',
+              }}>
+                <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{label}</div>
+                <div style={{ color, fontWeight: 700, fontSize: '16px' }}>{value}</div>
+              </div>
+            )
+
+            return (
+              <div style={{ marginTop: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                    Monte Carlo (1 000 bootstrap paths) — best strategy: <span style={{ color: C.textSecondary }}>{strat}</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: probLoss > 30 ? C.red : probLoss > 15 ? C.yellow : C.green, fontWeight: 700 }}>
+                    P(loss) {probLoss.toFixed(1)}%
+                  </div>
+                </div>
+
+                {/* Stat row */}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                  {statChip('Worst case (P5)', `${ret.p5 >= 0 ? '+' : ''}${ret.p5}%`, C.red)}
+                  {statChip('Median (P50)', `${ret.p50 >= 0 ? '+' : ''}${ret.p50}%`, C.textSecondary)}
+                  {statChip('Best case (P95)', `${ret.p95 >= 0 ? '+' : ''}${ret.p95}%`, C.green)}
+                  {statChip('Worst DD (P5)', `${dd.p5_worst.toFixed(1)}%`, C.red)}
+                  {statChip('Median DD', `${dd.median.toFixed(1)}%`, C.yellow)}
+                </div>
+
+                {/* Fan chart */}
+                <div style={{ height: '200px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
+                      <XAxis dataKey="i" tick={false} axisLine={false} tickLine={false} />
+                      <YAxis
+                        tickFormatter={(v) => `${v >= 0 ? '+' : ''}${Number(v).toFixed(0)}%`}
+                        tick={{ fill: C.textMuted, fontSize: 10 }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={50}
+                      />
+                      <Tooltip
+                        contentStyle={{ background: '#1a1a1a', border: `1px solid ${C.border}`, borderRadius: '8px', fontSize: '12px' }}
+                        formatter={(v: any, name: string) => [`${Number(v).toFixed(1)}%`, name]}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '11px', color: C.textMuted }} />
+                      <Line type="monotone" dataKey="P95 (best)" stroke={C.green} strokeWidth={1.5} strokeDasharray="5 3" dot={false} connectNulls />
+                      <Line type="monotone" dataKey="P50 (median)" stroke={C.textSecondary} strokeWidth={2} dot={false} connectNulls />
+                      <Line type="monotone" dataKey="P5 (worst)" stroke={C.red} strokeWidth={1.5} strokeDasharray="5 3" dot={false} connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )
+          })()}
         </>
       )}
     </Card>
