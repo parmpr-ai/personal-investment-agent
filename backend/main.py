@@ -373,6 +373,49 @@ async def agent_ml_train():
 @app.get('/agent/ml/status')
 def agent_ml_status(): return models_status()
 
+# ── Risk Report ───────────────────────────────────────────────────────────────
+@app.get('/agent/risk/report')
+async def agent_risk_report():
+ from services.paper_trading import get_open_longs, get_open_shorts, get_portfolio_summary as _ps
+ from services.market_data import fetch_quotes, fetch_macro
+ from services.risk_manager import RiskManager, _returns_cache
+ risk = RiskManager()
+ try:
+  macro = await fetch_macro()
+ except Exception:
+  macro = {}
+ longs = get_open_longs()
+ shorts = get_open_shorts()
+ all_pos = longs + shorts
+ tickers = list({p['ticker'] for p in all_pos})
+ try:
+  quotes = await fetch_quotes(tickers) if tickers else {}
+ except Exception:
+  quotes = {}
+ prices = {t: q.get('price', 0) for t, q in quotes.items()}
+ portfolio = _ps(prices)
+ health = risk.portfolio_health(portfolio, macro)
+ cvar = risk.portfolio_cvar(all_pos, _returns_cache, portfolio.get('total_value', 1))
+ peak = getattr(autonomous_agent, '_peak_value', portfolio.get('total_value', 1))
+ pv = portfolio.get('total_value', 0)
+ drawdown_pct = round((peak - pv) / peak * 100, 2) if peak > 0 else 0.0
+ return {
+  'portfolio_value': pv,
+  'peak_value': peak,
+  'drawdown_pct': drawdown_pct,
+  'cash_pct': health.get('cash_pct', 0),
+  'open_longs': len(longs),
+  'open_shorts': len(shorts),
+  'vix': macro.get('vix'),
+  'regime': (getattr(autonomous_agent, '_regime_cache', None) or {}).get('regime', 'UNKNOWN'),
+  'cvar_pct': cvar.get('cvar_pct', 0),
+  'var_pct': cvar.get('var_pct', 0),
+  'worst_day_pct': cvar.get('worst_day_pct', 0),
+  'days_analyzed': cvar.get('days_analyzed', 0),
+  'alerts': health.get('alerts', []),
+  'total_return_pct': portfolio.get('total_return_pct', 0),
+ }
+
 @app.websocket('/ws')
 async def ws(ws:WebSocket):
  await manager.connect(ws)

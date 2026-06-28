@@ -27,6 +27,7 @@ from services.ibkr_trader import place_ibkr_order, get_ibkr_paper_account, test_
 from services.regime_detector import detect_regime, apply_regime_to_config
 from services.institutional_signals import institutional_score_delta, get_institutional_signals_batch
 from services.ml_scorer import ml_confidence_boost, models_status
+from services.telegram_alerts import send_trade_alert, send_stop_alert, send_cycle_summary, send_risk_alert
 
 logger = logging.getLogger(__name__)
 
@@ -1026,6 +1027,12 @@ class AutonomousAgent:
                         record_exit(ticker, price, qty, cycle_id)
                 except Exception as _te:
                     _log("warning", f"[{cycle_id}] Strategy tracking error: {_te}")
+                asyncio.create_task(send_trade_alert(
+                    action=action, ticker=ticker, qty=qty, price=price,
+                    stop=stop, target=target,
+                    reason=d.get("reasoning", "")[:200],
+                    confidence=confidence,
+                ))
             else:
                 _log("warning", f"[{cycle_id}] FAILED {action} {ticker}: {result.get('error')}")
 
@@ -1069,6 +1076,7 @@ class AutonomousAgent:
         self._last_cycle_ts = summary["ts"]
         self._last_cycle_summary = summary
         _log("info", f"[{cycle_id}] Done: executed={executed}, blocked={blocked}, regime={macro.get('regime')}, portfolio=${paper['total_value']:,.0f} ({paper['total_return_pct']:+.2f}%)")
+        asyncio.create_task(send_cycle_summary(summary))
 
     def _execute(self, action: str, ticker: str, qty: float, price: float,
                  stop: Optional[float], target: Optional[float], reason: str, confidence: int) -> Dict[str, Any]:
@@ -1113,6 +1121,11 @@ class AutonomousAgent:
                     self._trailing_stops.pop(ticker, None)
                     try: record_exit(ticker, price, pos["qty"], cycle_id)
                     except Exception: pass
+                    asyncio.create_task(send_stop_alert(
+                        "SELL", ticker, pos["qty"], price,
+                        f"Stop-loss: −{self._risk.limits['stop_loss_pct']:.0f}% below entry ${avg:.2f}",
+                        avg_price=avg,
+                    ))
                 continue
 
             # Trailing stop: only activate after 3% profit to avoid whipsaw near entry
@@ -1129,6 +1142,11 @@ class AutonomousAgent:
                         self._trailing_stops.pop(ticker, None)
                         try: record_exit(ticker, price, pos["qty"], cycle_id)
                         except Exception: pass
+                        asyncio.create_task(send_stop_alert(
+                            "SELL", ticker, pos["qty"], price,
+                            f"Trailing stop: {drop_pct:.1f}% below peak ${trailing_high:.2f}",
+                            avg_price=avg,
+                        ))
 
         # Short stop: cover if price rises 8%+ above entry
         short_stop_pct = self.config.get("short_stop_pct", 8.0)
@@ -1148,6 +1166,11 @@ class AutonomousAgent:
                 if result.get("ok"):
                     try: record_exit(ticker, price, pos["qty"], cycle_id)
                     except Exception: pass
+                    asyncio.create_task(send_stop_alert(
+                        "COVER", ticker, pos["qty"], price,
+                        f"Short stop: price +{rise_pct:.1f}% above entry ${avg:.2f}",
+                        avg_price=avg,
+                    ))
 
 
 agent = AutonomousAgent()

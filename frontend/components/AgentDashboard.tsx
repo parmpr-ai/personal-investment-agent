@@ -1887,6 +1887,132 @@ function InstitutionalPanel({ data, loading }: { data: any[]; loading: boolean }
   )
 }
 
+// ─── L. Portfolio Risk Card ───────────────────────────────────────────────────
+
+function RiskGauge({ label, value, color, unit = '%', invert = false }: {
+  label: string; value: number | null; color: string; unit?: string; invert?: boolean
+}) {
+  const display = value === null || value === undefined ? '—' : `${value > 0 && unit === '%' ? '' : ''}${value.toFixed(1)}${unit}`
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        {label}
+      </div>
+      <div style={{ color, fontSize: '22px', fontWeight: 700, fontFamily: 'monospace' }}>
+        {display}
+      </div>
+    </div>
+  )
+}
+
+function AlertRow({ alert }: { alert: { level: string; msg: string } }) {
+  const color = alert.level === 'danger' ? C.red : C.yellow
+  const bg = alert.level === 'danger' ? 'rgba(255,68,68,0.08)' : 'rgba(245,158,11,0.08)'
+  const icon = alert.level === 'danger' ? '🔴' : '⚠️'
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: '8px',
+      padding: '8px 12px', borderRadius: '8px', background: bg,
+      border: `1px solid ${color}33`, fontSize: '12px', color,
+    }}>
+      <span>{icon}</span>
+      <span>{alert.msg}</span>
+    </div>
+  )
+}
+
+function PortfolioRiskCard({ data, loading }: { data: any; loading: boolean }) {
+  const noData = !data || Object.keys(data).length === 0
+
+  const cvar = data?.cvar_pct ?? null
+  const varPct = data?.var_pct ?? null
+  const worstDay = data?.worst_day_pct ?? null
+  const drawdown = data?.drawdown_pct ?? 0
+  const cashPct = data?.cash_pct ?? null
+  const vix = data?.vix ?? null
+  const regime = data?.regime ?? '—'
+  const alerts: any[] = data?.alerts ?? []
+  const daysAnalyzed = data?.days_analyzed ?? 0
+  const totalReturn = data?.total_return_pct ?? 0
+  const openLongs = data?.open_longs ?? 0
+  const openShorts = data?.open_shorts ?? 0
+
+  // Color coding: CVaR < -3% = red, -1...-3% = yellow, >-1% = green
+  const cvarColor = cvar === null ? C.textMuted : cvar < -3 ? C.red : cvar < -1 ? C.yellow : C.green
+  const ddColor = drawdown > 10 ? C.red : drawdown > 5 ? C.yellow : C.green
+  const cashColor = cashPct !== null && cashPct < 10 ? C.red : cashPct !== null && cashPct < 15 ? C.yellow : C.green
+  const vixColor = vix !== null && vix > 27 ? C.red : vix !== null && vix > 20 ? C.yellow : C.green
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <SectionTitle>L. Portfolio Risk Report</SectionTitle>
+
+      {loading && noData ? (
+        <Spinner />
+      ) : (
+        <>
+          {/* Metrics grid */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+            gap: '20px',
+            marginBottom: alerts.length > 0 ? '20px' : '0',
+          }}>
+            <RiskGauge label="CVaR 95%" value={cvar} color={cvarColor} />
+            <RiskGauge label="VaR 95%" value={varPct} color={cvar === null ? C.textMuted : C.yellow} />
+            <RiskGauge label="Worst Day" value={worstDay} color={worstDay !== null && worstDay < -3 ? C.red : C.textSecondary} />
+            <RiskGauge label="Drawdown" value={drawdown} color={ddColor} />
+            <RiskGauge label="Cash" value={cashPct} color={cashColor} />
+            <RiskGauge label="VIX" value={vix} color={vixColor} unit="" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Positions</div>
+              <div style={{ color: C.textPrimary, fontSize: '22px', fontWeight: 700, fontFamily: 'monospace' }}>
+                <span style={{ color: C.green }}>{openLongs}L</span>
+                {' / '}
+                <span style={{ color: C.red }}>{openShorts}S</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Return</div>
+              <div style={{ color: totalReturn >= 0 ? C.green : C.red, fontSize: '22px', fontWeight: 700, fontFamily: 'monospace' }}>
+                {totalReturn >= 0 ? '+' : ''}{totalReturn.toFixed(2)}%
+              </div>
+            </div>
+          </div>
+
+          {/* Sub-labels row */}
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: alerts.length > 0 ? '16px' : '0' }}>
+            <span style={{ fontSize: '11px', color: C.textMuted }}>
+              Regime: <b style={{ color: C.textSecondary }}>{regime}</b>
+            </span>
+            {daysAnalyzed > 0 && (
+              <span style={{ fontSize: '11px', color: C.textMuted }}>
+                CVaR based on <b style={{ color: C.textSecondary }}>{daysAnalyzed} trading days</b>
+              </span>
+            )}
+            {daysAnalyzed === 0 && (
+              <span style={{ fontSize: '11px', color: C.textMuted }}>
+                CVaR unavailable — run a cycle first to build returns cache
+              </span>
+            )}
+          </div>
+
+          {/* Risk alerts */}
+          {alerts.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {alerts.map((a, i) => <AlertRow key={i} alert={a} />)}
+            </div>
+          )}
+
+          {noData && !loading && (
+            <div style={{ color: C.textMuted, fontSize: '13px' }}>No risk data yet — run a cycle first.</div>
+          )}
+        </>
+      )}
+    </Card>
+  )
+}
+
 // ─── Main AgentDashboard Component ───────────────────────────────────────────
 
 export default function AgentDashboard() {
@@ -1919,6 +2045,9 @@ export default function AgentDashboard() {
 
   const [institutionalData, setInstitutionalData] = useState<any[]>([])
   const [institutionalLoading, setInstitutionalLoading] = useState(true)
+
+  const [riskData, setRiskData] = useState<any>(null)
+  const [riskLoading, setRiskLoading] = useState(true)
 
   const [toggling, setToggling] = useState(false)
   const [toggleMsg, setToggleMsg] = useState('')
@@ -2029,6 +2158,17 @@ export default function AgentDashboard() {
     }
   }, [])
 
+  const fetchRisk = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/risk/report')
+      setRiskData(data || null)
+    } catch {
+      setRiskData(null)
+    } finally {
+      setRiskLoading(false)
+    }
+  }, [])
+
   // Initial load
   useEffect(() => {
     fetchStatus()
@@ -2040,6 +2180,7 @@ export default function AgentDashboard() {
     fetchLog()
     fetchRegime()
     fetchInstitutional()
+    fetchRisk()
   }, [])
 
   // Auto-refresh intervals
@@ -2052,6 +2193,7 @@ export default function AgentDashboard() {
   useInterval(fetchLog, 30000)
   useInterval(fetchRegime, 30000)
   useInterval(fetchInstitutional, 60000)
+  useInterval(fetchRisk, 30000)
 
   async function handleToggle() {
     if (!status) return
@@ -2198,6 +2340,9 @@ export default function AgentDashboard() {
 
         {/* K. Institutional Signals */}
         <InstitutionalPanel data={institutionalData} loading={institutionalLoading} />
+
+        {/* L. Portfolio Risk Report */}
+        <PortfolioRiskCard data={riskData} loading={riskLoading} />
       </div>
     </div>
   )
