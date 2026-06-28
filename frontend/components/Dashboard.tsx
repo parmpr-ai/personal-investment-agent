@@ -207,9 +207,27 @@ function useNewsIntelligence() {
   return items
 }
 
+function useAgentStatus() {
+  const [agentStatus, setAgentStatus] = useState<any>(null)
+
+  useEffect(() => {
+    let active = true
+    const fetch_ = () =>
+      fetchJson('/agent/status')
+        .then((d) => { if (active) setAgentStatus(d) })
+        .catch(() => {})
+    fetch_()
+    const id = setInterval(fetch_, 30_000)
+    return () => { active = false; clearInterval(id) }
+  }, [])
+
+  return agentStatus
+}
+
 export default function Dashboard() {
   const dashboard = useDash()
   const newsIntelligence = useNewsIntelligence()
+  const agentStatus = useAgentStatus()
   const [active, setActive] = useState('dashboard')
   const [mounted, setMounted] = useState(false)
   const [hidden, setHidden] = useState(false)
@@ -264,7 +282,7 @@ export default function Dashboard() {
 
   return (
     <div className="app">
-      <Sidebar active={active} setActive={setActive} hidden={privacyHidden} amountHidden={hidden} setHidden={updateHidden} />
+      <Sidebar active={active} setActive={setActive} hidden={privacyHidden} amountHidden={hidden} setHidden={updateHidden} agentStatus={agentStatus} />
       <main className="main">
         <Top
           active={active}
@@ -283,6 +301,7 @@ export default function Dashboard() {
             setActive={setActive}
             setSelected={setSelected}
             newsIntelligence={newsIntelligence}
+            agentStatus={agentStatus}
           />
         )}
         {active === 'portfolio' && (
@@ -308,7 +327,8 @@ export default function Dashboard() {
   )
 }
 
-function Sidebar({ active, setActive, hidden, amountHidden, setHidden }: any) {
+function Sidebar({ active, setActive, hidden, amountHidden, setHidden, agentStatus }: any) {
+  const agentRunning = agentStatus?.running === true
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -324,6 +344,20 @@ function Sidebar({ active, setActive, hidden, amountHidden, setHidden }: any) {
           <button key={id} onClick={() => setActive(id)} className={active === id ? 'active' : ''}>
             <Icon size={18} />
             <span>{privateNavLabel(hidden, id, label)}</span>
+            {id === 'agent' && (
+              <span
+                style={{
+                  marginLeft: 'auto',
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: agentRunning ? '#00ff88' : '#4b5563',
+                  boxShadow: agentRunning ? '0 0 6px #00ff88' : 'none',
+                  animation: agentRunning ? 'pulse 2s infinite' : 'none',
+                  flexShrink: 0,
+                }}
+              />
+            )}
           </button>
         ))}
       </nav>
@@ -400,12 +434,160 @@ function MetricBar({ label, value, tone = 'blue', hidden = false }: any) {
   )
 }
 
-function DashboardHome({ d, hidden, setActive, setSelected, newsIntelligence }: any) {
+function AgentMiniPanel({ agentStatus, setActive, hidden }: any) {
+  const running = agentStatus?.running === true
+  const port = agentStatus?.paper_portfolio || {}
+  const totalValue = port.total_value ?? null
+  const totalReturn = port.total_return_pct ?? null
+  const summary = agentStatus?.last_cycle_summary || {}
+  const executed = summary.executed ?? agentStatus?.last_cycle?.executed ?? null
+  const decisions = summary.decisions ?? agentStatus?.last_cycle?.decisions ?? null
+  const circuitBroken = summary.circuit_broken === true
+  const dailyPnl = summary.daily_pnl_pct ?? null
+  const regime = agentStatus?.macros?.regime || agentStatus?.regime || null
+  const lastCycle = agentStatus?.last_cycle
+  const cycleCount = agentStatus?.cycle_count ?? null
+
+  const dotColor = running ? '#00ff88' : '#4b5563'
+  const cardBorder = circuitBroken
+    ? 'rgba(255,68,68,0.35)'
+    : running
+    ? 'rgba(0,255,136,0.2)'
+    : 'rgba(255,255,255,0.08)'
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+      }}
+    >
+      {/* Status row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <span
+          style={{
+            width: '9px',
+            height: '9px',
+            borderRadius: '50%',
+            background: dotColor,
+            boxShadow: running ? `0 0 8px ${dotColor}` : 'none',
+            animation: running ? 'pulse 2s infinite' : 'none',
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ fontWeight: 700, fontSize: '13px', color: running ? '#00ff88' : '#6b7280' }}>
+          {hidden ? 'Workspace' : running ? 'RUNNING' : 'STOPPED'}
+        </span>
+        {circuitBroken && !hidden && (
+          <span style={{ fontSize: '11px', color: '#ff4444', fontWeight: 700, background: 'rgba(255,68,68,0.12)', padding: '2px 8px', borderRadius: '20px', border: '1px solid rgba(255,68,68,0.3)' }}>
+            ⛔ Circuit Breaker
+          </span>
+        )}
+        {agentStatus?.mode && !hidden && (
+          <span style={{ fontSize: '11px', color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '20px', marginLeft: 'auto' }}>
+            {agentStatus.mode}
+          </span>
+        )}
+      </div>
+
+      {/* Paper portfolio value */}
+      {totalValue !== null && (
+        <div>
+          <div style={{ fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
+            {hidden ? 'Overview' : 'Paper Portfolio'}
+          </div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#ffffff', lineHeight: 1 }}>
+            {hidden ? mask : Number(totalValue).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </div>
+          {totalReturn !== null && (
+            <div style={{ fontSize: '12px', marginTop: '3px', color: Number(totalReturn) >= 0 ? '#00ff88' : '#ff4444', fontWeight: 600 }}>
+              {hidden ? mask : `${Number(totalReturn) >= 0 ? '+' : ''}${Number(totalReturn).toFixed(2)}% total return`}
+            </div>
+          )}
+          {dailyPnl !== null && !hidden && (
+            <div style={{ fontSize: '12px', color: Number(dailyPnl) >= 0 ? '#22c55e' : '#ef4444' }}>
+              Day: {Number(dailyPnl) >= 0 ? '+' : ''}{Number(dailyPnl).toFixed(2)}%
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Today's stats */}
+      {(executed !== null || decisions !== null) && (
+        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+          {decisions !== null && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#3b82f6' }}>{hidden ? '—' : decisions}</div>
+              <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Decisions</div>
+            </div>
+          )}
+          {executed !== null && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#00ff88' }}>{hidden ? '—' : executed}</div>
+              <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Executed</div>
+            </div>
+          )}
+          {cycleCount !== null && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#a855f7' }}>{hidden ? '—' : cycleCount}</div>
+              <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Cycles</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Regime + last cycle */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+        {regime && !hidden && (
+          <span style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            padding: '3px 10px',
+            borderRadius: '20px',
+            background: regime === 'BULL_TREND' ? 'rgba(0,255,136,0.1)' : regime === 'CRISIS' || regime === 'BEAR_TREND' ? 'rgba(255,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+            color: regime === 'BULL_TREND' ? '#00ff88' : regime === 'CRISIS' || regime === 'BEAR_TREND' ? '#ff4444' : '#f59e0b',
+            border: `1px solid ${regime === 'BULL_TREND' ? 'rgba(0,255,136,0.25)' : regime === 'CRISIS' || regime === 'BEAR_TREND' ? 'rgba(255,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`,
+          }}>
+            {regime.replace(/_/g, ' ')}
+          </span>
+        )}
+        {lastCycle && !hidden && (
+          <span style={{ fontSize: '11px', color: '#6b7280' }}>
+            Last: {(() => { try { return new Date(lastCycle).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) } catch { return lastCycle } })()}
+          </span>
+        )}
+      </div>
+
+      {/* CTA */}
+      <button
+        className="tab"
+        onClick={() => setActive('agent')}
+        style={{ marginTop: '4px', width: '100%', justifyContent: 'center' }}
+      >
+        <Bot size={14} style={{ marginRight: '6px' }} />
+        {hidden ? 'Open workspace' : 'Open AI Agent →'}
+      </button>
+
+      {/* No data fallback */}
+      {agentStatus === null && (
+        <p className="muted" style={{ fontSize: '12px', textAlign: 'center' }}>
+          Connecting to agent…
+        </p>
+      )}
+    </div>
+  )
+}
+
+function DashboardHome({ d, hidden, setActive, setSelected, newsIntelligence, agentStatus }: any) {
   const p = d?.portfolio || {}
   return (
     <div className="grid">
       <Panel title="Portfolio Snapshot" privateTitle="Overview" span="span-8" hidden={hidden}>
         <PortfolioSnapshot p={p} hidden={hidden} />
+      </Panel>
+      <Panel title="AI Agent" privateTitle="Workspace" span="span-4" hidden={hidden} icon={<Bot size={16} />}>
+        <AgentMiniPanel agentStatus={agentStatus} setActive={setActive} hidden={hidden} />
       </Panel>
       <Panel title="Today's Decision Brief" privateTitle="Workspace" span="span-4" hidden={hidden}>
         <div className="actions">
