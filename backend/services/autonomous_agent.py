@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from services.market_data import fetch_quotes, fetch_enhanced_quotes, fetch_macro, fetch_sector_momentum
-from services.news_scorer import score_news, sentiment_boost
+from services.news_scorer import score_news_best, sentiment_boost
 from services.fundamentals_screener import fetch_fundamentals_batch, fundamental_adj
 from services.risk_manager import RiskManager
 from services.paper_trading import (
@@ -695,8 +695,11 @@ class AutonomousAgent:
             return {"ok": False, "message": "Agent already running"}
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
-        _log("info", f"Agent started. Mode={self.config['mode']}, Cycle={self.config['cycle_minutes']}m, Strategies={self.config['strategies']}")
-        return {"ok": True, "message": "Agent started", "config": self.config}
+        from services.ai_news_scorer import get_active_provider_name
+        from services.finnhub_sentiment import is_available as fh_ok
+        news_provider = get_active_provider_name() or ("finnhub" if fh_ok() else "keyword-only")
+        _log("info", f"Agent started. Mode={self.config['mode']}, Cycle={self.config['cycle_minutes']}m, NewsProvider={news_provider}, Strategies={self.config['strategies']}")
+        return {"ok": True, "message": "Agent started", "config": self.config, "news_provider": news_provider}
 
     def stop(self) -> Dict[str, Any]:
         self._running = False
@@ -751,7 +754,7 @@ class AutonomousAgent:
         quotes, macro, news, sectors = await asyncio.gather(
             fetch_enhanced_quotes(universe),
             fetch_macro(),
-            score_news(universe),
+            score_news_best(universe),
             fetch_sector_momentum(),
             return_exceptions=True,
         )

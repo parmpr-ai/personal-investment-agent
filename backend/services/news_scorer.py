@@ -182,3 +182,56 @@ def sentiment_boost(news: Dict[str, Any], ticker: str) -> tuple[int, str]:
         reasons.append("analyst action")
 
     return delta, ", ".join(reasons) if reasons else ""
+
+
+async def fetch_headlines_batch(tickers: List[str]) -> Dict[str, List[str]]:
+    """Fetch Yahoo RSS headlines for all tickers. Returns {ticker: [headline, ...]}."""
+    async with httpx.AsyncClient(headers=_HEADERS) as client:
+        tasks = {t.upper(): _fetch_rss(client, t) for t in tickers}
+        return {t: await coro for t, coro in tasks.items()}
+
+
+async def score_news_best(tickers: List[str]) -> Dict[str, Any]:
+    """
+    Unified scorer — uses best available source in priority order:
+      1. LLM (Groq / Gemini / Cerebras / Mistral) if API key configured
+      2. Finnhub pre-scored sentiment if FINNHUB_API_KEY configured
+      3. Keyword scoring (always available, zero-cost fallback)
+
+    Always returns the same schema as score_news().
+    """
+    from services.ai_news_scorer import score_news_ai, is_available as ai_available, get_active_provider_name
+    from services.finnhub_sentiment import fetch_sentiment as finnhub_fetch, is_available as fh_available
+
+    # Always fetch headlines (needed by LLM and keyword scorer)
+    headlines_map = await fetch_headlines_batch(tickers)
+
+    if ai_available():
+        results = await score_news_ai(tickers, headlines_map)
+        if results:
+            return results
+
+    if fh_available():
+        fh = await finnhub_fetch(tickers)
+        if fh:
+            # Merge Finnhub sentiment with keyword-extracted catalysts
+            kw = await score_news(tickers)
+            merged: Dict[str, Any] = {}
+            for t in tickers:
+                tu = t.upper()
+                fh_data = fh.get(tu, {})
+                kw_data = kw.get(tu, {})
+                if fh_data.get("ok"):
+                    merged[tu] = {
+                        **fh_data,
+                        # Enrich with keyword catalysts and headlines
+                        "catalysts": kw_data.get("catalysts", []),
+                        "top_headlines": kw_data.get("top_headlines", []),
+                        "headline_count": kw_data.get("headline_count", fh_data.get("headline_count", 0)),
+                    }
+                else:
+                    merged[tu] = kw_data
+            return merged
+
+    # Keyword fallback (always works, zero dependencies)
+    return await score_news(tickers)
