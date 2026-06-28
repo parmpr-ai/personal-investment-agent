@@ -16,6 +16,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import re
+import xml.etree.ElementTree as ET
 import httpx
 
 _TIMEOUT = 8
@@ -30,18 +31,19 @@ _CACHE_TTL = 3600 * 4  # 4h — institutional data changes slowly
 
 async def fetch_insider_trades(ticker: str, days: int = 30) -> List[Dict[str, Any]]:
     """
-    Fetch recent Form 4 filings for a ticker via SEC EDGAR full-text search RSS.
-    Returns list of {date, insider_name, role, transaction_type, shares, value_usd}.
+    Fetch recent Form 4 filings for a ticker via SEC EDGAR Atom feed.
+    Uses xml.etree.ElementTree for robust parsing (replaces fragile regex).
+    Returns list of {date, title, type, source}.
     """
-    # SEC EDGAR full-text search for Form 4 filings by ticker
-    rss_url = (
-        f"https://efts.sec.gov/LATEST/search-index?q=%22{ticker.upper()}%22"
-        f"&dateRange=custom&startdt={(datetime.now()-timedelta(days=days)).strftime('%Y-%m-%d')}"
-        f"&forms=4&hits.hits._source=period_of_report,display_names,file_date,entity_name"
+    edgar_rss = (
+        f"https://www.sec.gov/cgi-bin/browse-edgar"
+        f"?action=getcompany&company={ticker.upper()}&type=4"
+        f"&dateb=&owner=include&count=15&search_text=&output=atom"
     )
-    # Simpler: use the EDGAR RSS directly for the ticker's CIK
-    # Most reliable: use the search endpoint
-    edgar_rss = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company={ticker}&type=4&dateb=&owner=include&count=10&search_text=&output=atom"
+    _ATOM_NS = {"a": "http://www.w3.org/2005/Atom"}
+
+    def _strip_html(text: str) -> str:
+        return re.sub(r"<[^>]+>", " ", text or "").strip()
 
     trades: List[Dict[str, Any]] = []
     try:
@@ -52,37 +54,47 @@ async def fetch_insider_trades(ticker: str, days: int = 30) -> List[Dict[str, An
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
-        # Parse RSS with regex (avoids feedparser/sgmllib dependency)
-        items = re.findall(r'<entry>(.*?)</entry>', feed_text, re.DOTALL)
-        for item_xml in items[:15]:
+        try:
+            root = ET.fromstring(feed_text)
+            entries = root.findall("a:entry", _ATOM_NS)
+        except ET.ParseError:
+            # Feed occasionally wraps content in CDATA; fall back to a permissive parse
+            sanitised = re.sub(r"<!\[CDATA\[.*?\]\]>", "", feed_text, flags=re.DOTALL)
             try:
-                def _tag(tag: str) -> str:
-                    m = re.search(rf'<{tag}[^>]*>(.*?)</{tag}>', item_xml, re.DOTALL)
-                    return (m.group(1) if m else "").strip()
+                root = ET.fromstring(sanitised)
+                entries = root.findall("a:entry", _ATOM_NS)
+            except ET.ParseError:
+                entries = []
 
-                title = re.sub(r'<[^>]+>', '', _tag("title"))
-                summary = re.sub(r'<[^>]+>', '', _tag("summary"))
-                updated = _tag("updated") or _tag("published")
+        for entry in entries:
+            try:
+                def _text(tag: str) -> str:
+                    el = entry.find(f"a:{tag}", _ATOM_NS)
+                    return _strip_html(el.text or "") if el is not None else ""
+
+                title   = _text("title")
+                summary = _text("summary")
+                updated = _text("updated") or _text("published")
 
                 try:
                     filed_dt = datetime.fromisoformat(updated.replace("Z", "+00:00")) if updated else None
-                except Exception:
+                except ValueError:
                     filed_dt = None
 
                 if filed_dt and filed_dt < cutoff:
                     continue
 
                 combined = (title + " " + summary).lower()
-                is_buy = any(w in combined for w in ["purchase", "acquisition", "bought", "a - acquisition"])
+                is_buy  = any(w in combined for w in ["purchase", "acquisition", "bought", "a - acquisition"])
                 is_sell = any(w in combined for w in ["sale", "disposed", "sold", "d - disposition"])
 
                 if not is_buy and not is_sell:
                     continue
 
                 trades.append({
-                    "date": filed_dt.strftime("%Y-%m-%d") if filed_dt else "unknown",
-                    "title": title[:120],
-                    "type": "BUY" if is_buy else "SELL",
+                    "date":   filed_dt.strftime("%Y-%m-%d") if filed_dt else "unknown",
+                    "title":  title[:120],
+                    "type":   "BUY" if is_buy else "SELL",
                     "source": "SEC Form 4",
                 })
             except Exception:

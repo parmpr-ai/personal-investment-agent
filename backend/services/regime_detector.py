@@ -1,5 +1,5 @@
 """
-Market regime detection based on SPY price action + VIX.
+Market regime detection based on SPY price action + VIX + sector breadth.
 Classifies the current market into 4 discrete states:
 
   BULL_TREND   : SPY above SMA20+SMA50, RSI>55, volume confirmation, VIX<20
@@ -9,6 +9,9 @@ Classifies the current market into 4 discrete states:
 
 Regime changes require 2 consecutive detections (hysteresis) to avoid
 flip-flopping on borderline conditions.
+
+Market breadth uses XLK/XLF/XLE sector ETF 20d returns as a free proxy for
+the advance/decline spread — no additional API key required.
 
 Each regime activates/deactivates specific strategies and adjusts
 position sizing multipliers, stop-loss widths, and confidence thresholds.
@@ -96,6 +99,49 @@ async def _fetch_spy_history(days: int = 60) -> Optional[Dict[str, List[float]]]
         return None
 
 
+async def _fetch_sector_breadth() -> Optional[Dict[str, Any]]:
+    """
+    Fetch 20d returns for XLK (Tech), XLF (Financials), XLE (Energy).
+    Returns breadth_advance (sectors positive) and breadth_spread (max-min return).
+    Free Yahoo Finance endpoint — no API key required.
+    """
+    etfs = ["XLK", "XLF", "XLE"]
+
+    async def _get_return(ticker: str) -> Tuple[str, Optional[float]]:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_HEADERS) as client:
+                r = await client.get(url, params={"interval": "1d", "range": "1mo"})
+                r.raise_for_status()
+                data = r.json()
+            raw_closes = data["chart"]["result"][0]["indicators"]["quote"][0].get("close", [])
+            closes = [c for c in raw_closes if c is not None]
+            if len(closes) >= 21:
+                ret = (closes[-1] - closes[-21]) / closes[-21] * 100
+                return ticker, round(ret, 2)
+        except Exception:
+            pass
+        return ticker, None
+
+    pairs = await asyncio.gather(*[_get_return(t) for t in etfs], return_exceptions=True)
+    sector_rets: Dict[str, float] = {}
+    for item in pairs:
+        if isinstance(item, tuple):
+            t, r = item
+            if r is not None:
+                sector_rets[t] = r
+
+    if not sector_rets:
+        return None
+
+    rets = list(sector_rets.values())
+    return {
+        "sector_returns": sector_rets,
+        "breadth_advance": sum(1 for r in rets if r > 0),    # sectors positive (0-3)
+        "breadth_spread":  round(max(rets) - min(rets), 2),  # max-min divergence %
+    }
+
+
 async def _fetch_vix() -> Optional[float]:
     """Fetch current VIX from Yahoo Finance."""
     url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX"
@@ -133,10 +179,15 @@ def _volume_trend(volumes: List[float]) -> float:
     return round(vol_5d / vol_20d, 2) if vol_20d > 0 else 1.0
 
 
-def _classify(spy_data: Dict[str, List[float]], vix: float) -> Tuple[str, float, Dict]:
+def _classify(
+    spy_data: Dict[str, List[float]],
+    vix: float,
+    breadth: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, float, Dict]:
     """
-    Regime classification from SPY price/volume data + VIX + RSI.
+    Regime classification from SPY price/volume data + VIX + RSI + sector breadth.
     Returns (regime, confidence_pct, details).
+    breadth: output of _fetch_sector_breadth(); None skips breadth scoring.
     """
     spy_closes  = spy_data.get("closes",  [])
     spy_volumes = spy_data.get("volumes", [])
@@ -159,18 +210,24 @@ def _classify(spy_data: Dict[str, List[float]], vix: float) -> Tuple[str, float,
     spy_rsi    = _rsi(spy_closes)
     vol_ratio  = _volume_trend(spy_volumes)   # >1.1 = volume confirming move
 
+    breadth_advance = breadth["breadth_advance"] if breadth else None
+    breadth_spread  = breadth["breadth_spread"]  if breadth else None
+
     details = {
-        "spy_price":    round(price, 2),
-        "sma20":        round(sma20, 2),
-        "sma50":        round(sma50, 2),
-        "trend_5d_pct": round(trend_5d, 2),
-        "trend_20d_pct":round(trend_20d, 2),
-        "above_sma20":  above_sma20,
-        "above_sma50":  above_sma50,
-        "golden_cross": golden_cross,
-        "rsi":          spy_rsi,
-        "volume_ratio": vol_ratio,
-        "vix":          round(vix, 1),
+        "spy_price":      round(price, 2),
+        "sma20":          round(sma20, 2),
+        "sma50":          round(sma50, 2),
+        "trend_5d_pct":   round(trend_5d, 2),
+        "trend_20d_pct":  round(trend_20d, 2),
+        "above_sma20":    above_sma20,
+        "above_sma50":    above_sma50,
+        "golden_cross":   golden_cross,
+        "rsi":            spy_rsi,
+        "volume_ratio":   vol_ratio,
+        "vix":            round(vix, 1),
+        "breadth_advance": breadth_advance,                          # sectors advancing (0-3)
+        "breadth_spread":  breadth_spread,                           # max-min sector return %
+        "sector_returns":  breadth["sector_returns"] if breadth else {},
     }
 
     # ── Crisis: VIX extreme or severe drawdown ────────────────────────────────
@@ -181,35 +238,48 @@ def _classify(spy_data: Dict[str, List[float]], vix: float) -> Tuple[str, float,
     # ── Bear: SPY structurally bearish ────────────────────────────────────────
     if not above_sma20 and not above_sma50 and trend_5d < -1.0 and vix > 22:
         bear_score = 0
-        if not above_sma20:      bear_score += 30
-        if not above_sma50:      bear_score += 25
-        if not golden_cross:     bear_score += 20
-        if trend_5d < -2:        bear_score += 15
-        if vix > 25:             bear_score += 10
-        if spy_rsi < 45:         bear_score += 10   # RSI confirmation
-        if vol_ratio > 1.1:      bear_score += 5    # high volume selloff = conviction
+        if not above_sma20:                        bear_score += 30
+        if not above_sma50:                        bear_score += 25
+        if not golden_cross:                       bear_score += 20
+        if trend_5d < -2:                          bear_score += 15
+        if vix > 25:                               bear_score += 10
+        if spy_rsi < 45:                           bear_score += 10  # RSI confirmation
+        if vol_ratio > 1.1:                        bear_score += 5   # high volume selloff = conviction
+        if breadth_advance is not None:
+            if breadth_advance == 0:               bear_score += 10  # all sectors down → broad decline
+            if breadth_spread is not None and breadth_spread < 5:
+                                                   bear_score += 5   # uniform decline = conviction
         confidence = min(92, 40 + bear_score * 0.45)
         return "BEAR_TREND", round(confidence, 1), details
 
     # ── Bull: strong uptrend with low fear ────────────────────────────────────
     if above_sma20 and above_sma50 and golden_cross and trend_5d > 0.5 and vix < 22:
         bull_score = 0
-        if above_sma20:          bull_score += 25
-        if above_sma50:          bull_score += 20
-        if golden_cross:         bull_score += 20
-        if trend_5d > 1.5:       bull_score += 15
-        if trend_20d > 3:        bull_score += 15
-        if vix < 15:             bull_score += 10
-        if spy_rsi > 55:         bull_score += 10   # RSI momentum confirmation
-        if vol_ratio > 1.05:     bull_score += 5    # volume confirms the rally
+        if above_sma20:                            bull_score += 25
+        if above_sma50:                            bull_score += 20
+        if golden_cross:                           bull_score += 20
+        if trend_5d > 1.5:                         bull_score += 15
+        if trend_20d > 3:                          bull_score += 15
+        if vix < 15:                               bull_score += 10
+        if spy_rsi > 55:                           bull_score += 10  # RSI momentum confirmation
+        if vol_ratio > 1.05:                       bull_score += 5   # volume confirms the rally
+        if breadth_advance is not None:
+            if breadth_advance == 3:               bull_score += 10  # all 3 sectors positive → broad rally
+            elif breadth_advance == 2:             bull_score += 5   # majority sectors positive
+            if breadth_spread is not None and breadth_spread < 5:
+                                                   bull_score += 5   # sectors moving together = trending
         confidence = min(92, 35 + bull_score * 0.50)
         return "BULL_TREND", round(confidence, 1), details
 
     # ── Choppy: neither clearly bull nor bear ────────────────────────────────
     choppy_score = 50
-    if abs(trend_5d) < 1.5:  choppy_score += 15
-    if abs(trend_20d) < 3:   choppy_score += 10
-    if 45 <= spy_rsi <= 55:  choppy_score += 10   # neutral RSI = choppy
+    if abs(trend_5d) < 1.5:   choppy_score += 15
+    if abs(trend_20d) < 3:    choppy_score += 10
+    if 45 <= spy_rsi <= 55:   choppy_score += 10  # neutral RSI = choppy
+    if breadth_advance is not None:
+        if breadth_advance in (1, 2):              choppy_score += 5   # mixed advance = no clear direction
+        if breadth_spread is not None and breadth_spread > 15:
+                                                   choppy_score += 10  # high sector divergence = choppy
     confidence = min(80, choppy_score)
     return "CHOPPY_RANGE", round(confidence, 1), details
 
@@ -226,9 +296,10 @@ async def detect_regime(force_refresh: bool = False) -> Dict[str, Any]:
     if not force_refresh and _regime_cache and time.time() - _regime_cache_ts < _CACHE_TTL:
         return _regime_cache
 
-    spy_data, vix = await asyncio.gather(
+    spy_data, vix, breadth = await asyncio.gather(
         _fetch_spy_history(60),
         _fetch_vix(),
+        _fetch_sector_breadth(),
         return_exceptions=True,
     )
 
@@ -236,6 +307,8 @@ async def detect_regime(force_refresh: bool = False) -> Dict[str, Any]:
         spy_data = None
     if isinstance(vix, Exception) or vix is None:
         vix = 18.0  # fallback: assume calm market
+    if isinstance(breadth, Exception):
+        breadth = None
 
     if not spy_data:
         result = {
@@ -251,7 +324,7 @@ async def detect_regime(force_refresh: bool = False) -> Dict[str, Any]:
         _regime_cache_ts = time.time()
         return result
 
-    raw_regime, confidence, details = _classify(spy_data, vix)
+    raw_regime, confidence, details = _classify(spy_data, vix, breadth)
 
     # ── Hysteresis: require 2 consecutive detections to confirm a change ──────
     current = _confirmed_regime or raw_regime
@@ -290,6 +363,7 @@ async def detect_regime(force_refresh: bool = False) -> Dict[str, Any]:
         "config": REGIME_CONFIG[regime],
         "days_in_regime": days_in_regime,
         "history": list(_regime_history[-5:]),
+        "breadth": breadth,   # XLK/XLF/XLE advance/spread; None if fetch failed
         "ts": datetime.now(timezone.utc).isoformat(),
         "data_ok": True,
     }
