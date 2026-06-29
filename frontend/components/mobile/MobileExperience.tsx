@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 
-const API = 'http://127.0.0.1:8000'
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
 
 type RailItem = Record<string, any>
 type Tone = 'good' | 'bad' | 'neutral'
@@ -127,7 +127,7 @@ function useMobileDashboard() {
 
     let socket: WebSocket | undefined
     try {
-      socket = new WebSocket('ws://127.0.0.1:8000/ws')
+      socket = new WebSocket(process.env.NEXT_PUBLIC_WS_URL ?? 'ws://127.0.0.1:8000/ws')
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data)

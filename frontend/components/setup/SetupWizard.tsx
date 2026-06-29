@@ -10,7 +10,7 @@ import StatusCard from './StatusCard'
 import { defaultPreferences, setupStorage } from './storage'
 import type { ConnectionMethod, LiveConnectionResult, SetupDiagnostics, SetupPreferences } from './types'
 
-const API = 'http://127.0.0.1:8000'
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
 const totalSteps = 7
 const command = 'docker run -it --rm -p 5000:5000 voyz/ibeam'
 

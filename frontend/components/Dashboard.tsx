@@ -34,8 +34,8 @@ import SectionHeader from './ui/SectionHeader'
 import IntelligenceBadge from './ui/IntelligenceBadge'
 import RiskGauge from './ui/RiskGauge'
 
-const API = 'http://127.0.0.1:8000'
-const WS = 'ws://127.0.0.1:8000/ws'
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
+const WS  = (process.env.NEXT_PUBLIC_WS_URL  ?? 'ws://127.0.0.1:8000/ws')
 const mask = '••••••'
 const assetTypes = ['Stock', 'ETF', 'Crypto', 'Option', 'Other']
 const brokers = ['IBKR', 'Freedom24', 'Revolut', 'Manual']
