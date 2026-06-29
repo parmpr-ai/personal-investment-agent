@@ -153,6 +153,21 @@ def _log_db():
             message TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trade_attribution (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            strategy TEXT,
+            tags TEXT,
+            entry_ts TEXT,
+            exit_ts TEXT,
+            hold_days REAL,
+            pnl_pct REAL,
+            regime TEXT,
+            trade_style TEXT,
+            exit_reason TEXT
+        )
+    """)
     conn.commit()
     return conn
 
@@ -261,6 +276,107 @@ def _get_recent_win_rate(n: int = 10) -> float:
         return sum(1 for t in closed if t["pnl"] > 0) / len(closed)
     except Exception:
         return 0.5
+
+
+def _beta_size_mult(beta: Optional[float]) -> float:
+    """Reduce position size for high-beta tickers to normalize risk exposure."""
+    if beta is None:
+        return 1.0
+    if beta > 2.0:
+        return 0.5
+    if beta > 1.5:
+        return round(1.0 / beta, 3)
+    if beta > 1.2:
+        return 0.85
+    return 1.0
+
+
+def _extract_indicator_tags(reasoning: str) -> str:
+    """Parse reasoning string into comma-separated indicator tags for attribution."""
+    keywords = {
+        "MACD": "macd", "RSI": "rsi", "VWAP": "vwap", "BB": "bb",
+        "SMA": "sma", "trend": "trend", "momentum": "momentum",
+        "breakout": "breakout", "mean-rev": "mean_rev", "zscore": "zscore",
+        "z=": "zscore", "ADX": "adx", "RS=": "rel_strength",
+        "earnings": "earnings", "news": "news", "institutional": "institutional",
+        "52w": "52w_pos",
+    }
+    tags = set()
+    r = reasoning.lower()
+    for kw, tag in keywords.items():
+        if kw.lower() in r:
+            tags.add(tag)
+    return ",".join(sorted(tags)) or "none"
+
+
+def _record_attribution(
+    ticker: str, strategy: str, entry_ts: str, exit_ts: str,
+    pnl_pct: float, regime: str, trade_style: str,
+    exit_reason: str, entry_reasoning: str,
+):
+    """Persist trade attribution row for post-hoc performance analysis."""
+    try:
+        tags = _extract_indicator_tags(entry_reasoning)
+        hold_days = 0.0
+        if entry_ts and exit_ts:
+            try:
+                e = datetime.fromisoformat(entry_ts.replace("Z", "+00:00"))
+                x = datetime.fromisoformat(exit_ts.replace("Z", "+00:00"))
+                hold_days = round((x - e).total_seconds() / 86400, 3)
+            except Exception:
+                pass
+        conn = _log_db()
+        try:
+            conn.execute(
+                """INSERT INTO trade_attribution
+                   (ticker,strategy,tags,entry_ts,exit_ts,hold_days,pnl_pct,regime,trade_style,exit_reason)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (ticker, strategy, tags, entry_ts, exit_ts, hold_days,
+                 round(pnl_pct, 4), regime, trade_style, exit_reason[:200]),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def get_attribution_stats(limit: int = 200) -> Dict[str, Any]:
+    """Per-tag and per-strategy win rates from the attribution log."""
+    conn = _log_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM trade_attribution ORDER BY exit_ts DESC LIMIT ?", (limit,)
+        ).fetchall()
+    finally:
+        conn.close()
+    records = [dict(r) for r in rows]
+    if not records:
+        return {"records": [], "by_tag": {}, "by_strategy": {}}
+
+    by_tag: Dict[str, Dict] = {}
+    by_strat: Dict[str, Dict] = {}
+    for r in records:
+        pnl = r.get("pnl_pct") or 0.0
+        win = pnl > 0
+        for tag in (r.get("tags") or "").split(","):
+            tag = tag.strip()
+            if not tag or tag == "none":
+                continue
+            s = by_tag.setdefault(tag, {"wins": 0, "losses": 0, "total_pnl": 0.0})
+            s["wins" if win else "losses"] += 1
+            s["total_pnl"] += pnl
+        strat = r.get("strategy") or "unknown"
+        s = by_strat.setdefault(strat, {"wins": 0, "losses": 0, "total_pnl": 0.0})
+        s["wins" if win else "losses"] += 1
+        s["total_pnl"] += pnl
+
+    for d in list(by_tag.values()) + list(by_strat.values()):
+        total = d["wins"] + d["losses"]
+        d["win_rate"] = round(d["wins"] / total, 3) if total else 0.0
+        d["avg_pnl"] = round(d["total_pnl"] / total, 4) if total else 0.0
+
+    return {"records": records[:50], "by_tag": by_tag, "by_strategy": by_strat}
 
 
 # ── Rule-based signal engine ──────────────────────────────────────────────────
@@ -878,6 +994,11 @@ class AutonomousAgent:
         self._last_risk_mode: Optional[str] = None
         self._current_trade_style: str = "SWING_TRADE"
         self._current_risk_mode: str = "NORMAL"
+        # Trade management state
+        self._partial_exits: Dict[str, bool] = {}       # ticker → partial profit taken
+        self._breakeven_stops: Dict[str, float] = {}    # ticker → breakeven price after partial exit
+        self._stop_out_times: Dict[str, float] = {}     # ticker → unix ts of last stop-out
+        self._entry_reasoning: Dict[str, str] = {}      # ticker → reasoning at entry (for attribution)
 
     def configure(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         self.config.update(updates)
@@ -960,7 +1081,12 @@ class AutonomousAgent:
         now_et_hour = now_et.hour
         now_et_min  = now_et.minute
         market_open = now_et_hour == 9 and now_et_min < 30    # 9:00-9:30 ET
-        market_close = now_et_hour == 15 and now_et_min >= 45  # 15:45-16:00 ET
+        market_close = now_et_hour == 15 and now_et_min >= 30  # 15:30+ ET — no new entries
+        # Force-close all positions at 15:45 when running in DAY_TRADE mode
+        day_trade_eod = (
+            now_et_hour == 15 and now_et_min >= 45
+            and self._current_trade_style == "DAY_TRADE"
+        )
         avoid_new_entries = market_open or market_close
         if avoid_new_entries:
             _log("info", f"[{cycle_id}] Time filter: avoiding new entries (open/close window)")
@@ -1125,7 +1251,32 @@ class AutonomousAgent:
         # Position aging: exit positions held beyond max_hold_days for current trade style
         await self._check_aged_positions(open_longs, open_shorts, quotes, cycle_id)
 
-        # Refresh positions after stops + aging exits
+        # Overnight filter: force-close all DAY_TRADE positions before market close
+        if day_trade_eod:
+            _all = get_open_longs() + get_open_shorts()
+            if _all:
+                _log("info", f"[{cycle_id}] DAY_TRADE EOD: force-closing {len(_all)} position(s)")
+            for _pos in _all:
+                _ticker = _pos["ticker"]
+                _action = "SELL" if _pos["action"] == "BUY" else "COVER"
+                _price = quotes.get(_ticker, {}).get("price", 0) or _pos.get("avg_price", 0)
+                if not _price:
+                    continue
+                _reason = "DAY_TRADE overnight filter: forced close at EOD"
+                _result = self._execute(_action, _ticker, _pos["qty"], _price, None, None, _reason, 99)
+                _save_decision(cycle_id, {"ticker": _ticker, "action": _action, "qty": _pos["qty"],
+                                          "price": _price, "confidence": 99, "reasoning": _reason,
+                                          "executed": _result.get("ok", False), "execution_result": _result})
+                if _result.get("ok"):
+                    _log("info", f"[{cycle_id}] EOD CLOSE {_action} {_ticker} @${_price:.2f}")
+                    try: record_exit(_ticker, _price, _pos["qty"], cycle_id)
+                    except Exception: pass
+                    asyncio.create_task(send_trade_alert(
+                        action=_action, ticker=_ticker, qty=_pos["qty"], price=_price,
+                        stop=0, target=0, reason=_reason, confidence=99,
+                    ))
+
+        # Refresh positions after stops + aging + EOD exits
         open_longs = get_open_longs()
         open_shorts = get_open_shorts()
 
@@ -1191,6 +1342,27 @@ class AutonomousAgent:
                     _log("info", f"[{cycle_id}] {action} {ticker} BLOCKED: {entry_reason}")
                     continue
 
+                # ── Re-entry cooloff: block entry after recent stop-out ────────
+                if ticker in self._stop_out_times:
+                    since_stop = _time.time() - self._stop_out_times[ticker]
+                    _cooloff = 2 * 86400  # 2-day hard block
+                    if since_stop < _cooloff:
+                        _hrs = since_stop / 3600
+                        _save_decision(cycle_id, {**d, "executed": False,
+                                                  "blocked_reason": f"Re-entry cooloff: {_hrs:.1f}h since stop-out (48h required)"})
+                        blocked += 1
+                        continue
+                    elif since_stop < 5 * 86400:
+                        # 2–5 days post-stop: allow but require higher conviction
+                        _min_conf = regime_cfg.get("min_confidence", 65) + 10
+                        if confidence < _min_conf:
+                            _save_decision(cycle_id, {**d, "executed": False,
+                                                      "blocked_reason": f"Re-entry needs confidence ≥{_min_conf} post-stop, got {confidence}"})
+                            blocked += 1
+                            continue
+                    else:
+                        del self._stop_out_times[ticker]  # cleared after 5 days
+
             # ── ML confidence boost: adjust confidence based on learned model ──
             if not is_close:
                 q_features = quotes.get(ticker, {})
@@ -1226,6 +1398,12 @@ class AutonomousAgent:
                     atr=atr,
                     drawdown_scale=drawdown_scale * regime_size_mult * corr_mult,
                 )
+                # Beta-adjusted sizing: normalize risk for high-volatility stocks
+                _beta = self._fundamentals_cache.get(ticker, {}).get("beta")
+                _bmult = _beta_size_mult(_beta)
+                if _bmult != 1.0:
+                    qty = round(qty * _bmult, 6)
+                    _log("info", f"[{cycle_id}] Beta-adj {ticker}: β={_beta:.2f} mult={_bmult:.2f} → qty={qty:.1f}")
             else:
                 qty = d.get("qty") or 1
 
@@ -1271,21 +1449,28 @@ class AutonomousAgent:
                     if action in ("BUY", "SHORT"):
                         record_entry(d.get("strategy", "unknown"), ticker, action, price, qty, cycle_id)
                         self._position_strategies[ticker] = d.get("strategy", "unknown")
+                        self._entry_reasoning[ticker] = d.get("reasoning", "")
                     elif action in ("SELL", "COVER"):
                         record_exit(ticker, price, qty, cycle_id)
-                        # Record ML outcome for auto-retrain trigger
                         opening_strategy = self._position_strategies.pop(ticker, None)
-                        if opening_strategy:
-                            pos_list = open_longs if action == "SELL" else open_shorts
-                            pos = next((p for p in pos_list if p.get("ticker") == ticker), None)
-                            if pos:
-                                avg = pos.get("avg_price", price)
-                                if action == "SELL":
-                                    pnl = (price - avg) / avg if avg else 0
-                                else:
-                                    pnl = (avg - price) / avg if avg else 0
+                        # Attribution: record which indicators drove this trade's outcome
+                        pos_list = open_longs if action == "SELL" else open_shorts
+                        _pos = next((p for p in pos_list if p.get("ticker") == ticker), None)
+                        if _pos:
+                            _avg = _pos.get("avg_price", price)
+                            _pnl_pct = ((price - _avg) / _avg * 100 if action == "SELL" else (_avg - price) / _avg * 100) if _avg else 0
+                            _record_attribution(
+                                ticker, opening_strategy or "unknown",
+                                _pos.get("entry_ts", ""), datetime.now(timezone.utc).isoformat(),
+                                _pnl_pct, self._last_regime_name or "UNKNOWN",
+                                self._current_trade_style, d.get("reasoning", "")[:200],
+                                self._entry_reasoning.get(ticker, ""),
+                            )
+                            # ML outcome for auto-retrain trigger
+                            if opening_strategy:
                                 from services import ml_scorer as _mls
-                                _mls.record_trade_outcome(opening_strategy, pnl > 0)
+                                _mls.record_trade_outcome(opening_strategy, _pnl_pct > 0)
+                        self._entry_reasoning.pop(ticker, None)
                 except Exception as _te:
                     _log("warning", f"[{cycle_id}] Strategy tracking error: {_te}")
                 asyncio.create_task(send_trade_alert(
@@ -1413,21 +1598,83 @@ class AutonomousAgent:
                 _log("warning", f"[{cycle_id}] Age check error {pos.get('ticker', '?')}: {exc}")
 
     async def _check_stops(self, open_longs: List[Dict], open_shorts: List[Dict], quotes: Dict, cycle_id: str):
-        # Long stops: fixed stop-loss + trailing stop (5% from peak, activates after 3% profit)
+        import time as _time
+        tp_pct = TRADE_STYLE_PARAMS.get(self._current_trade_style, {}).get("take_profit_pct", 12.0)
+
+        # Long stops: partial profit → breakeven → fixed stop → trailing stop
         for pos in open_longs:
             ticker = pos["ticker"]
             price = quotes.get(ticker, {}).get("price", 0)
             if not price:
                 continue
             avg = pos.get("avg_price", price)
+            pnl_pct = (price - avg) / avg * 100 if avg else 0
 
-            # Update trailing high watermark
+            # ── Partial profit taking: sell 50% at first target ───────────────
+            if not self._partial_exits.get(ticker) and pnl_pct >= tp_pct:
+                half_qty = round(pos["qty"] * 0.5, 6)
+                if half_qty > 0:
+                    reason = f"Partial profit: +{pnl_pct:.1f}% ≥ {tp_pct:.0f}% target — selling 50%"
+                    result = self._execute("SELL", ticker, half_qty, price, None, None, reason, 88)
+                    _save_decision(cycle_id, {"ticker": ticker, "action": "SELL", "qty": half_qty, "price": price,
+                                              "confidence": 88, "reasoning": reason,
+                                              "executed": result.get("ok", False), "execution_result": result})
+                    if result.get("ok"):
+                        self._partial_exits[ticker] = True
+                        self._breakeven_stops[ticker] = avg
+                        _log("info", f"[{cycle_id}] PARTIAL EXIT {ticker} {half_qty:.1f}sh @ ${price:.2f}, BE stop=${avg:.2f}")
+                        try: record_exit(ticker, price, half_qty, cycle_id)
+                        except Exception: pass
+                        _record_attribution(
+                            ticker, self._position_strategies.get(ticker, "unknown"),
+                            pos.get("entry_ts", ""), datetime.now(timezone.utc).isoformat(),
+                            pnl_pct, self._last_regime_name or "UNKNOWN",
+                            self._current_trade_style, reason,
+                            self._entry_reasoning.get(ticker, ""),
+                        )
+                        asyncio.create_task(send_trade_alert(
+                            action="SELL", ticker=ticker, qty=half_qty, price=price,
+                            stop=avg, target=None, reason=reason, confidence=88,
+                        ))
+                continue  # skip further checks this cycle — let remaining run
+
+            # ── Breakeven stop: close remaining if price reverts to cost basis ─
+            if self._partial_exits.get(ticker):
+                be_stop = self._breakeven_stops.get(ticker, avg)
+                if price <= be_stop:
+                    reason = f"Breakeven stop: ${price:.2f} ≤ cost basis ${be_stop:.2f}"
+                    result = self._execute("SELL", ticker, pos["qty"], price, None, None, reason, 95)
+                    _save_decision(cycle_id, {"ticker": ticker, "action": "SELL", "qty": pos["qty"], "price": price,
+                                              "confidence": 95, "reasoning": reason,
+                                              "executed": result.get("ok", False), "execution_result": result})
+                    if result.get("ok"):
+                        _pnl = (price - be_stop) / be_stop * 100 if be_stop else 0
+                        self._partial_exits.pop(ticker, None)
+                        self._breakeven_stops.pop(ticker, None)
+                        self._trailing_stops.pop(ticker, None)
+                        self._stop_out_times[ticker] = _time.time()
+                        try: record_exit(ticker, price, pos["qty"], cycle_id)
+                        except Exception: pass
+                        _record_attribution(
+                            ticker, self._position_strategies.get(ticker, "unknown"),
+                            pos.get("entry_ts", ""), datetime.now(timezone.utc).isoformat(),
+                            _pnl, self._last_regime_name or "UNKNOWN",
+                            self._current_trade_style, reason,
+                            self._entry_reasoning.get(ticker, ""),
+                        )
+                        self._entry_reasoning.pop(ticker, None)
+                        asyncio.create_task(send_stop_alert(
+                            "SELL", ticker, pos["qty"], price, reason, avg_price=avg,
+                        ))
+                    continue
+
+            # ── Update trailing high watermark ────────────────────────────────
             trailing_high = self._trailing_stops.get(ticker, avg)
             if price > trailing_high:
                 self._trailing_stops[ticker] = price
                 trailing_high = price
 
-            # Fixed stop-loss (8%+ below entry)
+            # ── Fixed stop-loss ───────────────────────────────────────────────
             if self._risk.should_trigger_stop(pos, price):
                 _log("warning", f"[{cycle_id}] LONG STOP: {ticker} @ ${price:.2f} (avg ${avg:.2f})")
                 result = self._execute("SELL", ticker, pos["qty"], price, None, None, "AUTO LONG STOP-LOSS", 99)
@@ -1435,9 +1682,21 @@ class AutonomousAgent:
                                           "confidence": 99, "reasoning": "Auto long stop-loss",
                                           "executed": result.get("ok", False), "execution_result": result})
                 if result.get("ok"):
+                    _pnl = pnl_pct
                     self._trailing_stops.pop(ticker, None)
+                    self._partial_exits.pop(ticker, None)
+                    self._breakeven_stops.pop(ticker, None)
+                    self._stop_out_times[ticker] = _time.time()
                     try: record_exit(ticker, price, pos["qty"], cycle_id)
                     except Exception: pass
+                    _record_attribution(
+                        ticker, self._position_strategies.get(ticker, "unknown"),
+                        pos.get("entry_ts", ""), datetime.now(timezone.utc).isoformat(),
+                        _pnl, self._last_regime_name or "UNKNOWN",
+                        self._current_trade_style, f"Stop-loss −{self._risk.limits['stop_loss_pct']:.0f}%",
+                        self._entry_reasoning.get(ticker, ""),
+                    )
+                    self._entry_reasoning.pop(ticker, None)
                     asyncio.create_task(send_stop_alert(
                         "SELL", ticker, pos["qty"], price,
                         f"Stop-loss: −{self._risk.limits['stop_loss_pct']:.0f}% below entry ${avg:.2f}",
@@ -1445,27 +1704,37 @@ class AutonomousAgent:
                     ))
                 continue
 
-            # Trailing stop: only activate after 3% profit to avoid whipsaw near entry
+            # ── Trailing stop: activate after 3% profit, trigger on 5% drop ──
             profit_pct = (trailing_high - avg) / avg * 100 if avg else 0
             if profit_pct >= 3.0:
                 drop_pct = (trailing_high - price) / trailing_high * 100 if trailing_high else 0
                 if drop_pct >= 5.0:
                     _log("warning", f"[{cycle_id}] TRAILING STOP: {ticker} @ ${price:.2f} ({drop_pct:.1f}% below peak ${trailing_high:.2f})")
-                    result = self._execute("SELL", ticker, pos["qty"], price, None, None, f"TRAILING STOP: {drop_pct:.1f}% below peak ${trailing_high:.2f}", 99)
+                    reason = f"Trailing stop: {drop_pct:.1f}% below peak ${trailing_high:.2f}"
+                    result = self._execute("SELL", ticker, pos["qty"], price, None, None, reason, 99)
                     _save_decision(cycle_id, {"ticker": ticker, "action": "SELL", "qty": pos["qty"], "price": price,
-                                              "confidence": 99, "reasoning": f"Trailing stop: {drop_pct:.1f}% below peak ${trailing_high:.2f}",
+                                              "confidence": 99, "reasoning": reason,
                                               "executed": result.get("ok", False), "execution_result": result})
                     if result.get("ok"):
                         self._trailing_stops.pop(ticker, None)
+                        self._partial_exits.pop(ticker, None)
+                        self._breakeven_stops.pop(ticker, None)
+                        self._stop_out_times[ticker] = _time.time()
                         try: record_exit(ticker, price, pos["qty"], cycle_id)
                         except Exception: pass
+                        _record_attribution(
+                            ticker, self._position_strategies.get(ticker, "unknown"),
+                            pos.get("entry_ts", ""), datetime.now(timezone.utc).isoformat(),
+                            pnl_pct, self._last_regime_name or "UNKNOWN",
+                            self._current_trade_style, reason,
+                            self._entry_reasoning.get(ticker, ""),
+                        )
+                        self._entry_reasoning.pop(ticker, None)
                         asyncio.create_task(send_stop_alert(
-                            "SELL", ticker, pos["qty"], price,
-                            f"Trailing stop: {drop_pct:.1f}% below peak ${trailing_high:.2f}",
-                            avg_price=avg,
+                            "SELL", ticker, pos["qty"], price, reason, avg_price=avg,
                         ))
 
-        # Short stop: cover if price rises 8%+ above entry
+        # Short stop: cover if price rises above stop % — record stop-out for re-entry cooloff
         short_stop_pct = self.config.get("short_stop_pct", 8.0)
         for pos in open_shorts:
             ticker = pos["ticker"]
@@ -1476,13 +1745,25 @@ class AutonomousAgent:
             rise_pct = (price - avg) / avg * 100 if avg else 0
             if rise_pct >= short_stop_pct:
                 _log("warning", f"[{cycle_id}] SHORT STOP: {ticker} @ ${price:.2f} rose +{rise_pct:.1f}% vs entry ${avg:.2f}")
+                reason = f"Auto short stop: price +{rise_pct:.1f}%"
                 result = self._execute("COVER", ticker, pos["qty"], price, None, None, f"AUTO SHORT STOP: +{rise_pct:.1f}%", 99)
                 _save_decision(cycle_id, {"ticker": ticker, "action": "COVER", "qty": pos["qty"], "price": price,
-                                          "confidence": 99, "reasoning": f"Auto short stop: price +{rise_pct:.1f}%",
+                                          "confidence": 99, "reasoning": reason,
                                           "executed": result.get("ok", False), "execution_result": result})
                 if result.get("ok"):
+                    import time as _time2
+                    self._stop_out_times[ticker] = _time2.time()
+                    pnl_pct = -rise_pct  # lost money on the short
                     try: record_exit(ticker, price, pos["qty"], cycle_id)
                     except Exception: pass
+                    _record_attribution(
+                        ticker, self._position_strategies.get(ticker, "unknown"),
+                        pos.get("entry_ts", ""), datetime.now(timezone.utc).isoformat(),
+                        pnl_pct, self._last_regime_name or "UNKNOWN",
+                        self._current_trade_style, reason,
+                        self._entry_reasoning.get(ticker, ""),
+                    )
+                    self._entry_reasoning.pop(ticker, None)
                     asyncio.create_task(send_stop_alert(
                         "COVER", ticker, pos["qty"], price,
                         f"Short stop: price +{rise_pct:.1f}% above entry ${avg:.2f}",

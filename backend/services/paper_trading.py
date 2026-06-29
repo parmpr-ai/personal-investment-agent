@@ -2,17 +2,38 @@
 Paper trading engine.
 Actions: BUY, SELL (close long), SHORT (open short), COVER (close short).
 Short P&L = (entry_price - current_price) * qty  — profit when price falls.
+Slippage model: liquid tickers 0.05%, others 0.15% + $0.005/share commission.
 """
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = BASE_DIR / "paper_trading.sqlite3"
 
 INITIAL_CASH = 100_000.0
 VALID_ACTIONS = ("BUY", "SELL", "SHORT", "COVER")
+
+# ── Slippage & commission model ───────────────────────────────────────────────
+_LIQUID_TICKERS = frozenset({
+    "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "META", "GOOGL", "AMZN", "TSLA",
+    "AMD", "JPM", "V", "MA", "BRK.B", "UNH", "SOFI", "MELI", "NBIS", "CRWV",
+})
+_SLIPPAGE_LIQUID   = 0.0005   # 0.05% — tight spread for mega-caps/ETFs
+_SLIPPAGE_DEFAULT  = 0.0015   # 0.15% — wider spread for mid/small caps
+_COMMISSION_PER_SH = 0.005    # $0.005/share (IBKR tiered approximation)
+
+
+def _apply_slippage(ticker: str, action: str, price: float, qty: float) -> Tuple[float, float]:
+    """Return (exec_price, commission). BUY/COVER fill higher; SELL/SHORT fill lower."""
+    slip = _SLIPPAGE_LIQUID if ticker.upper() in _LIQUID_TICKERS else _SLIPPAGE_DEFAULT
+    if action in ("BUY", "COVER"):
+        exec_price = round(price * (1 + slip), 4)
+    else:
+        exec_price = round(price * (1 - slip), 4)
+    commission = round(qty * _COMMISSION_PER_SH, 2)
+    return exec_price, commission
 
 
 def _connect():
@@ -90,20 +111,24 @@ def execute_paper_trade(
 
         # ── LONG: open ──────────────────────────────────────────────────────
         if action == "BUY":
-            cost = qty * price
+            exec_price, commission = _apply_slippage(ticker, "BUY", price, qty)
+            cost = qty * exec_price + commission
             if cost > cash:
                 return {"ok": False, "error": f"Insufficient cash: need ${cost:.2f}, have ${cash:.2f}"}
             _set_cash(conn, cash - cost)
             conn.execute(
                 "INSERT INTO paper_book(ticker,action,qty,price,stop_loss,target,reason,confidence,ts) VALUES(?,?,?,?,?,?,?,?,?)",
-                (ticker, "BUY", qty, price, stop_loss, target, reason, confidence, ts),
+                (ticker, "BUY", qty, exec_price, stop_loss, target, reason, confidence, ts),
             )
             conn.commit()
             return {"ok": True, "action": "BUY", "ticker": ticker, "qty": qty, "price": price,
-                    "cost": round(cost, 2), "cash_remaining": round(cash - cost, 2)}
+                    "exec_price": exec_price, "slippage": round(exec_price - price, 4),
+                    "commission": commission, "cost": round(cost, 2),
+                    "cash_remaining": round(cash - cost, 2)}
 
         # ── LONG: close ─────────────────────────────────────────────────────
         elif action == "SELL":
+            exec_price, commission = _apply_slippage(ticker, "SELL", price, qty)
             open_buys = conn.execute(
                 "SELECT id, qty, price FROM paper_book WHERE ticker=? AND action='BUY' AND closed=0 ORDER BY ts ASC",
                 (ticker,),
@@ -116,44 +141,50 @@ def execute_paper_trade(
                 if remaining <= 0:
                     break
                 sell_qty = min(remaining, row["qty"])
-                pnl = (price - row["price"]) * sell_qty
+                pnl = (exec_price - row["price"]) * sell_qty
                 total_pnl += pnl
                 remaining -= sell_qty
                 if sell_qty >= row["qty"]:
                     conn.execute(
                         "UPDATE paper_book SET closed=1, close_price=?, close_ts=?, pnl=? WHERE id=?",
-                        (price, ts, round(pnl, 2), row["id"]),
+                        (exec_price, ts, round(pnl, 2), row["id"]),
                     )
                 else:
                     conn.execute("UPDATE paper_book SET qty=qty-? WHERE id=?", (sell_qty, row["id"]))
                     conn.execute(
                         "INSERT INTO paper_book(ticker,action,qty,price,ts,closed,close_price,close_ts,pnl,confidence,reason) VALUES(?,?,?,?,?,1,?,?,?,?,?)",
-                        (ticker, "BUY", sell_qty, row["price"], row["ts"], price, ts, round(pnl, 2), confidence, "Partial close"),
+                        (ticker, "BUY", sell_qty, row["price"], row["ts"], exec_price, ts, round(pnl, 2), confidence, "Partial close"),
                     )
-            _set_cash(conn, cash + qty * price)
+            proceeds = qty * exec_price - commission
+            _set_cash(conn, cash + proceeds)
             conn.commit()
             return {"ok": True, "action": "SELL", "ticker": ticker, "qty": qty, "price": price,
-                    "pnl": round(total_pnl, 2), "cash_remaining": round(cash + qty * price, 2)}
+                    "exec_price": exec_price, "slippage": round(price - exec_price, 4),
+                    "commission": commission, "pnl": round(total_pnl - commission, 2),
+                    "cash_remaining": round(cash + proceeds, 2)}
 
         # ── SHORT: open ─────────────────────────────────────────────────────
         elif action == "SHORT":
-            # Need margin: reserve 100% of notional as collateral
-            collateral = qty * price
+            exec_price, commission = _apply_slippage(ticker, "SHORT", price, qty)
+            # Reserve 100% notional + commission as collateral
+            collateral = qty * exec_price + commission
             if collateral > cash:
                 return {"ok": False, "error": f"Insufficient cash for short collateral: need ${collateral:.2f}, have ${cash:.2f}"}
-            # Deduct collateral from cash; short proceeds added back on COVER
             _set_cash(conn, cash - collateral)
             conn.execute(
                 "INSERT INTO paper_book(ticker,action,qty,price,stop_loss,target,reason,confidence,ts) VALUES(?,?,?,?,?,?,?,?,?)",
-                (ticker, "SHORT", qty, price, stop_loss, target, reason, confidence, ts),
+                (ticker, "SHORT", qty, exec_price, stop_loss, target, reason, confidence, ts),
             )
             conn.commit()
             return {"ok": True, "action": "SHORT", "ticker": ticker, "qty": qty, "price": price,
-                    "collateral": round(collateral, 2), "cash_remaining": round(cash - collateral, 2),
+                    "exec_price": exec_price, "slippage": round(price - exec_price, 4),
+                    "commission": commission, "collateral": round(collateral, 2),
+                    "cash_remaining": round(cash - collateral, 2),
                     "note": "Profit when price falls. Close with COVER."}
 
         # ── SHORT: close ────────────────────────────────────────────────────
         elif action == "COVER":
+            exec_price, commission = _apply_slippage(ticker, "COVER", price, qty)
             open_shorts = conn.execute(
                 "SELECT id, qty, price FROM paper_book WHERE ticker=? AND action='SHORT' AND closed=0 ORDER BY ts ASC",
                 (ticker,),
@@ -167,28 +198,30 @@ def execute_paper_trade(
                 if remaining <= 0:
                     break
                 cover_qty = min(remaining, row["qty"])
-                # Short P&L: profit when price fell (entry - exit) * qty
-                pnl = (row["price"] - price) * cover_qty
+                # Short P&L: profit when price fell (entry_exec - cover_exec) * qty
+                pnl = (row["price"] - exec_price) * cover_qty
                 total_pnl += pnl
                 total_collateral += row["price"] * cover_qty
                 remaining -= cover_qty
                 if cover_qty >= row["qty"]:
                     conn.execute(
                         "UPDATE paper_book SET closed=1, close_price=?, close_ts=?, pnl=? WHERE id=?",
-                        (price, ts, round(pnl, 2), row["id"]),
+                        (exec_price, ts, round(pnl, 2), row["id"]),
                     )
                 else:
                     conn.execute("UPDATE paper_book SET qty=qty-? WHERE id=?", (cover_qty, row["id"]))
                     conn.execute(
                         "INSERT INTO paper_book(ticker,action,qty,price,ts,closed,close_price,close_ts,pnl,confidence,reason) VALUES(?,?,?,?,?,1,?,?,?,?,?)",
-                        (ticker, "SHORT", cover_qty, row["price"], row["ts"], price, ts, round(pnl, 2), confidence, "Partial cover"),
+                        (ticker, "SHORT", cover_qty, row["price"], row["ts"], exec_price, ts, round(pnl, 2), confidence, "Partial cover"),
                     )
-            # Return collateral + P&L
-            net_return = total_collateral + total_pnl
+            # Return collateral + P&L − commission
+            net_return = total_collateral + total_pnl - commission
             _set_cash(conn, cash + net_return)
             conn.commit()
             return {"ok": True, "action": "COVER", "ticker": ticker, "qty": qty, "price": price,
-                    "pnl": round(total_pnl, 2), "cash_remaining": round(cash + net_return, 2)}
+                    "exec_price": exec_price, "slippage": round(exec_price - price, 4),
+                    "commission": commission, "pnl": round(total_pnl - commission, 2),
+                    "cash_remaining": round(cash + net_return, 2)}
 
     finally:
         conn.close()
