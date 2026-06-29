@@ -201,7 +201,8 @@ def get_open_positions() -> List[Dict[str, Any]]:
     try:
         rows = conn.execute(
             """SELECT action, ticker, SUM(qty) as qty, AVG(price) as avg_price,
-               MIN(stop_loss) as stop_loss, MAX(target) as target
+               MIN(stop_loss) as stop_loss, MAX(target) as target,
+               MIN(ts) as entry_ts
                FROM paper_book WHERE action IN ('BUY','SHORT') AND closed=0
                GROUP BY action, ticker""",
         ).fetchall()

@@ -60,6 +60,68 @@ DEFAULT_CONFIG = {
     "short_stop_pct": 8.0,       # cut if price rises 8% above short entry
     "short_profit_pct": 12.0,    # cover when price falls 12% (take profit)
     "min_short_confidence": 68,
+    # Risk mode + trade style: AUTO = computed dynamically each cycle
+    "risk_mode":   "AUTO",   # AUTO | AGGRESSIVE | NORMAL | CONSERVATIVE | DEFENSIVE
+    "trade_style": "AUTO",   # AUTO | DAY_TRADE | SWING_TRADE | POSITION_TRADE
+}
+
+
+# ── Trade style parameters ────────────────────────────────────────────────────
+
+TRADE_STYLE_PARAMS: Dict[str, Dict] = {
+    "DAY_TRADE": {
+        "stop_loss_pct":    1.5,
+        "take_profit_pct":  2.5,
+        "cut_loss_pct":     1.5,
+        "short_stop_pct":   1.5,
+        "short_profit_pct": 2.5,
+        "max_hold_days":    1,
+        "min_confidence":   72,
+        "size_mult":        0.8,
+        "description":      "Intraday/same-day: tight stops, quick targets — bear/crisis environment",
+    },
+    "SWING_TRADE": {
+        "stop_loss_pct":    6.0,
+        "take_profit_pct":  12.0,
+        "cut_loss_pct":     6.0,
+        "short_stop_pct":   7.0,
+        "short_profit_pct": 12.0,
+        "max_hold_days":    7,
+        "min_confidence":   65,
+        "size_mult":        1.0,
+        "description":      "3-7 day holds, standard risk/reward — trending or normal market",
+    },
+    "POSITION_TRADE": {
+        "stop_loss_pct":    10.0,
+        "take_profit_pct":  22.0,
+        "cut_loss_pct":     10.0,
+        "short_stop_pct":   10.0,
+        "short_profit_pct": 20.0,
+        "max_hold_days":    30,
+        "min_confidence":   70,
+        "size_mult":        1.1,
+        "description":      "2-4 week holds, wide stops — strong bull trend + aggressive risk mode",
+    },
+}
+
+# (regime, risk_mode) → trade_style
+_STYLE_MATRIX: Dict[tuple, str] = {
+    ("BULL_TREND",   "AGGRESSIVE"):   "POSITION_TRADE",
+    ("BULL_TREND",   "NORMAL"):       "SWING_TRADE",
+    ("BULL_TREND",   "CONSERVATIVE"): "SWING_TRADE",
+    ("BULL_TREND",   "DEFENSIVE"):    "DAY_TRADE",
+    ("BEAR_TREND",   "AGGRESSIVE"):   "DAY_TRADE",
+    ("BEAR_TREND",   "NORMAL"):       "DAY_TRADE",
+    ("BEAR_TREND",   "CONSERVATIVE"): "DAY_TRADE",
+    ("BEAR_TREND",   "DEFENSIVE"):    "DAY_TRADE",
+    ("CHOPPY_RANGE", "AGGRESSIVE"):   "SWING_TRADE",
+    ("CHOPPY_RANGE", "NORMAL"):       "SWING_TRADE",
+    ("CHOPPY_RANGE", "CONSERVATIVE"): "DAY_TRADE",
+    ("CHOPPY_RANGE", "DEFENSIVE"):    "DAY_TRADE",
+    ("CRISIS",       "AGGRESSIVE"):   "DAY_TRADE",
+    ("CRISIS",       "NORMAL"):       "DAY_TRADE",
+    ("CRISIS",       "CONSERVATIVE"): "DAY_TRADE",
+    ("CRISIS",       "DEFENSIVE"):    "DAY_TRADE",
 }
 
 
@@ -146,6 +208,59 @@ def get_agent_log(limit: int = 100) -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+# ── Risk mode & trade style helpers ──────────────────────────────────────────
+
+def _degrade_mode(mode: str, steps: int = 1) -> str:
+    _ORDER = ["AGGRESSIVE", "NORMAL", "CONSERVATIVE", "DEFENSIVE"]
+    idx = _ORDER.index(mode) if mode in _ORDER else 1
+    return _ORDER[min(idx + steps, len(_ORDER) - 1)]
+
+
+def _upgrade_mode(mode: str) -> str:
+    _ORDER = ["AGGRESSIVE", "NORMAL", "CONSERVATIVE", "DEFENSIVE"]
+    idx = _ORDER.index(mode) if mode in _ORDER else 1
+    return _ORDER[max(idx - 1, 0)]
+
+
+def _determine_risk_mode(vix: float, drawdown_pct: float, recent_win_rate: float) -> str:
+    """Compute risk mode from market fear (VIX), portfolio drawdown, and recent win rate."""
+    if vix >= 28:
+        return "DEFENSIVE"
+    if vix < 15:
+        base = "AGGRESSIVE"
+    elif vix < 20:
+        base = "NORMAL"
+    else:
+        base = "CONSERVATIVE"
+    if drawdown_pct >= 10:
+        base = _degrade_mode(base, 2)
+    elif drawdown_pct >= 5:
+        base = _degrade_mode(base, 1)
+    if recent_win_rate < 0.35:
+        base = _degrade_mode(base, 1)
+    elif recent_win_rate > 0.65:
+        base = _upgrade_mode(base)
+    return base
+
+
+def _get_trade_style(regime: str, risk_mode: str) -> str:
+    """Map (market regime, risk mode) → trade style."""
+    return _STYLE_MATRIX.get((regime, risk_mode), "SWING_TRADE")
+
+
+def _get_recent_win_rate(n: int = 10) -> float:
+    """Win rate from last N closed paper trades. Returns 0.5 if no history."""
+    try:
+        from services.paper_trading import get_trade_history
+        trades = get_trade_history(limit=n * 3)
+        closed = [t for t in trades if t.get("closed") and t.get("pnl") is not None][-n:]
+        if not closed:
+            return 0.5
+        return sum(1 for t in closed if t["pnl"] > 0) / len(closed)
+    except Exception:
+        return 0.5
 
 
 # ── Rule-based signal engine ──────────────────────────────────────────────────
@@ -760,6 +875,9 @@ class AutonomousAgent:
         self._last_day: Optional[str] = None
         self._circuit_broken: bool = False  # True = daily loss limit hit, block new entries
         self._last_regime_name: Optional[str] = None  # for regime-change alerts
+        self._last_risk_mode: Optional[str] = None
+        self._current_trade_style: str = "SWING_TRADE"
+        self._current_risk_mode: str = "NORMAL"
 
     def configure(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         self.config.update(updates)
@@ -803,6 +921,9 @@ class AutonomousAgent:
             "paper_portfolio": get_portfolio_summary(),
             "ml_models": models_status(),
             "regime": self._regime_cache,
+            "risk_mode": self._current_risk_mode,
+            "trade_style": self._current_trade_style,
+            "trade_style_params": TRADE_STYLE_PARAMS.get(self._current_trade_style, {}),
         }
 
     async def _run_loop(self):
@@ -932,6 +1053,48 @@ class AutonomousAgent:
         if drawdown_scale < 0.9:
             _log("warning", f"[{cycle_id}] Drawdown scalar={drawdown_scale:.2f} — reducing position sizes")
 
+        # ── Risk mode + Trade style: adapt parameters to market conditions ────────
+        _drawdown_pct = (
+            (self._peak_value - pv) / self._peak_value * 100
+            if self._peak_value > 0 else 0.0
+        )
+        _vix = float(self._regime_cache.get("vix", 18)) if self._regime_cache else float(macro.get("vix", 18))
+        _win_rate = _get_recent_win_rate()
+
+        _risk_mode   = self.config.get("risk_mode", "AUTO")
+        _trade_style = self.config.get("trade_style", "AUTO")
+        if _risk_mode == "AUTO":
+            _risk_mode = _determine_risk_mode(_vix, _drawdown_pct, _win_rate)
+        if _trade_style == "AUTO":
+            _trade_style = _get_trade_style(regime_name, _risk_mode)
+
+        style_p = TRADE_STYLE_PARAMS[_trade_style]
+        regime_cfg["stop_loss_pct"]    = style_p["stop_loss_pct"]
+        regime_cfg["take_profit_pct"]  = style_p["take_profit_pct"]
+        regime_cfg["cut_loss_pct"]     = style_p["cut_loss_pct"]
+        regime_cfg["short_stop_pct"]   = style_p["short_stop_pct"]
+        regime_cfg["short_profit_pct"] = style_p["short_profit_pct"]
+        regime_cfg["min_confidence"]   = max(
+            regime_cfg.get("min_confidence", 65), style_p["min_confidence"]
+        )
+        regime_cfg["_regime_size_mult"] = regime_cfg.get("_regime_size_mult", 1.0) * style_p["size_mult"]
+        regime_cfg["_trade_style"]     = _trade_style
+        regime_cfg["_risk_mode"]       = _risk_mode
+        # Update risk manager so _check_stops uses the correct stop %
+        self._risk.limits["stop_loss_pct"] = style_p["stop_loss_pct"]
+
+        self._current_trade_style = _trade_style
+        self._current_risk_mode   = _risk_mode
+
+        _log("info", f"[{cycle_id}] RiskMode={_risk_mode} TradeStyle={_trade_style} "
+                     f"(DD={_drawdown_pct:.1f}% WR={_win_rate:.0%} VIX={_vix:.1f})")
+        if self._last_risk_mode and _risk_mode != self._last_risk_mode:
+            asyncio.create_task(send_risk_alert(
+                f"⚠️ RISK MODE: {self._last_risk_mode} → {_risk_mode} | "
+                f"Style: {_trade_style} | VIX={_vix:.1f} | DD={_drawdown_pct:.1f}%"
+            ))
+        self._last_risk_mode = _risk_mode
+
         # ── Daily P&L tracking: reset at start of each new trading day ───────────
         today_str = now_et.strftime("%Y-%m-%d") if hasattr(now_et, "strftime") else ""
         if today_str and today_str != self._last_day:
@@ -959,7 +1122,10 @@ class AutonomousAgent:
         # Auto stop-loss check (hard stops before signal-based decisions)
         await self._check_stops(open_longs, open_shorts, quotes, cycle_id)
 
-        # Refresh positions after stops
+        # Position aging: exit positions held beyond max_hold_days for current trade style
+        await self._check_aged_positions(open_longs, open_shorts, quotes, cycle_id)
+
+        # Refresh positions after stops + aging exits
         open_longs = get_open_longs()
         open_shorts = get_open_shorts()
 
@@ -1083,13 +1249,15 @@ class AutonomousAgent:
                     continue
                 qty = risk["adjusted_qty"]
 
-            # Compute stops/targets for new entries
+            # Compute stops/targets for new entries using trade-style-aware params
             if action == "BUY":
                 stop = self._risk.compute_stop_loss(price, "BUY", atr) if self.config.get("auto_stop_loss") else None
-                target = round(price * (1 + self.config.get("take_profit_pct", 15) / 100), 2) if self.config.get("auto_take_profit") else None
+                _tp_pct = regime_cfg.get("take_profit_pct", self.config.get("take_profit_pct", 15))
+                target = round(price * (1 + _tp_pct / 100), 2) if self.config.get("auto_take_profit") else None
             elif action == "SHORT":
                 stop = self._risk.compute_stop_loss(price, "SELL", atr) if self.config.get("auto_stop_loss") else None
-                target = round(price * (1 - self.config.get("short_profit_pct", 12) / 100), 2) if self.config.get("auto_take_profit") else None
+                _sp_pct = regime_cfg.get("short_profit_pct", self.config.get("short_profit_pct", 12))
+                target = round(price * (1 - _sp_pct / 100), 2) if self.config.get("auto_take_profit") else None
             else:
                 stop = target = None
 
@@ -1175,6 +1343,8 @@ class AutonomousAgent:
             "top_sectors": sectors.get("top_sectors", []) if isinstance(sectors, dict) else [],
             "drawdown_scale": drawdown_scale,
             "peak_value": self._peak_value,
+            "risk_mode": self._current_risk_mode,
+            "trade_style": self._current_trade_style,
         }
         self._last_cycle_ts = summary["ts"]
         self._last_cycle_summary = summary
@@ -1197,6 +1367,50 @@ class AutonomousAgent:
             return ibkr_result
         else:
             return {"ok": False, "error": f"Mode '{mode}' not enabled for execution"}
+
+    async def _check_aged_positions(
+        self, open_longs: List[Dict], open_shorts: List[Dict], quotes: Dict, cycle_id: str
+    ):
+        """Exit positions held beyond max_hold_days for the current trade style."""
+        max_hold = TRADE_STYLE_PARAMS.get(self._current_trade_style, {}).get("max_hold_days", 7)
+        now = datetime.now(timezone.utc)
+
+        for pos in open_longs + open_shorts:
+            entry_ts = pos.get("entry_ts")
+            if not entry_ts:
+                continue
+            try:
+                entry_dt = datetime.fromisoformat(entry_ts.replace("Z", "+00:00"))
+                age_days = (now - entry_dt).days
+                if age_days < max_hold:
+                    continue
+                ticker = pos["ticker"]
+                action = "SELL" if pos["action"] == "BUY" else "COVER"
+                price  = quotes.get(ticker, {}).get("price", 0) or pos.get("avg_price", 0)
+                if not price:
+                    continue
+                reason = (
+                    f"Position aging: held {age_days}d ≥ max {max_hold}d "
+                    f"[{self._current_trade_style}]"
+                )
+                result = self._execute(action, ticker, pos["qty"], price, None, None, reason, 90)
+                _save_decision(cycle_id, {
+                    "ticker": ticker, "action": action, "qty": pos["qty"], "price": price,
+                    "confidence": 90, "reasoning": reason,
+                    "executed": result.get("ok", False), "execution_result": result,
+                })
+                if result.get("ok"):
+                    _log("info", f"[{cycle_id}] AGE-EXIT {action} {ticker} @${price:.2f} — {reason}")
+                    try:
+                        record_exit(ticker, price, pos["qty"], cycle_id)
+                    except Exception:
+                        pass
+                    asyncio.create_task(send_trade_alert(
+                        action=action, ticker=ticker, qty=pos["qty"], price=price,
+                        stop=0, target=0, reason=reason, confidence=90,
+                    ))
+            except Exception as exc:
+                _log("warning", f"[{cycle_id}] Age check error {pos.get('ticker', '?')}: {exc}")
 
     async def _check_stops(self, open_longs: List[Dict], open_shorts: List[Dict], quotes: Dict, cycle_id: str):
         # Long stops: fixed stop-loss + trailing stop (5% from peak, activates after 3% profit)
