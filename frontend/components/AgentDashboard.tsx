@@ -18,7 +18,7 @@ import {
 } from 'recharts'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
 
 const C = {
   bg: '#0a0a0a',
@@ -76,7 +76,7 @@ const fmtDatetime = (ts: string) => {
 }
 
 async function apiFetch(path: string, init?: RequestInit) {
-  const res = await fetch(`${API}${path}`, init)
+  const res = await fetch(`${AGENT_API}${path}`, init)
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw body
   return body

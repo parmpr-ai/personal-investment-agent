@@ -34,8 +34,9 @@ import SectionHeader from './ui/SectionHeader'
 import IntelligenceBadge from './ui/IntelligenceBadge'
 import RiskGauge from './ui/RiskGauge'
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
-const WS  = (process.env.NEXT_PUBLIC_WS_URL  ?? 'ws://127.0.0.1:8000/ws')
+const API       = process.env.NEXT_PUBLIC_API_URL       ?? 'http://127.0.0.1:8000'
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
+const WS        = process.env.NEXT_PUBLIC_WS_URL        ?? 'ws://127.0.0.1:8000/ws'
 const mask = '••••••'
 const assetTypes = ['Stock', 'ETF', 'Crypto', 'Option', 'Other']
 const brokers = ['IBKR', 'Freedom24', 'Revolut', 'Manual']
@@ -213,7 +214,7 @@ function useAgentStatus() {
   useEffect(() => {
     let active = true
     const fetch_ = () =>
-      fetchJson('/agent/status')
+      fetch(`${AGENT_API}/agent/status`).then(r => r.json())
         .then((d) => { if (active) setAgentStatus(d) })
         .catch(() => {})
     fetch_()

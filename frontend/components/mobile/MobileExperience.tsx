@@ -23,7 +23,8 @@ import {
 } from 'lucide-react'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
+const API       = process.env.NEXT_PUBLIC_API_URL       ?? 'http://127.0.0.1:8000'
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
 
 type RailItem = Record<string, any>
 type Tone = 'good' | 'bad' | 'neutral'
@@ -760,10 +761,10 @@ function useAgentData() {
 
   useEffect(() => {
     const fetchAll = () => {
-      fetch(`${API}/agent/status`).then(r => r.json()).then(setAgentStatus).catch(() => {})
+      fetch(`${AGENT_API}/agent/status`).then(r => r.json()).then(setAgentStatus).catch(() => {})
     }
     fetchAll()
-    fetch(`${API}/agent/backtest/status`).then(r => r.json()).then(d => {
+    fetch(`${AGENT_API}/agent/backtest/status`).then(r => r.json()).then(d => {
       if (d?.status === 'completed') setBacktest(d)
     }).catch(() => {})
 
