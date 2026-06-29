@@ -344,6 +344,134 @@ def _candle_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
     return score, ", ".join(reasons)
 
 
+def _stoch_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
+    """Stochastic %K/%D: oversold cross = buy signal, overbought cross = sell."""
+    score = 0; reasons = []
+    if q.get("stoch_oversold"):
+        if bullish_context:
+            score += 12; reasons.append(f"Stoch oversold K={q.get('stoch_k',0):.0f}")
+        else:
+            score -= 10; reasons.append("Stoch oversold (short penalty)")
+    if q.get("stoch_overbought"):
+        if bullish_context:
+            score -= 12; reasons.append(f"Stoch overbought K={q.get('stoch_k',0):.0f}")
+        else:
+            score += 12; reasons.append(f"Stoch overbought K={q.get('stoch_k',0):.0f} (short confirm)")
+    if q.get("stoch_bullish_cross"):
+        if bullish_context:
+            score += 18; reasons.append("Stoch bullish cross (K>D from oversold)")
+        else:
+            score -= 12; reasons.append("Stoch bullish cross (short counter-signal)")
+    if q.get("stoch_bearish_cross"):
+        if bullish_context:
+            score -= 14; reasons.append("Stoch bearish cross")
+        else:
+            score += 18; reasons.append("Stoch bearish cross (short confirm)")
+    return score, ", ".join(reasons)
+
+
+def _obv_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
+    """OBV trend and divergence: confirms or contradicts price action."""
+    score = 0; reasons = []
+    obv_rising = q.get("obv_trend") == "RISING"
+    if obv_rising and bullish_context:
+        if q.get("obv_above_sma"):
+            score += 12; reasons.append("OBV rising above SMA (accumulation)")
+        else:
+            score += 6; reasons.append("OBV rising (buying pressure)")
+    elif not obv_rising and not bullish_context:
+        score += 10; reasons.append("OBV falling (distribution)")
+    if q.get("obv_bullish_div") and bullish_context:
+        score += 20; reasons.append("OBV bullish divergence (price down, OBV up)")
+    if q.get("obv_bearish_div"):
+        if bullish_context:
+            score -= 15; reasons.append("OBV bearish divergence (price up, OBV down)")
+        else:
+            score += 15; reasons.append("OBV bearish divergence (short confirm)")
+    return score, ", ".join(reasons)
+
+
+def _sar_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
+    """Parabolic SAR: trailing stop — above SAR = bullish, below = bearish."""
+    score = 0; reasons = []
+    above = q.get("price_above_sar")
+    dist  = q.get("sar_distance_pct", 0) or 0
+    if above is None:
+        return 0, ""
+    if above and bullish_context:
+        score += 8 if dist > 2 else 4
+        reasons.append(f"above SAR (+{dist:.1f}%)")
+    elif not above and not bullish_context:
+        score += 10
+        reasons.append(f"below SAR ({dist:.1f}% short side)")
+    elif not above and bullish_context:
+        score -= 10
+        reasons.append("below SAR (bearish trend)")
+    elif above and not bullish_context:
+        score -= 8
+        reasons.append("above SAR (short counter-signal)")
+    return score, ", ".join(reasons)
+
+
+def _divergence_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
+    """RSI and MACD divergence: early reversal signal."""
+    score = 0; reasons = []
+    if q.get("rsi_bullish_div") and bullish_context:
+        score += 22; reasons.append("RSI bullish divergence (reversal setup)")
+    if q.get("macd_bull_div") and bullish_context:
+        score += 15; reasons.append("MACD bullish divergence")
+    if q.get("rsi_bearish_div"):
+        if bullish_context:
+            score -= 18; reasons.append("RSI bearish divergence (caution)")
+        else:
+            score += 22; reasons.append("RSI bearish divergence (short confirm)")
+    if q.get("macd_bear_div"):
+        if bullish_context:
+            score -= 12; reasons.append("MACD bearish divergence")
+        else:
+            score += 15; reasons.append("MACD bearish divergence (short confirm)")
+    return score, ", ".join(reasons)
+
+
+def _pivot_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
+    """Pivot points: above pivot = bullish, near resistance/support zones."""
+    score = 0; reasons = []
+    if q.get("above_pivot") and bullish_context:
+        score += 8; reasons.append("above daily pivot")
+    elif not q.get("above_pivot") and not bullish_context:
+        score += 8; reasons.append("below daily pivot (short confirm)")
+    if q.get("near_pivot_support") and bullish_context:
+        score += 10; reasons.append("near pivot support (buy zone)")
+    if q.get("near_pivot_resistance"):
+        if bullish_context:
+            score -= 8; reasons.append("near pivot resistance (supply zone)")
+        else:
+            score += 10; reasons.append("near pivot resistance (short zone)")
+    return score, ", ".join(reasons)
+
+
+def _keltner_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
+    """Keltner Channels: above upper = strong trend, below lower = oversold, squeeze = coiling."""
+    score = 0; reasons = []
+    kc_pct = q.get("kc_pct", 0.5) or 0.5
+    if q.get("kc_squeeze"):
+        score += 10; reasons.append("KC squeeze (volatility compression — breakout imminent)")
+    if q.get("above_kc") and bullish_context:
+        score += 15; reasons.append("above Keltner upper (strong momentum)")
+    elif q.get("below_kc") and bullish_context:
+        score += 12; reasons.append("below Keltner lower (oversold mean-rev)")
+    elif q.get("above_kc") and not bullish_context:
+        score += 15; reasons.append("above Keltner upper (overbought, short zone)")
+    elif q.get("below_kc") and not bullish_context:
+        score -= 8; reasons.append("below Keltner (already oversold — short caution)")
+    # Near upper band without full breakout = extended
+    elif kc_pct > 0.85 and bullish_context:
+        score -= 5; reasons.append(f"KC extended ({kc_pct:.0%})")
+    elif kc_pct < 0.15 and not bullish_context:
+        score -= 5; reasons.append(f"KC very low ({kc_pct:.0%}) — short caution")
+    return score, ", ".join(reasons)
+
+
 def _score_momentum(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = {}) -> tuple[int, str]:
     score = 0
     reasons = []
@@ -383,9 +511,14 @@ def _score_momentum(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = 
     isd, isr = _institutional_adj(ticker)
     score += isd
     if isr: reasons.append(isr)
-    cd, cr = _candle_adj(q, bullish_context=True)
-    score += cd
-    if cr: reasons.append(cr)
+    for adj_fn in [
+        lambda: _stoch_adj(q, True), lambda: _obv_adj(q, True),
+        lambda: _sar_adj(q, True),   lambda: _divergence_adj(q, True),
+        lambda: _pivot_adj(q, True), lambda: _keltner_adj(q, True),
+        lambda: _candle_adj(q, bullish_context=True),
+    ]:
+        d, r = adj_fn(); score += d
+        if r: reasons.append(r)
     return score, "Momentum: " + ", ".join(reasons)
 
 
@@ -424,9 +557,14 @@ def _score_mean_reversion(q: Dict, macro: Dict, news: Dict = {}, fundamentals: D
     isd, isr = _institutional_adj(ticker)
     score += isd
     if isr: reasons.append(isr)
-    cd, cr = _candle_adj(q, bullish_context=True)
-    score += cd
-    if cr: reasons.append(cr)
+    for adj_fn in [
+        lambda: _stoch_adj(q, True), lambda: _obv_adj(q, True),
+        lambda: _sar_adj(q, True),   lambda: _divergence_adj(q, True),
+        lambda: _pivot_adj(q, True), lambda: _keltner_adj(q, True),
+        lambda: _candle_adj(q, bullish_context=True),
+    ]:
+        d, r = adj_fn(); score += d
+        if r: reasons.append(r)
     return score, "MeanRev: " + ", ".join(reasons)
 
 
@@ -462,9 +600,14 @@ def _score_breakout(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = 
     isd, isr = _institutional_adj(ticker)
     score += isd
     if isr: reasons.append(isr)
-    cd, cr = _candle_adj(q, bullish_context=True)
-    score += cd
-    if cr: reasons.append(cr)
+    for adj_fn in [
+        lambda: _stoch_adj(q, True), lambda: _obv_adj(q, True),
+        lambda: _sar_adj(q, True),   lambda: _divergence_adj(q, True),
+        lambda: _pivot_adj(q, True), lambda: _keltner_adj(q, True),
+        lambda: _candle_adj(q, bullish_context=True),
+    ]:
+        d, r = adj_fn(); score += d
+        if r: reasons.append(r)
     return score, "Breakout: " + ", ".join(reasons)
 
 
@@ -497,9 +640,14 @@ def _score_trend_follow(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dic
     isd, isr = _institutional_adj(ticker)
     score += isd
     if isr: reasons.append(isr)
-    cd, cr = _candle_adj(q, bullish_context=True)
-    score += cd
-    if cr: reasons.append(cr)
+    for adj_fn in [
+        lambda: _stoch_adj(q, True), lambda: _obv_adj(q, True),
+        lambda: _sar_adj(q, True),   lambda: _divergence_adj(q, True),
+        lambda: _pivot_adj(q, True), lambda: _keltner_adj(q, True),
+        lambda: _candle_adj(q, bullish_context=True),
+    ]:
+        d, r = adj_fn(); score += d
+        if r: reasons.append(r)
     return score, "Trend: above SMA20, " + ", ".join(reasons)
 
 
@@ -569,9 +717,14 @@ def _score_short_momentum(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, s
     score -= nd  # invert: bearish news (negative nd) strengthens short
     if nr:
         reasons.append(nr)
-    cd, cr = _candle_adj(q, bullish_context=False)
-    score += cd
-    if cr: reasons.append(cr)
+    for adj_fn in [
+        lambda: _stoch_adj(q, False), lambda: _obv_adj(q, False),
+        lambda: _sar_adj(q, False),   lambda: _divergence_adj(q, False),
+        lambda: _pivot_adj(q, False), lambda: _keltner_adj(q, False),
+        lambda: _candle_adj(q, bullish_context=False),
+    ]:
+        d, r = adj_fn(); score += d
+        if r: reasons.append(r)
     return score, "SHORT-Momentum: " + ", ".join(reasons)
 
 
@@ -641,9 +794,14 @@ def _score_short_breakdown(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, 
     score -= nd  # invert sign: negative nd = bearish news = helps short
     if nr:
         reasons.append(nr)
-    cd, cr = _candle_adj(q, bullish_context=False)
-    score += cd
-    if cr: reasons.append(cr)
+    for adj_fn in [
+        lambda: _stoch_adj(q, False), lambda: _obv_adj(q, False),
+        lambda: _sar_adj(q, False),   lambda: _divergence_adj(q, False),
+        lambda: _pivot_adj(q, False), lambda: _keltner_adj(q, False),
+        lambda: _candle_adj(q, bullish_context=False),
+    ]:
+        d, r = adj_fn(); score += d
+        if r: reasons.append(r)
     return score, "SHORT-Breakdown: " + ", ".join(reasons)
 
 

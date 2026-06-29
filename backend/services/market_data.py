@@ -191,10 +191,11 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
         data = await _yahoo_chart(ticker, {"range": f"{days}d", "interval": "1d"})
         result = data.get("chart", {}).get("result", [{}])[0]
         q = result.get("indicators", {}).get("quote", [{}])[0]
-        opens  = [o for o in (q.get("open")  or []) if o is not None]
-        highs  = [h for h in (q.get("high")  or []) if h is not None]
-        lows   = [l for l in (q.get("low")   or []) if l is not None]
-        closes = [c for c in (q.get("close") or []) if c is not None]
+        opens   = [o for o in (q.get("open")   or []) if o is not None]
+        highs   = [h for h in (q.get("high")   or []) if h is not None]
+        lows    = [l for l in (q.get("low")    or []) if l is not None]
+        closes  = [c for c in (q.get("close")  or []) if c is not None]
+        volumes = [v for v in (q.get("volume") or []) if v is not None]
         if not closes:
             return {"ticker": ticker.upper(), "ok": False, "error": "no daily data"}
         sma20 = sum(closes[-20:]) / min(20, len(closes)) if len(closes) >= 5 else closes[-1]
@@ -204,12 +205,24 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
             slope = (closes[-1] - closes[-5]) / closes[-5] * 100
         else:
             slope = 0
-        adx = _compute_adx(highs, lows, closes)
-        atr = _compute_atr_last(highs, lows, closes)
-        bb_daily = _compute_bollinger(closes)
-        macd_daily = _compute_macd(closes)
+        adx          = _compute_adx(highs, lows, closes)
+        atr          = _compute_atr_last(highs, lows, closes)
+        bb_daily     = _compute_bollinger(closes)
+        macd_daily   = _compute_macd(closes)
         zscore_daily = _compute_zscore(closes)
-        candles = cdl_detect(opens, highs, lows, closes) if opens else {}
+        candles      = cdl_detect(opens, highs, lows, closes) if opens else {}
+        stoch        = _compute_stochastic(highs, lows, closes)
+        obv          = _compute_obv(closes, volumes)
+        sar          = _compute_parabolic_sar(highs, lows, closes)
+        diverg       = _compute_divergence(closes, highs, lows)
+        keltner      = _compute_keltner(closes, highs, lows)
+        # Pivot points use previous day's H/L/C
+        pivots = _compute_pivot_points(
+            highs[-2] if len(highs) >= 2 else highs[-1],
+            lows[-2]  if len(lows)  >= 2 else lows[-1],
+            closes[-2] if len(closes) >= 2 else closes[-1],
+            last,
+        ) if highs and lows and closes else {}
         out = {
             "ticker": ticker.upper(),
             "ok": True,
@@ -227,7 +240,13 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
             "atr_pct": round(atr / last * 100, 2) if atr and last else None,
             "zscore_daily": zscore_daily,
         }
-        out.update(candles)  # cdl_* flags + candle_bull_score, candle_bear_score, candle_signal
+        out.update(candles)   # cdl_* flags + candle_bull_score, candle_bear_score, candle_signal
+        out.update(stoch)     # stoch_k, stoch_d, stoch_overbought/oversold, stoch_bull/bear_cross
+        out.update(obv)       # obv, obv_trend, obv_above_sma, obv_bullish_div, obv_bearish_div
+        out.update(sar)       # sar, sar_bullish, price_above_sar, sar_distance_pct
+        out.update(diverg)    # rsi_bullish_div, rsi_bearish_div, macd_bull_div, macd_bear_div
+        out.update(pivots)    # pivot, r1-r3, s1-s3, above_pivot, near_pivot_resistance/support
+        out.update(keltner)   # kc_upper/lower/mid, above_kc, below_kc, kc_squeeze, kc_pct
         for k, v in bb_daily.items():
             out[f"{k}_daily"] = v
         for k, v in macd_daily.items():
@@ -383,6 +402,221 @@ def _compute_adx(highs: list, lows: list, closes: list, period: int = 14) -> Opt
     return round(sum(dx_list[-period:]) / min(period, len(dx_list)), 1)
 
 
+def _compute_stochastic(highs: list, lows: list, closes: list, k: int = 14, d: int = 3) -> Dict[str, Any]:
+    """Stochastic %K/%D oscillator. Overbought >80, oversold <20."""
+    n = min(len(highs), len(lows), len(closes))
+    if n < k:
+        return {}
+    highs, lows, closes = highs[-n:], lows[-n:], closes[-n:]
+    k_values = []
+    for i in range(k - 1, n):
+        window_high = max(highs[i - k + 1: i + 1])
+        window_low  = min(lows[i  - k + 1: i + 1])
+        denom = window_high - window_low
+        k_values.append(100 * (closes[i] - window_low) / denom if denom else 50.0)
+    if len(k_values) < d:
+        return {}
+    d_values = [sum(k_values[i - d + 1: i + 1]) / d for i in range(d - 1, len(k_values))]
+    stoch_k, stoch_d = round(k_values[-1], 1), round(d_values[-1], 1)
+    prev_k = k_values[-2] if len(k_values) >= 2 else stoch_k
+    prev_d = d_values[-2] if len(d_values) >= 2 else stoch_d
+    return {
+        "stoch_k": stoch_k,
+        "stoch_d": stoch_d,
+        "stoch_overbought":     stoch_k > 80,
+        "stoch_oversold":       stoch_k < 20,
+        "stoch_bullish_cross":  stoch_k > stoch_d and prev_k <= prev_d and stoch_k < 80,
+        "stoch_bearish_cross":  stoch_k < stoch_d and prev_k >= prev_d and stoch_k > 20,
+    }
+
+
+def _compute_obv(closes: list, volumes: list) -> Dict[str, Any]:
+    """On-Balance Volume: cumulative vol-weighted price direction + trend."""
+    n = min(len(closes), len(volumes))
+    if n < 5:
+        return {}
+    closes, volumes = closes[-n:], volumes[-n:]
+    obv = [0.0]
+    for i in range(1, n):
+        if closes[i] > closes[i - 1]:
+            obv.append(obv[-1] + volumes[i])
+        elif closes[i] < closes[i - 1]:
+            obv.append(obv[-1] - volumes[i])
+        else:
+            obv.append(obv[-1])
+    last_obv = obv[-1]
+    obv_sma  = sum(obv[-20:]) / min(20, len(obv))
+    obv_rising = obv[-1] > obv[-5] if len(obv) >= 5 else False
+    price_rising = closes[-1] > closes[-5] if len(closes) >= 5 else False
+    # Divergence: price up but OBV down (bearish), or price down but OBV up (bullish)
+    obv_bullish_div = (not price_rising) and obv_rising
+    obv_bearish_div = price_rising and (not obv_rising)
+    return {
+        "obv":              round(last_obv),
+        "obv_trend":        "RISING" if obv_rising else "FALLING",
+        "obv_above_sma":    last_obv > obv_sma,
+        "obv_bullish_div":  obv_bullish_div,
+        "obv_bearish_div":  obv_bearish_div,
+    }
+
+
+def _compute_parabolic_sar(highs: list, lows: list, closes: list,
+                            af_start: float = 0.02, af_max: float = 0.2) -> Dict[str, Any]:
+    """Parabolic SAR — trailing stop that flips trend direction."""
+    n = min(len(highs), len(lows), len(closes))
+    if n < 3:
+        return {}
+    highs, lows, closes = highs[-n:], lows[-n:], closes[-n:]
+    # Start long if first close > second close
+    is_long  = closes[1] >= closes[0]
+    af       = af_start
+    ep       = highs[1] if is_long else lows[1]
+    sar      = lows[1]  if is_long else highs[1]
+    for i in range(2, n):
+        sar = sar + af * (ep - sar)
+        if is_long:
+            sar = min(sar, lows[i - 1], lows[i - 2] if i >= 2 else lows[i - 1])
+            if lows[i] < sar:                   # flip to short
+                is_long, sar, ep, af = False, ep, lows[i], af_start
+            else:
+                if highs[i] > ep:
+                    ep = highs[i]
+                    af = min(af + af_start, af_max)
+        else:
+            sar = max(sar, highs[i - 1], highs[i - 2] if i >= 2 else highs[i - 1])
+            if highs[i] > sar:                  # flip to long
+                is_long, sar, ep, af = True, ep, highs[i], af_start
+            else:
+                if lows[i] < ep:
+                    ep = lows[i]
+                    af = min(af + af_start, af_max)
+    return {
+        "sar":              round(sar, 4),
+        "sar_bullish":      is_long,             # price above SAR
+        "price_above_sar":  closes[-1] > sar,
+        "sar_distance_pct": round((closes[-1] - sar) / closes[-1] * 100, 2) if closes[-1] else 0,
+    }
+
+
+def _compute_rsi_series(closes: list, period: int = 14) -> list:
+    """Full RSI value series (needed for divergence detection)."""
+    if len(closes) < period + 1:
+        return []
+    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    avg_gain = sum(max(d, 0) for d in deltas[:period]) / period
+    avg_loss = sum(abs(min(d, 0)) for d in deltas[:period]) / period
+    rsi_vals = []
+    for d in deltas[period:]:
+        avg_gain = (avg_gain * (period - 1) + max(d, 0)) / period
+        avg_loss = (avg_loss * (period - 1) + abs(min(d, 0))) / period
+        rs = avg_gain / avg_loss if avg_loss else 100
+        rsi_vals.append(round(100 - 100 / (1 + rs), 1))
+    return rsi_vals
+
+
+def _compute_divergence(closes: list, highs: list, lows: list) -> Dict[str, Any]:
+    """RSI and MACD divergence detection (last 5 pivots)."""
+    if len(closes) < 40:
+        return {}
+    rsi_series = _compute_rsi_series(closes)
+    if len(rsi_series) < 10:
+        return {}
+    # Align RSI with price (RSI is period bars shorter)
+    offset = len(closes) - len(rsi_series)
+    aligned_closes = closes[offset:]
+    # Simple pivot: look at last 20 bars for higher-high / lower-low vs RSI
+    window = min(20, len(rsi_series))
+    price_seg = aligned_closes[-window:]
+    rsi_seg   = rsi_series[-window:]
+    price_max_i = price_seg.index(max(price_seg))
+    price_min_i = price_seg.index(min(price_seg))
+    rsi_at_max  = rsi_seg[price_max_i]
+    rsi_at_min  = rsi_seg[price_min_i]
+    prev_half   = window // 2
+    prev_price_max = max(price_seg[:prev_half]) if prev_half else price_seg[0]
+    prev_price_min = min(price_seg[:prev_half]) if prev_half else price_seg[0]
+    prev_rsi_max   = max(rsi_seg[:prev_half])   if prev_half else rsi_seg[0]
+    prev_rsi_min   = min(rsi_seg[:prev_half])   if prev_half else rsi_seg[0]
+    # Bearish divergence: price higher high but RSI lower high
+    rsi_bearish_div = (price_seg[-1] > prev_price_max) and (rsi_seg[-1] < prev_rsi_max - 3)
+    # Bullish divergence: price lower low but RSI higher low
+    rsi_bullish_div = (price_seg[-1] < prev_price_min) and (rsi_seg[-1] > prev_rsi_min + 3)
+    # MACD divergence: use histogram
+    macd_data = _compute_macd(closes)
+    hist = macd_data.get("macd_hist", 0) or 0
+    macd_bull_div = rsi_bullish_div and hist > 0   # RSI bull div + MACD hist recovering
+    macd_bear_div = rsi_bearish_div and hist < 0   # RSI bear div + MACD hist declining
+    return {
+        "rsi_bullish_div":  rsi_bullish_div,
+        "rsi_bearish_div":  rsi_bearish_div,
+        "macd_bull_div":    macd_bull_div,
+        "macd_bear_div":    macd_bear_div,
+    }
+
+
+def _compute_pivot_points(prev_high: float, prev_low: float, prev_close: float,
+                           current_price: float) -> Dict[str, Any]:
+    """Classic daily pivot points: P, R1-R3, S1-S3 + proximity flags."""
+    if not (prev_high and prev_low and prev_close):
+        return {}
+    pivot = (prev_high + prev_low + prev_close) / 3
+    r1 = 2 * pivot - prev_low
+    r2 = pivot + (prev_high - prev_low)
+    r3 = prev_high + 2 * (pivot - prev_low)
+    s1 = 2 * pivot - prev_high
+    s2 = pivot - (prev_high - prev_low)
+    s3 = prev_low - 2 * (prev_high - pivot)
+    price = current_price
+    levels = {"r3": r3, "r2": r2, "r1": r1, "pivot": pivot, "s1": s1, "s2": s2, "s3": s3}
+    tolerance = price * 0.005  # within 0.5%
+    near_resistance = any(abs(price - v) <= tolerance for k, v in levels.items() if k.startswith("r"))
+    near_support     = any(abs(price - v) <= tolerance for k, v in levels.items() if k.startswith("s"))
+    above_pivot = price > pivot
+    return {
+        "pivot": round(pivot, 2),
+        "pivot_r1": round(r1, 2), "pivot_r2": round(r2, 2), "pivot_r3": round(r3, 2),
+        "pivot_s1": round(s1, 2), "pivot_s2": round(s2, 2), "pivot_s3": round(s3, 2),
+        "above_pivot":      above_pivot,
+        "near_pivot_resistance": near_resistance,
+        "near_pivot_support":    near_support,
+    }
+
+
+def _compute_keltner(closes: list, highs: list, lows: list,
+                     period: int = 20, multiplier: float = 2.0) -> Dict[str, Any]:
+    """Keltner Channels: EMA ± multiplier * ATR. Also detects BB/KC squeeze."""
+    n = min(len(closes), len(highs), len(lows))
+    if n < period + 2:
+        return {}
+    closes, highs, lows = closes[-n:], highs[-n:], lows[-n:]
+    # EMA of closes
+    k = 2 / (period + 1)
+    ema = [closes[0]]
+    for c in closes[1:]:
+        ema.append(c * k + ema[-1] * (1 - k))
+    kc_mid = ema[-1]
+    # ATR over last period
+    tr_list = [max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+               for i in range(1, n)]
+    atr = sum(tr_list[-period:]) / period
+    kc_upper = kc_mid + multiplier * atr
+    kc_lower = kc_mid - multiplier * atr
+    last = closes[-1]
+    # BB squeeze: when Bollinger Bands are inside Keltner Channels
+    bb = _compute_bollinger(closes)
+    kc_squeeze = bb.get("bb_upper", kc_upper) < kc_upper and bb.get("bb_lower", kc_lower) > kc_lower
+    return {
+        "kc_upper":   round(kc_upper, 2),
+        "kc_lower":   round(kc_lower, 2),
+        "kc_mid":     round(kc_mid, 2),
+        "above_kc":   last > kc_upper,
+        "below_kc":   last < kc_lower,
+        "inside_kc":  kc_lower <= last <= kc_upper,
+        "kc_squeeze": kc_squeeze,
+        "kc_pct":     round((last - kc_lower) / (kc_upper - kc_lower), 3) if kc_upper != kc_lower else 0.5,
+    }
+
+
 def _relative_strength(ticker_closes: list, spy_closes: list, days: int = 20) -> Optional[float]:
     """RS = stock return / SPY return over N days. >1.0 = outperforming."""
     if len(ticker_closes) < days + 1 or len(spy_closes) < days + 1:
@@ -453,6 +687,48 @@ async def fetch_enhanced_quotes(tickers: List[str]) -> Dict[str, Dict[str, Any]]
                 "macd_crossover_daily": d.get("macd_crossover_daily"),
                 "macd_crossunder_daily":d.get("macd_crossunder_daily"),
                 "macd_hist_rising_daily":d.get("macd_hist_rising_daily"),
+                # Stochastic
+                "stoch_k":              d.get("stoch_k"),
+                "stoch_d":              d.get("stoch_d"),
+                "stoch_overbought":     d.get("stoch_overbought"),
+                "stoch_oversold":       d.get("stoch_oversold"),
+                "stoch_bullish_cross":  d.get("stoch_bullish_cross"),
+                "stoch_bearish_cross":  d.get("stoch_bearish_cross"),
+                # OBV
+                "obv":                  d.get("obv"),
+                "obv_trend":            d.get("obv_trend"),
+                "obv_above_sma":        d.get("obv_above_sma"),
+                "obv_bullish_div":      d.get("obv_bullish_div"),
+                "obv_bearish_div":      d.get("obv_bearish_div"),
+                # Parabolic SAR
+                "sar":                  d.get("sar"),
+                "sar_bullish":          d.get("sar_bullish"),
+                "price_above_sar":      d.get("price_above_sar"),
+                "sar_distance_pct":     d.get("sar_distance_pct"),
+                # Divergence
+                "rsi_bullish_div":      d.get("rsi_bullish_div"),
+                "rsi_bearish_div":      d.get("rsi_bearish_div"),
+                "macd_bull_div":        d.get("macd_bull_div"),
+                "macd_bear_div":        d.get("macd_bear_div"),
+                # Pivot Points
+                "pivot":                d.get("pivot"),
+                "pivot_r1":             d.get("pivot_r1"),
+                "pivot_r2":             d.get("pivot_r2"),
+                "pivot_r3":             d.get("pivot_r3"),
+                "pivot_s1":             d.get("pivot_s1"),
+                "pivot_s2":             d.get("pivot_s2"),
+                "pivot_s3":             d.get("pivot_s3"),
+                "above_pivot":          d.get("above_pivot"),
+                "near_pivot_resistance":d.get("near_pivot_resistance"),
+                "near_pivot_support":   d.get("near_pivot_support"),
+                # Keltner Channels
+                "kc_upper":             d.get("kc_upper"),
+                "kc_lower":             d.get("kc_lower"),
+                "kc_mid":               d.get("kc_mid"),
+                "above_kc":             d.get("above_kc"),
+                "below_kc":             d.get("below_kc"),
+                "kc_squeeze":           d.get("kc_squeeze"),
+                "kc_pct":               d.get("kc_pct"),
             })
         out[t] = base
     return out
