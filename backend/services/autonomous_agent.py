@@ -315,6 +315,35 @@ def _52w_adj(q: Dict) -> tuple[int, str]:
     return 0, ""
 
 
+def _candle_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
+    """Candlestick pattern adjustment: +points for confirming patterns, -points for opposing."""
+    bull = q.get("candle_bull_score", 0) or 0
+    bear = q.get("candle_bear_score", 0) or 0
+    if bull == 0 and bear == 0:
+        return 0, ""
+    reasons = []
+    score = 0
+    if bullish_context:
+        if bull:
+            score += min(bull * 12, 36)  # cap at 36 for 3+ patterns
+            patterns = [k.replace("cdl_", "").replace("_", " ") for k, v in q.items() if k.startswith("cdl_") and v and k not in ("cdl_doji", "cdl_spinning_top")]
+            if patterns:
+                reasons.append(f"CDL bullish: {', '.join(patterns[:3])}")
+        if bear:
+            score -= min(bear * 10, 30)
+            reasons.append(f"CDL bearish counter-signal ({bear})")
+    else:  # short context
+        if bear:
+            score += min(bear * 12, 36)
+            patterns = [k.replace("cdl_", "").replace("_", " ") for k, v in q.items() if k.startswith("cdl_") and v and k not in ("cdl_doji", "cdl_spinning_top")]
+            if patterns:
+                reasons.append(f"CDL bearish: {', '.join(patterns[:3])}")
+        if bull:
+            score -= min(bull * 10, 30)
+            reasons.append(f"CDL bullish counter-signal ({bull})")
+    return score, ", ".join(reasons)
+
+
 def _score_momentum(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = {}) -> tuple[int, str]:
     score = 0
     reasons = []
@@ -354,6 +383,9 @@ def _score_momentum(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = 
     isd, isr = _institutional_adj(ticker)
     score += isd
     if isr: reasons.append(isr)
+    cd, cr = _candle_adj(q, bullish_context=True)
+    score += cd
+    if cr: reasons.append(cr)
     return score, "Momentum: " + ", ".join(reasons)
 
 
@@ -392,6 +424,9 @@ def _score_mean_reversion(q: Dict, macro: Dict, news: Dict = {}, fundamentals: D
     isd, isr = _institutional_adj(ticker)
     score += isd
     if isr: reasons.append(isr)
+    cd, cr = _candle_adj(q, bullish_context=True)
+    score += cd
+    if cr: reasons.append(cr)
     return score, "MeanRev: " + ", ".join(reasons)
 
 
@@ -427,6 +462,9 @@ def _score_breakout(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = 
     isd, isr = _institutional_adj(ticker)
     score += isd
     if isr: reasons.append(isr)
+    cd, cr = _candle_adj(q, bullish_context=True)
+    score += cd
+    if cr: reasons.append(cr)
     return score, "Breakout: " + ", ".join(reasons)
 
 
@@ -459,6 +497,9 @@ def _score_trend_follow(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dic
     isd, isr = _institutional_adj(ticker)
     score += isd
     if isr: reasons.append(isr)
+    cd, cr = _candle_adj(q, bullish_context=True)
+    score += cd
+    if cr: reasons.append(cr)
     return score, "Trend: above SMA20, " + ", ".join(reasons)
 
 
@@ -528,7 +569,9 @@ def _score_short_momentum(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, s
     score -= nd  # invert: bearish news (negative nd) strengthens short
     if nr:
         reasons.append(nr)
-
+    cd, cr = _candle_adj(q, bullish_context=False)
+    score += cd
+    if cr: reasons.append(cr)
     return score, "SHORT-Momentum: " + ", ".join(reasons)
 
 
@@ -598,7 +641,9 @@ def _score_short_breakdown(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, 
     score -= nd  # invert sign: negative nd = bearish news = helps short
     if nr:
         reasons.append(nr)
-
+    cd, cr = _candle_adj(q, bullish_context=False)
+    score += cd
+    if cr: reasons.append(cr)
     return score, "SHORT-Breakdown: " + ", ".join(reasons)
 
 

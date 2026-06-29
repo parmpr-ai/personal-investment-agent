@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
+from services.candlestick import detect as cdl_detect
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; InvestAgent/6.0)"}
 _TIMEOUT = 8
@@ -190,15 +191,15 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
         data = await _yahoo_chart(ticker, {"range": f"{days}d", "interval": "1d"})
         result = data.get("chart", {}).get("result", [{}])[0]
         q = result.get("indicators", {}).get("quote", [{}])[0]
-        highs = [h for h in (q.get("high") or []) if h is not None]
-        lows  = [l for l in (q.get("low")  or []) if l is not None]
+        opens  = [o for o in (q.get("open")  or []) if o is not None]
+        highs  = [h for h in (q.get("high")  or []) if h is not None]
+        lows   = [l for l in (q.get("low")   or []) if l is not None]
         closes = [c for c in (q.get("close") or []) if c is not None]
         if not closes:
             return {"ticker": ticker.upper(), "ok": False, "error": "no daily data"}
         sma20 = sum(closes[-20:]) / min(20, len(closes)) if len(closes) >= 5 else closes[-1]
         sma50 = sum(closes[-50:]) / min(50, len(closes)) if len(closes) >= 10 else closes[-1]
         last = closes[-1]
-        # 5-day trend: slope of last 5 closes
         if len(closes) >= 5:
             slope = (closes[-1] - closes[-5]) / closes[-5] * 100
         else:
@@ -208,6 +209,7 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
         bb_daily = _compute_bollinger(closes)
         macd_daily = _compute_macd(closes)
         zscore_daily = _compute_zscore(closes)
+        candles = cdl_detect(opens, highs, lows, closes) if opens else {}
         out = {
             "ticker": ticker.upper(),
             "ok": True,
@@ -225,7 +227,7 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
             "atr_pct": round(atr / last * 100, 2) if atr and last else None,
             "zscore_daily": zscore_daily,
         }
-        # prefix daily Bollinger/MACD keys to avoid clash with intraday
+        out.update(candles)  # cdl_* flags + candle_bull_score, candle_bear_score, candle_signal
         for k, v in bb_daily.items():
             out[f"{k}_daily"] = v
         for k, v in macd_daily.items():
