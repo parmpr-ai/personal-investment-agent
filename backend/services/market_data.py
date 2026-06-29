@@ -216,6 +216,10 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
         sar          = _compute_parabolic_sar(highs, lows, closes)
         diverg       = _compute_divergence(closes, highs, lows)
         keltner      = _compute_keltner(closes, highs, lows)
+        fib          = _compute_fibonacci(highs, lows, closes)
+        ichimoku     = _compute_ichimoku(highs, lows, closes)
+        cci          = _compute_cci(highs, lows, closes)
+        ivr          = _compute_ivr(closes)
         # Pivot points use previous day's H/L/C
         pivots = _compute_pivot_points(
             highs[-2] if len(highs) >= 2 else highs[-1],
@@ -223,6 +227,14 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
             closes[-2] if len(closes) >= 2 else closes[-1],
             last,
         ) if highs and lows and closes else {}
+        # Short interest from chart meta (Yahoo provides sharesShort / floatShares / avgVol3Month)
+        meta = result.get("meta", {})
+        short_data = _compute_short_interest(
+            ticker,
+            float_shares=meta.get("floatShares"),
+            short_shares=meta.get("sharesShort"),
+            avg_volume=meta.get("regularMarketVolume") or (sum(volumes[-20:]) / 20 if len(volumes) >= 20 else None),
+        )
         out = {
             "ticker": ticker.upper(),
             "ok": True,
@@ -240,13 +252,18 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
             "atr_pct": round(atr / last * 100, 2) if atr and last else None,
             "zscore_daily": zscore_daily,
         }
-        out.update(candles)   # cdl_* flags + candle_bull_score, candle_bear_score, candle_signal
-        out.update(stoch)     # stoch_k, stoch_d, stoch_overbought/oversold, stoch_bull/bear_cross
-        out.update(obv)       # obv, obv_trend, obv_above_sma, obv_bullish_div, obv_bearish_div
-        out.update(sar)       # sar, sar_bullish, price_above_sar, sar_distance_pct
-        out.update(diverg)    # rsi_bullish_div, rsi_bearish_div, macd_bull_div, macd_bear_div
-        out.update(pivots)    # pivot, r1-r3, s1-s3, above_pivot, near_pivot_resistance/support
-        out.update(keltner)   # kc_upper/lower/mid, above_kc, below_kc, kc_squeeze, kc_pct
+        out.update(candles)    # cdl_* flags + candle_bull_score, candle_bear_score, candle_signal
+        out.update(stoch)      # stoch_k, stoch_d, stoch_overbought/oversold, stoch_bull/bear_cross
+        out.update(obv)        # obv, obv_trend, obv_above_sma, obv_bullish_div, obv_bearish_div
+        out.update(sar)        # sar, sar_bullish, price_above_sar, sar_distance_pct
+        out.update(diverg)     # rsi_bullish_div, rsi_bearish_div, macd_bull_div, macd_bear_div
+        out.update(pivots)     # pivot, r1-r3, s1-s3, above_pivot, near_pivot_resistance/support
+        out.update(keltner)    # kc_upper/lower/mid, above_kc, below_kc, kc_squeeze, kc_pct
+        out.update(fib)        # fib_0/236/382/500/618/786/100, fib_pct, fib_golden_zone, fib_support/resistance
+        out.update(ichimoku)   # ichi_tenkan/kijun/senkou_a/b, above/below cloud, tk_cross, chikou
+        out.update(cci)        # cci, cci_overbought/oversold/extreme, cci_bullish/bearish_zero
+        out.update(ivr)        # ivr, realized_vol, iv_high, iv_low, iv_extreme
+        out.update(short_data) # days_to_cover, short_float_pct, high_short_interest, squeeze_candidate
         for k, v in bb_daily.items():
             out[f"{k}_daily"] = v
         for k, v in macd_daily.items():
@@ -617,6 +634,167 @@ def _compute_keltner(closes: list, highs: list, lows: list,
     }
 
 
+def _compute_fibonacci(highs: list, lows: list, closes: list, lookback: int = 50) -> Dict[str, Any]:
+    """Fibonacci retracement levels from the swing high/low of the last `lookback` bars."""
+    n = min(len(highs), len(lows), len(closes))
+    if n < 5:
+        return {}
+    seg_h = highs[-min(lookback, n):]
+    seg_l = lows[-min(lookback, n):]
+    swing_high = max(seg_h)
+    swing_low  = min(seg_l)
+    diff = swing_high - swing_low
+    if diff == 0:
+        return {}
+    last = closes[-1]
+    # Classic Fibonacci retracement levels
+    levels = {
+        "fib_0":    round(swing_low,  2),
+        "fib_236":  round(swing_low  + 0.236 * diff, 2),
+        "fib_382":  round(swing_low  + 0.382 * diff, 2),
+        "fib_500":  round(swing_low  + 0.500 * diff, 2),
+        "fib_618":  round(swing_low  + 0.618 * diff, 2),
+        "fib_786":  round(swing_low  + 0.786 * diff, 2),
+        "fib_100":  round(swing_high, 2),
+    }
+    # Find nearest level and whether price is near support/resistance
+    tolerance = diff * 0.02  # within 2% of the range
+    nearest = min(levels.items(), key=lambda kv: abs(kv[1] - last))
+    near_any = abs(nearest[1] - last) <= tolerance
+    # Classify: below 50% = support territory, above 50% = extension
+    fib_pct = (last - swing_low) / diff  # 0 = at low, 1 = at high
+    return {
+        **levels,
+        "fib_pct":         round(fib_pct, 3),
+        "fib_nearest":     nearest[0],
+        "fib_near_level":  near_any,
+        "fib_support":     fib_pct < 0.5 and near_any,   # near a support level
+        "fib_resistance":  fib_pct >= 0.5 and near_any,  # near a resistance level
+        "fib_golden_zone": 0.382 <= fib_pct <= 0.618,    # the "golden pocket" buy zone
+    }
+
+
+def _compute_ichimoku(highs: list, lows: list, closes: list) -> Dict[str, Any]:
+    """Ichimoku Cloud: Tenkan, Kijun, Senkou A/B, Chikou, and cloud analysis."""
+    n = min(len(highs), len(lows), len(closes))
+    if n < 52:
+        return {}
+    highs, lows, closes = highs[-n:], lows[-n:], closes[-n:]
+
+    def midpoint(h_seg, l_seg):
+        return (max(h_seg) + min(l_seg)) / 2
+
+    tenkan  = midpoint(highs[-9:],  lows[-9:])   # 9-period conversion line
+    kijun   = midpoint(highs[-26:], lows[-26:])  # 26-period base line
+    # Senkou Span A (leading span A, plotted 26 periods ahead — use current value)
+    senkou_a = (tenkan + kijun) / 2
+    # Senkou Span B (52-period midpoint)
+    senkou_b = midpoint(highs[-52:], lows[-52:])
+    # Chikou Span (lagging close, 26 periods back — compare current close to close 26 bars ago)
+    chikou_above = closes[-1] > closes[-27] if len(closes) >= 27 else None
+    last = closes[-1]
+    cloud_top    = max(senkou_a, senkou_b)
+    cloud_bottom = min(senkou_a, senkou_b)
+    above_cloud  = last > cloud_top
+    below_cloud  = last < cloud_bottom
+    inside_cloud = cloud_bottom <= last <= cloud_top
+    bullish_cloud = senkou_a > senkou_b  # green cloud
+    tk_cross_bull = tenkan > kijun       # TK bullish cross
+    return {
+        "ichi_tenkan":      round(tenkan, 2),
+        "ichi_kijun":       round(kijun, 2),
+        "ichi_senkou_a":    round(senkou_a, 2),
+        "ichi_senkou_b":    round(senkou_b, 2),
+        "ichi_cloud_top":   round(cloud_top, 2),
+        "ichi_cloud_bottom":round(cloud_bottom, 2),
+        "ichi_above_cloud": above_cloud,
+        "ichi_below_cloud": below_cloud,
+        "ichi_inside_cloud":inside_cloud,
+        "ichi_bullish_cloud":bullish_cloud,
+        "ichi_tk_cross_bull":tk_cross_bull,
+        "ichi_chikou_above":chikou_above,
+    }
+
+
+def _compute_cci(highs: list, lows: list, closes: list, period: int = 20) -> Dict[str, Any]:
+    """Commodity Channel Index: (Typical Price - SMA) / (0.015 × Mean Deviation)."""
+    n = min(len(highs), len(lows), len(closes))
+    if n < period:
+        return {}
+    highs, lows, closes = highs[-n:], lows[-n:], closes[-n:]
+    tp = [(highs[i] + lows[i] + closes[i]) / 3 for i in range(n)]
+    window = tp[-period:]
+    sma = sum(window) / period
+    mean_dev = sum(abs(v - sma) for v in window) / period
+    cci = (tp[-1] - sma) / (0.015 * mean_dev) if mean_dev else 0
+    cci = round(cci, 1)
+    prev_tp   = tp[-2] if n >= 2 else tp[-1]
+    prev_sma  = sum(tp[-period - 1: -1]) / period if n > period else sma
+    prev_md   = sum(abs(v - prev_sma) for v in tp[-period - 1: -1]) / period if n > period else mean_dev
+    prev_cci  = round((prev_tp - prev_sma) / (0.015 * prev_md), 1) if prev_md else 0
+    return {
+        "cci":              cci,
+        "cci_overbought":   cci > 100,
+        "cci_oversold":     cci < -100,
+        "cci_extreme_ob":   cci > 200,
+        "cci_extreme_os":   cci < -200,
+        "cci_bullish_zero": cci > 0 and prev_cci <= 0,   # crossed above zero
+        "cci_bearish_zero": cci < 0 and prev_cci >= 0,   # crossed below zero
+    }
+
+
+def _compute_ivr(closes: list, period: int = 252) -> Dict[str, Any]:
+    """Implied Volatility Rank approximation using realized volatility percentile.
+
+    True IVR requires live options data; this proxy uses the 1-year realized vol
+    percentile — a structurally equivalent signal for scoring purposes.
+    """
+    n = len(closes)
+    if n < 21:
+        return {}
+    # 21-day rolling realized vol (annualized)
+    rv_series = []
+    for i in range(20, n):
+        window = closes[i - 20: i + 1]
+        log_rets = [(window[j] - window[j - 1]) / window[j - 1] for j in range(1, len(window))]
+        rv = (sum(r ** 2 for r in log_rets) / 20) ** 0.5 * (252 ** 0.5) * 100
+        rv_series.append(rv)
+    if not rv_series:
+        return {}
+    current_rv  = rv_series[-1]
+    lookback    = rv_series[-min(period, len(rv_series)):]
+    rv_min, rv_max = min(lookback), max(lookback)
+    ivr = round((current_rv - rv_min) / (rv_max - rv_min) * 100, 1) if rv_max > rv_min else 50.0
+    iv_high   = ivr > 50   # elevated vol → options expensive, expect vol crush
+    iv_low    = ivr < 20   # vol cheap → options underpriced, expansion likely
+    return {
+        "ivr":          ivr,
+        "realized_vol": round(current_rv, 1),
+        "iv_high":      iv_high,
+        "iv_low":       iv_low,
+        "iv_extreme":   ivr > 80,
+    }
+
+
+def _compute_short_interest(ticker: str, float_shares: Optional[float] = None,
+                             short_shares: Optional[float] = None,
+                             avg_volume: Optional[float] = None) -> Dict[str, Any]:
+    """Short interest metrics: short float %, days-to-cover, squeeze potential."""
+    if not short_shares or not avg_volume:
+        return {}
+    dtc = round(short_shares / avg_volume, 1) if avg_volume > 0 else None
+    short_float_pct = round(short_shares / float_shares * 100, 1) if float_shares else None
+    high_short_interest  = (short_float_pct or 0) > 15   # >15% float short = elevated
+    squeeze_candidate    = (short_float_pct or 0) > 20 and (dtc or 0) > 3
+    return {
+        "short_shares":       int(short_shares),
+        "days_to_cover":      dtc,
+        "short_float_pct":    short_float_pct,
+        "high_short_interest":high_short_interest,
+        "squeeze_candidate":  squeeze_candidate,
+    }
+
+
 def _relative_strength(ticker_closes: list, spy_closes: list, days: int = 20) -> Optional[float]:
     """RS = stock return / SPY return over N days. >1.0 = outperforming."""
     if len(ticker_closes) < days + 1 or len(spy_closes) < days + 1:
@@ -729,6 +907,52 @@ async def fetch_enhanced_quotes(tickers: List[str]) -> Dict[str, Dict[str, Any]]
                 "below_kc":             d.get("below_kc"),
                 "kc_squeeze":           d.get("kc_squeeze"),
                 "kc_pct":               d.get("kc_pct"),
+                # Fibonacci
+                "fib_0":                d.get("fib_0"),
+                "fib_236":              d.get("fib_236"),
+                "fib_382":              d.get("fib_382"),
+                "fib_500":              d.get("fib_500"),
+                "fib_618":              d.get("fib_618"),
+                "fib_786":              d.get("fib_786"),
+                "fib_100":              d.get("fib_100"),
+                "fib_pct":              d.get("fib_pct"),
+                "fib_nearest":          d.get("fib_nearest"),
+                "fib_near_level":       d.get("fib_near_level"),
+                "fib_support":          d.get("fib_support"),
+                "fib_resistance":       d.get("fib_resistance"),
+                "fib_golden_zone":      d.get("fib_golden_zone"),
+                # Ichimoku
+                "ichi_tenkan":          d.get("ichi_tenkan"),
+                "ichi_kijun":           d.get("ichi_kijun"),
+                "ichi_senkou_a":        d.get("ichi_senkou_a"),
+                "ichi_senkou_b":        d.get("ichi_senkou_b"),
+                "ichi_cloud_top":       d.get("ichi_cloud_top"),
+                "ichi_cloud_bottom":    d.get("ichi_cloud_bottom"),
+                "ichi_above_cloud":     d.get("ichi_above_cloud"),
+                "ichi_below_cloud":     d.get("ichi_below_cloud"),
+                "ichi_inside_cloud":    d.get("ichi_inside_cloud"),
+                "ichi_bullish_cloud":   d.get("ichi_bullish_cloud"),
+                "ichi_tk_cross_bull":   d.get("ichi_tk_cross_bull"),
+                "ichi_chikou_above":    d.get("ichi_chikou_above"),
+                # CCI
+                "cci":                  d.get("cci"),
+                "cci_overbought":       d.get("cci_overbought"),
+                "cci_oversold":         d.get("cci_oversold"),
+                "cci_extreme_ob":       d.get("cci_extreme_ob"),
+                "cci_extreme_os":       d.get("cci_extreme_os"),
+                "cci_bullish_zero":     d.get("cci_bullish_zero"),
+                "cci_bearish_zero":     d.get("cci_bearish_zero"),
+                # IVR (realized vol proxy)
+                "ivr":                  d.get("ivr"),
+                "realized_vol":         d.get("realized_vol"),
+                "iv_high":              d.get("iv_high"),
+                "iv_low":               d.get("iv_low"),
+                "iv_extreme":           d.get("iv_extreme"),
+                # Short Interest
+                "days_to_cover":        d.get("days_to_cover"),
+                "short_float_pct":      d.get("short_float_pct"),
+                "high_short_interest":  d.get("high_short_interest"),
+                "squeeze_candidate":    d.get("squeeze_candidate"),
             })
         out[t] = base
     return out
