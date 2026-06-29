@@ -426,16 +426,38 @@ def _source_switch_reason(resolution: "ProviderResolution") -> str:
     return resolution.fallback_reason or resolution.stale_reason or "Portfolio source resolved."
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _noncritical_health_template(name: str) -> Dict[str, Any]:
+    return {
+        "name": name,
+        "status": "OK",
+        "retryCount": 0,
+        "lastSuccess": None,
+        "lastFailure": None,
+        "failureReason": None,
+        "currentRetryDelaySeconds": 0.0,
+        "nextRetryAt": None,
+        "usesLastKnown": False,
+        "provider": "IBKR",
+    }
+
+
 def _record_provider_resolution(resolution: "ProviderResolution", *, switch_duration_ms: Optional[float] = None) -> "ProviderResolution":
     source = str(resolution.active_source or "DISCONNECTED")
     reason = _source_switch_reason(resolution)
     now = datetime.now(timezone.utc).isoformat()
+    previous_source: Optional[str] = None
+    source_changed = False
     with _SOURCE_TRACE_LOCK:
-        previous = _SOURCE_TRACE_STATE.get("currentSource")
-        if previous != source:
+        previous_source = _SOURCE_TRACE_STATE.get("currentSource")
+        if previous_source != source:
+            source_changed = True
             _SOURCE_TRACE_STATE.update(
                 {
-                    "previousSource": previous,
+                    "previousSource": previous_source,
                     "currentSource": source,
                     "lastSwitchReason": reason,
                     "lastSwitchTimestamp": now,
@@ -445,7 +467,7 @@ def _record_provider_resolution(resolution: "ProviderResolution", *, switch_dura
             event = {
                 "timestamp": now,
                 "event": "SOURCE_SWITCH",
-                "previousSource": previous,
+                "previousSource": previous_source,
                 "currentSource": source,
                 "reason": reason,
                 "switchDurationMs": round(switch_duration_ms, 1) if switch_duration_ms is not None else None,
@@ -453,7 +475,7 @@ def _record_provider_resolution(resolution: "ProviderResolution", *, switch_dura
             _SOURCE_TRACE_EVENTS.appendleft(event)
             _IBKR_LOGGER.info(
                 "[SOURCE_SWITCH] previous=%s current=%s reason=%s duration_ms=%s",
-                previous or "NONE",
+                previous_source or "NONE",
                 source,
                 reason,
                 round(switch_duration_ms, 1) if switch_duration_ms is not None else "n/a",
@@ -466,7 +488,88 @@ def _record_provider_resolution(resolution: "ProviderResolution", *, switch_dura
                 resolution.snapshot_available,
                 resolution.provider_class,
             )
+    # Update runtime state machine outside _SOURCE_TRACE_LOCK to avoid lock ordering issues.
+    # Always call on_resolution so the state machine starts from NONE on first request.
+    _update_runtime_state(resolution, previous_source=previous_source, source_changed=source_changed)
     return resolution
+
+
+def _invalidate_all_caches() -> None:
+    """Evict all route-level caches immediately after a provider state transition."""
+    try:
+        from services.provider_cache import invalidate_namespace
+        invalidate_namespace("route")
+    except Exception as exc:
+        _IBKR_LOGGER.debug("[CACHE_INVALIDATED] route namespace failed: %s", exc)
+    try:
+        from services import runtime_state as _rs
+        _rs.mark_cache_invalidated()
+    except Exception:
+        pass
+    _IBKR_LOGGER.info("[CACHE_INVALIDATED] namespace=route reason=provider_state_transition")
+
+
+def _update_runtime_state(
+    resolution: "ProviderResolution",
+    *,
+    previous_source: Optional[str],
+    source_changed: bool,
+) -> None:
+    """Synchronize the runtime state machine with the resolved provider."""
+    try:
+        from services import runtime_state as _rs
+        quote_degraded = False
+        provider = getattr(resolution, "provider", None)
+        if provider and hasattr(provider, "get_runtime_status"):
+            try:
+                runtime_status = provider.get_runtime_status() or {}
+                quote_degraded = bool(
+                    runtime_status.get("quoteHealth") == "DEGRADED"
+                    or runtime_status.get("tradeHealth") == "DEGRADED"
+                    or (
+                        resolution.active_source == "IBKR_LIVE"
+                        and runtime_status.get("pricesLive") is False
+                    )
+                )
+            except Exception:
+                quote_degraded = False
+        transitioned = _rs.on_resolution(
+            active_source=resolution.active_source or "DISCONNECTED",
+            is_live=bool(resolution.is_live),
+            configured_mode=str(resolution.configured_mode or ""),
+            provider_class=str(resolution.provider_class or ""),
+            fallback_active=bool(resolution.fallback_active),
+            quote_degraded=quote_degraded,
+        )
+        if transitioned:
+            new_state = _rs.current_state()
+            if new_state == _rs.LIVE:
+                _IBKR_LOGGER.info(
+                    "[PROVIDER_PROMOTE] previous_source=%s active_source=%s"
+                    " configured_mode=%s provider_generation=%s",
+                    previous_source,
+                    resolution.active_source,
+                    resolution.configured_mode,
+                    _rs.get_state().get("provider_generation"),
+                )
+                _invalidate_all_caches()
+            elif new_state == _rs.DEGRADED:
+                _IBKR_LOGGER.info(
+                    "[PROVIDER_DEGRADED] previous_source=%s active_source=%s quote_degraded=%s",
+                    previous_source,
+                    resolution.active_source,
+                    quote_degraded,
+                )
+            elif new_state == _rs.SNAPSHOT and previous_source == "IBKR_LIVE":
+                _IBKR_LOGGER.info(
+                    "[PROVIDER_FALLBACK] previous_source=%s active_source=%s stale_reason=%s",
+                    previous_source,
+                    resolution.active_source,
+                    resolution.stale_reason,
+                )
+                _invalidate_all_caches()
+    except Exception as exc:
+        _IBKR_LOGGER.debug("[RUNTIME_STATE] update failed: %s", exc)
 
 
 def record_surface_source(surface: str, portfolio: Dict[str, Any]) -> None:
@@ -1635,6 +1738,12 @@ class IbkrLivePortfolioProvider:
     _HEARTBEAT_TTL_SECONDS = 4.0
     _QUOTE_FIELDS = "31,82,83,84,85,86,87,88,7059"
     _QUOTE_BATCH_SIZE = 25
+    _QUOTE_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0, 10.0, 30.0)
+    _NONCRITICAL_LOCK = threading.RLock()
+    _NONCRITICAL_HEALTH: Dict[str, Dict[str, Any]] = {
+        "quotes": _noncritical_health_template("quotes"),
+        "trades": _noncritical_health_template("trades"),
+    }
     _REFRESH_THREAD_LOCK = threading.RLock()
     _REFRESH_THREAD: Optional[threading.Thread] = None
     _REFRESH_STOP = threading.Event()
@@ -1655,6 +1764,54 @@ class IbkrLivePortfolioProvider:
             cls._CACHE_BUNDLE = None
             cls._CACHE_AT = None
             cls._CACHE_ERROR = None
+        with cls._NONCRITICAL_LOCK:
+            cls._NONCRITICAL_HEALTH = {
+                "quotes": _noncritical_health_template("quotes"),
+                "trades": _noncritical_health_template("trades"),
+            }
+
+    @classmethod
+    def _mark_noncritical_success(cls, name: str) -> Dict[str, Any]:
+        now = _utc_now_iso()
+        with cls._NONCRITICAL_LOCK:
+            state = cls._NONCRITICAL_HEALTH.setdefault(name, _noncritical_health_template(name))
+            state.update(
+                {
+                    "status": "OK",
+                    "retryCount": 0,
+                    "lastSuccess": now,
+                    "failureReason": None,
+                    "currentRetryDelaySeconds": 0.0,
+                    "nextRetryAt": None,
+                    "usesLastKnown": False,
+                }
+            )
+            return deepcopy(state)
+
+    @classmethod
+    def _mark_noncritical_failure(cls, name: str, reason: str, *, uses_last_known: bool = True) -> Dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        with cls._NONCRITICAL_LOCK:
+            state = cls._NONCRITICAL_HEALTH.setdefault(name, _noncritical_health_template(name))
+            retry_count = int(state.get("retryCount") or 0) + 1
+            delay = cls._QUOTE_RETRY_DELAYS_SECONDS[min(retry_count - 1, len(cls._QUOTE_RETRY_DELAYS_SECONDS) - 1)]
+            state.update(
+                {
+                    "status": "DEGRADED",
+                    "retryCount": retry_count,
+                    "lastFailure": now.isoformat(),
+                    "failureReason": reason,
+                    "currentRetryDelaySeconds": float(delay),
+                    "nextRetryAt": (now + timedelta(seconds=delay)).isoformat(),
+                    "usesLastKnown": uses_last_known,
+                }
+            )
+            return deepcopy(state)
+
+    @classmethod
+    def _noncritical_state(cls, name: str) -> Dict[str, Any]:
+        with cls._NONCRITICAL_LOCK:
+            return deepcopy(cls._NONCRITICAL_HEALTH.setdefault(name, _noncritical_health_template(name)))
 
     @classmethod
     def _ensure_refresh_loop(cls, instance: Optional["IbkrLivePortfolioProvider"] = None) -> None:
@@ -1682,6 +1839,15 @@ class IbkrLivePortfolioProvider:
             return
         quote_map = self._fetch_market_quotes(conids)
         if not quote_map:
+            with self._CACHE_LOCK:
+                if self._CACHE_BUNDLE:
+                    self._CACHE_BUNDLE["quotes_stale"] = True
+                    self._CACHE_BUNDLE["quotes_stale_reason"] = (
+                        self._noncritical_state("quotes").get("failureReason")
+                        or "IBKR quote refresh unavailable; reusing last known prices."
+                    )
+                    self._CACHE_BUNDLE["pricesLive"] = False
+                    self._CACHE_BUNDLE["isLiveUpdating"] = False
             return
         new_positions, prices_live, _, prices_lr, _ = self._overlay_live_quotes(positions, quote_map, positions)
         as_of = datetime.now(timezone.utc).isoformat()
@@ -1692,6 +1858,8 @@ class IbkrLivePortfolioProvider:
                 self._CACHE_BUNDLE["isLiveUpdating"] = True
                 self._CACHE_BUNDLE["pricesLastRefresh"] = prices_lr or as_of
                 self._CACHE_BUNDLE["pricesAgeSeconds"] = _position_quote_refresh_age(prices_lr) if prices_lr else None
+                self._CACHE_BUNDLE["quotes_stale"] = False
+                self._CACHE_BUNDLE["quotes_stale_reason"] = None
                 self._CACHE_AT = datetime.now(timezone.utc)
 
     def _refresh_loop(self) -> None:
@@ -1750,6 +1918,12 @@ class IbkrLivePortfolioProvider:
             if self._HEARTBEAT_CACHE and self._HEARTBEAT_AT:
                 age = (datetime.now(timezone.utc) - self._HEARTBEAT_AT).total_seconds()
                 if age <= self._HEARTBEAT_TTL_SECONDS:
+                    _IBKR_LOGGER.debug(
+                        "[HEARTBEAT_CACHED] gateway_open=%s age_s=%.1f ttl_s=%.1f",
+                        self._HEARTBEAT_CACHE.get("gateway_open"),
+                        age,
+                        self._HEARTBEAT_TTL_SECONDS,
+                    )
                     return deepcopy(self._HEARTBEAT_CACHE)
         auth, auth_error = self._safe_get("/iserver/auth/status", timeout=2.0)
         reachable = auth_error is None and isinstance(auth, dict)
@@ -1782,6 +1956,13 @@ class IbkrLivePortfolioProvider:
             "ibkr_authenticated": authenticated,
             "auth_status": auth if isinstance(auth, dict) else {},
         }
+        _IBKR_LOGGER.info(
+            "[HEARTBEAT_FRESH] gateway_open=%s status=%s authenticated=%s error=%s",
+            payload["gateway_open"],
+            payload["gateway_status"],
+            payload["ibkr_authenticated"],
+            payload["gateway_error"],
+        )
         with self._HEARTBEAT_LOCK:
             self._HEARTBEAT_CACHE = deepcopy(payload)
             self._HEARTBEAT_AT = datetime.now(timezone.utc)
@@ -1872,16 +2053,44 @@ class IbkrLivePortfolioProvider:
         conid_list = [str(conid).strip() for conid in conids if str(conid).strip()]
         if not conid_list:
             return {}
+        quotes_state = self._noncritical_state("quotes")
+        next_retry_at = quotes_state.get("nextRetryAt")
+        if next_retry_at:
+            try:
+                retry_at = datetime.fromisoformat(str(next_retry_at).replace("Z", "+00:00"))
+                if retry_at > datetime.now(timezone.utc):
+                    _IBKR_LOGGER.info(
+                        "[QUOTE_RETRY] status=backoff retry_count=%s next_retry_at=%s delay_s=%s",
+                        quotes_state.get("retryCount"),
+                        next_retry_at,
+                        quotes_state.get("currentRetryDelaySeconds"),
+                    )
+                    return {}
+            except Exception:
+                pass
         quote_map: Dict[str, Dict[str, Any]] = {}
         refresh_at = datetime.now(timezone.utc).isoformat()
+        batch_errors: List[str] = []
         for batch in self._chunk(conid_list, self._QUOTE_BATCH_SIZE):
             query = f"/iserver/marketdata/snapshot?conids={','.join(batch)}&fields={self._QUOTE_FIELDS}"
-            raw_quotes = self._get(query, timeout=2.5)
+            try:
+                raw_quotes = self._get(query, timeout=2.5)
+                if not isinstance(raw_quotes, list):
+                    raw_quotes = []
+                if raw_quotes and not any(self._quote_entry_is_populated(entry) for entry in raw_quotes):
+                    time.sleep(0.1)
+                    raw_quotes = self._get(f"/iserver/marketdata/snapshot?conids={','.join(batch)}", timeout=2.5)
+            except Exception as exc:
+                batch_errors.append(str(exc))
+                _IBKR_LOGGER.warning(
+                    "[QUOTE_REFRESH] status=error conids=%s error=%s uses_last_known=true",
+                    ",".join(batch),
+                    exc,
+                )
+                continue
             if not isinstance(raw_quotes, list):
                 raw_quotes = []
             if raw_quotes and not any(self._quote_entry_is_populated(entry) for entry in raw_quotes):
-                time.sleep(0.1)
-                raw_quotes = self._get(f"/iserver/marketdata/snapshot?conids={','.join(batch)}", timeout=2.5)
                 if not isinstance(raw_quotes, list):
                     raw_quotes = []
             for entry in raw_quotes:
@@ -1927,6 +2136,10 @@ class IbkrLivePortfolioProvider:
                     server_timestamp=quote_last_refresh,
                     age_seconds=0.0,
                 )
+        if quote_map:
+            self._mark_noncritical_success("quotes")
+        elif batch_errors:
+            self._mark_noncritical_failure("quotes", batch_errors[-1], uses_last_known=True)
         return quote_map
 
     def _fetch_partitioned_pnl(self) -> Optional[Dict[str, Any]]:
@@ -1981,7 +2194,16 @@ class IbkrLivePortfolioProvider:
                     prev_close = _maybe_num(merged.get("previousClose") or merged.get("prevClose") or merged.get("closePrice"))
                 multiplier = _num(merged.get("multiplier") or _position_multiplier(merged), _position_multiplier(merged))
                 qty = _num(merged.get("qty") or merged.get("quantity") or merged.get("position"))
-                market_value = round(last_price * qty * multiplier, 2) if qty else _num(merged.get("market_value"))
+                # For options/FOPs use IBKR's authoritative mark price (mktValue from position endpoint)
+                # instead of field-31 last trade, which can be hours stale for illiquid contracts.
+                # For stocks/ETFs field-31 ≈ mark, so fall through to the standard formula.
+                _ibkr_mv = _num(merged.get("market_value"))
+                _is_derivative = str(merged.get("assetClass") or merged.get("sec_type") or "").upper() in {"OPT", "FOP"}
+                if _is_derivative and _ibkr_mv and qty and multiplier:
+                    market_value = _ibkr_mv
+                    last_price = round(_ibkr_mv / (qty * multiplier), 6)
+                else:
+                    market_value = round(last_price * qty * multiplier, 2) if qty else _ibkr_mv or 0
                 cost_basis = _num(merged.get("cost_basis") or merged.get("costBasis"))
                 unrealized = round(market_value - cost_basis, 2) if cost_basis or market_value else _num(merged.get("unrealized"))
                 # Prefer IBKR-reported day change (fields 82/83) over derivation — critical for
@@ -2562,7 +2784,9 @@ class IbkrLivePortfolioProvider:
             fetched_trades = self._get("/iserver/account/trades", timeout=3.0)
             if isinstance(fetched_trades, list):
                 raw_trades = fetched_trades
+            self._mark_noncritical_success("trades")
         except Exception:
+            self._mark_noncritical_failure("trades", "IBKR trade history unavailable; retrying without provider switch.", uses_last_known=False)
             raw_trades = []
         positions = self._normalize_live_positions(raw_positions, account_id)
         quote_map = self._fetch_market_quotes([str(p.get("conid") or "").strip() for p in positions if str(p.get("conid") or "").strip()])
@@ -2605,6 +2829,8 @@ class IbkrLivePortfolioProvider:
             "stale_reason": quote_fallback_reason,
             "quotes_stale": not prices_live,
             "quotes_stale_reason": quote_fallback_reason,
+            "quoteHealth": "DEGRADED" if (not prices_live or bool(self._noncritical_state("quotes").get("failureReason"))) else "OK",
+            "tradeHealth": "DEGRADED" if bool(self._noncritical_state("trades").get("failureReason")) else "OK",
         }
         valid_bundle, invalid_reason = _snapshot_bundle_is_valid(bundle)
         if not valid_bundle:
@@ -2827,6 +3053,8 @@ class IbkrLivePortfolioProvider:
         snapshot_meta = self.get_snapshot_meta()
         snapshot_available = _snapshot_available()
         snapshot_timestamp = _snapshot_timestamp(snapshot_meta) if snapshot_meta else None
+        quote_state = self._noncritical_state("quotes")
+        trade_state = self._noncritical_state("trades")
         is_live = bool(heartbeat.get("gateway_open"))
         is_stale = False
         stale_reason = None
@@ -2878,6 +3106,19 @@ class IbkrLivePortfolioProvider:
             "pricesAgeSeconds": prices_age_seconds,
             "positionsLastRefresh": positions_last_refresh,
             "summaryLastRefresh": summary_last_refresh,
+            "quoteHealth": quote_state.get("status"),
+            "quoteRetryCount": quote_state.get("retryCount"),
+            "lastQuoteSuccess": quote_state.get("lastSuccess"),
+            "lastQuoteFailure": quote_state.get("lastFailure"),
+            "quoteFailureReason": quote_state.get("failureReason"),
+            "currentQuoteRetryDelaySeconds": quote_state.get("currentRetryDelaySeconds"),
+            "quoteNextRetryAt": quote_state.get("nextRetryAt"),
+            "quoteUsesLastKnown": quote_state.get("usesLastKnown"),
+            "tradeHealth": trade_state.get("status"),
+            "tradeRetryCount": trade_state.get("retryCount"),
+            "lastTradeSuccess": trade_state.get("lastSuccess"),
+            "lastTradeFailure": trade_state.get("lastFailure"),
+            "tradeFailureReason": trade_state.get("failureReason"),
         }
 
     def _normalize_live_positions(self, raw_positions: List[Dict[str, Any]], account_id: str) -> List[Dict[str, Any]]:
@@ -3032,7 +3273,7 @@ class IbkrLivePortfolioProvider:
             daily_pnl = pnl.get("daily_pnl")
             daily_pnl_pct = pnl.get("daily_pnl_pct")
             daily_pnl_source = "pnl_endpoint"
-        if positions:
+        elif positions:
             daily_pnl = total_daily_pnl
             daily_pnl_source = "positions"
         elif daily_pnl is None:
@@ -3547,6 +3788,33 @@ def resolve_portfolio_provider() -> ProviderResolution:
         ))
 
     if mode == "last-update":
+        # "last-update" means "prefer snapshot until live becomes available" — not "never use live."
+        # Probe the IBKR gateway; if reachable, promote automatically.
+        live = IbkrLivePortfolioProvider()
+        heartbeat = live.get_gateway_heartbeat()
+        if heartbeat.get("gateway_open"):
+            live_meta = live.get_snapshot_meta() if hasattr(live, "get_snapshot_meta") else {}
+            live_timestamp = _snapshot_timestamp(live_meta) or snapshot_timestamp
+            return resolved(ProviderResolution(
+                provider=live,
+                configured_mode=mode,
+                active_source=live.source_name,
+                fallback_active=False,
+                fallback_reason=None,
+                provider_class=live.__class__.__name__,
+                snapshot_available=bool(live_timestamp or snapshot_available),
+                snapshot_timestamp=live_timestamp or snapshot_timestamp,
+                is_live=True,
+                is_stale=False,
+                stale_reason=None,
+                gateway_status=heartbeat.get("gateway_status", "connected"),
+                gateway_error=heartbeat.get("gateway_error"),
+                ibkr_gateway_reachable=True,
+                ibkr_authenticated=bool(heartbeat.get("ibkr_authenticated")),
+                accounts_available=None,
+                positions_available=None,
+                trades_available=None,
+            ))
         if snapshot_available:
             return resolved(ProviderResolution(
                 provider=snapshot,
@@ -3707,7 +3975,12 @@ def get_provider_status() -> Dict[str, Any]:
             "STALE" if resolution.active_source == "LAST_UPDATE" else "MOCK"
         )
     )
-    if portfolio_mode == "IBKR_LIVE" and provider_meta.get("isLivePricing", True):
+    quote_health = str(provider_meta.get("quoteHealth") or ("OK" if prices_live else "DEGRADED")).upper()
+    trade_health = str(provider_meta.get("tradeHealth") or "OK").upper()
+    if portfolio_mode == "IBKR_LIVE" and quote_health != "OK":
+        status = "LIVE_DEGRADED"
+        message = provider_meta.get("quoteFailureReason") or "IBKR live portfolio is healthy, but quote refresh is degraded."
+    elif portfolio_mode == "IBKR_LIVE" and provider_meta.get("isLivePricing", True):
         status = "LIVE"
         message = "Live IBKR Client Portal Gateway is available."
     elif portfolio_mode == "IBKR_LIVE":
@@ -3782,5 +4055,18 @@ def get_provider_status() -> Dict[str, Any]:
         "pricesAgeSeconds": provider_meta.get("pricesAgeSeconds"),
         "positionsLastRefresh": provider_meta.get("positionsLastRefresh") or provider_meta.get("positions_refreshed_at"),
         "summaryLastRefresh": provider_meta.get("summaryLastRefresh") or provider_meta.get("summary_refreshed_at"),
+        "quoteHealth": quote_health,
+        "quoteRetryCount": provider_meta.get("quoteRetryCount"),
+        "lastQuoteSuccess": provider_meta.get("lastQuoteSuccess"),
+        "lastQuoteFailure": provider_meta.get("lastQuoteFailure"),
+        "quoteFailureReason": provider_meta.get("quoteFailureReason"),
+        "currentQuoteRetryDelaySeconds": provider_meta.get("currentQuoteRetryDelaySeconds"),
+        "quoteNextRetryAt": provider_meta.get("quoteNextRetryAt"),
+        "quoteUsesLastKnown": provider_meta.get("quoteUsesLastKnown"),
+        "tradeHealth": trade_health,
+        "tradeRetryCount": provider_meta.get("tradeRetryCount"),
+        "lastTradeSuccess": provider_meta.get("lastTradeSuccess"),
+        "lastTradeFailure": provider_meta.get("lastTradeFailure"),
+        "tradeFailureReason": provider_meta.get("tradeFailureReason"),
         "mock_available": True,
     }

@@ -101,6 +101,9 @@ Decisions DEC-AI-RESEARCH-001..007 LOCKED. Backend perf well within budget (p50 
 |---|---|
 | HERMES-IBKR-RECOVERY-052 (Live IBKR source lifecycle recovery) | COMPLETE / locally validated |
 | HERMES-PROD-STABILIZATION-057 (Production stabilization sprint) | COMPLETE / PENDING UAT |
+| ARTEMIS-RUNTIME-FORENSICS-063 (Debug instrumentation — pipeline-trace, snapshot-lifecycle, position reconciliation) | COMPLETE / PENDING UAT |
+| CR-IBKR-LIVE-018 (Provider promotion — last-update mode locks out IBKR_LIVE) | **FIXED — 45/45 tests pass** |
+| ARTEMIS-PORTFOLIO-RUNTIME-064 (Runtime state machine, idempotent promotion, cache invalidation, DTO versioning) | **IMPLEMENTED — 45/45 tests pass** |
 
 ### Notes (057)
 - **Options cost_basis bug fixed**: `avgCost × qty` (was incorrectly `× multiplier` again, causing 100× overstatement).
@@ -109,7 +112,20 @@ Decisions DEC-AI-RESEARCH-001..007 LOCKED. Backend perf well within budget (p50 
 - **Source trace enhanced**: `switchDurationMs` and `snapshotPositions` now in `/api/debug/source-trace`.
 - **⚠️ Action required after deploy**: Force-refresh snapshot (`POST /api/portfolio/snapshot/refresh?force=true`) — existing snapshot has pre-fix cost_basis values for options.
 
+### Notes (CR-IBKR-LIVE-018)
+- **Root cause**: `resolve_portfolio_provider()` treated `mode == "last-update"` as "always use snapshot, never check gateway." There was NO automatic promotion path when the gateway came online.
+- **Fix**: `last-update` branch now probes `get_gateway_heartbeat()` first. If `gateway_open = True`, promotes to `IbkrLivePortfolioProvider` and emits `[PROVIDER_PROMOTE]` log. If gateway is down, falls through to existing snapshot/mock logic.
+- **Why quotes appeared "live"**: The `IbkrLivePortfolioProvider._refresh_loop` was already running (seeded at startup by `prime_ibkr_snapshot(respect_mode=False)`), but its `_CACHE_BUNDLE` was never consumed — `get_canonical_portfolio()` used `SnapshotPortfolioProvider` instead. The "live" quotes users saw were Yahoo Finance quotes via `market_data_engine.get_quotes()`.
+- **Observability added**: `[HEARTBEAT_CACHED]` (DEBUG) and `[HEARTBEAT_FRESH]` (INFO) log events in `get_gateway_heartbeat()`.
+- **Validation**: backend `py_compile` + 35/35 unittest pass including 7 new lifecycle regression tests.
+
 ### Notes (052)
 - Runtime provider status now drives the current source contract, so settings, provider status, portfolio, dashboard, and mobile all agree on `IBKR_LIVE` when the gateway is authenticated.
 - Snapshot and demo fallback still work automatically when live IBKR is unavailable; the compact settings card now shows only Current Source and Last Updated.
 - Validation passed: backend `py_compile`, backend `unittest`, frontend `npm run build`, and live route smoke checks.
+
+### Notes (070)
+- Quote and trade-history failures are now isolated from source ownership. `IBKR_LIVE` remains active while quote refresh degrades and retries.
+- `GET /api/portfolio/provider/status` now reports `LIVE_DEGRADED` when the portfolio is still live but quote freshness is impaired.
+- `GET /api/debug/live-status` and `GET /api/debug/source-trace` now expose quote/trade health, retry counters, last success/failure, retry delay, and live degradation evidence for PO reconstruction without log access.
+- Validation passed: backend `py_compile`; backend regression suite `backend.tests.test_provider_lifecycle` + `backend.tests.test_runtime_state`.

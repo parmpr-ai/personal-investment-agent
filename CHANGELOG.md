@@ -903,3 +903,25 @@ Owner: HERMES
 * `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/services/quote_engine.py backend/services/market_data_engine.py backend/services/provider_manager.py backend/services/portfolio_calculator.py` - PASS
 * `PYTHONPATH=backend python -m unittest discover -s backend/tests -p "test_*.py"` - PASS, 28 tests
 * `NEXT_DIST_DIR=.next-hermes062 npm run build` - PASS
+
+## v0.3.55 - Portfolio Fault Tolerance Hardening (ARTEMIS-PORTFOLIO-FAULT-TOLERANCE-070)
+
+Date: 2026-06-29
+Status: READY FOR PO UAT
+Owner: ARTEMIS / HERMES
+
+### Backend - Runtime Resilience
+
+* IBKR quote and trade-history failures are now treated as non-critical runtime degradation instead of forcing source fallback from `IBKR_LIVE` to `LAST_UPDATE`.
+* Added exponential retry state for IBKR market-data refresh with last-known quote reuse during backoff windows.
+* Runtime state machine now distinguishes `LIVE`, `DEGRADED`, and `SNAPSHOT` based on quote degradation vs actual portfolio source loss.
+
+### Diagnostics
+
+* `GET /api/debug/live-status` and `GET /api/debug/source-trace` now expose `quoteHealth`, retry counters, last success/failure timestamps, retry delay, and trade-health diagnostics.
+* `GET /api/portfolio/provider/status` now reports `LIVE_DEGRADED` when portfolio ownership remains live but quote refresh is degraded.
+
+### Validation
+
+* `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/services/runtime_state.py backend/tests/test_provider_lifecycle.py backend/tests/test_runtime_state.py` - PASS
+* `PYTHONPATH=backend python -m unittest backend.tests.test_provider_lifecycle backend.tests.test_runtime_state` - PASS, 19 tests

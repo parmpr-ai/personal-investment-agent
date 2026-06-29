@@ -1312,3 +1312,23 @@ Structure scaffolded under docs/mocks/<feature>/{APPROVED,WORKING,UAT} for ai-in
 - APOLLO: UAT/QA validation.
 - HERCULES: governance reads/validation.
 - Backend / HEPHAESTUS: data layer, analytics.
+
+## ARTEMIS-PORTFOLIO-FAULT-TOLERANCE-070
+
+- Status: IMPLEMENTED / READY FOR PO UAT
+- Owner: ARTEMIS
+- Scope: runtime resilience only; no UI work, no portfolio calculator changes, no portfolio mapping changes.
+
+Implemented:
+- IBKR quote endpoint failures no longer trigger source fallback to `LAST_UPDATE` while positions and summary remain healthy.
+- IBKR trade-history failures are now isolated as non-critical and do not switch the active portfolio provider.
+- Added exponential quote retry/backoff with last-known quote reuse during degraded windows.
+- Runtime diagnostics and provider status now expose quote/trade health, retry counters, failure timestamps, failure reason, and current retry delay.
+- Runtime state machine now supports `LIVE -> DEGRADED -> LIVE` independently from `LIVE -> SNAPSHOT`.
+
+Validation:
+- `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/services/runtime_state.py backend/tests/test_provider_lifecycle.py backend/tests/test_runtime_state.py` PASS
+- `PYTHONPATH=backend python -m unittest backend.tests.test_provider_lifecycle backend.tests.test_runtime_state` PASS
+
+Known limitation:
+- Degraded quote state is currently surfaced through diagnostics and provider status contracts only. No dedicated UI presentation was added because the task explicitly excluded UI work.

@@ -1249,6 +1249,11 @@ def portfolio_live_trades(limit: int = 100, offset: int = 0, symbol: str = None,
 def debug_live_status():
  try:
   provider_status = portfolio_provider_status()
+  try:
+   from services.runtime_state import get_state as _get_runtime_state
+   runtime_state = _get_runtime_state()
+  except Exception:
+   runtime_state = {}
   quote_trace = get_live_quote_trace(limit=20)
   last_quote_received = quote_trace[0] if quote_trace else None
   active_source = str(provider_status.get('active_source') or '').upper()
@@ -1284,6 +1289,23 @@ def debug_live_status():
    'cacheLayers': _cache_layers_debug(),
    'providerTrace': quote_trace[:10],
    'providerClass': provider_status.get('provider_class'),
+   'quoteDiagnostics': {
+    'quoteHealth': provider_status.get('quoteHealth'),
+    'quoteRetryCount': provider_status.get('quoteRetryCount'),
+    'lastQuoteSuccess': provider_status.get('lastQuoteSuccess'),
+    'lastQuoteFailure': provider_status.get('lastQuoteFailure'),
+    'quoteFailureReason': provider_status.get('quoteFailureReason'),
+    'currentQuoteRetryDelaySeconds': provider_status.get('currentQuoteRetryDelaySeconds'),
+    'quoteNextRetryAt': provider_status.get('quoteNextRetryAt'),
+    'quoteUsesLastKnown': provider_status.get('quoteUsesLastKnown'),
+    'tradeHealth': provider_status.get('tradeHealth'),
+    'tradeRetryCount': provider_status.get('tradeRetryCount'),
+    'lastTradeSuccess': provider_status.get('lastTradeSuccess'),
+    'lastTradeFailure': provider_status.get('lastTradeFailure'),
+    'tradeFailureReason': provider_status.get('tradeFailureReason'),
+    'runtimeState': runtime_state.get('state'),
+    'providerStabilityTimestamp': runtime_state.get('provider_timestamp'),
+   },
   }
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
@@ -1364,6 +1386,11 @@ def debug_portfolio_snapshot():
 def debug_source_trace():
  status = get_provider_status()
  trace = get_source_trace()
+ try:
+  from services.runtime_state import get_state as _get_runtime_state
+  runtime_state = _get_runtime_state()
+ except Exception:
+  runtime_state = {}
  current_source = status.get('active_source') or trace.get('currentSource')
  return {
   **trace,
@@ -1376,6 +1403,21 @@ def debug_source_trace():
   'positionsSource': status.get('positionsSource'),
   'priceSource': status.get('priceSource'),
   'providerClass': status.get('provider_class'),
+  'quoteHealth': status.get('quoteHealth'),
+  'quoteRetryCount': status.get('quoteRetryCount'),
+  'lastQuoteSuccess': status.get('lastQuoteSuccess'),
+  'lastQuoteFailure': status.get('lastQuoteFailure'),
+  'quoteFailureReason': status.get('quoteFailureReason'),
+  'currentQuoteRetryDelaySeconds': status.get('currentQuoteRetryDelaySeconds'),
+  'quoteNextRetryAt': status.get('quoteNextRetryAt'),
+  'quoteUsesLastKnown': status.get('quoteUsesLastKnown'),
+  'tradeHealth': status.get('tradeHealth'),
+  'tradeRetryCount': status.get('tradeRetryCount'),
+  'lastTradeSuccess': status.get('lastTradeSuccess'),
+  'lastTradeFailure': status.get('lastTradeFailure'),
+  'tradeFailureReason': status.get('tradeFailureReason'),
+  'runtimeState': runtime_state.get('state'),
+  'providerStabilityTimestamp': runtime_state.get('provider_timestamp'),
   'responseTimestamp': _utc_now_iso(),
  }
 
@@ -1413,10 +1455,12 @@ def debug_portfolio_reconciliation():
   portfolio = get_portfolio_payload()
   resolution = resolve_portfolio_provider()
   raw_summary = {}
+  raw_positions = []
   if isinstance(resolution.provider, IbkrLivePortfolioProvider):
    try:
     bundle = resolution.provider._load_bundle()
     raw_summary = bundle.get('summary') if isinstance(bundle, dict) and isinstance(bundle.get('summary'), dict) else {}
+    raw_positions = list(bundle.get('positions') or []) if isinstance(bundle, dict) else []
    except Exception:
     raw_summary = {}
   summary = portfolio.get('summary') if isinstance(portfolio.get('summary'), dict) else {}
@@ -1438,15 +1482,46 @@ def debug_portfolio_reconciliation():
   rows = [_reconciliation_row(label, ibkr_value, pia_value) for label, ibkr_value, pia_value in fields]
   comparable = [row for row in rows if row['status'] != 'MISSING']
   status = 'PASS' if comparable and all(row['status'] == 'PASS' for row in comparable) else ('MISSING' if not comparable else 'FAIL')
+  # Position-level comparison — IBKR raw bundle vs PIA canonical (ARTEMIS-063)
+  position_rows = []
+  position_status = 'MISSING'
+  if raw_positions:
+   pia_positions = portfolio.get('positions', [])
+   pia_by_sym = {str(p.get('symbol') or p.get('underlying') or '').upper().split()[0]: p for p in pia_positions if isinstance(p, dict)}
+   pia_by_conid = {str(p.get('conid') or p.get('conId') or ''): p for p in pia_positions if isinstance(p, dict) and (p.get('conid') or p.get('conId'))}
+   for raw in raw_positions:
+    if not isinstance(raw, dict):
+     continue
+    sym = str(raw.get('symbol') or raw.get('underlying') or '').upper().split()[0]
+    conid = str(raw.get('conid') or raw.get('conId') or '').strip()
+    pia_pos = pia_by_conid.get(conid) or pia_by_sym.get(sym) or {}
+    pos_fields = {
+     'last': _reconciliation_row('last', raw.get('last') or raw.get('mktPrice'), pia_pos.get('last'), tolerance=0.001),
+     'market_value': _reconciliation_row('market_value', raw.get('mktValue') or raw.get('market_value'), pia_pos.get('market_value'), tolerance=0.10),
+     'unrealized': _reconciliation_row('unrealized', raw.get('unrealizedPnl') or raw.get('unrealized'), pia_pos.get('unrealized'), tolerance=0.10),
+     'day_pnl': _reconciliation_row('day_pnl', raw.get('day_pnl'), pia_pos.get('day_pnl'), tolerance=0.10),
+    }
+    field_statuses = [f['status'] for f in pos_fields.values()]
+    pos_row_status = 'PASS' if all(s == 'PASS' for s in field_statuses) else ('FAIL' if any(s == 'FAIL' for s in field_statuses) else 'MISSING')
+    position_rows.append({
+     'symbol': sym, 'conid': conid or None,
+     'qty': raw.get('qty') or raw.get('quantity'),
+     'assetClass': str(raw.get('assetClass') or raw.get('sec_type') or 'STK').upper(),
+     'status': pos_row_status, 'fields': pos_fields,
+    })
+   pos_comparable = [r for r in position_rows if r['status'] != 'MISSING']
+   position_status = 'PASS' if pos_comparable and all(r['status'] == 'PASS' for r in pos_comparable) else ('MISSING' if not pos_comparable else 'FAIL')
   _UI_REFRESH_LOGGER.info(
-   '[RECONCILIATION] status=%s source=%s rows=%s failures=%s',
-   status,
+   '[RECONCILIATION] status=%s position_status=%s source=%s rows=%s failures=%s pos_failures=%s',
+   status, position_status,
    portfolio.get('source'),
    len(rows),
    len([row for row in rows if row['status'] == 'FAIL']),
+   len([r for r in position_rows if r['status'] == 'FAIL']),
   )
   return {
    'status': status,
+   'position_status': position_status,
    'source': portfolio.get('source'),
    'portfolioMode': portfolio.get('portfolioMode'),
    'positionsSource': portfolio.get('positionsSource'),
@@ -1457,9 +1532,22 @@ def debug_portfolio_reconciliation():
    'quoteAge': portfolio.get('quoteAge'),
    'summary': {
     'ibkr': raw_summary,
-    'pia': {key: pia.get(key) for key in ['total_value','net_liquidation','gross_position_value','cash','buying_power','excess_liquidity','init_margin_req','maint_margin_req','available_funds','unrealized','daily_pnl','realized_pnl']},
+    'pia': {key: pia.get(key) for key in ['total_value','net_liquidation','gross_position_value','cash','buying_power','excess_liquidity','init_margin_req','maint_margin_req','margin_used','available_funds','unrealized','daily_pnl','daily_pnl_pct','realized_pnl','currency']},
+   },
+   'calculationProvenance': portfolio.get('calculationProvenance'),
+   'runtime': {
+    'activeSource': portfolio.get('active_source') or portfolio.get('source'),
+    'quoteProvider': portfolio.get('quote_provider'),
+    'snapshotTimestamp': portfolio.get('snapshot_timestamp') or portfolio.get('snapshotTimestamp'),
+    'snapshotAgeSeconds': portfolio.get('snapshotAgeSeconds') or portfolio.get('snapshot_age_seconds'),
+    'pricesLastRefresh': portfolio.get('pricesLastRefresh'),
+    'pricesAgeSeconds': portfolio.get('pricesAgeSeconds'),
+    'isLivePricing': portfolio.get('isLivePricing'),
+    'isLiveUpdating': portfolio.get('isLiveUpdating'),
+    'currency': portfolio.get('currency'),
    },
    'rows': rows,
+   'position_rows': position_rows,
    'responseTimestamp': _utc_now_iso(),
   }
  except Exception as e:
@@ -1591,6 +1679,319 @@ def debug_quote_cache():
   }
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get('/api/debug/pipeline-trace')
+def debug_pipeline_trace():
+ """ARTEMIS-RUNTIME-FORENSICS-063 — full pipeline trace: raw bundle → quotes → calculator → DTO."""
+ import time as _time
+ try:
+  from services.provider_manager import get_canonical_portfolio
+  from services.market_data_engine import market_data_engine
+  from services.portfolio_calculator import STALE_COMPUTED_FIELDS, strip_stale_fields
+  t0 = _time.time()
+  stages = []
+
+  # Stage 1 — Provider Resolution
+  resolution = resolve_portfolio_provider()
+  stages.append({
+   'stage': 1, 'name': 'PROVIDER_RESOLUTION', 'timestamp': _utc_now_iso(),
+   'output': {
+    'active_source': resolution.active_source,
+    'configured_mode': resolution.configured_mode,
+    'provider_class': resolution.provider_class,
+    'snapshot_available': resolution.snapshot_available,
+    'snapshot_timestamp': resolution.snapshot_timestamp,
+    'fallback_active': getattr(resolution, 'fallback_active', None),
+    'stale_reason': getattr(resolution, 'stale_reason', None),
+   },
+  })
+
+  # Stage 2 — Raw Bundle (before any transformation)
+  raw_positions = []
+  raw_summary = {}
+  bundle_source = 'NOT_LOADED'
+  stage2_error = None
+  try:
+   active_src = resolution.active_source
+   if active_src == 'IBKR_LIVE':
+    ibkr_p = resolution.provider if isinstance(resolution.provider, IbkrLivePortfolioProvider) else IbkrLivePortfolioProvider()
+    bndl = ibkr_p._load_bundle()
+    raw_positions = list(bndl.get('positions') or []) if isinstance(bndl, dict) else []
+    raw_summary = (bndl.get('summary') or {}) if isinstance(bndl, dict) else {}
+    bundle_source = bndl.get('source', 'IBKR_LIVE') if isinstance(bndl, dict) else 'UNKNOWN'
+   elif active_src in ('LAST_UPDATE', 'SNAPSHOT'):
+    snap_p = resolution.provider if isinstance(resolution.provider, SnapshotPortfolioProvider) else SnapshotPortfolioProvider()
+    sb = snap_p._load_bundle()
+    raw_positions = list(sb.get('positions') or []) if isinstance(sb, dict) else []
+    raw_summary = (sb.get('summary') or {}) if isinstance(sb, dict) else {}
+    bundle_source = 'SNAPSHOT'
+  except Exception as exc:
+   stage2_error = str(exc)
+   bundle_source = 'ERROR'
+
+  def _pos_row(p):
+   return {
+    'symbol': str(p.get('symbol') or p.get('underlying') or '').upper().split()[0],
+    'conid': p.get('conid') or p.get('conId'),
+    'qty': p.get('qty') or p.get('quantity'),
+    'avgCost': p.get('avgCost') or p.get('avg_cost'),
+    'multiplier': p.get('multiplier'),
+    'assetClass': str(p.get('assetClass') or p.get('sec_type') or 'STK').upper(),
+    'last_ibkr': p.get('last') or p.get('mktPrice'),
+    'mktValue_ibkr': p.get('mktValue') or p.get('market_value'),
+    'unrealizedPnl_ibkr': p.get('unrealizedPnl') or p.get('unrealized'),
+    'day_pnl_ibkr': p.get('day_pnl'),
+   }
+
+  stages.append({
+   'stage': 2, 'name': 'RAW_BUNDLE', 'timestamp': _utc_now_iso(),
+   'input': {'active_source': resolution.active_source},
+   'output': {
+    'bundle_source': bundle_source,
+    'positions_count': len(raw_positions),
+    'error': stage2_error,
+    'summary': {k: v for k, v in raw_summary.items() if not isinstance(v, (dict, list))},
+    'positions': [_pos_row(p) for p in raw_positions if isinstance(p, dict)],
+   },
+  })
+
+  # Stage 3 — Calculator Input (stale fields stripped for snapshot mode)
+  if resolution.active_source in ('LAST_UPDATE', 'SNAPSHOT'):
+   stripped = [strip_stale_fields(p) for p in raw_positions if isinstance(p, dict)]
+   fields_stripped = sorted(STALE_COMPUTED_FIELDS)
+  else:
+   stripped = [p for p in raw_positions if isinstance(p, dict)]
+   fields_stripped = []
+  stages.append({
+   'stage': 3, 'name': 'CALCULATOR_INPUT', 'timestamp': _utc_now_iso(),
+   'output': {
+    'positions_count': len(stripped),
+    'stale_fields_stripped': fields_stripped,
+    'positions': [
+     {'symbol': str(p.get('symbol') or p.get('underlying') or '').upper().split()[0],
+      'conid': p.get('conid') or p.get('conId'),
+      'qty': p.get('qty') or p.get('quantity'),
+      'avgCost': p.get('avgCost') or p.get('avg_cost'),
+      'multiplier': p.get('multiplier'),
+      'has_last': bool(p.get('last') or p.get('mktPrice'))}
+     for p in stripped
+    ],
+   },
+  })
+
+  # Stage 4 — Canonical DTO (run the pipeline)
+  canonical = get_canonical_portfolio(resolution=resolution)
+  stages.append({
+   'stage': 4, 'name': 'CANONICAL_DTO', 'timestamp': _utc_now_iso(),
+   'output': {
+    'source': canonical.get('source'),
+    'portfolioMode': canonical.get('portfolioMode'),
+    'quote_provider': canonical.get('quote_provider'),
+    'total_value': canonical.get('total_value'),
+    'net_liquidation': canonical.get('net_liquidation'),
+    'cash': canonical.get('cash'),
+    'unrealized': canonical.get('unrealized'),
+    'daily_pnl': canonical.get('daily_pnl'),
+    'buying_power': canonical.get('buying_power'),
+    'excess_liquidity': canonical.get('excess_liquidity'),
+    'maint_margin_req': canonical.get('maint_margin_req'),
+    'init_margin_req': canonical.get('init_margin_req'),
+    'positions_count': canonical.get('positions_count'),
+    'consumers': ['Desktop', 'Mobile', 'Dashboard', 'AI'],
+   },
+  })
+
+  # Stage 5 — Quote Engine cache state
+  cache_snap = market_data_engine.cache_snapshot()
+  stages.append({
+   'stage': 5, 'name': 'QUOTE_ENGINE_CACHE', 'timestamp': _utc_now_iso(),
+   'output': {
+    'active_provider': cache_snap.get('activeProvider'),
+    'quote_count': cache_snap.get('quoteCount'),
+    'quotes': cache_snap.get('items', []),
+   },
+  })
+
+  # Position-level comparison — IBKR raw vs PIA computed (only when IBKR is live)
+  position_comparison = []
+  first_failure = None
+
+  def _cmp(iv, pv, tol):
+   try:
+    iv_f = float(iv) if iv not in (None, '') else None
+    pv_f = float(pv) if pv not in (None, '') else None
+    if iv_f is None and pv_f is None:
+     return {'ibkr': None, 'pia': None, 'diff': None, 'status': 'MISSING'}
+    if iv_f is None or pv_f is None:
+     return {'ibkr': iv_f, 'pia': pv_f, 'diff': None, 'status': 'FAIL'}
+    diff = round(pv_f - iv_f, 4)
+    return {'ibkr': round(iv_f, 4), 'pia': round(pv_f, 4), 'diff': diff, 'status': 'PASS' if abs(diff) <= tol else 'FAIL'}
+   except Exception:
+    return {'ibkr': iv, 'pia': pv, 'diff': None, 'status': 'MISSING'}
+
+  if resolution.active_source == 'IBKR_LIVE' and raw_positions:
+   can_positions = canonical.get('positions', [])
+   pia_by_sym = {str(p.get('symbol') or p.get('underlying') or '').upper().split()[0]: p for p in can_positions if isinstance(p, dict)}
+   pia_by_conid = {str(p.get('conid') or p.get('conId') or ''): p for p in can_positions if isinstance(p, dict) and (p.get('conid') or p.get('conId'))}
+   for raw in raw_positions:
+    if not isinstance(raw, dict):
+     continue
+    sym = str(raw.get('symbol') or raw.get('underlying') or '').upper().split()[0]
+    conid = str(raw.get('conid') or raw.get('conId') or '').strip()
+    pia_pos = pia_by_conid.get(conid) or pia_by_sym.get(sym) or {}
+    pos_fields = {
+     'last': _cmp(raw.get('last') or raw.get('mktPrice'), pia_pos.get('last'), 0.001),
+     'market_value': _cmp(raw.get('mktValue') or raw.get('market_value'), pia_pos.get('market_value'), 0.10),
+     'unrealized': _cmp(raw.get('unrealizedPnl') or raw.get('unrealized'), pia_pos.get('unrealized'), 0.10),
+     'day_pnl': _cmp(raw.get('day_pnl'), pia_pos.get('day_pnl'), 0.10),
+    }
+    fstatuses = [f['status'] for f in pos_fields.values()]
+    pos_status = 'PASS' if all(s == 'PASS' for s in fstatuses) else ('FAIL' if any(s == 'FAIL' for s in fstatuses) else 'MISSING')
+    row = {
+     'symbol': sym, 'conid': conid or None,
+     'qty': raw.get('qty') or raw.get('quantity'),
+     'avgCost': raw.get('avgCost') or raw.get('avg_cost'),
+     'assetClass': str(raw.get('assetClass') or raw.get('sec_type') or 'STK').upper(),
+     'status': pos_status, 'fields': pos_fields,
+    }
+    position_comparison.append(row)
+    if pos_status == 'FAIL' and first_failure is None:
+     first_failure = row
+
+  fail_count = sum(1 for p in position_comparison if p.get('status') == 'FAIL')
+  total_ms = round((_time.time() - t0) * 1000, 1)
+  overall = 'ERROR' if stage2_error else ('PASS' if fail_count == 0 else 'FAIL')
+  _UI_REFRESH_LOGGER.info(
+   '[FORENSICS_TRACE] id=ARTEMIS-063 source=%s positions=%s failures=%s ms=%s',
+   resolution.active_source, len(raw_positions), fail_count, total_ms,
+  )
+  return {
+   'forensics_id': 'ARTEMIS-RUNTIME-FORENSICS-063',
+   'responseTimestamp': _utc_now_iso(),
+   'total_duration_ms': total_ms,
+   'overall_status': overall,
+   'active_source': resolution.active_source,
+   'position_failures': fail_count,
+   'first_failure': first_failure,
+   'stages': stages,
+   'position_comparison': position_comparison,
+  }
+ except Exception as e:
+  import traceback as _tb
+  raise HTTPException(status_code=503, detail={'error': str(e), 'traceback': _tb.format_exc()})
+
+
+@app.get('/api/debug/snapshot-lifecycle')
+def debug_snapshot_lifecycle():
+ """ARTEMIS-RUNTIME-FORENSICS-063 — snapshot state and offline-mode readiness."""
+ try:
+  from services.market_data_engine import market_data_engine
+  snap = SnapshotPortfolioProvider()
+  snap_positions = []
+  snap_summary = {}
+  snap_available = False
+  try:
+   sb = snap._load_bundle()
+   snap_positions = list(sb.get('positions') or []) if isinstance(sb, dict) else []
+   snap_summary = (sb.get('summary') or {}) if isinstance(sb, dict) else {}
+   snap_available = bool(snap_positions)
+  except Exception:
+   pass
+  snap_state = {}
+  try:
+   snap_state = snap.get_snapshot_state() or {}
+  except Exception:
+   pass
+  stk_syms = []
+  opt_syms = []
+  for p in snap_positions:
+   if not isinstance(p, dict):
+    continue
+   asset = str(p.get('assetClass') or p.get('sec_type') or 'STK').upper()
+   sym = str(p.get('symbol') or p.get('underlying') or '').upper().split()[0]
+   if sym:
+    (opt_syms if asset in ('OPT', 'OPTION', 'OPTIONS') else stk_syms).append(sym)
+  cache_snap = market_data_engine.cache_snapshot()
+  cached_syms = {item.get('symbol', '').upper() for item in cache_snap.get('items', []) if isinstance(item, dict)}
+  yahoo_needed = sorted(set(s for s in stk_syms if s and s not in cached_syms))
+  resolution = resolve_portfolio_provider()
+  return {
+   'responseTimestamp': _utc_now_iso(),
+   'snapshotAvailable': snap_available,
+   'snapshotTimestamp': snap_state.get('snapshot_timestamp') or snap_summary.get('snapshot_timestamp') or snap_summary.get('as_of'),
+   'snapshotAgeSeconds': snap_state.get('snapshotAgeSeconds'),
+   'snapshotSchemaVersion': snap_state.get('schemaVersion'),
+   'lastRefreshStatus': snap_state.get('lastRefreshStatus'),
+   'lastRefreshAttempt': snap_state.get('lastRefreshAttempt'),
+   'lastRefreshError': snap_state.get('lastRefreshError'),
+   'positionsCount': len(snap_positions),
+   'stockSymbols': sorted(set(stk_syms)),
+   'optionCount': len(set(opt_syms)),
+   'optionSymbolsOrConids': sorted(set(opt_syms)),
+   'quoteCoverage': {
+    'stocksYahooCoverable': sorted(set(stk_syms)),
+    'optionsLastKnownOnly': sorted(set(opt_syms)),
+    'yahooNeededOnRestart': yahoo_needed,
+    'note': 'Options have no Yahoo fallback; price seeded via prime_cache() from stored last price on snapshot load',
+   },
+   'currentResolution': {
+    'active_source': resolution.active_source,
+    'configured_mode': resolution.configured_mode,
+    'provider_class': resolution.provider_class,
+    'fallback_active': getattr(resolution, 'fallback_active', None),
+   },
+   'lifecycle': {
+    'ibkr_connected': 'IBKR_LIVE — live positions + prices direct from gateway',
+    'ibkr_offline_snapshot_present': 'LAST_UPDATE — snapshot positions + Yahoo prices for stocks; LAST_KNOWN for options',
+    'ibkr_offline_no_snapshot': 'MOCK — demo data only',
+    'reconnect': 'resolve_portfolio_provider() auto-returns to IBKR_LIVE on next poll when gateway reconnects',
+   },
+  }
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get('/api/debug/provider-runtime')
+def debug_provider_runtime():
+ """Runtime provider state machine — single diagnostics endpoint for ARTEMIS-064."""
+ try:
+  from services.runtime_state import get_state as _get_rs
+  from services.provider_cache import _MEMORY, _LOCK as _PC_LOCK
+  rs=_get_rs()
+  now=time.time()
+  cache_versions={}
+  with _PC_LOCK:
+   for (ns,key),(ts,_payload) in list(_MEMORY.items()):
+    if ns=='route':
+     cache_versions[f'{ns}:{key}']={
+      'ageSeconds':round(now-ts,3),
+      'updatedAt':datetime.fromtimestamp(ts,timezone.utc).isoformat(),
+     }
+  dashboard_cache=_dashboard_cache_debug()
+  return {
+   'configuredMode':rs.get('configured_mode'),
+   'runtimeState':rs.get('state'),
+   'activeProvider':rs.get('active_source'),
+   'providerClass':rs.get('provider_class'),
+   'promotionCount':rs.get('promotion_count',0),
+   'lastPromotion':rs.get('last_promotion'),
+   'canonicalVersion':rs.get('canonical_version',0),
+   'providerGeneration':rs.get('provider_generation',0),
+   'providerTimestamp':rs.get('provider_timestamp'),
+   'portfolioTimestamp':rs.get('portfolio_timestamp'),
+   'quoteTimestamp':rs.get('quote_timestamp'),
+   'cacheInvalidatedAt':rs.get('cache_invalidated_at'),
+   'cacheVersions':cache_versions,
+   'dashboardCache':dashboard_cache,
+   'dashboardCacheAge':dashboard_cache.get('ageSeconds'),
+   'mobileCacheAge':cache_versions.get('route:MOBILE',{}).get('ageSeconds'),
+   'portfolioCacheAge':cache_versions.get('route:PORTFOLIO',{}).get('ageSeconds'),
+   'servedFrom':rs.get('active_source'),
+  }
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
+
 
 @app.get('/api/portfolio/history')
 def portfolio_history(limit:int=90):
