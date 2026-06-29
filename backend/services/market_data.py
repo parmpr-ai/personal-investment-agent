@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from services.candlestick import detect as cdl_detect
+from services.chart_patterns import detect as ptn_detect
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; InvestAgent/6.0)"}
 _TIMEOUT = 8
@@ -220,6 +221,7 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
         ichimoku     = _compute_ichimoku(highs, lows, closes)
         cci          = _compute_cci(highs, lows, closes)
         ivr          = _compute_ivr(closes)
+        patterns     = ptn_detect(highs, lows, closes) if len(closes) >= 10 else {}
         # Pivot points use previous day's H/L/C
         pivots = _compute_pivot_points(
             highs[-2] if len(highs) >= 2 else highs[-1],
@@ -264,6 +266,7 @@ async def fetch_quote_daily(ticker: str, days: int = 60) -> Dict[str, Any]:
         out.update(cci)        # cci, cci_overbought/oversold/extreme, cci_bullish/bearish_zero
         out.update(ivr)        # ivr, realized_vol, iv_high, iv_low, iv_extreme
         out.update(short_data) # days_to_cover, short_float_pct, high_short_interest, squeeze_candidate
+        out.update(patterns)   # ptn_* flags, chart_bull_patterns, chart_bear_patterns, chart_signal
         for k, v in bb_daily.items():
             out[f"{k}_daily"] = v
         for k, v in macd_daily.items():
@@ -953,6 +956,21 @@ async def fetch_enhanced_quotes(tickers: List[str]) -> Dict[str, Dict[str, Any]]
                 "short_float_pct":      d.get("short_float_pct"),
                 "high_short_interest":  d.get("high_short_interest"),
                 "squeeze_candidate":    d.get("squeeze_candidate"),
+                # Chart Patterns
+                "ptn_head_shoulders":       d.get("ptn_head_shoulders"),
+                "ptn_inv_head_shoulders":   d.get("ptn_inv_head_shoulders"),
+                "ptn_double_top":           d.get("ptn_double_top"),
+                "ptn_double_bottom":        d.get("ptn_double_bottom"),
+                "ptn_ascending_triangle":   d.get("ptn_ascending_triangle"),
+                "ptn_descending_triangle":  d.get("ptn_descending_triangle"),
+                "ptn_symmetrical_triangle": d.get("ptn_symmetrical_triangle"),
+                "ptn_bull_flag":            d.get("ptn_bull_flag"),
+                "ptn_bear_flag":            d.get("ptn_bear_flag"),
+                "ptn_pennant":              d.get("ptn_pennant"),
+                "ptn_cup_handle":           d.get("ptn_cup_handle"),
+                "chart_bull_patterns":      d.get("chart_bull_patterns"),
+                "chart_bear_patterns":      d.get("chart_bear_patterns"),
+                "chart_signal":             d.get("chart_signal"),
             })
         out[t] = base
     return out

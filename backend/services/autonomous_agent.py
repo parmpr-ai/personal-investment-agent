@@ -472,6 +472,41 @@ def _keltner_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
     return score, ", ".join(reasons)
 
 
+def _chart_pattern_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
+    """Chart pattern adjustment: each active pattern contributes score."""
+    score = 0; reasons = []
+    BULL_PATTERNS = {
+        "ptn_inv_head_shoulders":   (22, "Inv H&S (reversal buy)"),
+        "ptn_double_bottom":        (18, "Double Bottom"),
+        "ptn_cup_handle":           (20, "Cup & Handle (breakout setup)"),
+        "ptn_ascending_triangle":   (15, "Ascending Triangle"),
+        "ptn_bull_flag":            (16, "Bull Flag"),
+        "ptn_pennant":              (14, "Pennant (continuation)"),
+        "ptn_symmetrical_triangle": (10, "Symmetrical Triangle"),
+    }
+    BEAR_PATTERNS = {
+        "ptn_head_shoulders":       (22, "H&S (reversal short)"),
+        "ptn_double_top":           (18, "Double Top"),
+        "ptn_descending_triangle":  (15, "Descending Triangle"),
+        "ptn_bear_flag":            (16, "Bear Flag"),
+    }
+    if bullish_context:
+        for key, (pts, label) in BULL_PATTERNS.items():
+            if q.get(key):
+                score += pts; reasons.append(label)
+        for key, (pts, label) in BEAR_PATTERNS.items():
+            if q.get(key):
+                score -= pts; reasons.append(f"{label} (bearish counter)")
+    else:
+        for key, (pts, label) in BEAR_PATTERNS.items():
+            if q.get(key):
+                score += pts; reasons.append(label)
+        for key, (pts, label) in BULL_PATTERNS.items():
+            if q.get(key):
+                score -= pts; reasons.append(f"{label} (bull counter)")
+    return score, ", ".join(reasons)
+
+
 def _fib_adj(q: Dict, bullish_context: bool = True) -> tuple[int, str]:
     """Fibonacci retracement: golden zone = prime buy zone; near resistance = caution."""
     score = 0; reasons = []
@@ -628,7 +663,8 @@ def _score_momentum(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = 
         lambda: _pivot_adj(q, True),         lambda: _keltner_adj(q, True),
         lambda: _fib_adj(q, True),           lambda: _ichimoku_adj(q, True),
         lambda: _cci_adj(q, True),           lambda: _ivr_adj(q),
-        lambda: _short_interest_adj(q, True),lambda: _candle_adj(q, bullish_context=True),
+        lambda: _short_interest_adj(q, True), lambda: _chart_pattern_adj(q, True),
+        lambda: _candle_adj(q, bullish_context=True),
     ]:
         d, r = adj_fn(); score += d
         if r: reasons.append(r)
@@ -676,7 +712,8 @@ def _score_mean_reversion(q: Dict, macro: Dict, news: Dict = {}, fundamentals: D
         lambda: _pivot_adj(q, True),         lambda: _keltner_adj(q, True),
         lambda: _fib_adj(q, True),           lambda: _ichimoku_adj(q, True),
         lambda: _cci_adj(q, True),           lambda: _ivr_adj(q),
-        lambda: _short_interest_adj(q, True),lambda: _candle_adj(q, bullish_context=True),
+        lambda: _short_interest_adj(q, True), lambda: _chart_pattern_adj(q, True),
+        lambda: _candle_adj(q, bullish_context=True),
     ]:
         d, r = adj_fn(); score += d
         if r: reasons.append(r)
@@ -721,7 +758,8 @@ def _score_breakout(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dict = 
         lambda: _pivot_adj(q, True),         lambda: _keltner_adj(q, True),
         lambda: _fib_adj(q, True),           lambda: _ichimoku_adj(q, True),
         lambda: _cci_adj(q, True),           lambda: _ivr_adj(q),
-        lambda: _short_interest_adj(q, True),lambda: _candle_adj(q, bullish_context=True),
+        lambda: _short_interest_adj(q, True), lambda: _chart_pattern_adj(q, True),
+        lambda: _candle_adj(q, bullish_context=True),
     ]:
         d, r = adj_fn(); score += d
         if r: reasons.append(r)
@@ -763,7 +801,8 @@ def _score_trend_follow(q: Dict, macro: Dict, news: Dict = {}, fundamentals: Dic
         lambda: _pivot_adj(q, True),         lambda: _keltner_adj(q, True),
         lambda: _fib_adj(q, True),           lambda: _ichimoku_adj(q, True),
         lambda: _cci_adj(q, True),           lambda: _ivr_adj(q),
-        lambda: _short_interest_adj(q, True),lambda: _candle_adj(q, bullish_context=True),
+        lambda: _short_interest_adj(q, True), lambda: _chart_pattern_adj(q, True),
+        lambda: _candle_adj(q, bullish_context=True),
     ]:
         d, r = adj_fn(); score += d
         if r: reasons.append(r)
@@ -842,7 +881,8 @@ def _score_short_momentum(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, s
         lambda: _pivot_adj(q, False),          lambda: _keltner_adj(q, False),
         lambda: _fib_adj(q, False),            lambda: _ichimoku_adj(q, False),
         lambda: _cci_adj(q, False),            lambda: _ivr_adj(q),
-        lambda: _short_interest_adj(q, False), lambda: _candle_adj(q, bullish_context=False),
+        lambda: _short_interest_adj(q, False), lambda: _chart_pattern_adj(q, False),
+        lambda: _candle_adj(q, bullish_context=False),
     ]:
         d, r = adj_fn(); score += d
         if r: reasons.append(r)
@@ -921,7 +961,8 @@ def _score_short_breakdown(q: Dict, macro: Dict, news: Dict = {}) -> tuple[int, 
         lambda: _pivot_adj(q, False),          lambda: _keltner_adj(q, False),
         lambda: _fib_adj(q, False),            lambda: _ichimoku_adj(q, False),
         lambda: _cci_adj(q, False),            lambda: _ivr_adj(q),
-        lambda: _short_interest_adj(q, False), lambda: _candle_adj(q, bullish_context=False),
+        lambda: _short_interest_adj(q, False), lambda: _chart_pattern_adj(q, False),
+        lambda: _candle_adj(q, bullish_context=False),
     ]:
         d, r = adj_fn(); score += d
         if r: reasons.append(r)
