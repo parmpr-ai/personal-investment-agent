@@ -925,3 +925,25 @@ Owner: ARTEMIS / HERMES
 
 * `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/services/runtime_state.py backend/tests/test_provider_lifecycle.py backend/tests/test_runtime_state.py` - PASS
 * `PYTHONPATH=backend python -m unittest backend.tests.test_provider_lifecycle backend.tests.test_runtime_state` - PASS, 19 tests
+
+## v0.3.56 - Hybrid Market Data Engine (EPIC-PLATFORM-002)
+
+Date: 2026-06-29
+Status: READY FOR PO UAT
+Owner: ARTEMIS
+
+### Backend - Market Data Engine
+
+* Quote provider selection is now explicit and independent from portfolio ownership: `IBKR_LIVE -> YAHOO_LIVE -> LAST_KNOWN -> NO_DATA`.
+* `QuoteEngine` now treats stale/non-live IBKR position quotes as quote-provider degradation instead of as valid IBKR live quotes.
+* Automatic quote recovery now promotes back to IBKR without restart when fresh IBKR quotes reappear.
+
+### Diagnostics
+
+* Added `GET /api/debug/market-data-engine` with active quote provider, latency, retry delay, retry count, failure count, failed symbols, successful symbols, freshness, and cache snapshot.
+* Canonical portfolio payload now exposes `quoteProvider` and `quoteDiagnostics` alongside existing position ownership fields.
+
+### Validation
+
+* `python -m py_compile backend/main.py backend/services/quote_engine.py backend/services/market_data_engine.py backend/services/provider_manager.py backend/tests/test_market_data_engine.py` - PASS
+* `PYTHONPATH=backend python -m unittest backend.tests.test_market_data_engine backend.tests.test_price_provider_fallback backend.tests.test_provider_lifecycle backend.tests.test_runtime_state` - PASS, 26 tests

@@ -1681,6 +1681,35 @@ def debug_quote_cache():
   raise HTTPException(status_code=503, detail=str(e))
 
 
+@app.get('/api/debug/market-data-engine')
+def debug_market_data_engine():
+ try:
+  from services.market_data_engine import market_data_engine
+
+  diagnostics = market_data_engine.diagnostics_snapshot()
+  return {
+   'source': 'MARKET_DATA_ENGINE',
+   'activeQuoteProvider': diagnostics.get('activeQuoteProvider'),
+   'quoteSource': diagnostics.get('quoteSource'),
+   'quoteLatencyMs': diagnostics.get('quoteLatencyMs'),
+   'retryDelaySeconds': diagnostics.get('retryDelaySeconds'),
+   'retryCount': diagnostics.get('retryCount'),
+   'failureCount': diagnostics.get('failureCount'),
+   'failedSymbols': diagnostics.get('failedSymbols'),
+   'successfulSymbols': diagnostics.get('successfulSymbols'),
+   'lastRefresh': diagnostics.get('lastRefresh'),
+   'quoteFreshnessSeconds': diagnostics.get('quoteFreshnessSeconds'),
+   'failureReasons': diagnostics.get('failureReasons'),
+   'providerFailures': diagnostics.get('providerFailures'),
+   'providerRetries': diagnostics.get('providerRetries'),
+   'quoteCount': diagnostics.get('quoteCount'),
+   'cache': market_data_engine.cache_snapshot(),
+   'responseTimestamp': _utc_now_iso(),
+  }
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
+
+
 @app.get('/api/debug/pipeline-trace')
 def debug_pipeline_trace():
  """ARTEMIS-RUNTIME-FORENSICS-063 — full pipeline trace: raw bundle → quotes → calculator → DTO."""

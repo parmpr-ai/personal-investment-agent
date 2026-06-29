@@ -63,6 +63,7 @@ class MarketDataEngine:
             "latencyMs": latency_ms,
             "timestamp": _utc_now().isoformat(),
             "cache": _ENGINE.cache_snapshot(),
+            "diagnostics": _ENGINE.diagnostics_snapshot(),
         }
         _LOG.info(
             "[MARKET_SESSION] session=%s status=%s provider=%s quotes=%s latency_ms=%s",
@@ -79,6 +80,26 @@ class MarketDataEngine:
 
     def cache_snapshot(self) -> Dict[str, Any]:
         return _ENGINE.cache_snapshot()
+
+    def diagnostics_snapshot(self) -> Dict[str, Any]:
+        cache = _ENGINE.cache_snapshot()
+        status = cache.get("status") if isinstance(cache.get("status"), dict) else {}
+        return {
+            "activeQuoteProvider": status.get("activeProvider") or cache.get("activeProvider"),
+            "quoteSource": status.get("quoteSource") or cache.get("activeProvider"),
+            "quoteLatencyMs": status.get("quoteLatencyMs"),
+            "retryDelaySeconds": status.get("retryDelaySeconds"),
+            "retryCount": status.get("retryCount"),
+            "failureCount": status.get("failureCount"),
+            "failedSymbols": status.get("failedSymbols") or [],
+            "successfulSymbols": status.get("successfulSymbols") or [],
+            "lastRefresh": status.get("lastRefresh"),
+            "quoteFreshnessSeconds": status.get("quoteFreshnessSeconds"),
+            "failureReasons": status.get("failureReasons") or {},
+            "providerFailures": status.get("providerFailures") or {},
+            "providerRetries": status.get("providerRetries") or {},
+            "quoteCount": cache.get("quoteCount"),
+        }
 
 
 market_data_engine = MarketDataEngine()

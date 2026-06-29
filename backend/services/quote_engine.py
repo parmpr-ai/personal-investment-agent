@@ -17,6 +17,7 @@ _LOG = logging.getLogger("pia.quote_engine")
 
 _LIVE_SOURCES = frozenset({"IBKR_LIVE", "YAHOO_LIVE", "YAHOO_DELAYED"})
 _STALE_SOURCES = frozenset({"LAST_KNOWN", "NO_DATA"})
+_IBKR_SOURCES = frozenset({"IBKR_LIVE", "IBKR_MARKETDATA", "IBKR_MARKETDATA_SNAPSHOT"})
 
 
 @dataclass
@@ -100,6 +101,75 @@ class QuoteEngine:
     def __init__(self) -> None:
         self._last_known: Dict[str, Quote] = {}
         self._active_provider = "NO_DATA"
+        self._provider_failures: Dict[str, int] = {"IBKR": 0, "YAHOO": 0, "LAST_KNOWN": 0}
+        self._provider_retries: Dict[str, int] = {"IBKR": 0, "YAHOO": 0, "LAST_KNOWN": 0}
+        self._last_status: Dict[str, Any] = {
+            "activeProvider": "NO_DATA",
+            "quoteSource": "NO_DATA",
+            "quoteLatencyMs": None,
+            "retryDelaySeconds": 0.0,
+            "retryCount": 0,
+            "failureCount": 0,
+            "failedSymbols": [],
+            "successfulSymbols": [],
+            "lastRefresh": None,
+            "quoteFreshnessSeconds": None,
+        }
+
+    def _record_status(
+        self,
+        *,
+        provider: str,
+        latency_ms: float,
+        quote_map: Dict[str, Quote],
+        requested: List[Dict[str, str]],
+        failure_reasons: Dict[str, str],
+    ) -> None:
+        requested_symbols = sorted({item["symbol"] for item in requested if item.get("symbol")})
+        successful_symbols = sorted(
+            {
+                (quote.symbol or "").upper()
+                for quote in quote_map.values()
+                if quote.symbol
+            }
+        )
+        failed_symbols = sorted(symbol for symbol in requested_symbols if symbol not in successful_symbols)
+        quote_freshness = None
+        if quote_map:
+            quote_freshness = round(max(quote.age_seconds for quote in quote_map.values()), 3)
+        primary_provider = "LAST_KNOWN" if provider == "NO_DATA" and quote_map else provider
+        if primary_provider in {"IBKR_LIVE", "HYBRID"}:
+            self._provider_failures["IBKR"] = 0
+            self._provider_retries["IBKR"] = 0
+        elif any(item.get("reason") == "ibkr_unavailable" for item in [{"reason": reason} for reason in failure_reasons.values()]):
+            self._provider_failures["IBKR"] += 1
+            self._provider_retries["IBKR"] += 1
+        if primary_provider in {"YAHOO_LIVE", "HYBRID"}:
+            self._provider_failures["YAHOO"] = 0
+            self._provider_retries["YAHOO"] = 0
+        elif any(item.get("reason") == "yahoo_unavailable" for item in [{"reason": reason} for reason in failure_reasons.values()]):
+            self._provider_failures["YAHOO"] += 1
+            self._provider_retries["YAHOO"] += 1
+        retry_delay = 0.0
+        if failed_symbols and primary_provider in {"LAST_KNOWN", "NO_DATA"}:
+            retry_delay = 5.0
+        elif primary_provider == "YAHOO_LIVE" and self._provider_retries["IBKR"] > 0:
+            retry_delay = 2.0
+        self._last_status = {
+            "activeProvider": primary_provider,
+            "quoteSource": primary_provider,
+            "quoteLatencyMs": latency_ms,
+            "retryDelaySeconds": retry_delay,
+            "retryCount": max(self._provider_retries.values()) if self._provider_retries else 0,
+            "failureCount": sum(self._provider_failures.values()),
+            "failedSymbols": failed_symbols,
+            "successfulSymbols": successful_symbols,
+            "lastRefresh": _utc_now_iso(),
+            "quoteFreshnessSeconds": quote_freshness,
+            "failureReasons": failure_reasons,
+            "providerFailures": dict(self._provider_failures),
+            "providerRetries": dict(self._provider_retries),
+        }
 
     def get_quotes(
         self,
@@ -120,13 +190,19 @@ class QuoteEngine:
         requested = [_normalize_instrument(item) for item in instruments]
         quote_map: Dict[str, Quote] = {}
         provider = "NO_DATA"
+        failure_reasons: Dict[str, str] = {}
 
         if ibkr_positions:
             for position in ibkr_positions:
                 inst = _normalize_instrument(position)
                 symbol = inst["symbol"]
                 last = _f(position.get("last") or position.get("mktPrice"))
+                quote_source = str(position.get("priceSource") or position.get("quoteSource") or "").upper()
+                quote_stale = bool(position.get("quoteStale"))
                 if not symbol or last is None:
+                    continue
+                if quote_stale or quote_source not in _IBKR_SOURCES:
+                    failure_reasons.setdefault(symbol, "ibkr_unavailable")
                     continue
                 qty = _f(position.get("qty") or position.get("quantity") or 1) or 1.0
                 multiplier = _f(position.get("multiplier") or 1) or 1.0
@@ -171,8 +247,22 @@ class QuoteEngine:
             for symbol, quote in yahoo_quotes.items():
                 quote_map[symbol] = quote
                 self._last_known[symbol] = quote
+                if symbol in failure_reasons:
+                    failure_reasons.pop(symbol, None)
+            for item in requested:
+                if item["asset_type"] == "OPT" or not item["symbol"]:
+                    continue
+                key = quote_key_for_instrument(item)
+                if key in quote_map:
+                    continue
+                yahoo_quote = yahoo_quotes.get(item["symbol"])
+                if yahoo_quote:
+                    quote_map[key] = yahoo_quote
             if yahoo_quotes:
                 provider = "HYBRID" if provider == "IBKR_LIVE" else "YAHOO_LIVE"
+            for symbol in missing_yahoo_symbols:
+                if symbol not in yahoo_quotes:
+                    failure_reasons.setdefault(symbol, "yahoo_unavailable")
 
         for item in requested:
             key = quote_key_for_instrument(item)
@@ -202,9 +292,21 @@ class QuoteEngine:
                 timestamp=cached.timestamp,
                 fetched_at=cached.fetched_at,
             )
+            if item["symbol"]:
+                failure_reasons.pop(item["symbol"], None)
+
+        if provider == "NO_DATA" and quote_map:
+            provider = "LAST_KNOWN"
 
         latency_ms = round((time.time() - started) * 1000, 1)
         live_count = sum(1 for quote in quote_map.values() if quote.source not in _STALE_SOURCES)
+        self._record_status(
+            provider=provider,
+            latency_ms=latency_ms,
+            quote_map=quote_map,
+            requested=requested,
+            failure_reasons=failure_reasons,
+        )
         if provider != self._active_provider:
             _LOG.info("[PROVIDER_SWITCH] source=%s destination=%s reason=quote_provider_change", self._active_provider, provider)
             self._active_provider = provider
@@ -241,6 +343,7 @@ class QuoteEngine:
         now = time.time()
         return {
             "activeProvider": self._active_provider,
+            "status": dict(self._last_status),
             "quoteCount": len(self._last_known),
             "items": [
                 {
@@ -263,6 +366,13 @@ class QuoteEngine:
                 }
                 for key, quote in sorted(self._last_known.items())
             ],
+        }
+
+    def diagnostics_snapshot(self) -> Dict[str, Any]:
+        return {
+            **dict(self._last_status),
+            "activeProvider": self._active_provider,
+            "quoteCount": len(self._last_known),
         }
 
 

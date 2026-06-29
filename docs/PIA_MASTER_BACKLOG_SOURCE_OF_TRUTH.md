@@ -1332,3 +1332,18 @@ Validation:
 
 Known limitation:
 - Degraded quote state is currently surfaced through diagnostics and provider status contracts only. No dedicated UI presentation was added because the task explicitly excluded UI work.
+
+## EPIC-PLATFORM-002 — Hybrid Market Data Engine
+
+- Status: IMPLEMENTED / READY FOR PO UAT
+- Owner: ARTEMIS
+
+Implemented:
+- Quote ownership is now explicitly separated from portfolio ownership in the backend contract.
+- Quote priority is enforced as `IBKR_LIVE -> YAHOO_LIVE -> LAST_KNOWN -> NO_DATA`.
+- Fresh IBKR quotes automatically reclaim quote ownership after Yahoo/Last Known degradation without restart.
+- Added market-data diagnostics endpoint: `/api/debug/market-data-engine`.
+
+Validation:
+- `python -m py_compile backend/main.py backend/services/quote_engine.py backend/services/market_data_engine.py backend/services/provider_manager.py backend/tests/test_market_data_engine.py` PASS
+- `PYTHONPATH=backend python -m unittest backend.tests.test_market_data_engine backend.tests.test_price_provider_fallback backend.tests.test_provider_lifecycle backend.tests.test_runtime_state` PASS

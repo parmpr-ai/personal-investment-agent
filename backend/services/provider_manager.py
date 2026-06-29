@@ -86,7 +86,10 @@ def get_canonical_portfolio(
                 active_source = actual_source  # "LAST_UPDATE" or "NO_DATA"
                 last_cash = _f(raw_summary.get("cash") or 0)
                 if last_cash:
-                    ibkr_summary = {"cash": last_cash}
+                    ibkr_summary = {
+                        "cash": last_cash,
+                        "currency": raw_summary.get("currency") or "USD",
+                    }
                 # Prime QuoteEngine cache with snapshot prices (for options)
                 market_data_engine.prime_cache(positions)
                 # Strip stale computed fields before recalculating
@@ -96,6 +99,17 @@ def get_canonical_portfolio(
                     "reason=live_fetch_failed_snapshot_fallback positions=%s",
                     actual_source, len(positions),
                 )
+                try:
+                    from services import runtime_state as _rs
+                    _rs.on_resolution(
+                        active_source=actual_source,
+                        is_live=False,
+                        configured_mode=resolution.configured_mode or "",
+                        provider_class="SnapshotPortfolioProvider",
+                        fallback_active=True,
+                    )
+                except Exception:
+                    pass
             bundle_meta = _extract_bundle_meta(bundle)
         except Exception as exc:
             prev = active_source
@@ -119,7 +133,10 @@ def get_canonical_portfolio(
 
             last_cash = _f(raw_summary.get("cash") or 0)
             if last_cash:
-                ibkr_summary = {"cash": last_cash}
+                ibkr_summary = {
+                    "cash": last_cash,
+                    "currency": raw_summary.get("currency") or "USD",
+                }
 
             try:
                 snapshot_state = snap.get_snapshot_state() or {}
@@ -165,10 +182,14 @@ def get_canonical_portfolio(
     mode = "ibkr-live" if active_source == "IBKR_LIVE" else "last-update"
     snap_ts = bundle_meta.get("snapshot_timestamp")
 
-    # For offline mode, pass only cash (not full ibkr_summary — all other fields
-    # are unavailable without a live IBKR connection)
+    # For offline mode, pass cash + currency so the calculator can apply FX conversion
+    # correctly. All other account fields (margins, buying power) are unavailable without
+    # a live IBKR connection and are intentionally excluded.
     calc_summary = ibkr_summary if active_source == "IBKR_LIVE" else (
-        {"cash": ibkr_summary.get("cash", 0)} if ibkr_summary else None
+        {
+            "cash": ibkr_summary.get("cash", 0),
+            "currency": ibkr_summary.get("currency") or "USD",
+        } if ibkr_summary else None
     )
 
     dto = calculate(
@@ -183,7 +204,8 @@ def get_canonical_portfolio(
 
     # ── Provider meta enrichment ───────────────────────────────────────────────
     prices_live = quote_provider in ("IBKR_LIVE", "YAHOO_LIVE", "YAHOO_DELAYED", "HYBRID")
-    fallback_active = active_source != "IBKR_LIVE" or resolution.fallback_active
+    quote_fallback_active = quote_provider not in ("IBKR_LIVE",)
+    fallback_active = active_source != "IBKR_LIVE" or resolution.fallback_active or quote_fallback_active
     positions_source = "IBKR_LIVE" if active_source == "IBKR_LIVE" else "IBKR_LAST_UPDATE"
     portfolio_mode = (
         "IBKR_LIVE" if active_source == "IBKR_LIVE"
@@ -191,8 +213,16 @@ def get_canonical_portfolio(
     )
     price_provider_label = (
         "IBKR" if "IBKR" in quote_provider
-        else ("YAHOO" if "YAHOO" in quote_provider else "STALE")
+        else ("YAHOO" if "YAHOO" in quote_provider else ("LAST_KNOWN" if quote_provider == "LAST_KNOWN" else "STALE"))
     )
+    quote_diagnostics = market_meta.get("diagnostics") or {}
+    fallback_reason = resolution.fallback_reason
+    if active_source == "IBKR_LIVE" and quote_provider in ("YAHOO_LIVE", "YAHOO_DELAYED", "HYBRID"):
+        fallback_reason = fallback_reason or "IBKR live positions retained; quote provider degraded to Yahoo fallback."
+    elif active_source == "IBKR_LIVE" and quote_provider == "LAST_KNOWN":
+        fallback_reason = fallback_reason or "IBKR live positions retained; quote provider degraded to last known quotes."
+    elif active_source == "IBKR_LIVE" and quote_provider == "NO_DATA":
+        fallback_reason = fallback_reason or "IBKR live positions retained; no fresh quotes are currently available."
 
     dto.update({
         "portfolioMode": portfolio_mode,
@@ -209,7 +239,7 @@ def get_canonical_portfolio(
         ),
         "fallback_active": fallback_active,
         "fallback_reason": (
-            resolution.fallback_reason
+            fallback_reason
             if fallback_active
             else None
         ),
@@ -248,7 +278,10 @@ def get_canonical_portfolio(
             "latencyMs": market_meta.get("latencyMs"),
             "quoteCount": market_meta.get("quoteCount"),
             "timestamp": market_meta.get("timestamp"),
+            "diagnostics": quote_diagnostics,
         },
+        "quoteProvider": quote_provider,
+        "quoteDiagnostics": quote_diagnostics,
         # Display / risk
         "risk_mode": "IBKR LIVE" if active_source == "IBKR_LIVE" else "LAST UPDATE",
         "journal": [],
@@ -258,12 +291,28 @@ def get_canonical_portfolio(
         "_via_provider_manager": True,
     })
 
+    # ── Canonical DTO versioning ───────────────────────────────────────────────
+    _portfolio_ts = dto.get("summaryLastRefresh") or dto.get("lastRefresh")
+    _quote_ts = market_meta.get("timestamp")
+    try:
+        from services import runtime_state as _rs
+        _cv = _rs.next_canonical_version(portfolio_timestamp=_portfolio_ts, quote_timestamp=_quote_ts)
+        _rs_snap = _rs.get_state()
+    except Exception:
+        _cv = 0
+        _rs_snap = {}
+    dto["canonicalVersion"] = _cv
+    dto["providerGeneration"] = _rs_snap.get("provider_generation", 0)
+    dto["providerTimestamp"] = _rs_snap.get("provider_timestamp")
+    dto["portfolioTimestamp"] = _portfolio_ts
+    dto["quoteTimestamp"] = _quote_ts
+
     duration_ms = round((time.time() - t0) * 1000, 1)
     _LOG.info(
         "[DTO_CREATED] source=%s mode=%s total=%.2f positions=%s "
-        "quote_provider=%s consumers=[Desktop,Mobile,Dashboard,AI] duration_ms=%s",
+        "quote_provider=%s canonical_version=%s consumers=[Desktop,Mobile,Dashboard,AI] duration_ms=%s",
         active_source, mode, dto.get("total_value", 0),
-        len(positions), quote_provider, duration_ms,
+        len(positions), quote_provider, _cv, duration_ms,
     )
 
     return dto
