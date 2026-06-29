@@ -689,12 +689,12 @@ function AgentQuickCard({ agentStatus, onTap }: { agentStatus: any; onTap: () =>
   const port        = agentStatus?.paper_portfolio || {}
   const totalValue  = Number(port.total_value || 0)
   const totalRet    = Number(port.total_return_pct || 0)
-  const summary     = agentStatus?.last_cycle_summary || {}
+  const summary     = agentStatus?.last_summary || {}
   const executed    = summary.executed ?? null
   const decisions   = summary.decisions ?? null
   const dailyPnl    = summary.daily_pnl_pct ?? null
   const circuitBroken = summary.circuit_broken === true
-  const regime      = (agentStatus?.last_regime as string) || null
+  const regime      = (agentStatus?.regime as string) || null
   const lastCycle   = agentStatus?.last_cycle
   const retColor    = totalRet >= 0 ? '#24d18c' : '#ff6375'
 
@@ -824,8 +824,8 @@ function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any 
 
   const portfolio  = agentStatus?.paper_portfolio || {}
   const running    = !!agentStatus?.running
-  const regime     = (agentStatus?.last_regime as string) || 'UNKNOWN'
-  const vix        = Number(agentStatus?.last_vix || 0)
+  const regime     = (agentStatus?.regime as string) || 'UNKNOWN'
+  const vix        = Number(agentStatus?.macros?.vix || 0)
   const totalValue = Number(portfolio.total_value || 100_000)
   const totalRet   = Number(portfolio.total_return_pct || 0)
   const cash       = Number(portfolio.cash || 0)

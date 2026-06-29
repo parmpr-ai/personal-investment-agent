@@ -439,12 +439,12 @@ function AgentMiniPanel({ agentStatus, setActive, hidden }: any) {
   const port = agentStatus?.paper_portfolio || {}
   const totalValue = port.total_value ?? null
   const totalReturn = port.total_return_pct ?? null
-  const summary = agentStatus?.last_cycle_summary || {}
-  const executed = summary.executed ?? agentStatus?.last_cycle?.executed ?? null
-  const decisions = summary.decisions ?? agentStatus?.last_cycle?.decisions ?? null
+  const summary = agentStatus?.last_summary || {}
+  const executed = summary.executed ?? null
+  const decisions = summary.decisions ?? null
   const circuitBroken = summary.circuit_broken === true
   const dailyPnl = summary.daily_pnl_pct ?? null
-  const regime = agentStatus?.macros?.regime || agentStatus?.regime || null
+  const regime = agentStatus?.regime || null
   const lastCycle = agentStatus?.last_cycle
   const cycleCount = agentStatus?.cycle_count ?? null
 
