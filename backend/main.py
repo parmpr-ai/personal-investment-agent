@@ -12,7 +12,7 @@ from services.connectors import source_health, test_source, yahoo_news, yahoo_fu
 from services.manual_holdings import create_manual_holding, delete_manual_holding, list_manual_holdings, merge_manual_holdings, update_manual_holding
 from services.news_intelligence import get_news_intelligence
 from services.autonomous_agent import agent as autonomous_agent, get_recent_decisions, get_agent_log
-from services.paper_trading import get_portfolio_summary as paper_summary, get_trade_history, reset_book
+from services.paper_trading import get_portfolio_summary as paper_summary, get_trade_history, get_closed_trades, reset_book
 from services.ibkr_trader import test_ibkr_paper, get_ibkr_paper_account, cancel_ibkr_orders, get_ibkr_paper_status
 from services.strategy_tracker import get_strategy_stats, get_pnl_series, get_hourly_stats, get_today_summary
 from services.regime_detector import detect_regime
@@ -315,6 +315,14 @@ async def paper_portfolio():
 
 @app.get('/agent/paper/trades')
 def paper_trades(limit:int=100): return get_trade_history(limit)
+
+@app.get('/agent/paper/closed')
+def paper_closed_trades(limit:int=100): return get_closed_trades(limit)
+
+@app.get('/agent/attribution')
+def agent_attribution(limit:int=200):
+ from services.autonomous_agent import get_attribution_stats
+ return get_attribution_stats(limit)
 
 @app.post('/agent/paper/reset')
 def paper_reset(): return reset_book()

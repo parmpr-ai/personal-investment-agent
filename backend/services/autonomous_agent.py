@@ -142,9 +142,14 @@ def _log_db():
             reasoning TEXT,
             executed INTEGER DEFAULT 0,
             execution_result TEXT,
-            blocked_reason TEXT
+            blocked_reason TEXT,
+            trade_style TEXT
         )
     """)
+    try:
+        conn.execute("ALTER TABLE decisions ADD COLUMN trade_style TEXT")
+    except Exception:
+        pass  # column already exists
     conn.execute("""
         CREATE TABLE IF NOT EXISTS agent_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -187,7 +192,7 @@ def _save_decision(cycle_id: str, d: Dict[str, Any]):
     conn = _log_db()
     try:
         conn.execute(
-            "INSERT INTO decisions(ts,cycle_id,ticker,action,qty,price,confidence,reasoning,executed,execution_result,blocked_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO decisions(ts,cycle_id,ticker,action,qty,price,confidence,reasoning,executed,execution_result,blocked_reason,trade_style) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 datetime.now(timezone.utc).isoformat(),
                 cycle_id,
@@ -200,6 +205,7 @@ def _save_decision(cycle_id: str, d: Dict[str, Any]):
                 1 if d.get("executed") else 0,
                 json.dumps(d.get("execution_result")) if d.get("execution_result") else None,
                 d.get("blocked_reason"),
+                d.get("trade_style"),
             ),
         )
         conn.commit()
@@ -1441,7 +1447,7 @@ class AutonomousAgent:
 
             result = self._execute(action, ticker, qty, price, stop, target, d.get("reasoning", "")[:400], confidence)
 
-            _save_decision(cycle_id, {**d, "qty": qty, "price": price, "executed": result.get("ok", False), "execution_result": result, "blocked_reason": result.get("error") if not result.get("ok") else None})
+            _save_decision(cycle_id, {**d, "qty": qty, "price": price, "executed": result.get("ok", False), "execution_result": result, "blocked_reason": result.get("error") if not result.get("ok") else None, "trade_style": self._current_trade_style})
             if result.get("ok"):
                 executed += 1
                 _log("info", f"[{cycle_id}] {action} {qty:.1f}x {ticker} @ ${price:.2f} | {d.get('reasoning','')}")
@@ -1541,14 +1547,16 @@ class AutonomousAgent:
         mode = self.config["mode"]
         if mode == "paper":
             return execute_paper_trade(ticker=ticker, action=action, qty=qty, price=price,
-                                       stop_loss=stop, target=target, reason=reason, confidence=confidence)
+                                       stop_loss=stop, target=target, reason=reason, confidence=confidence,
+                                       trade_style=self._current_trade_style)
         elif mode == "ibkr_paper":
             ibkr_result = place_ibkr_order(ticker=ticker, action=action, qty=qty, price=price,
                                             order_type="MKT", mode="ibkr_paper")
             if ibkr_result.get("ok"):
                 # Mirror into internal book so portfolio_summary stays consistent
                 execute_paper_trade(ticker=ticker, action=action, qty=qty, price=price,
-                                    stop_loss=stop, target=target, reason=reason, confidence=confidence)
+                                    stop_loss=stop, target=target, reason=reason, confidence=confidence,
+                                    trade_style=self._current_trade_style)
             return ibkr_result
         else:
             return {"ok": False, "error": f"Mode '{mode}' not enabled for execution"}

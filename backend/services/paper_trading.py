@@ -64,6 +64,10 @@ def _connect():
             value TEXT NOT NULL
         )
     """)
+    try:
+        conn.execute("ALTER TABLE paper_book ADD COLUMN trade_style TEXT")
+    except Exception:
+        pass  # column already exists
     conn.commit()
     return conn
 
@@ -97,6 +101,7 @@ def execute_paper_trade(
     target: Optional[float] = None,
     reason: str = "",
     confidence: int = 50,
+    trade_style: str = "",
 ) -> Dict[str, Any]:
     action = action.upper()
     if action not in VALID_ACTIONS:
@@ -117,8 +122,8 @@ def execute_paper_trade(
                 return {"ok": False, "error": f"Insufficient cash: need ${cost:.2f}, have ${cash:.2f}"}
             _set_cash(conn, cash - cost)
             conn.execute(
-                "INSERT INTO paper_book(ticker,action,qty,price,stop_loss,target,reason,confidence,ts) VALUES(?,?,?,?,?,?,?,?,?)",
-                (ticker, "BUY", qty, exec_price, stop_loss, target, reason, confidence, ts),
+                "INSERT INTO paper_book(ticker,action,qty,price,stop_loss,target,reason,confidence,ts,trade_style) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (ticker, "BUY", qty, exec_price, stop_loss, target, reason, confidence, ts, trade_style),
             )
             conn.commit()
             return {"ok": True, "action": "BUY", "ticker": ticker, "qty": qty, "price": price,
@@ -172,8 +177,8 @@ def execute_paper_trade(
                 return {"ok": False, "error": f"Insufficient cash for short collateral: need ${collateral:.2f}, have ${cash:.2f}"}
             _set_cash(conn, cash - collateral)
             conn.execute(
-                "INSERT INTO paper_book(ticker,action,qty,price,stop_loss,target,reason,confidence,ts) VALUES(?,?,?,?,?,?,?,?,?)",
-                (ticker, "SHORT", qty, exec_price, stop_loss, target, reason, confidence, ts),
+                "INSERT INTO paper_book(ticker,action,qty,price,stop_loss,target,reason,confidence,ts,trade_style) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (ticker, "SHORT", qty, exec_price, stop_loss, target, reason, confidence, ts, trade_style),
             )
             conn.commit()
             return {"ok": True, "action": "SHORT", "ticker": ticker, "qty": qty, "price": price,
@@ -235,7 +240,7 @@ def get_open_positions() -> List[Dict[str, Any]]:
         rows = conn.execute(
             """SELECT action, ticker, SUM(qty) as qty, AVG(price) as avg_price,
                MIN(stop_loss) as stop_loss, MAX(target) as target,
-               MIN(ts) as entry_ts
+               MIN(ts) as entry_ts, MAX(trade_style) as trade_style
                FROM paper_book WHERE action IN ('BUY','SHORT') AND closed=0
                GROUP BY action, ticker""",
         ).fetchall()
@@ -257,6 +262,38 @@ def get_trade_history(limit: int = 100) -> List[Dict[str, Any]]:
     try:
         rows = conn.execute("SELECT * FROM paper_book ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_closed_trades(limit: int = 100) -> List[Dict[str, Any]]:
+    """Return closed trades with computed hold_days, formatted for UI display."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """SELECT ticker, action, qty, price as entry_price, close_price,
+               ts as entry_ts, close_ts, pnl, reason, confidence, trade_style
+               FROM paper_book WHERE closed=1 AND pnl IS NOT NULL
+               ORDER BY close_ts DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                from datetime import datetime, timezone as tz
+                entry = datetime.fromisoformat(d["entry_ts"].replace("Z", "+00:00"))
+                exit_ = datetime.fromisoformat(d["close_ts"].replace("Z", "+00:00"))
+                d["hold_hours"] = round((exit_ - entry).total_seconds() / 3600, 1)
+                d["hold_days"] = round((exit_ - entry).total_seconds() / 86400, 2)
+            except Exception:
+                d["hold_hours"] = None
+                d["hold_days"] = None
+            cost = (d["entry_price"] or 0) * (d["qty"] or 0)
+            d["pnl_pct"] = round(d["pnl"] / cost * 100, 2) if cost else None
+            d["side"] = "LONG" if d["action"] == "BUY" else "SHORT"
+            out.append(d)
+        return out
     finally:
         conn.close()
 
@@ -295,6 +332,8 @@ def get_portfolio_summary(current_prices: Dict[str, float] | None = None) -> Dic
                 "unrealized_pct": round(unrealized / cost * 100, 2) if cost else 0,
                 "stop_loss": p.get("stop_loss"),
                 "target": p.get("target"),
+                "entry_ts": p.get("entry_ts"),
+                "trade_style": p.get("trade_style") or "",
             })
         else:  # SHORT
             # Short P&L: (entry - current) * qty
@@ -312,6 +351,8 @@ def get_portfolio_summary(current_prices: Dict[str, float] | None = None) -> Dic
                 "unrealized_pct": round(unrealized / cost * 100, 2) if cost else 0,
                 "stop_loss": p.get("stop_loss"),
                 "target": p.get("target"),
+                "entry_ts": p.get("entry_ts"),
+                "trade_style": p.get("trade_style") or "",
             })
 
     closed = [t for t in get_trade_history(500) if t.get("closed") and t.get("pnl") is not None]
