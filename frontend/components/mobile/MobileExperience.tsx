@@ -517,8 +517,135 @@ function PositionCards({ rows, onSelect }: { rows: any[]; onSelect: (position: a
   )
 }
 
+function ScenarioPill({ label, color, bg }: { label: string; color: string; bg: string }) {
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: '6px',
+      fontSize: '10px', fontWeight: 700, color, background: bg, border: `1px solid ${color}44`,
+    }}>{label}</span>
+  )
+}
+
+function AIIntelligenceWidget({ details, position }: { details: any; position: any }) {
+  const forecast = details?.forecast || {}
+  const watch    = details?.watch || {}
+  const thesis   = details?.thesis || []
+  const score    = Number(watch.score || position.momentum_score || 0)
+  const aiView   = details?.position?.ai_view || position.ai_view || ''
+  const whyMoving = details?.position?.why_moving || position.why_moving || ''
+
+  const scoreColor = score >= 70 ? '#24d18c' : score >= 50 ? '#fbbf24' : '#fb7185'
+  const scoreBg    = score >= 70 ? 'rgba(36,209,140,0.1)' : score >= 50 ? 'rgba(251,191,36,0.1)' : 'rgba(251,113,133,0.1)'
+  const action     = watch.action || position.action || 'MONITOR'
+  const actionColor = action === 'BUY' || action === 'SWING WATCH' ? '#24d18c' : action === 'SELL' ? '#fb7185' : '#fbbf24'
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+      {/* Signal row */}
+      {score > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px',
+          background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '10px 12px',
+        }}>
+          <div style={{
+            width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0,
+            background: scoreBg, border: `2px solid ${scoreColor}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '14px', fontWeight: 800, color: scoreColor,
+          }}>{score}</div>
+          <div>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '3px' }}>PIA Signal</div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: actionColor }}>{action}</div>
+            {watch.reason && <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>{watch.reason}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* AI View */}
+      {(aiView || thesis.length > 0) && (
+        <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px' }}>
+          <div style={{ fontSize: '11px', color: '#a78bfa', fontWeight: 600, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Sparkles size={12} /> AI THESIS
+          </div>
+          {thesis.length > 0 ? (
+            thesis.slice(0, 1).map((t: any) => (
+              <div key={t.title}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--fg)', marginBottom: '4px' }}>{t.title}</div>
+                <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>{t.summary || t.full_text}</p>
+              </div>
+            ))
+          ) : (
+            <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>{aiView}</p>
+          )}
+        </div>
+      )}
+
+      {/* Why Moving */}
+      {whyMoving && (
+        <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px' }}>
+          <div style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 600, marginBottom: '6px' }}>WHY MOVING</div>
+          <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>{whyMoving}</p>
+        </div>
+      )}
+
+      {/* Bull / Base / Bear */}
+      {(forecast.bull || forecast.base || forecast.bear) && (
+        <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 600, marginBottom: '10px' }}>SCENARIOS</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {forecast.bull && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <ScenarioPill label="BULL" color="#24d18c" bg="rgba(36,209,140,0.1)" />
+                <span style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.4, flex: 1 }}>{forecast.bull}</span>
+              </div>
+            )}
+            {forecast.base && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <ScenarioPill label="BASE" color="#fbbf24" bg="rgba(251,191,36,0.1)" />
+                <span style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.4, flex: 1 }}>{forecast.base}</span>
+              </div>
+            )}
+            {forecast.bear && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <ScenarioPill label="BEAR" color="#fb7185" bg="rgba(251,113,133,0.1)" />
+                <span style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.4, flex: 1 }}>{forecast.bear}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Entry / Target / Stop */}
+      {(position.entry || position.target || position.stop) && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+          {[
+            { label: 'Entry', value: position.entry, color: '#38bdf8' },
+            { label: 'Target', value: position.target, color: '#24d18c' },
+            { label: 'Stop', value: position.stop, color: '#fb7185' },
+          ].map(({ label, value, color }) => value && (
+            <div key={label} style={{
+              background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
+              padding: '8px 6px', textAlign: 'center',
+            }}>
+              <div style={{ fontSize: '11px', color }}>{label}</div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--fg)', marginTop: '2px' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!aiView && thesis.length === 0 && !forecast.base && (
+        <p style={{ fontSize: '12px', color: 'var(--muted)', textAlign: 'center', padding: '24px 0' }}>
+          PIA has no saved thesis yet. Treat this as a watch item until catalyst, valuation, and risk checks agree.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function MobileDetailView({ position, onClose }: { position: any; onClose: () => void }) {
-  const [tab, setTab] = useState('AI Thesis')
+  const [tab, setTab] = useState('Intelligence')
   const [details, setDetails] = useState<any>(null)
   const ticker = position.symbol || position.ticker
   const change = Number(position.day_change_pct || position.change_pct || position.change || 0)
@@ -531,7 +658,7 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
       .catch(() => {})
   }, [ticker])
 
-  const tabs = ['AI Thesis', 'News', 'Risk']
+  const tabs = ['Intelligence', 'News', 'Risk']
 
   return (
     <div className="mobile-detail" role="dialog" aria-modal="true" aria-label={`${ticker} details`}>
@@ -564,13 +691,8 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
         ))}
       </div>
       <section className="mobile-detail-panel">
-        {tab === 'AI Thesis' && (
-          <p>
-            {details?.position?.ai_view ||
-              position.ai_view ||
-              details?.forecast?.base ||
-              'PIA has no saved thesis yet. Treat this as a watch item until catalyst, valuation, and risk checks agree.'}
-          </p>
+        {tab === 'Intelligence' && (
+          <AIIntelligenceWidget details={details} position={position} />
         )}
         {tab === 'News' && (
           <div className="mobile-news-list">
@@ -579,7 +701,7 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
                 <article key={item.title}>
                   <strong>{item.title}</strong>
                   <span>
-                    {item.impact} - {item.action}
+                    {item.impact} · {item.action}
                   </span>
                 </article>
               ),
@@ -597,8 +719,20 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
               <b>{position.risk || 31}</b>
             </span>
             <span>
+              Macro sensitivity
+              <b>{position.macro_sensitivity || '—'}</b>
+            </span>
+            <span>
+              Momentum
+              <b>{position.momentum_score || position.momentum || 52}</b>
+            </span>
+            <span>
               Stop discipline
               <b>{position.stop || 'Required'}</b>
+            </span>
+            <span>
+              Entry zone
+              <b>{position.entry || '—'}</b>
             </span>
           </div>
         )}
