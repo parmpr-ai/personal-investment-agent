@@ -947,3 +947,30 @@ Owner: ARTEMIS
 
 * `python -m py_compile backend/main.py backend/services/quote_engine.py backend/services/market_data_engine.py backend/services/provider_manager.py backend/tests/test_market_data_engine.py` - PASS
 * `PYTHONPATH=backend python -m unittest backend.tests.test_market_data_engine backend.tests.test_price_provider_fallback backend.tests.test_provider_lifecycle backend.tests.test_runtime_state` - PASS, 26 tests
+
+## v0.3.57 - Position Reconciliation & Live Quote Completion (HERMES-PORTFOLIO-068)
+
+Date: 2026-06-29
+Status: READY FOR PO UAT
+Owner: HERMES
+
+### Position Propagation
+
+* Canonical portfolio refresh now carries explicit `positionsVersion`, `summaryVersion`, `positionsUpdated`, `summaryUpdated`, `quoteTimestamp`, and `quoteProvider` metadata.
+* Position DTOs now expose `quoteProvider`, `quoteTimestamp`, `quoteAgeSeconds`, `marketState`, and `symbolsUpdated` from the single calculation path.
+* `pricesLastRefresh` now prefers the active quote-layer timestamp instead of inheriting snapshot timing when Yahoo live quotes are active.
+
+### Refresh Delivery
+
+* Live dashboard state now replaces the positions array when `positionsVersion` changes, preventing stale row references while preserving the no-blink incremental update behavior.
+* Desktop and mobile stale-price warnings now appear only for `LAST_KNOWN` / `NO_DATA` / `STALE`, not while Yahoo Live is the active quote provider.
+
+### Diagnostics
+
+* `GET /api/debug/market-data-engine` now includes `positionsUpdated`, `summaryUpdated`, `canonicalVersion`, `positionsVersion`, `quoteProvider`, `quoteTimestamp`, `lastSuccessfulRefresh`, and `symbolsUpdated`.
+
+### Validation
+
+* `python -m py_compile backend/main.py backend/services/portfolio_calculator.py backend/services/provider_manager.py backend/services/market_data_engine.py` - PASS
+* `PYTHONPATH=backend python -m unittest backend.tests.test_market_data_engine backend.tests.test_price_provider_fallback backend.tests.test_provider_lifecycle backend.tests.test_runtime_state backend.tests.test_portfolio_metrics` - PASS, 42 tests
+* `npm run build` - PASS

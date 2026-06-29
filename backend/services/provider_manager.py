@@ -224,6 +224,11 @@ def get_canonical_portfolio(
     elif active_source == "IBKR_LIVE" and quote_provider == "NO_DATA":
         fallback_reason = fallback_reason or "IBKR live positions retained; no fresh quotes are currently available."
 
+    quote_timestamp = market_meta.get("quoteTimestamp") or quote_diagnostics.get("lastRefresh") or market_meta.get("timestamp")
+    prices_last_refresh = quote_timestamp or bundle_meta.get("pricesLastRefresh") or market_meta.get("timestamp")
+    positions_refresh_at = quote_timestamp or bundle_meta.get("positionsLastRefresh") or snap_ts
+    summary_refresh_at = quote_timestamp or bundle_meta.get("summaryLastRefresh") or snap_ts
+
     dto.update({
         "portfolioMode": portfolio_mode,
         "positionsSource": positions_source,
@@ -264,11 +269,11 @@ def get_canonical_portfolio(
         "snapshotSchemaVersion": snapshot_state.get("schemaVersion"),
         "snapshot_schema_version": snapshot_state.get("schemaVersion"),
         # Refresh timestamps
-        "pricesLastRefresh": bundle_meta.get("pricesLastRefresh") or market_meta.get("timestamp"),
+        "pricesLastRefresh": prices_last_refresh,
         "pricesAgeSeconds": market_meta.get("quoteAge", bundle_meta.get("pricesAgeSeconds")),
-        "positionsLastRefresh": bundle_meta.get("positionsLastRefresh") or snap_ts,
-        "summaryLastRefresh": bundle_meta.get("summaryLastRefresh") or snap_ts,
-        "lastRefresh": bundle_meta.get("lastRefresh") or snap_ts,
+        "positionsLastRefresh": positions_refresh_at,
+        "summaryLastRefresh": summary_refresh_at,
+        "lastRefresh": quote_timestamp or bundle_meta.get("lastRefresh") or snap_ts,
         "nextRefresh": bundle_meta.get("nextRefresh"),
         "marketSession": market_meta.get("marketSession"),
         "marketStatus": market_meta.get("marketStatus"),
@@ -282,6 +287,8 @@ def get_canonical_portfolio(
         },
         "quoteProvider": quote_provider,
         "quoteDiagnostics": quote_diagnostics,
+        "positionsUpdated": positions_refresh_at,
+        "summaryUpdated": summary_refresh_at,
         # Display / risk
         "risk_mode": "IBKR LIVE" if active_source == "IBKR_LIVE" else "LAST UPDATE",
         "journal": [],
@@ -293,7 +300,7 @@ def get_canonical_portfolio(
 
     # ── Canonical DTO versioning ───────────────────────────────────────────────
     _portfolio_ts = dto.get("summaryLastRefresh") or dto.get("lastRefresh")
-    _quote_ts = market_meta.get("timestamp")
+    _quote_ts = quote_timestamp or market_meta.get("timestamp")
     try:
         from services import runtime_state as _rs
         _cv = _rs.next_canonical_version(portfolio_timestamp=_portfolio_ts, quote_timestamp=_quote_ts)
@@ -302,6 +309,8 @@ def get_canonical_portfolio(
         _cv = 0
         _rs_snap = {}
     dto["canonicalVersion"] = _cv
+    dto["positionsVersion"] = _cv
+    dto["summaryVersion"] = _cv
     dto["providerGeneration"] = _rs_snap.get("provider_generation", 0)
     dto["providerTimestamp"] = _rs_snap.get("provider_timestamp")
     dto["portfolioTimestamp"] = _portfolio_ts

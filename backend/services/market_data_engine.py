@@ -53,6 +53,8 @@ class MarketDataEngine:
         quote_map, provider = _ENGINE.get_quotes_for_instruments(instruments, ibkr_positions=ibkr_positions)
         quote_ages = [quote.age_seconds for quote in quote_map.values()]
         quote_age = round(max(quote_ages), 3) if quote_ages else None
+        quote_timestamps = [str(quote.timestamp) for quote in quote_map.values() if quote.timestamp]
+        latest_quote_timestamp = max(quote_timestamps) if quote_timestamps else None
         latency_ms = round((time.time() - started) * 1000, 1)
         meta = {
             "provider": provider,
@@ -62,6 +64,7 @@ class MarketDataEngine:
             "quoteCount": len(quote_map),
             "latencyMs": latency_ms,
             "timestamp": _utc_now().isoformat(),
+            "quoteTimestamp": latest_quote_timestamp,
             "cache": _ENGINE.cache_snapshot(),
             "diagnostics": _ENGINE.diagnostics_snapshot(),
         }

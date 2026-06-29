@@ -1347,3 +1347,20 @@ Implemented:
 Validation:
 - `python -m py_compile backend/main.py backend/services/quote_engine.py backend/services/market_data_engine.py backend/services/provider_manager.py backend/tests/test_market_data_engine.py` PASS
 - `PYTHONPATH=backend python -m unittest backend.tests.test_market_data_engine backend.tests.test_price_provider_fallback backend.tests.test_provider_lifecycle backend.tests.test_runtime_state` PASS
+
+## HERMES-PORTFOLIO-068 — Position Reconciliation & Live Quote Completion
+
+- Status: IMPLEMENTED / READY FOR PO UAT
+- Owner: HERMES
+
+Implemented:
+- Position refresh metadata is now explicit: `positionsVersion`, `summaryVersion`, `positionsUpdated`, `summaryUpdated`, `quoteTimestamp`, and `quoteProvider`.
+- Position DTOs now expose per-row `quoteProvider`, `quoteTimestamp`, `quoteAgeSeconds`, `marketState`, and quote freshness metadata from the canonical calculation path.
+- Quote timestamps are now separated from snapshot timestamps when Yahoo live pricing is active.
+- Desktop/mobile live dashboard state now replaces the positions array on `positionsVersion` change to prevent stale row references.
+- Stale-price warnings now render only for `LAST_KNOWN` / `NO_DATA` / `STALE`.
+
+Validation:
+- `python -m py_compile backend/main.py backend/services/portfolio_calculator.py backend/services/provider_manager.py backend/services/market_data_engine.py` PASS
+- `PYTHONPATH=backend python -m unittest backend.tests.test_market_data_engine backend.tests.test_price_provider_fallback backend.tests.test_provider_lifecycle backend.tests.test_runtime_state backend.tests.test_portfolio_metrics` PASS
+- `npm run build` PASS

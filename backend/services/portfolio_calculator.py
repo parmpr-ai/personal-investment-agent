@@ -26,6 +26,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from services.quote_engine import Quote, quote_key_for_instrument
+from services.connectors import get_fx_rate
 
 _LOG = logging.getLogger("pia.portfolio_calculator")
 
@@ -73,6 +74,19 @@ def calculate(
     """
     t0 = time.time()
     enriched: List[Dict] = []
+    symbols_updated: List[str] = []
+
+    # Determine account currency and pre-fetch FX rate for position conversion.
+    # Position monetary values (market_value, day_pnl, etc.) come from quote prices
+    # which are always in the instrument's native currency (USD for US equities/options).
+    # For EUR-base accounts we convert each position to EUR before aggregating so that
+    # Σ(position.day_pnl) = portfolio.daily_pnl = IBKR (all in EUR).
+    account_currency = ((ibkr_summary.get("currency") or "USD").upper()
+                        if ibkr_summary else "USD")
+    if account_currency != "USD":
+        _fx_usd_to_acct = get_fx_rate("USD", account_currency) or 1.0
+    else:
+        _fx_usd_to_acct = 1.0
 
     for raw in positions:
         p = dict(raw)
@@ -115,6 +129,20 @@ def calculate(
                 round(qty * prev_close * mult, 2) if prev_close is not None else None
             )
             price_source = quote.source
+
+            # Convert USD instrument values to account base currency (e.g. EUR).
+            # Applies only to USD-denominated positions in non-USD accounts.
+            pos_currency = str(p.get("currency") or "USD").upper()
+            if pos_currency == "USD" and account_currency != "USD" and _fx_usd_to_acct != 1.0:
+                _fx = _fx_usd_to_acct
+                market_value = round(market_value * _fx, 2)
+                cost_basis = round(cost_basis * _fx, 2)
+                unrealized = round(market_value - cost_basis, 2)
+                unrealized_pct = round(unrealized / cost_basis * 100, 2) if cost_basis else None
+                day_pnl = round(day_pnl * _fx, 2) if day_pnl is not None else None
+                previous_market_value = (
+                    round(previous_market_value * _fx, 2) if previous_market_value is not None else None
+                )
         else:
             last = None
             market_value = None
@@ -153,15 +181,20 @@ def calculate(
             "price_source": price_source,
             "quoteSource": price_source,
             "priceSource": price_source,
+            "quoteProvider": quote.provider if quote else "NO_DATA",
             "quoteLastRefresh": quote.timestamp if quote else None,
+            "quoteTimestamp": quote.timestamp if quote else None,
             "quoteAgeSeconds": round(quote.age_seconds, 3) if quote else None,
             "quoteStale": not bool(quote and quote.is_live),
             "quoteStaleReason": None if quote and quote.is_live else "No live quote available from MarketDataEngine.",
             "marketSession": quote.market_state if quote and quote.market_state else None,
+            "marketState": quote.market_state if quote and quote.market_state else None,
         })
 
         if qty != 0:
             enriched.append(p)
+            if quote and sym:
+                symbols_updated.append(sym)
 
     # ── Portfolio-level aggregation ────────────────────────────────────────────
     mv_list = [p["market_value"] for p in enriched if p.get("market_value") is not None]
@@ -191,7 +224,6 @@ def calculate(
         init_margin_req = _nz(ibkr_summary.get("init_margin_req"))
         available_funds = _nz(ibkr_summary.get("available_funds"))
         realized_pnl = _nz(ibkr_summary.get("realized_pnl"))
-        daily_pnl_pct_portfolio = ibkr_summary.get("daily_pnl_pct")
         currency = ibkr_summary.get("currency") or "USD"
     else:
         # Offline / snapshot mode — no broker-level account data available.
@@ -204,8 +236,23 @@ def calculate(
         init_margin_req = None
         available_funds = None
         realized_pnl = None
+        currency = account_currency  # preserved from ibkr_summary["currency"] passed offline
+
+    # Derive daily_pnl_pct from the now-FX-adjusted total_day_pnl and portfolio total.
+    # Using ibkr_summary.get("daily_pnl_pct") would be stale (computed before FX fix).
+    if total_day_pnl is not None and portfolio_total > 0:
+        _prev_portfolio = portfolio_total - total_day_pnl
+        daily_pnl_pct_portfolio = (
+            round(total_day_pnl / _prev_portfolio * 100, 4) if _prev_portfolio else None
+        )
+    else:
         daily_pnl_pct_portfolio = None
-        currency = "USD"
+
+    margin_used = (
+        round(maint_margin_req / nlv * 100, 2)
+        if (maint_margin_req is not None and nlv > 0)
+        else None
+    )
 
     # ── Allocation % ───────────────────────────────────────────────────────────
     for p in enriched:
@@ -223,6 +270,25 @@ def calculate(
         len(enriched), total_day_pnl, duration_ms,
     )
 
+    _prev_portfolio_total = (portfolio_total - total_day_pnl) if total_day_pnl is not None else None
+    _provenance = {
+        "daily_pnl": {
+            "formula": f"Σ(position.day_pnl × fx_usd_to_{account_currency.lower()})",
+            "fx_rate": _fx_usd_to_acct,
+            "fx_pair": f"USD→{account_currency}",
+            "value": total_day_pnl,
+            "position_count": len(dpnl_list),
+            "account_currency": account_currency,
+            "quote_provider": quote_provider,
+            "ibkr_field": "field_83_abs_change_per_share",
+        },
+        "daily_pnl_pct": {
+            "formula": "daily_pnl / (total_value - daily_pnl) × 100",
+            "value": daily_pnl_pct_portfolio,
+            "previous_portfolio_value": round(_prev_portfolio_total, 2) if _prev_portfolio_total is not None else None,
+        },
+    }
+
     return {
         # ── Positions ──────────────────────────────────────────────────────────
         "positions": enriched,
@@ -238,18 +304,21 @@ def calculate(
         "daily_pnl": total_day_pnl,
         "daily_pnl_pct": daily_pnl_pct_portfolio,
         "realized_pnl": realized_pnl,
+        "calculationProvenance": _provenance,
         # ── Account fields (IBKR live only; None = not available offline) ──────
         "buying_power": buying_power,
         "excess_liquidity": excess_liquidity,
         "maint_margin_req": maint_margin_req,
         "init_margin_req": init_margin_req,
         "available_funds": available_funds,
+        "margin_used": margin_used,
         # ── Meta ───────────────────────────────────────────────────────────────
         "source": source,
         "active_source": source,
         "mode": mode,
         "currency": currency,
         "quote_provider": quote_provider,
+        "symbolsUpdated": sorted(set(symbols_updated)),
         "snapshot_timestamp": snapshot_timestamp,
         "_calculator_duration_ms": duration_ms,
     }

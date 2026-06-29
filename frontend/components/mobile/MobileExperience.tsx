@@ -490,7 +490,7 @@ function MobileStatusDock({ health, hidden, portfolioSource, portfolio }: { heal
           )
         })}
       </div>
-      {!hidden && portfolio?.pricesLive === false && String(portfolio?.mode || '').toLowerCase() !== 'mock' && (
+      {!hidden && String(portfolio?.mode || '').toLowerCase() !== 'mock' && ['LAST_KNOWN', 'NO_DATA', 'STALE'].includes(String(portfolio?.priceSource || portfolio?.quoteProvider || '').toUpperCase()) && (
         <div className="mobile-fallback-strip">⚠ Prices may be stale{portfolio?.pricesLastRefresh ? ` — updated ${fmtMobileTs(portfolio.pricesLastRefresh)}` : ''}</div>
       )}
     </section>
@@ -898,7 +898,7 @@ function MarketPulse({ items, hidden = false }: { items: any[]; hidden?: boolean
 
 function PortfolioInsights({ portfolio, positions, hidden }: { portfolio: any; positions: any[]; hidden?: boolean }) {
   const top = positions[0] || positionFallback[0]
-  const { currency, toggle: toggleCurrency, fmt } = useCurrency(Number(portfolio.fxRate || 0.87))
+  const { currency, toggle: toggleCurrency, fmt } = useCurrency(Number(portfolio.fxRate || 0.87), portfolio.baseCurrency || 'USD')
   const insights = [
     {
       title: 'Net Worth',
@@ -2352,7 +2352,7 @@ function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
   portfolio: any; positions: any[]; hidden: boolean; expanded: boolean; onToggle: () => void
 }) {
   const [selectedTf, setSelectedTf] = useState<TfKey>('1M')
-  const { currency, toggle: toggleCurrency, fmt } = useCurrency(Number(portfolio.fxRate || 0.87))
+  const { currency, toggle: toggleCurrency, fmt } = useCurrency(Number(portfolio.fxRate || 0.87), portfolio.baseCurrency || 'USD')
 
   const total = portfolio.total_value || positions.reduce((s: number, p: any) => s + Number(p.market_value || 0), 0)
   const dayPnl = portfolio.daily_pnl || positions.reduce((s: number, p: any) => s + Number(p.day_pnl || 0), 0)

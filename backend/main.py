@@ -1685,11 +1685,13 @@ def debug_quote_cache():
 def debug_market_data_engine():
  try:
   from services.market_data_engine import market_data_engine
+  portfolio = get_portfolio_payload()
 
   diagnostics = market_data_engine.diagnostics_snapshot()
   return {
    'source': 'MARKET_DATA_ENGINE',
    'activeQuoteProvider': diagnostics.get('activeQuoteProvider'),
+   'quoteProvider': portfolio.get('quoteProvider') or diagnostics.get('activeQuoteProvider'),
    'quoteSource': diagnostics.get('quoteSource'),
    'quoteLatencyMs': diagnostics.get('quoteLatencyMs'),
    'retryDelaySeconds': diagnostics.get('retryDelaySeconds'),
@@ -1698,7 +1700,14 @@ def debug_market_data_engine():
    'failedSymbols': diagnostics.get('failedSymbols'),
    'successfulSymbols': diagnostics.get('successfulSymbols'),
    'lastRefresh': diagnostics.get('lastRefresh'),
+   'lastSuccessfulRefresh': diagnostics.get('lastRefresh'),
    'quoteFreshnessSeconds': diagnostics.get('quoteFreshnessSeconds'),
+   'quoteTimestamp': portfolio.get('quoteTimestamp') or portfolio.get('pricesLastRefresh'),
+   'positionsUpdated': portfolio.get('positionsUpdated') or portfolio.get('positionsLastRefresh'),
+   'summaryUpdated': portfolio.get('summaryUpdated') or portfolio.get('summaryLastRefresh'),
+   'canonicalVersion': portfolio.get('canonicalVersion'),
+   'positionsVersion': portfolio.get('positionsVersion'),
+   'symbolsUpdated': portfolio.get('symbolsUpdated') or [],
    'failureReasons': diagnostics.get('failureReasons'),
    'providerFailures': diagnostics.get('providerFailures'),
    'providerRetries': diagnostics.get('providerRetries'),

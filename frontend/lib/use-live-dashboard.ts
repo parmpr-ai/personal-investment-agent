@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { apiUrl, wsUrl } from './runtime-config'
+import { wsUrl } from './runtime-config'
 
 const POLL_INTERVAL_MS = 5_000
 const LIVE_POLL_MS = 2_000
@@ -52,35 +52,72 @@ function stabilizeValue(prev: any, next: any): any {
   return next
 }
 
-async function requestDashboard() {
-  const response = await fetch(apiUrl('/dashboard'), { cache: 'no-store' })
+export type DashboardSurface = 'desktop' | 'mobile'
+
+async function requestDashboard(surface: DashboardSurface) {
+  const response = await fetch(`/api/dashboard?surface=${surface}`, { cache: 'no-store' })
   const data = await response.json().catch(() => ({}))
   if (!response.ok) throw data
+  if (!data?.portfolio || !Array.isArray(data.portfolio.positions)) {
+    throw new Error('Dashboard response did not contain a valid portfolio payload.')
+  }
   return data
 }
 
-export function useLiveDashboard() {
+export function useLiveDashboard(surface: DashboardSurface = 'desktop') {
   const [dashboard, setDashboard] = useState<any>(null)
   const [backendStatus, setBackendStatus] = useState<DashboardBackendStatus>('loading')
   const [transport, setTransport] = useState<DashboardTransport>('connecting')
   const activeRef = useRef(false)
   const staleRetryRef = useRef<number | null>(null)
+  const sourceRef = useRef<string | null>(null)
 
   const commitDashboard = useCallback((data: any) => {
     if (!activeRef.current || !data || typeof data !== 'object') return
-    setDashboard((current) => stabilizeValue(current, data))
+    const source = String(data?.portfolio?.source || data?.portfolio?.active_source || '')
+    if (!source || !Array.isArray(data?.portfolio?.positions)) return
+    if (sourceRef.current !== source && process.env.NODE_ENV !== 'production') {
+      const marker = surface === 'mobile' ? '[MOBILE_SOURCE]' : '[DASHBOARD_SOURCE]'
+      console.debug(marker, {
+        previousSource: sourceRef.current,
+        currentSource: source,
+        portfolioValue: data.portfolio.total_value,
+        positionCount: data.portfolio.positions.length,
+        timestamp: data.portfolio.as_of || data.portfolio.snapshot_timestamp,
+      })
+    }
+    sourceRef.current = source
+    setDashboard((current) => {
+      const currentPositionsVersion = current?.portfolio?.positionsVersion ?? current?.portfolio?.canonicalVersion
+      const nextPositionsVersion = data?.portfolio?.positionsVersion ?? data?.portfolio?.canonicalVersion
+      if (
+        current &&
+        currentPositionsVersion != null &&
+        nextPositionsVersion != null &&
+        currentPositionsVersion !== nextPositionsVersion
+      ) {
+        return {
+          ...stabilizeValue(current, data),
+          portfolio: {
+            ...stabilizeValue(current?.portfolio, data?.portfolio),
+            positions: Array.isArray(data?.portfolio?.positions) ? data.portfolio.positions.map((row: any) => ({ ...row })) : [],
+          },
+        }
+      }
+      return stabilizeValue(current, data)
+    })
     setBackendStatus('ok')
-  }, [])
+  }, [surface])
 
   const refresh = useCallback(async () => {
     try {
-      const data = await requestDashboard()
+      const data = await requestDashboard(surface)
       commitDashboard(data)
       if (dashboardIsStale(data)) {
         if (staleRetryRef.current) window.clearTimeout(staleRetryRef.current)
         staleRetryRef.current = window.setTimeout(async () => {
           try {
-            commitDashboard(await requestDashboard())
+            commitDashboard(await requestDashboard(surface))
           } catch {
             if (activeRef.current) setBackendStatus('unavailable')
           }
@@ -91,7 +128,7 @@ export function useLiveDashboard() {
       if (activeRef.current) setBackendStatus('unavailable')
       return null
     }
-  }, [commitDashboard])
+  }, [commitDashboard, surface])
 
   useEffect(() => {
     activeRef.current = true

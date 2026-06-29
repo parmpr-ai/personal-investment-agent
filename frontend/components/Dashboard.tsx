@@ -860,14 +860,20 @@ function Kpis({ p, hidden, fmt }: { p: any; hidden: boolean; fmt: (v: unknown) =
 function PortfolioSnapshot({ p, hidden, showMarginDiscipline = true }: any) {
   const mounted = useMounted()
   const [activeTf, setActiveTf] = useState('1M')
-  const { currency, toggle: toggleCurrency, fmt } = useCurrency(Number(p.fxRate || 0.87))
+  const { currency, toggle: toggleCurrency, fmt } = useCurrency(Number(p.fxRate || 0.87), p.baseCurrency || 'USD')
   const tfOptions = ['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL']
   const dayPnlPct = Number(p.daily_pnl_pct || 0)
-  const fxMult = currency === 'EUR' ? Number(p.fxRate || 0.87) : 1
+  const safeRate = Number(p.fxRate || 0.87)
+  const fxMult = p.baseCurrency === 'EUR'
+    ? (currency === 'USD' ? 1 / safeRate : 1)     // EUR base: no-op for EUR, invert for USD
+    : (currency === 'EUR' ? safeRate : 1)           // USD base: multiply for EUR, no-op for USD
   const total = Number(p.total_value || 0) * fxMult
   const bp = Number(p.buying_power || 0) * fxMult
   const sym = currency === 'EUR' ? '€' : '$'
-  const showStaleBanner = !hidden && p.pricesLive === false && String(p.mode || '').toLowerCase() !== 'mock'
+  const showStaleBanner =
+    !hidden &&
+    String(p.mode || '').toLowerCase() !== 'mock' &&
+    ['LAST_KNOWN', 'NO_DATA', 'STALE'].includes(String(p.priceSource || p.quoteProvider || '').toUpperCase())
   const excessLiq = Number(p.excess_liquidity || 0)
   const maintMgn = Number(p.maint_margin_req || 0)
   const initMgn = Number(p.init_margin_req || 0)
