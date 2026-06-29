@@ -276,28 +276,28 @@ def get_portfolio_payload():
     snapshot_state = provider.get_snapshot_meta() or {}
    except Exception:
     snapshot_state = {}
-  p = provider.get_portfolio()
-  configured_mode = resolution.configured_mode
-  p['configured_mode'] = configured_mode
-  p['mode'] = p.get('mode') or configured_mode
-  p['provider_class'] = resolution.provider_class
-  p['snapshot_available'] = p.get('snapshot_available', resolution.snapshot_available)
-  p['snapshot_timestamp'] = p.get('snapshot_timestamp') or resolution.snapshot_timestamp
-  p['snapshotAvailable'] = p['snapshot_available']
-  p['snapshotTimestamp'] = p['snapshot_timestamp']
-  p['snapshotAgeSeconds'] = snapshot_state.get('snapshotAgeSeconds', p.get('snapshotAgeSeconds'))
-  p['snapshot_age_seconds'] = p['snapshotAgeSeconds']
-  p['snapshotRefreshStatus'] = snapshot_state.get('lastRefreshStatus') or snapshot_state.get('snapshotRefreshStatus') or p.get('snapshotRefreshStatus')
-  p['snapshot_refresh_status'] = p['snapshotRefreshStatus']
-  p['snapshotLastRefreshAttempt'] = snapshot_state.get('lastRefreshAttempt') or p.get('snapshotLastRefreshAttempt')
-  p['snapshot_last_refresh_attempt'] = p['snapshotLastRefreshAttempt']
-  p['snapshotLastRefreshError'] = snapshot_state.get('lastRefreshError') or p.get('snapshotLastRefreshError')
-  p['snapshot_last_refresh_error'] = p['snapshotLastRefreshError']
-  p['snapshotSchemaVersion'] = snapshot_state.get('schemaVersion') or p.get('snapshotSchemaVersion')
-  p['snapshot_schema_version'] = p['snapshotSchemaVersion']
-  p['nextRefresh'] = p.get('nextRefresh')
-  p['positions'] = normalize_positions(p.get('positions', []))
   if resolution.active_source == 'MOCK' or isinstance(provider, MockPortfolioProvider):
+   p = provider.get_portfolio()
+   configured_mode = resolution.configured_mode
+   p['configured_mode'] = configured_mode
+   p['mode'] = p.get('mode') or configured_mode
+   p['provider_class'] = resolution.provider_class
+   p['snapshot_available'] = p.get('snapshot_available', resolution.snapshot_available)
+   p['snapshot_timestamp'] = p.get('snapshot_timestamp') or resolution.snapshot_timestamp
+   p['snapshotAvailable'] = p['snapshot_available']
+   p['snapshotTimestamp'] = p['snapshot_timestamp']
+   p['snapshotAgeSeconds'] = snapshot_state.get('snapshotAgeSeconds', p.get('snapshotAgeSeconds'))
+   p['snapshot_age_seconds'] = p['snapshotAgeSeconds']
+   p['snapshotRefreshStatus'] = snapshot_state.get('lastRefreshStatus') or snapshot_state.get('snapshotRefreshStatus') or p.get('snapshotRefreshStatus')
+   p['snapshot_refresh_status'] = p['snapshotRefreshStatus']
+   p['snapshotLastRefreshAttempt'] = snapshot_state.get('lastRefreshAttempt') or p.get('snapshotLastRefreshAttempt')
+   p['snapshot_last_refresh_attempt'] = p['snapshotLastRefreshAttempt']
+   p['snapshotLastRefreshError'] = snapshot_state.get('lastRefreshError') or p.get('snapshotLastRefreshError')
+   p['snapshot_last_refresh_error'] = p['snapshotLastRefreshError']
+   p['snapshotSchemaVersion'] = snapshot_state.get('schemaVersion') or p.get('snapshotSchemaVersion')
+   p['snapshot_schema_version'] = p['snapshotSchemaVersion']
+   p['nextRefresh'] = p.get('nextRefresh')
+   p['positions'] = normalize_positions(p.get('positions', []))
    p['mode'] = 'mock'
    p['source'] = 'MOCK'
    p['active_source'] = 'MOCK'
@@ -340,6 +340,22 @@ def get_portfolio_payload():
     p['stale_reason'] = None
   else:
    p = get_canonical_portfolio(resolution=resolution)
+   p['configured_mode'] = resolution.configured_mode
+   p['provider_class'] = resolution.provider_class
+   p['snapshot_available'] = p.get('snapshot_available', resolution.snapshot_available)
+   p['snapshot_timestamp'] = p.get('snapshot_timestamp') or resolution.snapshot_timestamp
+   p['snapshotAvailable'] = p.get('snapshotAvailable', p['snapshot_available'])
+   p['snapshotTimestamp'] = p.get('snapshotTimestamp', p['snapshot_timestamp'])
+   p['snapshotAgeSeconds'] = snapshot_state.get('snapshotAgeSeconds', p.get('snapshotAgeSeconds'))
+   p['snapshot_age_seconds'] = p['snapshotAgeSeconds']
+   p['snapshotRefreshStatus'] = snapshot_state.get('lastRefreshStatus') or snapshot_state.get('snapshotRefreshStatus') or p.get('snapshotRefreshStatus')
+   p['snapshot_refresh_status'] = p['snapshotRefreshStatus']
+   p['snapshotLastRefreshAttempt'] = snapshot_state.get('lastRefreshAttempt') or p.get('snapshotLastRefreshAttempt')
+   p['snapshot_last_refresh_attempt'] = p['snapshotLastRefreshAttempt']
+   p['snapshotLastRefreshError'] = snapshot_state.get('lastRefreshError') or p.get('snapshotLastRefreshError')
+   p['snapshot_last_refresh_error'] = p['snapshotLastRefreshError']
+   p['snapshotSchemaVersion'] = snapshot_state.get('schemaVersion') or p.get('snapshotSchemaVersion')
+   p['snapshot_schema_version'] = p['snapshotSchemaVersion']
    if not p.get('positions') and p.get('portfolioMode') in {'NO_DATA', 'DISCONNECTED', 'LAST_UPDATE_ONLY'}:
     p = merge_manual_holdings(p, macros, state_module)
     manual_positions = [pos for pos in p.get('positions', []) if str(pos.get('positionSource') or pos.get('manual') or '').upper() == 'MANUAL_HOLDINGS' or bool(pos.get('manual'))]
@@ -1364,6 +1380,92 @@ def debug_source_trace():
  }
 
 
+def _reconciliation_row(label: str, ibkr_value, pia_value, *, tolerance: float = 0.02):
+ try:
+  ibkr_num = float(ibkr_value) if ibkr_value not in (None, '') else None
+ except Exception:
+  ibkr_num = None
+ try:
+  pia_num = float(pia_value) if pia_value not in (None, '') else None
+ except Exception:
+  pia_num = None
+ diff = None
+ status = 'MISSING'
+ if ibkr_num is not None and pia_num is not None:
+  diff = round(pia_num - ibkr_num, 4)
+  status = 'PASS' if abs(diff) <= tolerance else 'FAIL'
+ elif ibkr_num is None and pia_num is None:
+  status = 'MISSING'
+ else:
+  status = 'FAIL'
+ return {
+  'field': label,
+  'ibkr': ibkr_num,
+  'pia': pia_num,
+  'difference': diff,
+  'status': status,
+ }
+
+
+@app.get('/api/debug/portfolio-reconciliation')
+def debug_portfolio_reconciliation():
+ try:
+  portfolio = get_portfolio_payload()
+  resolution = resolve_portfolio_provider()
+  raw_summary = {}
+  if isinstance(resolution.provider, IbkrLivePortfolioProvider):
+   try:
+    bundle = resolution.provider._load_bundle()
+    raw_summary = bundle.get('summary') if isinstance(bundle, dict) and isinstance(bundle.get('summary'), dict) else {}
+   except Exception:
+    raw_summary = {}
+  summary = portfolio.get('summary') if isinstance(portfolio.get('summary'), dict) else {}
+  pia = {**summary, **portfolio}
+  fields = [
+   ('Portfolio Total', raw_summary.get('total_value') or raw_summary.get('net_liquidation'), pia.get('total_value') or pia.get('net_liquidation')),
+   ('Market Value', raw_summary.get('gross_position_value'), pia.get('gross_position_value') or sum(float(p.get('market_value') or 0) for p in portfolio.get('positions', []) if isinstance(p, dict))),
+   ('Cash', raw_summary.get('cash'), pia.get('cash')),
+   ('Buying Power', raw_summary.get('buying_power'), pia.get('buying_power')),
+   ('Excess Liquidity', raw_summary.get('excess_liquidity'), pia.get('excess_liquidity')),
+   ('Initial Margin', raw_summary.get('init_margin_req'), pia.get('init_margin_req')),
+   ('Maintenance Margin', raw_summary.get('maint_margin_req'), pia.get('maint_margin_req')),
+   ('Available Funds', raw_summary.get('available_funds'), pia.get('available_funds')),
+   ('Unrealized', raw_summary.get('unrealized'), pia.get('unrealized')),
+   ('Daily P/L', raw_summary.get('daily_pnl'), pia.get('daily_pnl')),
+   ('Realized', raw_summary.get('realized_pnl'), pia.get('realized_pnl')),
+   ('Greeks', raw_summary.get('greeks'), pia.get('greeks')),
+  ]
+  rows = [_reconciliation_row(label, ibkr_value, pia_value) for label, ibkr_value, pia_value in fields]
+  comparable = [row for row in rows if row['status'] != 'MISSING']
+  status = 'PASS' if comparable and all(row['status'] == 'PASS' for row in comparable) else ('MISSING' if not comparable else 'FAIL')
+  _UI_REFRESH_LOGGER.info(
+   '[RECONCILIATION] status=%s source=%s rows=%s failures=%s',
+   status,
+   portfolio.get('source'),
+   len(rows),
+   len([row for row in rows if row['status'] == 'FAIL']),
+  )
+  return {
+   'status': status,
+   'source': portfolio.get('source'),
+   'portfolioMode': portfolio.get('portfolioMode'),
+   'positionsSource': portfolio.get('positionsSource'),
+   'priceSource': portfolio.get('priceSource'),
+   'as_of': portfolio.get('as_of'),
+   'marketSession': portfolio.get('marketSession'),
+   'marketStatus': portfolio.get('marketStatus'),
+   'quoteAge': portfolio.get('quoteAge'),
+   'summary': {
+    'ibkr': raw_summary,
+    'pia': {key: pia.get(key) for key in ['total_value','net_liquidation','gross_position_value','cash','buying_power','excess_liquidity','init_margin_req','maint_margin_req','available_funds','unrealized','daily_pnl','realized_pnl']},
+   },
+   'rows': rows,
+   'responseTimestamp': _utc_now_iso(),
+  }
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
+
+
 @app.get('/api/debug/ibkr-connectivity')
 def debug_ibkr_connectivity():
  provider = IbkrLivePortfolioProvider()
@@ -1472,6 +1574,20 @@ def debug_live_quotes():
    'source': provider_status.get('active_source'),
    'fallbackActive': provider_status.get('fallback_active'),
    'fallbackReason': provider_status.get('fallback_reason'),
+  }
+ except Exception as e:
+  raise HTTPException(status_code=503, detail=str(e))
+
+@app.get('/api/debug/quote-cache')
+def debug_quote_cache():
+ try:
+  from services.market_data_engine import market_data_engine
+
+  cache = market_data_engine.cache_snapshot()
+  return {
+   'source': 'MARKET_DATA_ENGINE',
+   'cache': cache,
+   'responseTimestamp': _utc_now_iso(),
   }
  except Exception as e:
   raise HTTPException(status_code=503, detail=str(e))

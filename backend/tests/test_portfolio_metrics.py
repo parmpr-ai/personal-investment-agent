@@ -288,6 +288,33 @@ class PortfolioMetricsTests(unittest.TestCase):
         self.assertIsNone(summary["unrealized"])
         self.assertIsNone(summary["unrealized_pct"])
 
+    def test_calculator_does_not_price_option_from_underlying_symbol(self) -> None:
+        from services.portfolio_calculator import calculate
+        from services.quote_engine import Quote
+
+        dto = calculate(
+            [
+                {
+                    "conid": "OPT123",
+                    "assetClass": "OPT",
+                    "symbol": "SOFI",
+                    "underlying": "SOFI",
+                    "qty": 1,
+                    "avg_cost": 250.0,
+                    "multiplier": 100,
+                }
+            ],
+            {"SOFI": Quote(symbol="SOFI", last=12.5, source="YAHOO_LIVE", provider="YAHOO")},
+            source="LAST_UPDATE",
+            mode="last-update",
+            quote_provider="YAHOO_LIVE",
+        )
+
+        row = dto["positions"][0]
+        self.assertIsNone(row["last"])
+        self.assertIsNone(row["market_value"])
+        self.assertEqual(row["quoteSource"], "NO_DATA")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -217,6 +217,75 @@ def _snapshot_paths() -> list[Path]:
     return [_SNAPSHOT_POSITIONS_FILE, _SNAPSHOT_SUMMARY_FILE, _SNAPSHOT_TRADES_FILE, _SNAPSHOT_META_FILE]
 
 
+def _canonical_snapshot_position(position: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist only identity, contract, quantity, and average-cost fields."""
+    allowed = {
+        "accountId",
+        "account_id",
+        "conid",
+        "contractDesc",
+        "contract_desc",
+        "symbol",
+        "underlying",
+        "expiration",
+        "expiry",
+        "strike",
+        "call_put",
+        "callPut",
+        "sec_type",
+        "assetClass",
+        "name",
+        "currency",
+        "qty",
+        "quantity",
+        "avg_price",
+        "avg_cost",
+        "avgCost",
+        "averageCost",
+        "cost_basis",
+        "costBasis",
+        "multiplier",
+    }
+    return {key: deepcopy(value) for key, value in position.items() if key in allowed}
+
+
+def _write_canonical_snapshot(bundle: Dict[str, Any], *, snapshot_timestamp: str) -> None:
+    positions = bundle.get("positions", []) if isinstance(bundle.get("positions"), list) else []
+    payload = {
+        "schemaVersion": _SNAPSHOT_SCHEMA_VERSION,
+        "source": "IBKR_LIVE",
+        "snapshotTimestamp": snapshot_timestamp,
+        "accountId": bundle.get("account_id"),
+        "positions": [_canonical_snapshot_position(position) for position in positions if isinstance(position, dict)],
+        "contracts": [
+            {
+                "conid": str(position.get("conid") or ""),
+                "symbol": position.get("symbol"),
+                "underlying": position.get("underlying"),
+                "assetClass": position.get("assetClass") or position.get("sec_type"),
+                "contractDesc": position.get("contractDesc") or position.get("contract_desc"),
+                "currency": position.get("currency"),
+                "expiration": position.get("expiration") or position.get("expiry"),
+                "strike": position.get("strike"),
+                "right": position.get("call_put") or position.get("callPut"),
+                "multiplier": position.get("multiplier"),
+            }
+            for position in positions
+            if isinstance(position, dict)
+        ],
+        "metadata": {
+            "timestamp": snapshot_timestamp,
+            "positionsCount": len(positions),
+            "containsPrices": False,
+            "containsTotals": False,
+            "containsPnl": False,
+            "containsMargins": False,
+            "containsBuyingPower": False,
+        },
+    }
+    _write_json_file(_SNAPSHOT_DIR / "canonical_latest.json", payload)
+
+
 def _ensure_snapshot_dir() -> None:
     _SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     _SNAPSHOT_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
@@ -3147,6 +3216,7 @@ class IbkrLivePortfolioProvider:
                 "meta_payload": meta_payload,
                 "state_payload": state_payload,
             })
+            _write_canonical_snapshot(bundle, snapshot_timestamp=snapshot_timestamp)
             _append_snapshot_history(
                 {
                     "timestamp": snapshot_timestamp,

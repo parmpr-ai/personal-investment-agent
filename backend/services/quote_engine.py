@@ -1,22 +1,17 @@
+"""Central quote cache and provider selection for portfolio pricing.
+
+QuoteEngine is intentionally independent from portfolio calculations. It owns
+provider priority, last-known quote cache, quote freshness metadata, and the
+instrument identity rule that options are priced only by contract id.
 """
-Quote Engine — ARTEMIS-PORTFOLIO-ENGINE-REFACTOR-061
 
-Single source of all market prices. Maintains a last-known price cache so
-provider transitions (IBKR → Yahoo or vice-versa) are seamless.
-
-Provider priority:
-  1. IBKR Live   — prices embedded in normalized positions from _load_bundle()
-  2. Yahoo Finance — live/delayed quotes for STK, ETF, CRYPTO
-  3. Last Known  — cached prices from the current server session
-  4. NO_DATA      — no price available (options with no IBKR + cold start)
-
-Emits structured log events: [QUOTE_PROVIDER], [PROVIDER_SWITCH]
-"""
+from __future__ import annotations
 
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
+from datetime import datetime, timezone
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 _LOG = logging.getLogger("pia.quote_engine")
 
@@ -28,10 +23,18 @@ _STALE_SOURCES = frozenset({"LAST_KNOWN", "NO_DATA"})
 class Quote:
     symbol: str
     last: float
-    # Per-share/per-contract price change from previous close
+    conid: Optional[str] = None
+    asset_type: str = "STK"
+    currency: Optional[str] = None
+    bid: Optional[float] = None
+    ask: Optional[float] = None
+    previous_close: Optional[float] = None
     change: Optional[float] = None
     change_pct: Optional[float] = None
+    market_state: Optional[str] = None
     source: str = "NO_DATA"
+    provider: str = "NO_DATA"
+    timestamp: Optional[str] = None
     fetched_at: float = field(default_factory=time.time)
 
     @property
@@ -43,149 +46,255 @@ class Quote:
         return time.time() - self.fetched_at
 
 
-def _f(v: Any) -> Optional[float]:
-    """Safe float conversion; returns None for None/NaN."""
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _f(value: Any) -> Optional[float]:
     try:
-        f = float(v)
-        return None if f != f else f  # NaN guard
+        if value in (None, ""):
+            return None
+        parsed = float(value)
+        return None if parsed != parsed else parsed
     except (TypeError, ValueError):
         return None
 
 
+def _normalize_instrument(item: Dict[str, Any]) -> Dict[str, str]:
+    raw_asset = str(
+        item.get("assetClass")
+        or item.get("asset_type")
+        or item.get("sec_type")
+        or item.get("assetType")
+        or "STK"
+    ).upper()
+    if raw_asset in {"OPT", "OPTION", "OPTIONS"}:
+        asset_type = "OPT"
+    elif raw_asset in {"CRYPTO", "CASHCRYPTO"}:
+        asset_type = "CRYPTO"
+    elif raw_asset in {"ETF", "FUND"}:
+        asset_type = "ETF"
+    else:
+        asset_type = "STK"
+    symbol = str(item.get("symbol") or item.get("underlying") or item.get("ticker") or "").upper().split()[0]
+    return {
+        "conid": str(item.get("conid") or item.get("conId") or item.get("contractId") or "").strip(),
+        "symbol": symbol,
+        "asset_type": asset_type,
+        "currency": str(item.get("currency") or "USD").upper(),
+    }
+
+
+def quote_key_for_instrument(item: Dict[str, Any]) -> str:
+    inst = _normalize_instrument(item)
+    conid = inst["conid"]
+    symbol = inst["symbol"]
+    if inst["asset_type"] == "OPT":
+        return f"CONID:{conid}" if conid else "OPT:NO_CONID"
+    return f"CONID:{conid}" if conid else symbol
+
+
 class QuoteEngine:
-    """
-    Priority-ordered market data provider.
-    One instance per server process — preserves last-known price cache across requests.
-    """
+    """Priority-ordered market data engine with one in-memory quote cache."""
 
     def __init__(self) -> None:
         self._last_known: Dict[str, Quote] = {}
-        self._active_provider: str = "NO_DATA"
+        self._active_provider = "NO_DATA"
 
     def get_quotes(
         self,
         symbols: List[str],
         *,
-        ibkr_positions: Optional[List[Dict]] = None,
+        ibkr_positions: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[Dict[str, Quote], str]:
-        """
-        Return (quote_map, provider_name) for the given symbols.
+        instruments = [{"symbol": symbol, "assetClass": "STK"} for symbol in symbols]
+        return self.get_quotes_for_instruments(instruments, ibkr_positions=ibkr_positions)
 
-        Provider priority:
-          1. IBKR Live — extract `last` + `day_pnl` from normalized positions
-          2. Yahoo Finance — for symbols missing from IBKR (or snapshot-only mode)
-          3. Last Known — cached prices from this server session
-          4. NO_DATA
-        """
-        t0 = time.time()
+    def get_quotes_for_instruments(
+        self,
+        instruments: Iterable[Dict[str, Any]],
+        *,
+        ibkr_positions: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[Dict[str, Quote], str]:
+        started = time.time()
+        requested = [_normalize_instrument(item) for item in instruments]
         quote_map: Dict[str, Quote] = {}
         provider = "NO_DATA"
-        syms = [s.upper().split()[0] for s in symbols if s]
 
-        # ── Priority 1: IBKR Live prices ──────────────────────────────────────
         if ibkr_positions:
-            for pos in ibkr_positions:
-                sym = str(pos.get("symbol") or pos.get("underlying") or "").upper().split()[0]
-                last = _f(pos.get("last") or pos.get("mktPrice"))
-                if not sym or not last:
+            for position in ibkr_positions:
+                inst = _normalize_instrument(position)
+                symbol = inst["symbol"]
+                last = _f(position.get("last") or position.get("mktPrice"))
+                if not symbol or last is None:
                     continue
-                qty = _f(pos.get("qty") or pos.get("quantity") or 1) or 1.0
-                mult = _f(pos.get("multiplier") or 1) or 1.0
-                # day_pnl is total $ P&L for the position; convert to per-share change
-                raw_pnl = _f(pos.get("day_pnl") or pos.get("day_change"))
-                change = (raw_pnl / (qty * mult)) if raw_pnl is not None else None
-                change_pct = _f(pos.get("day_pnl_pct") or pos.get("day_change_pct"))
-                q = Quote(
-                    symbol=sym, last=last, change=change,
-                    change_pct=change_pct, source="IBKR_LIVE",
+                qty = _f(position.get("qty") or position.get("quantity") or 1) or 1.0
+                multiplier = _f(position.get("multiplier") or 1) or 1.0
+                raw_day_change = _f(position.get("day_change"))
+                raw_day_pnl = _f(position.get("day_pnl"))
+                change = raw_day_change
+                if change is None and raw_day_pnl is not None and qty and multiplier:
+                    change = raw_day_pnl / (qty * multiplier)
+                quote = Quote(
+                    symbol=symbol,
+                    conid=inst["conid"] or None,
+                    asset_type=inst["asset_type"],
+                    currency=inst["currency"],
+                    last=last,
+                    bid=_f(position.get("bid")),
+                    ask=_f(position.get("ask")),
+                    previous_close=_f(position.get("previousClose") or position.get("prevClose") or position.get("closePrice")),
+                    change=change,
+                    change_pct=_f(position.get("day_change_pct") or position.get("day_pnl_pct")),
+                    market_state=position.get("marketState"),
+                    source="IBKR_LIVE",
+                    provider="IBKR",
+                    timestamp=position.get("quoteLastRefresh") or _utc_now_iso(),
                 )
-                quote_map[sym] = q
-                self._last_known[sym] = q
+                key = quote_key_for_instrument(inst)
+                quote_map[key] = quote
+                self._last_known[key] = quote
+                if inst["asset_type"] != "OPT":
+                    self._last_known[symbol] = quote
             if quote_map:
                 provider = "IBKR_LIVE"
 
-        # ── Priority 2: Yahoo Finance for missing symbols ─────────────────────
-        missing = [s for s in syms if s and s not in quote_map]
-        if missing:
-            yahoo = _fetch_yahoo(missing)
-            for sym, q in yahoo.items():
-                quote_map[sym] = q
-                self._last_known[sym] = q
-            if yahoo:
+        missing_yahoo_symbols = []
+        for item in requested:
+            key = quote_key_for_instrument(item)
+            if key in quote_map or item["asset_type"] == "OPT" or not item["symbol"]:
+                continue
+            missing_yahoo_symbols.append(item["symbol"])
+        missing_yahoo_symbols = list(dict.fromkeys(missing_yahoo_symbols))
+        if missing_yahoo_symbols:
+            yahoo_quotes = _fetch_yahoo(missing_yahoo_symbols)
+            for symbol, quote in yahoo_quotes.items():
+                quote_map[symbol] = quote
+                self._last_known[symbol] = quote
+            if yahoo_quotes:
                 provider = "HYBRID" if provider == "IBKR_LIVE" else "YAHOO_LIVE"
 
-        # ── Priority 3: Last Known prices from cache ───────────────────────────
-        for sym in syms:
-            if sym and sym not in quote_map and sym in self._last_known:
-                cached = self._last_known[sym]
-                quote_map[sym] = Quote(
-                    symbol=sym,
-                    last=cached.last,
-                    change=cached.change,
-                    change_pct=cached.change_pct,
-                    source="LAST_KNOWN",
-                    fetched_at=cached.fetched_at,
-                )
-
-        # ── Observability ──────────────────────────────────────────────────────
-        latency_ms = round((time.time() - t0) * 1000, 1)
-        live_count = sum(1 for q in quote_map.values() if q.source not in _STALE_SOURCES)
-
-        if provider != self._active_provider:
-            _LOG.info(
-                "[PROVIDER_SWITCH] source=%s destination=%s reason=quote_provider_change",
-                self._active_provider, provider,
+        for item in requested:
+            key = quote_key_for_instrument(item)
+            if key in quote_map:
+                continue
+            candidates = [key]
+            if item["asset_type"] != "OPT" and item["symbol"]:
+                candidates.append(item["symbol"])
+            cached_key = next((candidate for candidate in candidates if candidate in self._last_known), None)
+            if not cached_key:
+                continue
+            cached = self._last_known[cached_key]
+            quote_map[key] = Quote(
+                symbol=cached.symbol,
+                conid=cached.conid,
+                asset_type=cached.asset_type,
+                currency=cached.currency,
+                last=cached.last,
+                bid=cached.bid,
+                ask=cached.ask,
+                previous_close=cached.previous_close,
+                change=cached.change,
+                change_pct=cached.change_pct,
+                market_state=cached.market_state,
+                source="LAST_KNOWN",
+                provider=cached.provider,
+                timestamp=cached.timestamp,
+                fetched_at=cached.fetched_at,
             )
-            self._active_provider = provider
 
-        _LOG.info(
-            "[QUOTE_PROVIDER] provider=%s symbols=%s quotes_updated=%s latency_ms=%s",
-            provider, len(syms), live_count, latency_ms,
-        )
+        latency_ms = round((time.time() - started) * 1000, 1)
+        live_count = sum(1 for quote in quote_map.values() if quote.source not in _STALE_SOURCES)
+        if provider != self._active_provider:
+            _LOG.info("[PROVIDER_SWITCH] source=%s destination=%s reason=quote_provider_change", self._active_provider, provider)
+            self._active_provider = provider
+        _LOG.info("[QUOTE_REFRESH] provider=%s instruments=%s quotes_updated=%s latency_ms=%s", provider, len(requested), live_count, latency_ms)
+        _LOG.debug("[QUOTE_CACHE] provider=%s cache_size=%s", provider, len(self._last_known))
         return quote_map, provider
 
-    def prime_cache(self, positions: List[Dict]) -> None:
-        """
-        Pre-populate last-known cache from snapshot positions' stored prices.
-        Called when loading snapshot so options have a price of last record.
-        Prices are tagged LAST_KNOWN so consumers know they may be stale.
-        """
-        for pos in positions:
-            sym = str(pos.get("symbol") or pos.get("underlying") or "").upper().split()[0]
-            last = _f(pos.get("last") or pos.get("mktPrice"))
-            if not sym or not last or sym in self._last_known:
+    def prime_cache(self, positions: List[Dict[str, Any]]) -> None:
+        for position in positions:
+            inst = _normalize_instrument(position)
+            symbol = inst["symbol"]
+            last = _f(position.get("last") or position.get("mktPrice"))
+            if not symbol or last is None:
                 continue
-            self._last_known[sym] = Quote(
-                symbol=sym,
+            quote = Quote(
+                symbol=symbol,
+                conid=inst["conid"] or None,
+                asset_type=inst["asset_type"],
+                currency=inst["currency"],
                 last=last,
-                change=_f(pos.get("day_pnl") or pos.get("day_change")),
-                change_pct=_f(pos.get("day_pnl_pct") or pos.get("day_change_pct")),
+                previous_close=_f(position.get("previousClose") or position.get("prevClose")),
+                change=_f(position.get("day_change")),
+                change_pct=_f(position.get("day_change_pct")),
                 source="LAST_KNOWN",
+                provider=str(position.get("quoteSource") or position.get("priceSource") or "LAST_KNOWN"),
+                timestamp=position.get("quoteLastRefresh"),
             )
+            key = quote_key_for_instrument(inst)
+            self._last_known.setdefault(key, quote)
+            if inst["asset_type"] != "OPT":
+                self._last_known.setdefault(symbol, quote)
+
+    def cache_snapshot(self) -> Dict[str, Any]:
+        now = time.time()
+        return {
+            "activeProvider": self._active_provider,
+            "quoteCount": len(self._last_known),
+            "items": [
+                {
+                    "key": key,
+                    "conid": quote.conid,
+                    "symbol": quote.symbol,
+                    "assetType": quote.asset_type,
+                    "currency": quote.currency,
+                    "lastPrice": quote.last,
+                    "bid": quote.bid,
+                    "ask": quote.ask,
+                    "previousClose": quote.previous_close,
+                    "change": quote.change,
+                    "changePercent": quote.change_pct,
+                    "marketState": quote.market_state,
+                    "timestamp": quote.timestamp,
+                    "provider": quote.provider or quote.source,
+                    "source": quote.source,
+                    "quoteAge": round(now - quote.fetched_at, 3),
+                }
+                for key, quote in sorted(self._last_known.items())
+            ],
+        }
 
 
-def _fetch_yahoo(symbols: List[str]) -> Dict[str, "Quote"]:
-    """Fetch quotes from Yahoo Finance. Returns {SYMBOL: Quote}."""
+def _fetch_yahoo(symbols: List[str]) -> Dict[str, Quote]:
     try:
         from services.portfolio_providers import get_yahoo_live_quotes
-        bundle = get_yahoo_live_quotes(symbols, wait_timeout_seconds=2.5)
+
+        bundle = get_yahoo_live_quotes(symbols, wait_timeout_seconds=0.45)
         raw = (bundle or {}).get("quotes") if isinstance(bundle, dict) else {}
         if not isinstance(raw, dict):
             return {}
         result: Dict[str, Quote] = {}
-        for sym, data in raw.items():
+        for symbol, data in raw.items():
             if not isinstance(data, dict):
                 continue
             last = _f(data.get("last") or data.get("regularMarketPrice"))
-            if not last:
+            if last is None:
                 continue
-            change = _f(data.get("dayChange") or data.get("regularMarketChange"))
-            change_pct = _f(data.get("dayChangePercent") or data.get("regularMarketChangePercent"))
-            src = "YAHOO_LIVE" if data.get("isLiveQuote") else "YAHOO_DELAYED"
-            result[sym.upper()] = Quote(
-                symbol=sym.upper(), last=last, change=change, change_pct=change_pct, source=src,
+            source = "YAHOO_LIVE" if data.get("isLiveQuote") else "YAHOO_DELAYED"
+            result[symbol.upper()] = Quote(
+                symbol=symbol.upper(),
+                last=last,
+                previous_close=_f(data.get("previousClose")),
+                change=_f(data.get("dayChange") or data.get("regularMarketChange")),
+                change_pct=_f(data.get("dayChangePercent") or data.get("regularMarketChangePercent")),
+                market_state=data.get("marketState"),
+                currency=data.get("currency"),
+                source=source,
+                provider="YAHOO",
+                timestamp=data.get("quoteTimestamp"),
             )
         return result
     except Exception as exc:
-        _LOG.warning("[QUOTE_ENGINE] Yahoo fetch error: %s", exc)
+        _LOG.warning("[QUOTE_REFRESH] provider=YAHOO status=error error=%s", exc)
         return {}

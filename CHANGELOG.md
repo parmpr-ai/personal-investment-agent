@@ -874,3 +874,32 @@ Status: Implemented and locally validated.
 - Fixed Greek tax estimate to use net taxable stock/options gain after loss offset; UCITS ETFs excluded.
 - Added basic drag-and-drop dashboard widget reorder with localStorage persistence.
 - Added UAT report with simulation pass results.
+## v0.3.54 - Portfolio Production Stabilization (HERMES-PORTFOLIO-PRODUCTION-062)
+
+Date: 2026-06-29
+Status: READY FOR PO UAT
+Owner: HERMES
+
+### Backend - Market Data Engine
+
+* Added `backend/services/market_data_engine.py` as the portfolio market-data facade.
+* Reworked `backend/services/quote_engine.py` into a single in-memory quote cache with instrument identity, bid/ask, previous close, market state, timestamp, provider, and quote-age metadata.
+* Enforced option quote identity by `conid`; options no longer fall back to the underlying stock symbol.
+* Routed canonical portfolio construction through `ProviderManager -> MarketDataEngine -> PortfolioCalculator`.
+
+### Backend - Diagnostics
+
+* Added `/api/debug/portfolio-reconciliation` for IBKR vs PIA PASS/FAIL comparison across total value, market value, cash, buying power, liquidity, margins, P/L, realized, and Greeks.
+* Added `/api/debug/quote-cache` for MarketDataEngine cache inspection.
+* Added runtime log coverage for `[MARKET_SESSION]`, `[QUOTE_REFRESH]`, `[QUOTE_CACHE]`, `[DTO_CREATED]`, and `[RECONCILIATION]`.
+
+### Snapshot Lifecycle
+
+* Successful live snapshot writes now also persist a canonical price-free snapshot artifact with positions, contracts, average-cost fields, metadata, and timestamp.
+* Existing legacy snapshot files remain readable for backward-compatible recovery.
+
+### Validation
+
+* `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/services/quote_engine.py backend/services/market_data_engine.py backend/services/provider_manager.py backend/services/portfolio_calculator.py` - PASS
+* `PYTHONPATH=backend python -m unittest discover -s backend/tests -p "test_*.py"` - PASS, 28 tests
+* `NEXT_DIST_DIR=.next-hermes062 npm run build` - PASS

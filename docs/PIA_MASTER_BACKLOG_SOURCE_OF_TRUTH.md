@@ -1,7 +1,7 @@
 # PIA Master Backlog Source Of Truth
 
 Status: Active AI memory engine
-Last updated: 2026-06-24 (HERMES-IBKR-RECOVERY-052)
+Last updated: 2026-06-29 (HERMES-PORTFOLIO-PRODUCTION-062)
 Branch: `feat/pia-v3-foundation-integration`
 
 This Markdown is the canonical readable operating memory for PIA. The Excel workbook is the PM operational database. Both must stay synchronized after every approved sprint, merge, or implementation.
@@ -59,6 +59,7 @@ Developers may stop only for:
 - HERMES-MOBILE-LIVE-REFRESH-BLINK-041 stabilizes mobile live refresh by preserving dashboard and portfolio identity across polls, memoizing the portfolio view shell, and preventing mock fallback flashes during live updates. Build passed; PO UAT pending.
 - HERMES-LIVE-QUOTES-037 ties the stock hero and AI context consumers to the live dashboard quote seed, so held symbols follow the same live quote source as the position table and debug live-quotes contract.
 - HERMES-LIVE-POSITION-METRICS-038 recalculates live day P/L, day %, and unrealized from validated quote inputs, removes fake zero fallbacks, and emits calculation provenance in position, summary, and debug payloads.
+- HERMES-PORTFOLIO-PRODUCTION-062 introduces MarketDataEngine, hardens the single quote cache, rejects option fallback to underlying symbols, routes non-mock portfolios through the canonical DTO path, adds price-free canonical snapshot artifacts, and exposes reconciliation/quote-cache diagnostics. Status: READY FOR PO UAT.
 
 ## Sprint Summary
 
@@ -438,6 +439,7 @@ Developers may stop only for:
 - AI Intelligence V2 is the official approved design (PO-approved, 10/10); V1 deprecated. Spec: docs/design-system/mocks/stock-workspace/ai-intelligence-widget-v2.md. All future AI Intelligence work must follow V2.
 - DEC-GOV-004 (LOCKED): Approved Mock Preservation & Design Lock Traceability — every Design Lock must archive the approved mock under `docs/mocks/<feature>/APPROVED_<feature>_v<version>.png` and COMMIT it before implementation starts; record the approved-mock path in the backlog item, UAT ticket, and Design Lock notes. Process: Requirement → UX Mockup → Design Review → Design Lock → SAVE approved mock → COMMIT approved mock → Implementation → UAT. UAT reports must include Approved Mock <path>, Design Lock Commit <id>, Implementation Commit <id>. Non-compliance: implementation started without an archived approved mock is a governance violation and is blocked until the mock is committed. Reason: Analyst Targets drifted because the approved mock was not preserved as a repo source of truth.
 - DEC-PORTFOLIO-MODE-001 (LOCKED): Portfolio source selection is controlled by `data_source.mode` and may be `mock`, `last-update`, or `ibkr-live`. The IBKR integration setting (`ibkr.mode`) is transport-only and must not force portfolio source fallback. Reason: settings UI, provider status endpoint, and portfolio endpoints must report the same source.
+- DEC-PORTFOLIO-MARKETDATA-001 (LOCKED): Portfolio state must originate from the Canonical Portfolio DTO, and market prices must flow through MarketDataEngine / Quote Cache. Portfolio calculation code must not fetch provider quotes directly. Options must resolve quotes by `conid`; fallback to underlying stock symbols is prohibited.
 - DEC-AI-CV3 (LOCKED): AI Intelligence Compact V3 design lock principles — (1) no Last Updated; (2) no score badge; (3) no dots/arrows; (4) 3 rows; (5) 4 cards per row; (6) 2.2 visible cards per row; (7) card customization (show/hide, reorder, persisted); (8) semantic card coloring (tone → border/glow/chart stroke). Approved Compact V3 redesign; commits 1b7d426, 3887882.
 - DEC-AI-009 (LOCKED): Shared Intelligence Data Layer — AI Intelligence consumes data exclusively through the Shared Intelligence Context Layer; direct provider access from widgets is prohibited. Consumers: AI Intelligence, Analyst Targets, Company, Financials, News, Videos. Rationale: avoid duplicate fetch logic; consistency; centralized caching + validation.
 - DEC-AI-010 (LOCKED): AI Verdict Separation — AI Verdict (BUY/HOLD/SELL) and Portfolio Recommendation (ADD/HOLD/TRIM/REDUCE/AVOID) are independent. Compact shows AI Verdict only; Expanded may display portfolio recommendation.
@@ -611,6 +613,17 @@ Note: `Get-Process node | Stop-Process -Force` kills all Node processes on the m
 - Always validate route integrity and responsive behavior before release.
 
 ## CHANGELOG
+
+### v0.3.54 - Portfolio Production Stabilization
+Date: 2026-06-29
+Status: READY FOR PO UAT.
+- Backlog: HERMES-PORTFOLIO-PRODUCTION-062 is READY FOR PO UAT.
+- Backend: added MarketDataEngine, hardened Quote Cache, and routed non-mock portfolio payloads through `ProviderManager -> MarketDataEngine -> PortfolioCalculator`.
+- Backend: options now require `conid` quote identity and cannot use underlying-stock fallback prices.
+- Backend: added `/api/debug/portfolio-reconciliation` and `/api/debug/quote-cache`.
+- Snapshot lifecycle: successful live saves also create a canonical price-free snapshot artifact.
+- Validation: backend `py_compile` PASS; backend unittest discovery PASS (28 tests); frontend `npm run build` PASS with `NEXT_DIST_DIR=.next-hermes062`.
+- Known limitations: live reconciliation PASS requires PO validation against authenticated IBKR app values during market/extended-hours sessions; Yahoo fallback does not price options without IBKR marketdata.
 
 ### v0.3.36 - Live Frontend Refresh Recovery
 Date: 2026-06-23

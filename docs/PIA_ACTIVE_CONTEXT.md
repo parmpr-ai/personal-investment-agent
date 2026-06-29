@@ -6,7 +6,7 @@ feat/pia-v3-foundation-integration
 
 ## Current Sprint
 
-ARTEMIS Portfolio Engine Stabilization (ARTEMIS-PORTFOLIO-ENGINE-STABILIZATION-060)
+Portfolio Production Stabilization (HERMES-PORTFOLIO-PRODUCTION-062)
 
 ## Completed Sprints (in order)
 
@@ -16,8 +16,25 @@ ARTEMIS Portfolio Engine Stabilization (ARTEMIS-PORTFOLIO-ENGINE-STABILIZATION-0
 | ARTEMIS-PORTFOLIO-UX-058 | ARTEMIS | PENDING UAT | Currency toggle, option labels, settings cleanup |
 | ARTEMIS-PORTFOLIO-PRODUCTION-POLISH-059 | ARTEMIS | PENDING UAT | Header cleanup, segmented currency, dot indicator |
 | ARTEMIS-PORTFOLIO-ENGINE-STABILIZATION-060 | ARTEMIS | PENDING UAT | Portfolio total fix, metric accuracy, trade history |
+| HERMES-PORTFOLIO-PRODUCTION-062 | HERMES | READY FOR PO UAT | MarketDataEngine, conid-first option pricing, canonical reconciliation |
 
 ## Current Focus
+
+### Completed in HERMES-062 (2026-06-29)
+
+* **MarketDataEngine introduced** - portfolio calculations now request quotes through a dedicated market-data facade with provider/session/cache metadata.
+* **Quote Cache hardened** - the in-memory quote cache stores instrument identity, bid/ask, previous close, market state, timestamp, provider, and quote age.
+* **Option pricing guardrail** - options are keyed by `conid`; the calculator refuses to price an option from the underlying stock symbol.
+* **Canonical DTO path tightened** - non-mock portfolio payloads route through `ProviderManager -> MarketDataEngine -> PortfolioCalculator` without the old provider-side calculation side effect.
+* **Snapshot lifecycle foundation** - successful live snapshot writes also persist a canonical price-free snapshot file containing positions, contracts, average cost, metadata, and timestamp only.
+* **Reconciliation diagnostics** - `/api/debug/portfolio-reconciliation` compares IBKR vs PIA totals, margin/liquidity fields, P/L, and Greeks with PASS/FAIL rows for UAT.
+* **Runtime diagnostics** - `/api/debug/quote-cache` exposes MarketDataEngine cache contents, active provider, quote age, and source metadata.
+
+### Pending PO UAT
+
+* Validate reconciliation endpoint against live IBKR app values during market hours.
+* Validate extended-hours quote behavior with the active IBKR market-data entitlements.
+* Validate option contracts with live bid/ask/mid from IBKR Client Portal marketdata snapshots.
 
 ### Completed in ARTEMIS-060 (2026-06-25)
 

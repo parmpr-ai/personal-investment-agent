@@ -16,6 +16,36 @@ Format per entry:
 
 ## UAT Log
 
+### HERMES-PORTFOLIO-PRODUCTION-062
+
+Status: READY FOR PO UAT
+Owner: HERMES
+Date: 2026-06-29
+Build: PASS (`NEXT_DIST_DIR=.next-hermes062 npm run build`)
+
+#### UAT Checklist - Portfolio Production Engine
+
+| Check | Status | Notes |
+|---|---|---|
+| MarketDataEngine separates market data from portfolio calculation | READY | Portfolio manager calls MarketDataEngine; calculator receives quote cache output only |
+| Single Quote Cache contains provider/timestamp/session metadata | READY | `/api/debug/quote-cache` exposes cache state |
+| Option quotes resolve by conid only | READY | Unit test rejects underlying-symbol fallback for options |
+| Snapshot writes canonical price-free artifact | READY | `canonical_latest.json` contains positions/contracts/avg-cost metadata only |
+| Reconciliation endpoint available | READY | `/api/debug/portfolio-reconciliation` returns PASS/FAIL rows |
+| Runtime logs trace refresh lifecycle | READY | `[MARKET_SESSION]`, `[QUOTE_REFRESH]`, `[QUOTE_CACHE]`, `[PORTFOLIO_CALCULATED]`, `[DTO_CREATED]`, `[RECONCILIATION]` |
+
+#### Validation
+
+| Command | Result |
+|---|---|
+| `python -m py_compile backend/main.py backend/services/portfolio_providers.py backend/services/quote_engine.py backend/services/market_data_engine.py backend/services/provider_manager.py backend/services/portfolio_calculator.py` | PASS |
+| `PYTHONPATH=backend python -m unittest discover -s backend/tests -p "test_*.py"` | PASS - 28 tests |
+| `NEXT_DIST_DIR=.next-hermes062 npm run build` | PASS |
+
+Known limitations: live IBKR reconciliation still requires PO validation against the authenticated IBKR app during market/extended-hours sessions; Yahoo fallback does not price options when IBKR is unavailable.
+
+---
+
 ### ARTEMIS-PORTFOLIO-ENGINE-STABILIZATION-060
 
 Status: PENDING UAT

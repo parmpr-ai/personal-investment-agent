@@ -118,12 +118,17 @@ class SnapshotLifecycleTests(unittest.TestCase):
         original_positions = self._read_json(positions_path)
         original_summary = self._read_json(summary_path)
         original_meta = self._read_json(meta_path)
+        canonical = self._read_json(pp._SNAPSHOT_DIR / "canonical_latest.json")
         self.assertEqual(original_meta["snapshot_valid"], True)
         self.assertEqual(original_meta["snapshotPersisted"], True)
         self.assertEqual(original_meta["positions_count"], 1)
         self.assertEqual(original_meta["lastRefreshStatus"], "ok")
         self.assertEqual(original_positions["positions"][0]["symbol"], "AMD")
         self.assertEqual(original_summary["summary"]["total_value"], 2200.0)
+        self.assertFalse(canonical["metadata"]["containsPrices"])
+        self.assertFalse(canonical["metadata"]["containsTotals"])
+        self.assertNotIn("last", canonical["positions"][0])
+        self.assertNotIn("market_value", canonical["positions"][0])
 
         failed_bundle = self._valid_bundle(last=121.5)
         failed_bundle["positions"] = []
@@ -169,6 +174,80 @@ class SnapshotLifecycleTests(unittest.TestCase):
         )
         refreshed_positions = self._read_json(pp._SNAPSHOT_POSITIONS_FILE)
         self.assertEqual(refreshed_positions["positions"][0]["last"], 123.0)
+
+    def test_snapshot_provider_restores_last_known_good_value_and_positions(self) -> None:
+        live_provider = pp.IbkrLivePortfolioProvider.__new__(pp.IbkrLivePortfolioProvider)
+        self.assertTrue(live_provider._persist_live_snapshot(self._valid_bundle(), force=True))
+
+        snapshot = pp.SnapshotPortfolioProvider()
+        portfolio = snapshot.get_portfolio()
+
+        self.assertEqual(portfolio["source"], "LAST_UPDATE")
+        self.assertEqual(portfolio["total_value"], 2200.0)
+        self.assertEqual(len(portfolio["positions"]), 1)
+        self.assertEqual(portfolio["positions"][0]["symbol"], "AMD")
+        self.assertEqual(portfolio["snapshotTimestamp"], self._base_timestamp().isoformat())
+
+    def test_zero_value_snapshot_is_rejected_without_moving_last_good_timestamp(self) -> None:
+        provider = pp.IbkrLivePortfolioProvider.__new__(pp.IbkrLivePortfolioProvider)
+        saved = self._valid_bundle()
+        self.assertTrue(provider._persist_live_snapshot(saved, force=True))
+
+        invalid = self._valid_bundle(ts=self._base_timestamp() + timedelta(minutes=31), total_value=0.0)
+        invalid["summary"]["net_liquidation"] = 0.0
+        self.assertFalse(provider._persist_live_snapshot(invalid, force=True))
+
+        meta = self._read_json(pp._SNAPSHOT_META_FILE)
+        state = self._read_json(pp._SNAPSHOT_STATE_FILE)
+        self.assertEqual(meta["snapshot_timestamp"], saved["snapshot_timestamp"])
+        self.assertEqual(state["snapshotTimestamp"], saved["snapshot_timestamp"])
+        self.assertEqual(state["positionsCount"], 1)
+        self.assertEqual(state["snapshotRefreshStatus"], "rejected")
+        self.assertIn("finite positive", state["lastRefreshError"])
+
+    def test_production_resolver_uses_live_then_snapshot_then_demo(self) -> None:
+        provider = pp.IbkrLivePortfolioProvider.__new__(pp.IbkrLivePortfolioProvider)
+        self.assertTrue(provider._persist_live_snapshot(self._valid_bundle(), force=True))
+
+        with patch.object(pp, "get_data_source_mode", return_value="ibkr-live"), patch.object(
+            pp.IbkrLivePortfolioProvider,
+            "_ensure_refresh_loop",
+            return_value=None,
+        ), patch.object(
+            pp.IbkrLivePortfolioProvider,
+            "get_gateway_heartbeat",
+            return_value={"gateway_open": False, "gateway_status": "gateway_down", "gateway_error": "offline", "ibkr_authenticated": False},
+        ):
+            snapshot_resolution = pp.resolve_portfolio_provider()
+        self.assertIsInstance(snapshot_resolution.provider, pp.SnapshotPortfolioProvider)
+        self.assertEqual(snapshot_resolution.active_source, "LAST_UPDATE")
+
+        pp._SNAPSHOT_META_FILE.unlink()
+        with patch.object(pp, "get_data_source_mode", return_value="ibkr-live"), patch.object(
+            pp.IbkrLivePortfolioProvider,
+            "_ensure_refresh_loop",
+            return_value=None,
+        ), patch.object(
+            pp.IbkrLivePortfolioProvider,
+            "get_gateway_heartbeat",
+            return_value={"gateway_open": False, "gateway_status": "gateway_down", "gateway_error": "offline", "ibkr_authenticated": False},
+        ):
+            demo_resolution = pp.resolve_portfolio_provider()
+        self.assertIsInstance(demo_resolution.provider, pp.MockPortfolioProvider)
+        self.assertEqual(demo_resolution.active_source, "MOCK")
+
+        with patch.object(pp, "get_data_source_mode", return_value="ibkr-live"), patch.object(
+            pp.IbkrLivePortfolioProvider,
+            "_ensure_refresh_loop",
+            return_value=None,
+        ), patch.object(
+            pp.IbkrLivePortfolioProvider,
+            "get_gateway_heartbeat",
+            return_value={"gateway_open": True, "gateway_status": "connected", "gateway_error": None, "ibkr_authenticated": True},
+        ), patch.object(pp.IbkrLivePortfolioProvider, "get_snapshot_meta", return_value={}):
+            live_resolution = pp.resolve_portfolio_provider()
+        self.assertIsInstance(live_resolution.provider, pp.IbkrLivePortfolioProvider)
+        self.assertEqual(live_resolution.active_source, "IBKR_LIVE")
 
     def test_live_load_bundle_uses_snapshot_fallback_when_refresh_fails(self) -> None:
         provider = pp.IbkrLivePortfolioProvider.__new__(pp.IbkrLivePortfolioProvider)

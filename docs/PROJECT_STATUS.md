@@ -1,6 +1,19 @@
 # PIA Project Status
 
-Last updated: 2026-06-25 (ARTEMIS-PORTFOLIO-ENGINE-STABILIZATION-060)
+## HERMES-062 Update
+
+Status: READY FOR PO UAT
+Date: 2026-06-29
+
+- MarketDataEngine separation implemented for portfolio quote resolution.
+- Single in-memory quote cache now carries instrument identity, bid/ask, previous close, market state, timestamp, provider, and quote age.
+- Option quotes are keyed by `conid`; fallback to underlying stock price is rejected.
+- Non-mock portfolio payloads now route through `ProviderManager -> MarketDataEngine -> PortfolioCalculator`.
+- Successful live snapshot writes also persist a canonical price-free snapshot artifact.
+- `/api/debug/portfolio-reconciliation` added for IBKR vs PIA PASS/FAIL comparison.
+- `/api/debug/quote-cache` added for MarketDataEngine cache inspection.
+
+Last updated: 2026-06-29 (HERMES-PORTFOLIO-PRODUCTION-062)
 Branch: `feat/pia-v3-foundation-integration`
 
 ## Portfolio Engine — Production Status

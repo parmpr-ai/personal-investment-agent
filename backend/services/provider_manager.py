@@ -23,16 +23,13 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from services.quote_engine import QuoteEngine
+from services.market_data_engine import market_data_engine
 from services.portfolio_calculator import calculate, strip_stale_fields
 
 _LOG = logging.getLogger("pia.provider_manager")
 
 # Module-level QuoteEngine singleton — preserves last-known price cache
 # across all requests within a server session.
-_quote_engine = QuoteEngine()
-
-
 def get_canonical_portfolio(
     *,
     resolution=None,
@@ -91,7 +88,7 @@ def get_canonical_portfolio(
                 if last_cash:
                     ibkr_summary = {"cash": last_cash}
                 # Prime QuoteEngine cache with snapshot prices (for options)
-                _quote_engine.prime_cache(positions)
+                market_data_engine.prime_cache(positions)
                 # Strip stale computed fields before recalculating
                 positions = [strip_stale_fields(p) for p in positions]
                 _LOG.warning(
@@ -117,7 +114,7 @@ def get_canonical_portfolio(
             snap_meta = snap_bundle.get("meta") or {}
 
             # Prime cache before stripping (lets options get LAST_KNOWN prices)
-            _quote_engine.prime_cache(raw_positions)
+            market_data_engine.prime_cache(raw_positions)
             positions = [strip_stale_fields(p) for p in raw_positions]
 
             last_cash = _f(raw_summary.get("cash") or 0)
@@ -160,15 +157,9 @@ def get_canonical_portfolio(
         return result
 
     # ── Quote Engine ───────────────────────────────────────────────────────────
-    symbols = list({
-        str(p.get("symbol") or p.get("underlying") or "").upper().split()[0]
-        for p in positions
-        if p.get("symbol") or p.get("underlying")
-    } - {""})
-
-    # For IBKR_LIVE: extract prices from normalized positions (they carry `last`)
     ibkr_live_data = positions if active_source == "IBKR_LIVE" else None
-    quotes, quote_provider = _quote_engine.get_quotes(symbols, ibkr_positions=ibkr_live_data)
+    quotes, market_meta = market_data_engine.get_quotes(positions, ibkr_positions=ibkr_live_data)
+    quote_provider = str(market_meta.get("provider") or "NO_DATA")
 
     # ── Portfolio Calculator ───────────────────────────────────────────────────
     mode = "ibkr-live" if active_source == "IBKR_LIVE" else "last-update"
@@ -193,6 +184,7 @@ def get_canonical_portfolio(
     # ── Provider meta enrichment ───────────────────────────────────────────────
     prices_live = quote_provider in ("IBKR_LIVE", "YAHOO_LIVE", "YAHOO_DELAYED", "HYBRID")
     fallback_active = active_source != "IBKR_LIVE" or resolution.fallback_active
+    positions_source = "IBKR_LIVE" if active_source == "IBKR_LIVE" else "IBKR_LAST_UPDATE"
     portfolio_mode = (
         "IBKR_LIVE" if active_source == "IBKR_LIVE"
         else ("HYBRID_LAST_POSITIONS_LIVE_QUOTES" if prices_live else "LAST_UPDATE_ONLY")
@@ -204,10 +196,10 @@ def get_canonical_portfolio(
 
     dto.update({
         "portfolioMode": portfolio_mode,
-        "positionsSource": active_source,
+        "positionsSource": positions_source,
         "priceSource": quote_provider,
         "activePriceProvider": price_provider_label,
-        "activePositionProvider": active_source,
+        "activePositionProvider": positions_source,
         "is_live": active_source == "IBKR_LIVE",
         "is_stale": active_source != "IBKR_LIVE",
         "stale_reason": (
@@ -242,12 +234,21 @@ def get_canonical_portfolio(
         "snapshotSchemaVersion": snapshot_state.get("schemaVersion"),
         "snapshot_schema_version": snapshot_state.get("schemaVersion"),
         # Refresh timestamps
-        "pricesLastRefresh": bundle_meta.get("pricesLastRefresh"),
-        "pricesAgeSeconds": bundle_meta.get("pricesAgeSeconds"),
+        "pricesLastRefresh": bundle_meta.get("pricesLastRefresh") or market_meta.get("timestamp"),
+        "pricesAgeSeconds": market_meta.get("quoteAge", bundle_meta.get("pricesAgeSeconds")),
         "positionsLastRefresh": bundle_meta.get("positionsLastRefresh") or snap_ts,
         "summaryLastRefresh": bundle_meta.get("summaryLastRefresh") or snap_ts,
         "lastRefresh": bundle_meta.get("lastRefresh") or snap_ts,
         "nextRefresh": bundle_meta.get("nextRefresh"),
+        "marketSession": market_meta.get("marketSession"),
+        "marketStatus": market_meta.get("marketStatus"),
+        "quoteAge": market_meta.get("quoteAge"),
+        "marketData": {
+            "provider": quote_provider,
+            "latencyMs": market_meta.get("latencyMs"),
+            "quoteCount": market_meta.get("quoteCount"),
+            "timestamp": market_meta.get("timestamp"),
+        },
         # Display / risk
         "risk_mode": "IBKR LIVE" if active_source == "IBKR_LIVE" else "LAST UPDATE",
         "journal": [],
@@ -259,7 +260,7 @@ def get_canonical_portfolio(
 
     duration_ms = round((time.time() - t0) * 1000, 1)
     _LOG.info(
-        "[CANONICAL_DTO] source=%s mode=%s total=%.2f positions=%s "
+        "[DTO_CREATED] source=%s mode=%s total=%.2f positions=%s "
         "quote_provider=%s consumers=[Desktop,Mobile,Dashboard,AI] duration_ms=%s",
         active_source, mode, dto.get("total_value", 0),
         len(positions), quote_provider, duration_ms,

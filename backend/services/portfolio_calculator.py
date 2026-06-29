@@ -25,7 +25,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from services.quote_engine import Quote
+from services.quote_engine import Quote, quote_key_for_instrument
 
 _LOG = logging.getLogger("pia.portfolio_calculator")
 
@@ -91,7 +91,12 @@ def calculate(
             p.get("cost_basis") or p.get("costBasis") or (avg_cost * qty if avg_cost else 0)
         )
 
-        quote: Optional[Quote] = quotes.get(sym) if quotes else None
+        quote_key = quote_key_for_instrument(p)
+        quote: Optional[Quote] = None
+        if quotes:
+            quote = quotes.get(quote_key)
+            if quote is None and str(p.get("assetClass") or p.get("sec_type") or "").upper() != "OPT":
+                quote = quotes.get(sym)
 
         if quote and quote.last:
             last = quote.last
@@ -105,7 +110,7 @@ def calculate(
                 if quote.change is not None else None
             )
             day_pnl_pct = round(quote.change_pct, 4) if quote.change_pct is not None else None
-            prev_close = (last - quote.change) if quote.change is not None else None
+            prev_close = quote.previous_close if quote.previous_close is not None else ((last - quote.change) if quote.change is not None else None)
             previous_market_value = (
                 round(qty * prev_close * mult, 2) if prev_close is not None else None
             )
@@ -117,6 +122,7 @@ def calculate(
             unrealized_pct = None
             day_pnl = None
             day_pnl_pct = None
+            prev_close = None
             previous_market_value = None
             price_source = "NO_DATA"
 
@@ -130,17 +136,28 @@ def calculate(
             # Price layer
             "last": last,
             "price": last,           # frontend alias
+            "previousClose": prev_close,
+            "prevClose": prev_close,
+            "bid": quote.bid if quote else None,
+            "ask": quote.ask if quote else None,
+            "mid": round((quote.bid + quote.ask) / 2, 4) if quote and quote.bid is not None and quote.ask is not None else None,
             # Computed
             "market_value": market_value,
             "unrealized": unrealized,
             "unrealized_pct": unrealized_pct,
             "day_pnl": day_pnl,
-            "day_change": day_pnl,   # frontend alias
+            "day_change": quote.change if quote else None,
             "day_pnl_pct": day_pnl_pct,
             "day_change_pct": day_pnl_pct,
             "previous_market_value": previous_market_value,
             "price_source": price_source,
             "quoteSource": price_source,
+            "priceSource": price_source,
+            "quoteLastRefresh": quote.timestamp if quote else None,
+            "quoteAgeSeconds": round(quote.age_seconds, 3) if quote else None,
+            "quoteStale": not bool(quote and quote.is_live),
+            "quoteStaleReason": None if quote and quote.is_live else "No live quote available from MarketDataEngine.",
+            "marketSession": quote.market_state if quote and quote.market_state else None,
         })
 
         if qty != 0:
