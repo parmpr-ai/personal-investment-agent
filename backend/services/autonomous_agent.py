@@ -1060,6 +1060,67 @@ class AutonomousAgent:
             pass
         return {"ok": True, "message": "Agent stopped"}
 
+    async def sell_all(self) -> Dict[str, Any]:
+        """Emergency exit: close ALL open positions immediately at market price."""
+        open_longs = get_open_longs()
+        open_shorts = get_open_shorts()
+        all_positions = open_longs + open_shorts
+
+        if not all_positions:
+            return {"ok": True, "message": "No open positions to close", "closed": 0}
+
+        cycle_id = f"emergency_{datetime.now(timezone.utc).strftime('%H%M%S')}"
+        closed_count = 0
+
+        # Fetch current quotes
+        try:
+            from services.market_data import fetch_quotes
+            quotes = await fetch_quotes([p["ticker"] for p in all_positions])
+        except Exception:
+            quotes = {}
+
+        _log("warning", f"🚨 EMERGENCY SELL-ALL: closing {len(all_positions)} position(s)")
+        await send_risk_alert(f"🚨 EMERGENCY SELL-ALL TRIGGERED\nClosing {len(all_positions)} position(s) at market price")
+
+        for pos in all_positions:
+            ticker = pos["ticker"]
+            action = "SELL" if pos.get("action") == "BUY" else "COVER"
+            price = quotes.get(ticker, {}).get("price", 0) or pos.get("avg_price", 0)
+
+            if not price:
+                _log("warning", f"[{cycle_id}] Could not get price for {ticker}, skipping")
+                continue
+
+            reason = f"Emergency sell-all at {price}"
+            result = self._execute(action, ticker, pos["qty"], price, None, None, reason, 99)
+
+            if result.get("ok"):
+                closed_count += 1
+                _log("warning", f"[{cycle_id}] EMERGENCY {action} {ticker} {pos['qty']}sh @ ${price:.2f}")
+                try:
+                    record_exit(ticker, price, pos["qty"], cycle_id)
+                except Exception:
+                    pass
+                try:
+                    asyncio.create_task(send_trade_alert(
+                        action=action, ticker=ticker, qty=pos["qty"], price=price,
+                        stop=0, target=0, reason=reason, confidence=99,
+                    ))
+                except Exception:
+                    pass
+            else:
+                _log("error", f"[{cycle_id}] Failed to close {ticker}: {result.get('error')}")
+
+        msg = f"Emergency sell-all complete: closed {closed_count}/{len(all_positions)} positions"
+        _log("warning", msg)
+        return {
+            "ok": True,
+            "message": msg,
+            "closed": closed_count,
+            "total": len(all_positions),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
     def status(self) -> Dict[str, Any]:
         return {
             "running": self._running,

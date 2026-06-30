@@ -286,6 +286,11 @@ async def agent_start(): return autonomous_agent.start()
 @app.post('/agent/stop')
 async def agent_stop(): return autonomous_agent.stop()
 
+@app.post('/agent/sell-all')
+async def agent_sell_all():
+ """Emergency exit: close all open positions immediately."""
+ return await autonomous_agent.sell_all()
+
 @app.post('/agent/config')
 def agent_config(req:AgentConfigRequest):
  updates={k:v for k,v in req.model_dump().items() if v is not None}
