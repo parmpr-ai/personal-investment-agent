@@ -228,11 +228,12 @@ function Spinner() {
 
 // ─── Section A: Live Status Bar ───────────────────────────────────────────────
 
-function LiveStatusBar({ status, onToggle, toggling, regimeData }: { status: any; onToggle: () => void; toggling: boolean; regimeData: any }) {
+function LiveStatusBar({ status, onToggle, onSellAll, toggling, sellAllLoading, regimeData }: { status: any; onToggle: () => void; onSellAll: () => void; toggling: boolean; sellAllLoading: boolean; regimeData: any }) {
   const running = status?.running
   const portfolio = status?.paper_portfolio || {}
   const totalReturn = portfolio.total_return_pct ?? 0
   const totalValue = portfolio.total_value ?? 0
+  const openPositions = (portfolio?.positions || []).length
 
   return (
     <Card
@@ -277,6 +278,31 @@ function LiveStatusBar({ status, onToggle, toggling, regimeData }: { status: any
         />
         {toggling ? 'Working...' : running ? 'STOP AGENT' : 'START AGENT'}
       </button>
+
+      {/* Emergency Sell-All Button */}
+      {openPositions > 0 && (
+        <button
+          onClick={onSellAll}
+          disabled={sellAllLoading}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 16px',
+            borderRadius: '8px',
+            border: 'none',
+            background: 'rgba(255,68,68,0.2)',
+            color: C.red,
+            fontWeight: 700,
+            fontSize: '13px',
+            cursor: sellAllLoading ? 'wait' : 'pointer',
+            transition: 'all 0.2s',
+            flexShrink: 0,
+          }}
+        >
+          🚨 SELL ALL ({openPositions})
+        </button>
+      )}
 
       {/* Divider */}
       <div style={{ width: '1px', height: '32px', background: C.border }} />
@@ -2677,6 +2703,8 @@ export default function AgentDashboard() {
   const [toggling, setToggling] = useState(false)
   const [toggleMsg, setToggleMsg] = useState('')
 
+  const [sellAllLoading, setSellAllLoading] = useState(false)
+
   // Fetch functions
   const fetchStatus = useCallback(async () => {
     try {
@@ -2862,6 +2890,25 @@ export default function AgentDashboard() {
     }
   }
 
+  async function handleSellAll() {
+    const confirmed = window.confirm('🚨 Emergency Sell-All\n\nThis will close ALL open positions immediately at market price.\n\nAre you sure?')
+    if (!confirmed) return
+
+    setSellAllLoading(true)
+    try {
+      const res = await apiFetch('/agent/sell-all', { method: 'POST' })
+      setToggleMsg(res?.message || 'Sell-all executed')
+      setTimeout(() => {
+        fetchStatus()
+        fetchPortfolio()
+      }, 500)
+    } catch (err: any) {
+      setToggleMsg(err?.detail || err?.message || 'Sell-all failed')
+    } finally {
+      setSellAllLoading(false)
+    }
+  }
+
   async function handleSaveConfig(updates: any) {
     await apiFetch('/agent/config', {
       method: 'POST',
@@ -2946,7 +2993,7 @@ export default function AgentDashboard() {
             </div>
           </Card>
         ) : (
-          <LiveStatusBar status={status} onToggle={handleToggle} toggling={toggling} regimeData={regimeData} />
+          <LiveStatusBar status={status} onToggle={handleToggle} onSellAll={handleSellAll} toggling={toggling} sellAllLoading={sellAllLoading} regimeData={regimeData} />
         )}
 
         {/* Last Cycle Summary */}
