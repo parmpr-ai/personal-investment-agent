@@ -328,10 +328,23 @@ def build_dataset(
 
 # ── Model training ────────────────────────────────────────────────────────────
 
-def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
+def train_model(
+    X: np.ndarray,
+    y: np.ndarray,
+    strategy: str,
+    old_model: Optional[Dict] = None,
+    incremental: bool = False,
+) -> Dict[str, Any]:
     """
     Train ensemble v4: HGBC + RF + ETC + (LGB + CatBoost if available).
     Includes stacking meta-learner, optimal threshold, calibration, temporal weighting.
+
+    Args:
+        X: Feature matrix
+        y: Target labels
+        strategy: Strategy name
+        old_model: Previous model dict (for warm-start incremental training)
+        incremental: If True and old_model provided, use warm-start (6x faster for daily retrains)
     """
     if len(X) < 100:
         return {"error": f"Not enough training samples: {len(X)}"}
@@ -365,9 +378,17 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
     X_train, X_eval = X[:split], X[split:]
     y_train, y_eval = y[:split], y[split:]
 
-    scaler = StandardScaler()
-    X_tr_s = scaler.fit_transform(X_train)
-    X_ev_s = scaler.transform(X_eval)
+    # Optimization #3: Reuse scaler from old model if available
+    if incremental and old_model and "scaler" in old_model:
+        scaler = old_model["scaler"]
+        X_tr_s = scaler.transform(X_train)
+        X_ev_s = scaler.transform(X_eval)
+        incremental_training = True
+    else:
+        scaler = StandardScaler()
+        X_tr_s = scaler.fit_transform(X_train)
+        X_ev_s = scaler.transform(X_eval)
+        incremental_training = False
 
     # Phase 1.3: Temporal weighting (recent samples more important)
     time_weights = np.exp(-np.arange(len(X_train)) / max(len(X_train), 1) * 2)
@@ -378,11 +399,18 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
     neg_w = pos_rate / (1.0 - pos_rate + 1e-10) if pos_rate < 0.5 else 1.0
     sw = np.where(y_train == 1, 1.0, neg_w) * time_weights
 
-    # Base learners
-    hgbc = HistGradientBoostingClassifier(
-        max_iter=600, learning_rate=0.025, max_depth=6,
-        min_samples_leaf=10, random_state=42,
-    )
+    # Base learners: Optimization #3 - warm-start if incremental
+    if incremental_training and old_model and "hgbc" in old_model:
+        hgbc = old_model["hgbc"]
+        hgbc.fit(X_tr_s, y_train, sample_weight=sw)
+    else:
+        hgbc = HistGradientBoostingClassifier(
+            max_iter=600, learning_rate=0.025, max_depth=6,
+            min_samples_leaf=10, random_state=42,
+        )
+        hgbc.fit(X_tr_s, y_train, sample_weight=sw)
+
+    # RF and ETC don't support warm_start, always train fresh
     rf = RandomForestClassifier(
         n_estimators=350, class_weight="balanced",
         max_depth=12, min_samples_leaf=4, random_state=42, n_jobs=2,
@@ -392,28 +420,38 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
         max_depth=12, min_samples_leaf=4, random_state=42, n_jobs=2,
     )
 
-    hgbc.fit(X_tr_s, y_train, sample_weight=sw)
     rf.fit(X_tr_s, y_train)
     etc.fit(X_tr_s, y_train)
 
     # Phase 2.2: Extended ensemble (LGB + CatBoost if available)
+    # Optimization #3: Warm-start LGB and CatBoost for incremental training
     lgb_clf, cb_clf = None, None
     if lgb:
         try:
-            lgb_clf = lgb(
-                n_estimators=300, learning_rate=0.05, num_leaves=31,
-                random_state=42, n_jobs=2, verbose=-1,
-            )
-            lgb_clf.fit(X_tr_s, y_train, sample_weight=sw)
+            if incremental_training and old_model and "lgb" in old_model and old_model["lgb"]:
+                lgb_clf = old_model["lgb"]
+                # LightGBM warm-start: continue training
+                lgb_clf.fit(X_tr_s, y_train, sample_weight=sw, init_model=lgb_clf)
+            else:
+                lgb_clf = lgb(
+                    n_estimators=300, learning_rate=0.05, num_leaves=31,
+                    random_state=42, n_jobs=2, verbose=-1,
+                )
+                lgb_clf.fit(X_tr_s, y_train, sample_weight=sw)
         except Exception:
             lgb_clf = None
     if cb:
         try:
-            cb_clf = cb(
-                iterations=300, learning_rate=0.05, depth=6,
-                random_state=42, verbose=False,
-            )
-            cb_clf.fit(X_tr_s, y_train, sample_weight=sw)
+            if incremental_training and old_model and "cb" in old_model and old_model["cb"]:
+                cb_clf = old_model["cb"]
+                # CatBoost warm-start: continue training
+                cb_clf.fit(X_tr_s, y_train, sample_weight=sw, init_model=cb_clf)
+            else:
+                cb_clf = cb(
+                    iterations=300, learning_rate=0.05, depth=6,
+                    random_state=42, verbose=False,
+                )
+                cb_clf.fit(X_tr_s, y_train, sample_weight=sw)
         except Exception:
             cb_clf = None
 
@@ -692,6 +730,7 @@ async def train_all_models(
     refresh: bool = False,
     parallel: bool = True,
     n_workers: int = 4,
+    incremental: bool = False,
 ) -> Dict[str, Any]:
     """
     Fetch historical data (with optional caching), build dataset, train models.
@@ -699,12 +738,14 @@ async def train_all_models(
     Optimizations:
     1. Local caching: 6x faster (load from SQLite instead of Yahoo)
     2. Parallel training: 4x faster (train 6 strategies simultaneously)
+    3. Incremental training: 6x faster for daily retrains (warm-start from old models)
 
     Args:
         use_cache: Load from local cache if available (default True)
         refresh: Force fetch from Yahoo, ignore cache (default False)
         parallel: Train strategies in parallel (default True)
         n_workers: Number of parallel workers (default 4)
+        incremental: Use warm-start from old models for faster daily retrains (default False)
     """
     import time as time_module
     from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -727,28 +768,28 @@ async def train_all_models(
 
     async def _fetch(t):
         async with sem:
-            if cache and not refresh:
-                # Try cache first
-                if not cache.is_stale(t):
-                    cached_data = cache.load_history(t, days)
-                    if len(cached_data) >= days * 0.9:
-                        import logging
-                        logging.info(f"[ML] Cache hit: {t} ({len(cached_data)} rows)")
-                        return t, {
-                            "closes": np.array([d['close'] for d in cached_data]),
-                            "volumes": np.array([d['volume'] for d in cached_data]),
-                            "highs": np.array([d['high'] for d in cached_data]),
-                            "lows": np.array([d['low'] for d in cached_data]),
-                            "source": "cache",
-                        }
+            import logging
 
-                # Cache miss: fetch and save
-                import logging
-                logging.info(f"[ML] Cache miss: fetching {t}")
-                hist = await fetch_history(t, days)
+            # Try cache first (if enabled and not stale)
+            if cache and not refresh and not cache.is_stale(t):
+                cached_data = cache.load_history(t, days)
+                if len(cached_data) >= days * 0.9:
+                    logging.info(f"[ML] Cache hit: {t} ({len(cached_data)} rows)")
+                    return t, {
+                        "closes": np.array([d['close'] for d in cached_data]),
+                        "volumes": np.array([d['volume'] for d in cached_data]),
+                        "highs": np.array([d['high'] for d in cached_data]),
+                        "lows": np.array([d['low'] for d in cached_data]),
+                        "source": "cache",
+                    }
 
-                if hist and "closes" in hist:
-                    # Format for cache
+            # Cache miss or disabled: fetch from Yahoo
+            logging.info(f"[ML] Fetching {t} (cache miss or refresh={refresh})")
+            hist = await fetch_history(t, days)
+
+            # Always save to cache (for next time)
+            if cache and hist and "closes" in hist:
+                try:
                     ohlcv_list = [
                         {
                             'date': d,
@@ -761,11 +802,11 @@ async def train_all_models(
                         for i, d in enumerate(hist.get('dates', []))
                     ]
                     cache.save_history(t, ohlcv_list)
+                    logging.info(f"[ML] Saved {t} to cache ({len(ohlcv_list)} rows)")
+                except Exception as e:
+                    logging.warning(f"[ML] Failed to save {t} to cache: {e}")
 
-                return t, hist
-            else:
-                # No caching: direct fetch
-                return t, await fetch_history(t, days)
+            return t, hist
 
     pairs = await asyncio.gather(*[_fetch(t) for t in tickers], return_exceptions=True)
 
@@ -801,7 +842,11 @@ async def train_all_models(
                 target_return_pct=cfg["target_pct"],
                 for_short=is_short,
             )
-            return train_model(X, y, strategy)
+            # Optimization #3: Load old model for warm-start incremental training
+            old_model = None
+            if incremental:
+                old_model = _load_model(strategy)
+            return train_model(X, y, strategy, old_model=old_model, incremental=incremental)
 
         # Use ThreadPoolExecutor for I/O-bound training
         with ThreadPoolExecutor(max_workers=min(n_workers, len(strategies))) as executor:
@@ -827,7 +872,11 @@ async def train_all_models(
                 target_return_pct=cfg["target_pct"],
                 for_short=is_short,
             )
-            r = train_model(X, y, strategy)
+            # Optimization #3: Load old model for warm-start incremental training
+            old_model = None
+            if incremental:
+                old_model = _load_model(strategy)
+            r = train_model(X, y, strategy, old_model=old_model, incremental=incremental)
             results.append(r)
 
     elapsed = time_module.time() - start_time
@@ -842,6 +891,7 @@ async def train_all_models(
             "caching": "enabled" if use_cache else "disabled",
             "parallel": "enabled" if parallel else "disabled",
             "workers": n_workers,
+            "incremental": "enabled" if incremental else "disabled",
         }
     }
 

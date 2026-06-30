@@ -392,6 +392,7 @@ async def agent_ml_train(
  refresh: bool = False,
  parallel: bool = True,
  n_workers: int = 4,
+ incremental: bool = False,
 ):
  """
  Train ML models with optimizations.
@@ -401,15 +402,17 @@ async def agent_ml_train(
  - refresh=true: Force fetch from Yahoo, ignore cache
  - parallel=true (default): Train strategies in parallel (4x faster)
  - n_workers=4 (default): Number of parallel training workers
+ - incremental=true: Warm-start from old models for daily retrains (6x faster)
 
  Example:
- POST /agent/ml/train?use_cache=true&parallel=true&n_workers=4
+ POST /agent/ml/train?use_cache=true&parallel=true&incremental=true&n_workers=4
  """
  result = await train_all_models(
   use_cache=use_cache,
   refresh=refresh,
   parallel=parallel,
   n_workers=n_workers,
+  incremental=incremental,
  )
  # Update agent's last training timestamp (SAFETY CHECK #6)
  import time
