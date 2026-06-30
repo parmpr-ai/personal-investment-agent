@@ -30,7 +30,8 @@ class DataCache:
 
     def init_db(self):
         """Create tables if they don't exist."""
-        with sqlite3.connect(self.db_path) as conn:
+        # Use check_same_thread=False to allow multi-threaded access
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ohlcv (
                     ticker TEXT NOT NULL,
@@ -54,7 +55,7 @@ class DataCache:
         Save historical OHLCV data for ticker.
         Returns number of rows saved.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             rows_saved = 0
             for row in ohlcv_list:
                 conn.execute(
@@ -82,7 +83,7 @@ class DataCache:
         Load cached historical data for ticker (instant!).
         Returns list of OHLCV dicts, newest first.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT date, open, high, low, close, volume FROM ohlcv "
@@ -95,7 +96,7 @@ class DataCache:
 
     def get_cached_count(self, ticker: str) -> int:
         """Get number of cached rows for ticker."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             count = conn.execute(
                 "SELECT COUNT(*) FROM ohlcv WHERE ticker = ?", (ticker,)
             ).fetchone()[0]
@@ -103,7 +104,7 @@ class DataCache:
 
     def is_stale(self, ticker: str, max_age_hours: int = 24) -> bool:
         """Check if cached data is older than max_age_hours."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT last_update FROM cache_meta WHERE ticker = ?", (ticker,)
@@ -127,7 +128,7 @@ class DataCache:
 
     def clear_ticker(self, ticker: str):
         """Delete all cached data for a ticker (for manual refresh)."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.execute("DELETE FROM ohlcv WHERE ticker = ?", (ticker,))
             conn.execute("DELETE FROM cache_meta WHERE ticker = ?", (ticker,))
             conn.commit()
@@ -135,7 +136,7 @@ class DataCache:
 
     def clear_all(self):
         """Delete entire cache (careful!)."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.execute("DELETE FROM ohlcv")
             conn.execute("DELETE FROM cache_meta")
             conn.commit()
@@ -143,7 +144,7 @@ class DataCache:
 
     def get_stats(self) -> Dict:
         """Get cache statistics."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             total_rows = conn.execute("SELECT COUNT(*) FROM ohlcv").fetchone()[0]
             total_tickers = conn.execute("SELECT COUNT(*) FROM cache_meta").fetchone()[0]
 
