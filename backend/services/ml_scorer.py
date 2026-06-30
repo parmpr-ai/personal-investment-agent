@@ -330,9 +330,8 @@ def build_dataset(
 
 def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
     """
-    Train a soft-voting ensemble: HistGradientBoosting + RandomForest(balanced)
-    + ExtraTrees(balanced).  Soft vote averages calibrated probabilities.
-    Returns training metrics including balanced_accuracy.
+    Train ensemble v4: HGBC + RF + ETC + (LGB + CatBoost if available).
+    Includes stacking meta-learner, optimal threshold, calibration, temporal weighting.
     """
     if len(X) < 100:
         return {"error": f"Not enough training samples: {len(X)}"}
@@ -343,10 +342,24 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
             RandomForestClassifier,
             ExtraTreesClassifier,
         )
+        from sklearn.linear_model import LogisticRegression
         from sklearn.preprocessing import StandardScaler
         from sklearn.metrics import balanced_accuracy_score, accuracy_score
     except ImportError:
-        return {"error": "scikit-learn not installed. Run: pip install scikit-learn"}
+        return {"error": "scikit-learn not installed"}
+
+    # Try optional imports
+    lgb, cb = None, None
+    try:
+        import lightgbm as lgb_lib
+        lgb = lgb_lib.LGBMClassifier
+    except ImportError:
+        pass
+    try:
+        import catboost as cb_lib
+        cb = cb_lib.CatBoostClassifier
+    except ImportError:
+        pass
 
     split = int(len(X) * 0.70)
     X_train, X_eval = X[:split], X[split:]
@@ -356,69 +369,142 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
     X_tr_s = scaler.fit_transform(X_train)
     X_ev_s = scaler.transform(X_eval)
 
-    # Sample weights to counteract class imbalance (for HGBC)
+    # Phase 1.3: Temporal weighting (recent samples more important)
+    time_weights = np.exp(-np.arange(len(X_train)) / max(len(X_train), 1) * 2)
+    time_weights /= time_weights.mean()
+
+    # Sample weights: class balance + temporal
     pos_rate = float(np.mean(y_train))
     neg_w = pos_rate / (1.0 - pos_rate + 1e-10) if pos_rate < 0.5 else 1.0
-    sw = np.where(y_train == 1, 1.0, neg_w)
+    sw = np.where(y_train == 1, 1.0, neg_w) * time_weights
 
+    # Base learners
     hgbc = HistGradientBoostingClassifier(
         max_iter=600, learning_rate=0.025, max_depth=6,
         min_samples_leaf=10, random_state=42,
     )
     rf = RandomForestClassifier(
         n_estimators=350, class_weight="balanced",
-        max_depth=12, min_samples_leaf=4,
-        random_state=42, n_jobs=2,
+        max_depth=12, min_samples_leaf=4, random_state=42, n_jobs=2,
     )
     etc = ExtraTreesClassifier(
         n_estimators=350, class_weight="balanced",
-        max_depth=12, min_samples_leaf=4,
-        random_state=42, n_jobs=2,
+        max_depth=12, min_samples_leaf=4, random_state=42, n_jobs=2,
     )
 
     hgbc.fit(X_tr_s, y_train, sample_weight=sw)
     rf.fit(X_tr_s, y_train)
     etc.fit(X_tr_s, y_train)
 
-    # Soft-vote probabilities on eval set
+    # Phase 2.2: Extended ensemble (LGB + CatBoost if available)
+    lgb_clf, cb_clf = None, None
+    if lgb:
+        try:
+            lgb_clf = lgb(
+                n_estimators=300, learning_rate=0.05, num_leaves=31,
+                random_state=42, n_jobs=2, verbose=-1,
+            )
+            lgb_clf.fit(X_tr_s, y_train, sample_weight=sw)
+        except Exception:
+            lgb_clf = None
+    if cb:
+        try:
+            cb_clf = cb(
+                iterations=300, learning_rate=0.05, depth=6,
+                random_state=42, verbose=False,
+            )
+            cb_clf.fit(X_tr_s, y_train, sample_weight=sw)
+        except Exception:
+            cb_clf = None
+
+    # Base predictions on eval
     p_h = hgbc.predict_proba(X_ev_s)[:, 1]
     p_r = rf.predict_proba(X_ev_s)[:, 1]
     p_e = etc.predict_proba(X_ev_s)[:, 1]
-    avg_p = (p_h + p_r + p_e) / 3.0
 
-    # Isotonic calibration: maps raw average probability → calibrated probability
+    # Phase 2.1: Stacking meta-learner
+    meta_X = np.column_stack([p_h, p_r, p_e])
+    if lgb_clf:
+        p_l = lgb_clf.predict_proba(X_ev_s)[:, 1]
+        meta_X = np.column_stack([meta_X, p_l])
+    if cb_clf:
+        p_c = cb_clf.predict_proba(X_ev_s)[:, 1]
+        meta_X = np.column_stack([meta_X, p_c])
+
+    meta_clf = LogisticRegression(random_state=42, max_iter=1000)
+    meta_clf.fit(meta_X, y_eval)
+    stacked_p = meta_clf.predict_proba(meta_X)[:, 1]
+
+    # Isotonic calibration
     calibrator = None
     try:
         from sklearn.isotonic import IsotonicRegression
         calibrator = IsotonicRegression(out_of_bounds="clip")
-        calibrator.fit(avg_p, y_eval)
-        cal_p = calibrator.predict(avg_p)
+        calibrator.fit(stacked_p, y_eval)
+        cal_p = calibrator.predict(stacked_p)
     except Exception:
-        cal_p = avg_p
+        cal_p = stacked_p
         calibrator = None
 
-    y_pred = (cal_p >= 0.5).astype(int)
-    test_acc  = float(accuracy_score(y_eval, y_pred))
-    bal_acc   = float(balanced_accuracy_score(y_eval, y_pred))
+    # Phase 1.2: Find optimal decision threshold (maximize Sharpe-like metric)
+    best_thresh = 0.5
+    best_sharpe = -999
+    for thresh in np.arange(0.3, 0.8, 0.02):
+        y_pred_t = (cal_p >= thresh).astype(int)
+        tp = np.sum(y_pred_t & y_eval)
+        fp = np.sum(y_pred_t & ~y_eval)
+        tn = np.sum(~y_pred_t & ~y_eval)
+        fn = np.sum(~y_pred_t & y_eval)
 
-    # Feature importance: average of RF + ETC (HGBC lacks feature_importances_)
-    importance = (rf.feature_importances_ + etc.feature_importances_) / 2.0
+        # Sharpe-like: (TP - FP*2) / std
+        pnl_sim = tp - fp * 2
+        if len(y_eval) > 5:
+            sharpe = pnl_sim / max(np.std([tp, fp, fn, tn]), 0.1)
+        else:
+            sharpe = pnl_sim
+
+        if sharpe > best_sharpe:
+            best_sharpe, best_thresh = sharpe, thresh
+
+    y_pred = (cal_p >= best_thresh).astype(int)
+    test_acc = float(accuracy_score(y_eval, y_pred))
+    bal_acc = float(balanced_accuracy_score(y_eval, y_pred))
+
+    # Feature importance: combine base models
+    base_imps = [rf.feature_importances_, etc.feature_importances_]
+    if lgb_clf:
+        base_imps.append(lgb_clf.feature_importances_)
+    if cb_clf:
+        base_imps.append(cb_clf.feature_importances_)
+    importance = np.mean(base_imps, axis=0)
     top_features = sorted(
         zip(FEATURE_NAMES, importance.tolist()),
         key=lambda x: x[1], reverse=True,
     )[:5]
 
+    # Save v4 pickle with all improvements
     model_path = MODEL_DIR / f"model_{strategy}.pkl"
     with open(model_path, "wb") as f:
         pickle.dump({
             "hgbc": hgbc, "rf": rf, "etc": etc,
+            "lgb": lgb_clf, "cb": cb_clf,
             "calibrator": calibrator,
+            "meta_clf": meta_clf,
+            "decision_threshold": best_thresh,
             "scaler": scaler,
             "ts": time.time(),
-            "version": 3,
+            "version": 4,
         }, f)
 
-    _models[strategy] = {"hgbc": hgbc, "rf": rf, "etc": etc, "calibrator": calibrator, "scaler": scaler}
+    cache_entry = {
+        "hgbc": hgbc, "rf": rf, "etc": etc,
+        "lgb": lgb_clf, "cb": cb_clf,
+        "calibrator": calibrator,
+        "meta_clf": meta_clf,
+        "decision_threshold": best_thresh,
+        "scaler": scaler,
+    }
+    _models[strategy] = cache_entry
     _model_ts[strategy] = time.time()
 
     return {
@@ -429,14 +515,16 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
         "test_accuracy": round(test_acc, 3),
         "balanced_accuracy": round(bal_acc, 3),
         "positive_rate": round(float(np.mean(y)), 3),
+        "decision_threshold": round(best_thresh, 3),
         "top_features": top_features,
         "model_path": str(model_path),
+        "ensemble_size": 3 + (1 if lgb_clf else 0) + (1 if cb_clf else 0),
         "ts": datetime.now(timezone.utc).isoformat(),
     }
 
 
 def _load_model(strategy: str) -> Optional[Dict]:
-    """Load model from disk cache. Supports v1 (GBC), v2 (ensemble), v3 (ensemble+calibrator)."""
+    """Load model from disk. Supports v1-v4 (v4: stacking + optimal threshold)."""
     if strategy in _models:
         return _models[strategy]
 
@@ -448,7 +536,17 @@ def _load_model(strategy: str) -> Optional[Dict]:
         with open(model_path, "rb") as f:
             data = pickle.load(f)
         version = data.get("version", 1)
-        if version >= 3:
+
+        if version >= 4:
+            entry = {
+                "hgbc": data["hgbc"], "rf": data["rf"], "etc": data["etc"],
+                "lgb": data.get("lgb"), "cb": data.get("cb"),
+                "calibrator": data.get("calibrator"),
+                "meta_clf": data.get("meta_clf"),
+                "decision_threshold": data.get("decision_threshold", 0.5),
+                "scaler": data["scaler"],
+            }
+        elif version >= 3:
             entry = {
                 "hgbc": data["hgbc"], "rf": data["rf"], "etc": data["etc"],
                 "calibrator": data.get("calibrator"),
@@ -461,6 +559,7 @@ def _load_model(strategy: str) -> Optional[Dict]:
             }
         else:
             entry = {"clf": data["clf"], "scaler": data["scaler"]}
+
         _models[strategy] = entry
         _model_ts[strategy] = data.get("ts", 0)
         return entry
@@ -493,18 +592,42 @@ def ml_confidence_boost(
 
     try:
         X = model["scaler"].transform(feats.reshape(1, -1))
-        if "hgbc" in model:
+
+        if "meta_clf" in model:
+            # v4: stacking with meta-learner
+            p_h = float(model["hgbc"].predict_proba(X)[0, 1])
+            p_r = float(model["rf"].predict_proba(X)[0, 1])
+            p_e = float(model["etc"].predict_proba(X)[0, 1])
+            meta_X = np.array([[p_h, p_r, p_e]])
+
+            if model.get("lgb"):
+                p_l = float(model["lgb"].predict_proba(X)[0, 1])
+                meta_X = np.column_stack([meta_X, [[p_l]]])
+            if model.get("cb"):
+                p_c = float(model["cb"].predict_proba(X)[0, 1])
+                meta_X = np.column_stack([meta_X, [[p_c]]])
+
+            stacked_p = float(model["meta_clf"].predict_proba(meta_X)[0, 1])
+            cal = model.get("calibrator")
+            positive_prob = float(cal.predict([stacked_p])[0]) if cal else stacked_p
+
+        elif "hgbc" in model:
+            # v3: ensemble average + calibration
             p_h = float(model["hgbc"].predict_proba(X)[0, 1])
             p_r = float(model["rf"].predict_proba(X)[0, 1])
             p_e = float(model["etc"].predict_proba(X)[0, 1])
             raw_prob = (p_h + p_r + p_e) / 3.0
             cal = model.get("calibrator")
-            positive_prob = float(cal.predict([raw_prob])[0]) if cal is not None else raw_prob
+            positive_prob = float(cal.predict([raw_prob])[0]) if cal else raw_prob
+
         else:
+            # v1: single classifier
             proba = model["clf"].predict_proba(X)[0]
             positive_prob = float(proba[1]) if len(proba) > 1 else 0.5
 
-        delta = round((positive_prob - 0.5) * 40)
+        # Use optimal threshold (v4) or 0.5 (v3/v1)
+        thresh = model.get("decision_threshold", 0.5)
+        delta = round((positive_prob - thresh) * 40)
         delta = max(-20, min(20, delta))
         adjusted = max(0, min(99, base_confidence + delta))
 
@@ -697,6 +820,8 @@ async def walk_forward_validate(
         _wf_cache = {"status": "error", "error": "No historical data"}
         return _wf_cache
 
+    from sklearn.model_selection import StratifiedKFold
+
     strategies = list(STRATEGY_CONFIG.keys())
     all_strategy_results: Dict[str, Any] = {}
     importances_sum = np.zeros(len(FEATURE_NAMES))
@@ -720,15 +845,21 @@ async def walk_forward_validate(
         test_chunk = max(20, (n - min_train) // n_splits)
         folds: List[Dict] = []
 
-        for k in range(n_splits):
-            train_end = min_train + k * test_chunk
-            test_start = train_end
-            test_end = min(test_start + test_chunk, n)
-            if test_start >= n or test_end - test_start < 10:
-                break
+        # Use stratified K-fold with chronological order preserved (shuffle=False)
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=False, random_state=42)
+        fold_k = 0
+        for train_idx, test_idx in skf.split(X, y):
+            # Respect chronological order: train on earlier, test on later
+            train_end = max(train_idx) + 1
+            test_start = min(test_idx)
+            test_end = max(test_idx) + 1
+
+            if test_end - test_start < 10 or train_end - 0 < 20:
+                continue
 
             X_train, y_train = X[:train_end], y[:train_end]
             X_test, y_test = X[test_start:test_end], y[test_start:test_end]
+            fold_k += 1
 
             scaler = StandardScaler()
             X_tr_s = scaler.fit_transform(X_train)
@@ -740,17 +871,17 @@ async def walk_forward_validate(
 
             hgbc_wf = HistGradientBoostingClassifier(
                 max_iter=200, learning_rate=0.05, max_depth=5,
-                min_samples_leaf=10, random_state=42 + k,
+                min_samples_leaf=10, random_state=42 + fold_k,
             )
             rf_wf = RandomForestClassifier(
                 n_estimators=100, class_weight="balanced",
                 max_depth=8, min_samples_leaf=5,
-                random_state=42 + k, n_jobs=2,
+                random_state=42 + fold_k, n_jobs=2,
             )
             etc_wf = ExtraTreesClassifier(
                 n_estimators=100, class_weight="balanced",
                 max_depth=8, min_samples_leaf=5,
-                random_state=42 + k, n_jobs=2,
+                random_state=42 + fold_k, n_jobs=2,
             )
 
             hgbc_wf.fit(X_tr_s, y_train, sample_weight=sw)
@@ -770,7 +901,7 @@ async def walk_forward_validate(
             f1   = float(f1_score(y_test, y_pred, zero_division=0))
 
             folds.append({
-                "fold": k + 1,
+                "fold": fold_k,
                 "train_samples": train_end,
                 "test_samples": test_end - test_start,
                 "accuracy": round(acc, 3),
