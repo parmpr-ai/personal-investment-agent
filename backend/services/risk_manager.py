@@ -443,6 +443,92 @@ class RiskManager:
 
         return marginal
 
+    def sector_exposure_check(
+        self,
+        new_ticker: str,
+        open_positions: List[Dict[str, Any]],
+        max_sector_pct: float = 25.0,
+        portfolio_value: float = 100000.0,
+    ) -> Tuple[bool, str]:
+        """
+        Check if adding new_ticker would exceed sector concentration limit.
+        Returns (approved, reason).
+        """
+        from backtester import SECTOR_MAP
+
+        new_sector = SECTOR_MAP.get(new_ticker.upper(), "Other")
+        if new_sector == "Unknown":
+            return True, ""
+
+        # Calculate current sector exposure
+        sector_value = 0.0
+        for pos in open_positions:
+            t = pos.get("ticker", "").upper()
+            s = SECTOR_MAP.get(t, "Unknown")
+            if s == new_sector:
+                sector_value += abs(float(pos.get("market_value", 0)))
+
+        # Add proposed position (rough estimate: assume 2% position = 2,000 on 100k portfolio)
+        sector_value += portfolio_value * 0.02
+
+        sector_pct = sector_value / portfolio_value * 100 if portfolio_value > 0 else 0
+        if sector_pct > max_sector_pct:
+            return False, f"{new_sector} at {sector_pct:.1f}% (limit {max_sector_pct}%)"
+        return True, ""
+
+    def trailing_stop_update(
+        self,
+        position: Dict[str, Any],
+        current_price: float,
+        trail_pct: float = 3.0,
+    ) -> Optional[float]:
+        """
+        Calculate trailing stop for a long position.
+        For shorts, invert logic (track lowest price, stop above it).
+        Returns new stop loss price, or None if unchanged.
+        """
+        entry_price = float(position.get("entry_price", 0))
+        qty = float(position.get("qty", 0))
+        is_long = qty > 0
+
+        if not entry_price or entry_price <= 0:
+            return None
+
+        # For longs: stop trails from the high
+        if is_long:
+            high_since_entry = float(position.get("high_since_entry", current_price))
+            if current_price > high_since_entry:
+                high_since_entry = current_price
+            trail_stop = high_since_entry * (1 - trail_pct / 100)
+            return trail_stop if trail_stop > entry_price * 0.9 else None
+
+        # For shorts: stop trails from the low
+        else:
+            low_since_entry = float(position.get("low_since_entry", current_price))
+            if current_price < low_since_entry:
+                low_since_entry = current_price
+            trail_stop = low_since_entry * (1 + trail_pct / 100)
+            return trail_stop if trail_stop < entry_price * 1.1 else None
+
+    def intraday_drawdown_check(
+        self,
+        portfolio: Dict[str, Any],
+        intraday_high_value: float,
+        intraday_dd_limit_pct: float = 2.0,
+    ) -> Tuple[bool, str]:
+        """
+        Check if intraday drawdown from session high exceeds limit.
+        Prevents over-trading on bad days.
+        """
+        current_value = float(portfolio.get("total_value", 0))
+        if intraday_high_value <= 0:
+            return True, ""
+
+        intraday_dd = (intraday_high_value - current_value) / intraday_high_value * 100
+        if intraday_dd > intraday_dd_limit_pct:
+            return False, f"Intraday DD {intraday_dd:.1f}% > limit {intraday_dd_limit_pct}%"
+        return True, ""
+
     def portfolio_health(self, portfolio: Dict[str, Any], macro: Dict[str, Any]) -> Dict[str, Any]:
         total = float(portfolio.get("total_value", 1))
         cash = float(portfolio.get("cash", 0))

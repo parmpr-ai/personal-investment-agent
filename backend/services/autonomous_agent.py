@@ -14,7 +14,7 @@ from services.market_data import fetch_quotes, fetch_enhanced_quotes, fetch_macr
 from services.news_scorer import score_news_best, sentiment_boost
 from services.fundamentals_screener import fetch_fundamentals_batch, fundamental_adj
 from services.earnings_calendar import refresh_calendar, should_avoid_entry, pead_signal, pre_earnings_signal
-from services.strategy_tracker import save_pnl_snapshot, record_entry, record_exit, kelly_scale
+from services.strategy_tracker import save_pnl_snapshot, record_entry, record_exit, kelly_scale, kelly_rolling
 from services.risk_manager import RiskManager
 from services.paper_trading import (
     execute_paper_trade,
@@ -1005,6 +1005,13 @@ class AutonomousAgent:
         self._breakeven_stops: Dict[str, float] = {}    # ticker → breakeven price after partial exit
         self._stop_out_times: Dict[str, float] = {}     # ticker → unix ts of last stop-out
         self._entry_reasoning: Dict[str, str] = {}      # ticker → reasoning at entry (for attribution)
+        # Enhancement: dynamic position sizing & trailing stops
+        self._intraday_high_value: float = 0.0           # session high portfolio value
+        self._intraday_dd_limit_pct: float = 2.0         # intraday drawdown circuit breaker
+        self._trailing_stop_pct: float = 3.0             # trailing stop as % below high
+        self._sector_max_pct: float = 25.0               # max sector concentration
+        self._position_entry_highs: Dict[str, float] = {} # ticker → highest price since entry (for trailing)
+        self._position_entry_lows: Dict[str, float] = {}  # ticker → lowest price since entry (for shorts)
 
     def configure(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         self.config.update(updates)
@@ -1231,9 +1238,15 @@ class AutonomousAgent:
         today_str = now_et.strftime("%Y-%m-%d") if hasattr(now_et, "strftime") else ""
         if today_str and today_str != self._last_day:
             self._day_start_value = pv if pv > 0 else INITIAL_CASH_DEFAULT
+            self._intraday_high_value = pv if pv > 0 else INITIAL_CASH_DEFAULT  # Track intraday high (NEW)
             self._last_day = today_str
             self._circuit_broken = False  # reset circuit breaker at day start
             _log("info", f"[{cycle_id}] New trading day {today_str}: day_start=${self._day_start_value:,.0f}")
+
+        # Update intraday high (NEW: for intraday DD check)
+        if pv > self._intraday_high_value:
+            self._intraday_high_value = pv
+
         daily_pnl_pct = (
             (pv - self._day_start_value) / self._day_start_value * 100
             if self._day_start_value > 0 else 0.0
@@ -1385,6 +1398,17 @@ class AutonomousAgent:
             # ── Regime size multiplier ──────────────────────────────────────
             regime_size_mult = regime_cfg.get("_regime_size_mult", 1.0) if not is_close else 1.0
 
+            # ── Intraday drawdown circuit breaker (NEW) ──────────────────────
+            if not is_close and not self._circuit_broken:
+                intraday_ok, intraday_msg = self._risk.intraday_drawdown_check(
+                    paper, self._intraday_high_value, self._intraday_dd_limit_pct
+                )
+                if not intraday_ok:
+                    _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": intraday_msg})
+                    blocked += 1
+                    _log("warning", f"[{cycle_id}] Intraday DD check failed: {intraday_msg}")
+                    continue
+
             # ── Correlation penalty: reduce size if correlated with open pos ─
             corr_mult = 1.0
             corr_reason = ""
@@ -1395,12 +1419,27 @@ class AutonomousAgent:
                 if corr_reason:
                     _log("info", f"[{cycle_id}] Correlation penalty {ticker}: {corr_reason}")
 
-            # Kelly-scaled position sizing for new entries
+            # ── Sector concentration check (NEW) ────────────────────────────
+            sector_ok = True
+            sector_msg = ""
             if not is_close:
-                kelly_risk_pct = kelly_scale(
+                sector_ok, sector_msg = self._risk.sector_exposure_check(
+                    ticker, paper.get("positions", []),
+                    max_sector_pct=self._sector_max_pct,
+                    portfolio_value=paper["total_value"],
+                )
+                if not sector_ok:
+                    _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": sector_msg})
+                    blocked += 1
+                    _log("info", f"[{cycle_id}] Sector check blocked {ticker}: {sector_msg}")
+                    continue
+
+            # ── Dynamic Kelly-scaled position sizing (NEW: rolling window) ──
+            if not is_close:
+                kelly_risk_pct = kelly_rolling(
                     d.get("strategy", "unknown"),
-                    paper["total_value"],
-                    self.config.get("risk_per_trade_pct", 2.0),
+                    lookback_trades=20,
+                    default_risk_pct=self.config.get("risk_per_trade_pct", 2.0),
                 )
                 qty = d.get("qty") or self._risk.position_size_shares(
                     ticker, price, paper["total_value"],
@@ -1460,6 +1499,10 @@ class AutonomousAgent:
                         record_entry(d.get("strategy", "unknown"), ticker, action, price, qty, cycle_id)
                         self._position_strategies[ticker] = d.get("strategy", "unknown")
                         self._entry_reasoning[ticker] = d.get("reasoning", "")
+                        # Track entry highs/lows for trailing stops (NEW)
+                        self._position_entry_highs[ticker] = price
+                        self._position_entry_lows[ticker] = price
+                        self._trailing_stops[ticker] = price
                     elif action in ("SELL", "COVER"):
                         record_exit(ticker, price, qty, cycle_id)
                         opening_strategy = self._position_strategies.pop(ticker, None)

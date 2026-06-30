@@ -172,6 +172,47 @@ def kelly_scale(strategy: str, portfolio_value: float, default_risk_pct: float =
         conn.close()
 
 
+def kelly_rolling(strategy: str, lookback_trades: int = 20, default_risk_pct: float = 2.0) -> float:
+    """
+    Dynamic Kelly based on most recent N closed trades (rolling window).
+    More responsive to recent performance than full history.
+    Useful for adapting position size when win rate changes.
+    """
+    conn = _conn()
+    try:
+        row = conn.execute("""
+            SELECT
+                COUNT(*) AS n,
+                AVG(CASE WHEN win=1 THEN 1.0 ELSE 0.0 END) AS win_rate,
+                AVG(CASE WHEN win=1 THEN ABS(pnl_pct) ELSE NULL END) AS avg_win_pct,
+                AVG(CASE WHEN win=0 THEN ABS(pnl_pct) ELSE NULL END) AS avg_loss_pct
+            FROM (
+                SELECT win, pnl_pct FROM strategy_stats
+                WHERE strategy=? AND exit_price IS NOT NULL AND pnl_pct IS NOT NULL
+                ORDER BY exit_ts DESC LIMIT ?
+            )
+        """, (strategy, lookback_trades)).fetchone()
+
+        n = row["n"] if row else 0
+        if n < 5:  # Need at least 5 recent trades
+            return default_risk_pct
+
+        wr = row["win_rate"] or 0.5
+        avg_win = row["avg_win_pct"] or 5.0
+        avg_loss = row["avg_loss_pct"] or 5.0
+        k = _kelly_half(wr, avg_win, avg_loss)
+
+        # Scale down if recent win rate is low
+        if wr < 0.45:
+            k *= 0.7  # 30% reduction if below breakeven
+        elif wr > 0.65:
+            k *= 1.1  # 10% boost if strong performance
+
+        return max(0.5, min(default_risk_pct * 2, k))
+    finally:
+        conn.close()
+
+
 def kelly_diagnostics(strategy: str) -> Dict[str, Any]:
     """Return Kelly diagnostics for a strategy (for API/debug use)."""
     conn = _conn()
