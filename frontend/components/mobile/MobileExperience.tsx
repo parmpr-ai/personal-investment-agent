@@ -793,6 +793,7 @@ function useAgentData() {
   const [decisions, setDecisions]       = useState<any[]>([])
   const [closedTrades, setClosedTrades] = useState<any[]>([])
   const [attribution, setAttribution]   = useState<any>(null)
+  const [equityCurve, setEquityCurve]   = useState<any[]>([])
   const [toggling, setToggling]         = useState(false)
 
   useEffect(() => {
@@ -809,6 +810,9 @@ function useAgentData() {
       }).catch(() => {})
       fetch(`${API}/agent/attribution?limit=200`).then(r => r.json()).then(d => {
         if (d && typeof d === 'object') setAttribution(d)
+      }).catch(() => {})
+      fetch(`${API}/agent/analytics/pnl?hours=72`).then(r => r.json()).then(d => {
+        setEquityCurve(Array.isArray(d) ? d : [])
       }).catch(() => {})
     }
 
@@ -835,7 +839,69 @@ function useAgentData() {
     }
   }
 
-  return { agentStatus, backtest, decisions, closedTrades, attribution, toggleAgent, toggling }
+  return { agentStatus, backtest, decisions, closedTrades, attribution, equityCurve, toggleAgent, toggling }
+}
+
+// ─── Equity Curve Chart ───────────────────────────────────────────────────────
+
+function EquityCurveChart({ data }: { data: any[] }) {
+  if (!data.length) return null
+
+  const values = data.map(d => Number(d.portfolio_value || 0)).filter(v => v > 0)
+  if (values.length < 2) return null
+
+  const W = 320, H = 80
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const last = values[values.length - 1]
+  const first = values[0]
+  const netPct = ((last - first) / first) * 100
+  const up = netPct >= 0
+
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * W
+    const y = H - ((v - min) / range) * (H - 8) - 4
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+
+  const fillPts = `0,${H} ${pts} ${W},${H}`
+
+  return (
+    <section className="mobile-section">
+      <div className="mobile-section-title">
+        <h2>Equity Curve · 72h</h2>
+        <TrendingUp size={18} />
+      </div>
+      <div style={{
+        background: '#0b1119', border: '1px solid rgba(148,163,184,0.14)',
+        borderRadius: '18px', padding: '14px 14px 10px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+          <span style={{ fontSize: '20px', fontWeight: 800 }}>
+            {last.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+          </span>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: up ? '#24d18c' : '#ff6375' }}>
+            {up ? '+' : ''}{netPct.toFixed(2)}%
+          </span>
+        </div>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: 'block', overflow: 'visible' }}>
+          <defs>
+            <linearGradient id="ecGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={up ? '#24d18c' : '#ff6375'} stopOpacity="0.25" />
+              <stop offset="100%" stopColor={up ? '#24d18c' : '#ff6375'} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polygon points={fillPts} fill="url(#ecGrad)" />
+          <polyline points={pts} fill="none" stroke={up ? '#24d18c' : '#ff6375'} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        </svg>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+          <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{data[0]?.ts ? new Date(data[0].ts).toLocaleDateString() : ''}</span>
+          <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{data[data.length - 1]?.ts ? new Date(data[data.length - 1].ts).toLocaleDateString() : 'now'}</span>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 function RegimePill({ regime }: { regime: string }) {
@@ -961,13 +1027,26 @@ function DecisionsFeed({ decisions }: { decisions: any[] }) {
                   </div>
                 </div>
 
-                {/* Row 2: confidence bar */}
+                {/* Row 2: confidence bar + ML probability badge */}
                 {conf > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '7px' }}>
                     <div style={{ flex: 1, height: '4px', background: 'rgba(255,255,255,0.07)', borderRadius: '999px', overflow: 'hidden' }}>
                       <div style={{ height: '100%', width: `${conf * 100}%`, background: conf >= 0.7 ? '#24d18c' : conf >= 0.5 ? '#fbbf24' : '#ff6375', borderRadius: 'inherit' }} />
                     </div>
                     <span style={{ fontSize: '10px', color: 'var(--muted)', flexShrink: 0 }}>{(conf * 100).toFixed(0)}%</span>
+                    {d.ml_prob != null && (() => {
+                      const mp = Number(d.ml_prob)
+                      const mlColor = mp >= 0.7 ? '#24d18c' : mp >= 0.5 ? '#fbbf24' : '#ff6375'
+                      return (
+                        <span style={{
+                          fontSize: '9px', fontWeight: 700, color: mlColor,
+                          background: `${mlColor}18`, border: `1px solid ${mlColor}44`,
+                          borderRadius: '5px', padding: '1px 5px', flexShrink: 0,
+                        }}>
+                          ML {(mp * 100).toFixed(0)}%
+                        </span>
+                      )
+                    })()}
                   </div>
                 )}
 
@@ -1374,6 +1453,7 @@ function AgentView({
   decisions,
   closedTrades,
   attribution,
+  equityCurve,
   toggleAgent,
   toggling,
 }: {
@@ -1382,6 +1462,7 @@ function AgentView({
   decisions: any[]
   closedTrades: any[]
   attribution: any
+  equityCurve: any[]
   toggleAgent: () => void
   toggling: boolean
 }) {
@@ -1464,6 +1545,9 @@ function AgentView({
         <StatChip label="Mode"        value="paper"     color="#60a5fa" />
         <StatChip label="Cycles"      value={agentStatus?.cycle_count ?? '—'} color="#fbbf24" />
       </div>
+
+      {/* ── Equity curve ── */}
+      <EquityCurveChart data={equityCurve} />
 
       {/* ── Open positions mini list ── */}
       {(portfolio.positions || []).length > 0 && (
@@ -1639,7 +1723,7 @@ function AgentView({
 
 export default function MobileExperience() {
   const dashboard = useMobileDashboard()
-  const { agentStatus, backtest, decisions, closedTrades, attribution, toggleAgent, toggling } = useAgentData()
+  const { agentStatus, backtest, decisions, closedTrades, attribution, equityCurve, toggleAgent, toggling } = useAgentData()
   const [active, setActive] = useState('home')
   const [selected, setSelected] = useState<any>(null)
 
@@ -1682,6 +1766,7 @@ export default function MobileExperience() {
           decisions={decisions}
           closedTrades={closedTrades}
           attribution={attribution}
+          equityCurve={equityCurve}
           toggleAgent={toggleAgent}
           toggling={toggling}
         />

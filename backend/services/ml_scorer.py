@@ -385,8 +385,19 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
     p_r = rf.predict_proba(X_ev_s)[:, 1]
     p_e = etc.predict_proba(X_ev_s)[:, 1]
     avg_p = (p_h + p_r + p_e) / 3.0
-    y_pred = (avg_p >= 0.5).astype(int)
 
+    # Isotonic calibration: maps raw average probability → calibrated probability
+    calibrator = None
+    try:
+        from sklearn.isotonic import IsotonicRegression
+        calibrator = IsotonicRegression(out_of_bounds="clip")
+        calibrator.fit(avg_p, y_eval)
+        cal_p = calibrator.predict(avg_p)
+    except Exception:
+        cal_p = avg_p
+        calibrator = None
+
+    y_pred = (cal_p >= 0.5).astype(int)
     test_acc  = float(accuracy_score(y_eval, y_pred))
     bal_acc   = float(balanced_accuracy_score(y_eval, y_pred))
 
@@ -401,12 +412,13 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
     with open(model_path, "wb") as f:
         pickle.dump({
             "hgbc": hgbc, "rf": rf, "etc": etc,
+            "calibrator": calibrator,
             "scaler": scaler,
             "ts": time.time(),
-            "version": 2,
+            "version": 3,
         }, f)
 
-    _models[strategy] = {"hgbc": hgbc, "rf": rf, "etc": etc, "scaler": scaler}
+    _models[strategy] = {"hgbc": hgbc, "rf": rf, "etc": etc, "calibrator": calibrator, "scaler": scaler}
     _model_ts[strategy] = time.time()
 
     return {
@@ -424,7 +436,7 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
 
 
 def _load_model(strategy: str) -> Optional[Dict]:
-    """Load model from disk cache. Supports v1 (GBC) and v2 (ensemble)."""
+    """Load model from disk cache. Supports v1 (GBC), v2 (ensemble), v3 (ensemble+calibrator)."""
     if strategy in _models:
         return _models[strategy]
 
@@ -435,7 +447,14 @@ def _load_model(strategy: str) -> Optional[Dict]:
     try:
         with open(model_path, "rb") as f:
             data = pickle.load(f)
-        if data.get("version", 1) == 2:
+        version = data.get("version", 1)
+        if version >= 3:
+            entry = {
+                "hgbc": data["hgbc"], "rf": data["rf"], "etc": data["etc"],
+                "calibrator": data.get("calibrator"),
+                "scaler": data["scaler"],
+            }
+        elif version == 2:
             entry = {
                 "hgbc": data["hgbc"], "rf": data["rf"], "etc": data["etc"],
                 "scaler": data["scaler"],
@@ -478,7 +497,9 @@ def ml_confidence_boost(
             p_h = float(model["hgbc"].predict_proba(X)[0, 1])
             p_r = float(model["rf"].predict_proba(X)[0, 1])
             p_e = float(model["etc"].predict_proba(X)[0, 1])
-            positive_prob = (p_h + p_r + p_e) / 3.0
+            raw_prob = (p_h + p_r + p_e) / 3.0
+            cal = model.get("calibrator")
+            positive_prob = float(cal.predict([raw_prob])[0]) if cal is not None else raw_prob
         else:
             proba = model["clf"].predict_proba(X)[0]
             positive_prob = float(proba[1]) if len(proba) > 1 else 0.5
@@ -622,21 +643,24 @@ async def walk_forward_validate(
 ) -> Dict[str, Any]:
     """
     Walk-forward (expanding window) cross-validation for the ML signal model.
+    Runs per-strategy using STRATEGY_CONFIG (forward_days, target_pct).
+    Each fold trains the full HGBC+RF+ETC ensemble and soft-votes probabilities.
 
     For each fold k (k=1..n_splits):
       train on first  (40% + k * step)  of chronological samples
       test  on next   step              of samples
     where step = (total - 40%) / n_splits
-
-    Returns per-fold OOS accuracy, precision, recall, F1
-    plus aggregated feature importances.
     """
     global _wf_cache
 
     _wf_cache = {"status": "running", "ts": datetime.now(timezone.utc).isoformat()}
 
     try:
-        from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+        from sklearn.ensemble import (
+            HistGradientBoostingClassifier,
+            RandomForestClassifier,
+            ExtraTreesClassifier,
+        )
         from sklearn.preprocessing import StandardScaler
         from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, balanced_accuracy_score
     except ImportError:
@@ -673,66 +697,111 @@ async def walk_forward_validate(
         _wf_cache = {"status": "error", "error": "No historical data"}
         return _wf_cache
 
-    # Build combined dataset (all tickers, long signals only for simplicity)
-    X, y = build_dataset(sigs_map, closes_map, forward_days=5, target_return_pct=2.0)
-    if len(X) < 200:
-        _wf_cache = {"status": "error", "error": f"Not enough samples: {len(X)}"}
-        return _wf_cache
-
-    n = len(X)
-    # Expanding window: initial train = 40%, each fold tests next (60%/n_splits)
-    min_train = int(n * 0.40)
-    test_chunk = max(20, (n - min_train) // n_splits)
-
-    folds: List[Dict] = []
+    strategies = list(STRATEGY_CONFIG.keys())
+    all_strategy_results: Dict[str, Any] = {}
     importances_sum = np.zeros(len(FEATURE_NAMES))
     importances_count = 0
 
-    for k in range(n_splits):
-        train_end = min_train + k * test_chunk
-        test_start = train_end
-        test_end = min(test_start + test_chunk, n)
-        if test_start >= n or test_end - test_start < 10:
-            break
-
-        X_train, y_train = X[:train_end], y[:train_end]
-        X_test, y_test = X[test_start:test_end], y[test_start:test_end]
-
-        scaler = StandardScaler()
-        X_tr_s = scaler.fit_transform(X_train)
-        X_te_s = scaler.transform(X_test)
-
-        rf_wf = RandomForestClassifier(
-            n_estimators=150, class_weight="balanced",
-            max_depth=8, min_samples_leaf=5,
-            random_state=42 + k, n_jobs=2,
+    for strategy in strategies:
+        is_short = strategy.startswith("short_")
+        cfg = STRATEGY_CONFIG[strategy]
+        X, y = build_dataset(
+            sigs_map, closes_map,
+            forward_days=cfg["forward_days"],
+            target_return_pct=cfg["target_pct"],
+            for_short=is_short,
         )
-        rf_wf.fit(X_tr_s, y_train)
-        y_pred = rf_wf.predict(X_te_s)
+        if len(X) < 200:
+            all_strategy_results[strategy] = {"error": f"Insufficient samples: {len(X)}"}
+            continue
 
-        acc  = float(accuracy_score(y_test, y_pred))
-        bal  = float(balanced_accuracy_score(y_test, y_pred))
-        prec = float(precision_score(y_test, y_pred, zero_division=0))
-        rec  = float(recall_score(y_test, y_pred, zero_division=0))
-        f1   = float(f1_score(y_test, y_pred, zero_division=0))
+        n = len(X)
+        min_train = int(n * 0.40)
+        test_chunk = max(20, (n - min_train) // n_splits)
+        folds: List[Dict] = []
 
-        folds.append({
-            "fold": k + 1,
-            "train_samples": train_end,
-            "test_samples": test_end - test_start,
-            "accuracy": round(acc, 3),
-            "balanced_accuracy": round(bal, 3),
-            "precision": round(prec, 3),
-            "recall": round(rec, 3),
-            "f1": round(f1, 3),
-        })
+        for k in range(n_splits):
+            train_end = min_train + k * test_chunk
+            test_start = train_end
+            test_end = min(test_start + test_chunk, n)
+            if test_start >= n or test_end - test_start < 10:
+                break
 
-        importances_sum += rf_wf.feature_importances_
-        importances_count += 1
+            X_train, y_train = X[:train_end], y[:train_end]
+            X_test, y_test = X[test_start:test_end], y[test_start:test_end]
 
-    if not folds:
-        _wf_cache = {"status": "error", "error": "No folds completed"}
-        return _wf_cache
+            scaler = StandardScaler()
+            X_tr_s = scaler.fit_transform(X_train)
+            X_te_s = scaler.transform(X_test)
+
+            pos_rate = float(np.mean(y_train))
+            neg_w = pos_rate / (1.0 - pos_rate + 1e-10) if pos_rate < 0.5 else 1.0
+            sw = np.where(y_train == 1, 1.0, neg_w)
+
+            hgbc_wf = HistGradientBoostingClassifier(
+                max_iter=200, learning_rate=0.05, max_depth=5,
+                min_samples_leaf=10, random_state=42 + k,
+            )
+            rf_wf = RandomForestClassifier(
+                n_estimators=100, class_weight="balanced",
+                max_depth=8, min_samples_leaf=5,
+                random_state=42 + k, n_jobs=2,
+            )
+            etc_wf = ExtraTreesClassifier(
+                n_estimators=100, class_weight="balanced",
+                max_depth=8, min_samples_leaf=5,
+                random_state=42 + k, n_jobs=2,
+            )
+
+            hgbc_wf.fit(X_tr_s, y_train, sample_weight=sw)
+            rf_wf.fit(X_tr_s, y_train)
+            etc_wf.fit(X_tr_s, y_train)
+
+            p_h = hgbc_wf.predict_proba(X_te_s)[:, 1]
+            p_r = rf_wf.predict_proba(X_te_s)[:, 1]
+            p_e = etc_wf.predict_proba(X_te_s)[:, 1]
+            avg_p = (p_h + p_r + p_e) / 3.0
+            y_pred = (avg_p >= 0.5).astype(int)
+
+            acc  = float(accuracy_score(y_test, y_pred))
+            bal  = float(balanced_accuracy_score(y_test, y_pred))
+            prec = float(precision_score(y_test, y_pred, zero_division=0))
+            rec  = float(recall_score(y_test, y_pred, zero_division=0))
+            f1   = float(f1_score(y_test, y_pred, zero_division=0))
+
+            folds.append({
+                "fold": k + 1,
+                "train_samples": train_end,
+                "test_samples": test_end - test_start,
+                "accuracy": round(acc, 3),
+                "balanced_accuracy": round(bal, 3),
+                "precision": round(prec, 3),
+                "recall": round(rec, 3),
+                "f1": round(f1, 3),
+            })
+
+            importances_sum += (rf_wf.feature_importances_ + etc_wf.feature_importances_) / 2.0
+            importances_count += 1
+
+        if not folds:
+            all_strategy_results[strategy] = {"error": "No folds completed"}
+            continue
+
+        pos_rate = float(np.mean(y))
+        all_strategy_results[strategy] = {
+            "folds": folds,
+            "overall_accuracy": round(float(np.mean([f["accuracy"] for f in folds])), 3),
+            "overall_balanced_accuracy": round(float(np.mean([f["balanced_accuracy"] for f in folds])), 3),
+            "overall_f1": round(float(np.mean([f["f1"] for f in folds])), 3),
+            "baseline_accuracy": round(max(pos_rate, 1 - pos_rate), 3),
+            "lift_over_baseline": round(
+                float(np.mean([f["accuracy"] for f in folds])) - max(pos_rate, 1 - pos_rate), 3
+            ),
+            "samples": n,
+            "positive_rate": round(pos_rate, 3),
+            "forward_days": cfg["forward_days"],
+            "target_pct": cfg["target_pct"],
+        }
 
     avg_imp = importances_sum / importances_count if importances_count else importances_sum
     top_features = sorted(
@@ -740,26 +809,18 @@ async def walk_forward_validate(
         key=lambda x: x[1], reverse=True
     )[:8]
 
-    overall_acc     = float(np.mean([f["accuracy"] for f in folds]))
-    overall_bal_acc = float(np.mean([f["balanced_accuracy"] for f in folds]))
-    overall_f1      = float(np.mean([f["f1"] for f in folds]))
-
-    # Baseline: always predict majority class
-    pos_rate = float(np.mean(y))
-    baseline_acc = max(pos_rate, 1 - pos_rate)
+    overall_bal_accs = [
+        v["overall_balanced_accuracy"]
+        for v in all_strategy_results.values()
+        if isinstance(v, dict) and "overall_balanced_accuracy" in v
+    ]
 
     _wf_cache = {
         "status": "completed",
         "ts": datetime.now(timezone.utc).isoformat(),
-        "n_splits": len(folds),
-        "total_samples": n,
-        "overall_oos_accuracy": round(overall_acc, 3),
-        "overall_oos_balanced_accuracy": round(overall_bal_acc, 3),
-        "overall_oos_f1": round(overall_f1, 3),
-        "baseline_accuracy": round(baseline_acc, 3),
-        "lift_over_baseline": round(overall_acc - baseline_acc, 3),
-        "positive_rate": round(pos_rate, 3),
-        "folds": folds,
+        "n_splits": n_splits,
+        "strategies": all_strategy_results,
+        "overall_mean_balanced_accuracy": round(float(np.mean(overall_bal_accs)), 3) if overall_bal_accs else None,
         "top_features": [{"feature": f, "importance": round(imp, 4)} for f, imp in top_features],
         "mock_data": mock_count > 0,
         "mock_ticker_count": mock_count,

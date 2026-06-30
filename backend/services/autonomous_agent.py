@@ -1375,7 +1375,11 @@ class AutonomousAgent:
                 ml_conf, ml_reason = ml_confidence_boost(q_features, price, d.get("strategy", "unknown"), confidence)
                 if ml_reason:
                     _log("info", f"[{cycle_id}] ML adj {ticker}: {ml_reason}")
-                    d = {**d, "confidence": ml_conf, "reasoning": d.get("reasoning", "") + f" | {ml_reason}"}
+                    import re as _re
+                    _mp = _re.search(r'p=([\d.]+)', ml_reason)
+                    ml_prob_val = float(_mp.group(1)) if _mp else None
+                    d = {**d, "confidence": ml_conf, "ml_prob": ml_prob_val, "ml_reason": ml_reason,
+                         "reasoning": d.get("reasoning", "") + f" | {ml_reason}"}
                     confidence = ml_conf
 
             # ── Regime size multiplier ──────────────────────────────────────
