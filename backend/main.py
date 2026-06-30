@@ -287,9 +287,10 @@ async def agent_start(): return autonomous_agent.start()
 async def agent_stop(): return autonomous_agent.stop()
 
 @app.post('/agent/sell-all')
-async def agent_sell_all():
- """Emergency exit: close all open positions immediately."""
- return await autonomous_agent.sell_all()
+async def agent_sell_all(trade_style: str|None=None):
+ """Emergency exit: close all or filtered open positions immediately.
+ trade_style: optional filter (DAY_TRADE, SWING_TRADE, POSITION_TRADE) or None for all."""
+ return await autonomous_agent.sell_all(trade_style=trade_style)
 
 @app.post('/agent/config')
 def agent_config(req:AgentConfigRequest):

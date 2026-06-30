@@ -1060,14 +1060,23 @@ class AutonomousAgent:
             pass
         return {"ok": True, "message": "Agent stopped"}
 
-    async def sell_all(self) -> Dict[str, Any]:
-        """Emergency exit: close ALL open positions immediately at market price."""
+    async def sell_all(self, trade_style: Optional[str] = None) -> Dict[str, Any]:
+        """Emergency exit: close open positions immediately at market price.
+
+        Args:
+            trade_style: Optional filter (DAY_TRADE, SWING_TRADE, POSITION_TRADE) or None for all.
+        """
         open_longs = get_open_longs()
         open_shorts = get_open_shorts()
         all_positions = open_longs + open_shorts
 
+        # Filter by trade_style if specified
+        if trade_style:
+            all_positions = [p for p in all_positions if p.get("trade_style") == trade_style]
+
         if not all_positions:
-            return {"ok": True, "message": "No open positions to close", "closed": 0}
+            style_msg = f" with style {trade_style}" if trade_style else ""
+            return {"ok": True, "message": f"No open positions to close{style_msg}", "closed": 0}
 
         cycle_id = f"emergency_{datetime.now(timezone.utc).strftime('%H%M%S')}"
         closed_count = 0
@@ -1079,8 +1088,9 @@ class AutonomousAgent:
         except Exception:
             quotes = {}
 
-        _log("warning", f"🚨 EMERGENCY SELL-ALL: closing {len(all_positions)} position(s)")
-        await send_risk_alert(f"🚨 EMERGENCY SELL-ALL TRIGGERED\nClosing {len(all_positions)} position(s) at market price")
+        style_desc = f" ({trade_style})" if trade_style else ""
+        _log("warning", f"🚨 EMERGENCY SELL-ALL{style_desc}: closing {len(all_positions)} position(s)")
+        await send_risk_alert(f"🚨 EMERGENCY SELL-ALL TRIGGERED{style_desc}\nClosing {len(all_positions)} position(s) at market price")
 
         for pos in all_positions:
             ticker = pos["ticker"]

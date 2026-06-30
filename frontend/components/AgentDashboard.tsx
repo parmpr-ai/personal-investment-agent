@@ -228,7 +228,7 @@ function Spinner() {
 
 // ─── Section A: Live Status Bar ───────────────────────────────────────────────
 
-function LiveStatusBar({ status, onToggle, onSellAll, toggling, sellAllLoading, regimeData }: { status: any; onToggle: () => void; onSellAll: () => void; toggling: boolean; sellAllLoading: boolean; regimeData: any }) {
+function LiveStatusBar({ status, onToggle, onOpenSellModal, toggling, sellAllLoading, regimeData }: { status: any; onToggle: () => void; onOpenSellModal: () => void; toggling: boolean; sellAllLoading: boolean; regimeData: any }) {
   const running = status?.running
   const portfolio = status?.paper_portfolio || {}
   const totalReturn = portfolio.total_return_pct ?? 0
@@ -282,7 +282,7 @@ function LiveStatusBar({ status, onToggle, onSellAll, toggling, sellAllLoading, 
       {/* Emergency Sell-All Button */}
       {openPositions > 0 && (
         <button
-          onClick={onSellAll}
+          onClick={onOpenSellModal}
           disabled={sellAllLoading}
           style={{
             display: 'flex',
@@ -2704,6 +2704,8 @@ export default function AgentDashboard() {
   const [toggleMsg, setToggleMsg] = useState('')
 
   const [sellAllLoading, setSellAllLoading] = useState(false)
+  const [showSellModal, setShowSellModal] = useState(false)
+  const [selectedTradeStyle, setSelectedTradeStyle] = useState<string | null>(null)
 
   // Fetch functions
   const fetchStatus = useCallback(async () => {
@@ -2890,23 +2892,37 @@ export default function AgentDashboard() {
     }
   }
 
-  async function handleSellAll() {
-    const confirmed = window.confirm('🚨 Emergency Sell-All\n\nThis will close ALL open positions immediately at market price.\n\nAre you sure?')
-    if (!confirmed) return
-
+  async function handleSellAll(tradeStyle?: string | null) {
     setSellAllLoading(true)
     try {
-      const res = await apiFetch('/agent/sell-all', { method: 'POST' })
+      const params = tradeStyle ? `?trade_style=${tradeStyle}` : ''
+      const res = await apiFetch(`/agent/sell-all${params}`, { method: 'POST' })
       setToggleMsg(res?.message || 'Sell-all executed')
+      setShowSellModal(false)
+      setSelectedTradeStyle(null)
       setTimeout(() => {
         fetchStatus()
         fetchPortfolio()
       }, 500)
     } catch (err: any) {
       setToggleMsg(err?.detail || err?.message || 'Sell-all failed')
+      setShowSellModal(false)
     } finally {
       setSellAllLoading(false)
     }
+  }
+
+  function openSellModal() {
+    setShowSellModal(true)
+    setSelectedTradeStyle(null)
+  }
+
+  function confirmSellAll() {
+    if (selectedTradeStyle === null) {
+      alert('Please select an option')
+      return
+    }
+    handleSellAll(selectedTradeStyle === 'ALL' ? null : selectedTradeStyle)
   }
 
   async function handleSaveConfig(updates: any) {
@@ -2993,7 +3009,7 @@ export default function AgentDashboard() {
             </div>
           </Card>
         ) : (
-          <LiveStatusBar status={status} onToggle={handleToggle} onSellAll={handleSellAll} toggling={toggling} sellAllLoading={sellAllLoading} regimeData={regimeData} />
+          <LiveStatusBar status={status} onToggle={handleToggle} onOpenSellModal={openSellModal} toggling={toggling} sellAllLoading={sellAllLoading} regimeData={regimeData} />
         )}
 
         {/* Last Cycle Summary */}
@@ -3050,6 +3066,204 @@ export default function AgentDashboard() {
 
         {/* N. Performance Attribution */}
         <AttributionPanel data={attributionData} loading={attributionLoading} />
+
+        {/* Sell-All Modal */}
+        {showSellModal && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+            }}
+            onClick={() => !sellAllLoading && setShowSellModal(false)}
+          >
+            <div
+              style={{
+                maxWidth: '500px',
+                width: '90%',
+                padding: '24px',
+                borderRadius: C.radius,
+                border: `1px solid ${C.border}`,
+                background: C.card,
+                color: C.textPrimary,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: C.red }}>
+                  🚨 Emergency Sell-All
+                </h3>
+                <p style={{ margin: 0, fontSize: '13px', color: C.textMuted }}>
+                  Choose which positions to close immediately at market price
+                </p>
+              </div>
+
+              {/* Options */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+                {(() => {
+                  const positions = status?.paper_portfolio?.positions || []
+                  const dayTradeCount = positions.filter((p: any) => p.trade_style === 'DAY_TRADE').length
+                  const swingTradeCount = positions.filter((p: any) => p.trade_style === 'SWING_TRADE').length
+                  const positionTradeCount = positions.filter((p: any) => p.trade_style === 'POSITION_TRADE').length
+                  const totalCount = positions.length
+
+                  return (
+                    <>
+                      {totalCount > 0 && (
+                        <button
+                          onClick={() => setSelectedTradeStyle('ALL')}
+                          style={{
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            border: selectedTradeStyle === 'ALL' ? `2px solid ${C.red}` : `1px solid ${C.border}`,
+                            background: selectedTradeStyle === 'ALL' ? 'rgba(255,68,68,0.15)' : 'transparent',
+                            color: C.textPrimary,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontWeight: selectedTradeStyle === 'ALL' ? 700 : 500,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: 700 }}>Close ALL ({totalCount})</div>
+                          <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '4px' }}>
+                            All open positions regardless of type
+                          </div>
+                        </button>
+                      )}
+
+                      {dayTradeCount > 0 && (
+                        <button
+                          onClick={() => setSelectedTradeStyle('DAY_TRADE')}
+                          style={{
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            border: selectedTradeStyle === 'DAY_TRADE' ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
+                            background: selectedTradeStyle === 'DAY_TRADE' ? 'rgba(59,130,246,0.15)' : 'transparent',
+                            color: C.textPrimary,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontWeight: selectedTradeStyle === 'DAY_TRADE' ? 700 : 500,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: 700 }}>Close DAY_TRADE ({dayTradeCount})</div>
+                          <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '4px' }}>
+                            Intraday positions only
+                          </div>
+                        </button>
+                      )}
+
+                      {swingTradeCount > 0 && (
+                        <button
+                          onClick={() => setSelectedTradeStyle('SWING_TRADE')}
+                          style={{
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            border: selectedTradeStyle === 'SWING_TRADE' ? `2px solid ${C.yellow}` : `1px solid ${C.border}`,
+                            background: selectedTradeStyle === 'SWING_TRADE' ? 'rgba(245,158,11,0.15)' : 'transparent',
+                            color: C.textPrimary,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontWeight: selectedTradeStyle === 'SWING_TRADE' ? 700 : 500,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: 700 }}>Close SWING_TRADE ({swingTradeCount})</div>
+                          <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '4px' }}>
+                            Multi-day swing positions
+                          </div>
+                        </button>
+                      )}
+
+                      {positionTradeCount > 0 && (
+                        <button
+                          onClick={() => setSelectedTradeStyle('POSITION_TRADE')}
+                          style={{
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            border: selectedTradeStyle === 'POSITION_TRADE' ? `2px solid ${C.purple}` : `1px solid ${C.border}`,
+                            background: selectedTradeStyle === 'POSITION_TRADE' ? 'rgba(168,85,247,0.15)' : 'transparent',
+                            color: C.textPrimary,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontWeight: selectedTradeStyle === 'POSITION_TRADE' ? 700 : 500,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: 700 }}>Close POSITION_TRADE ({positionTradeCount})</div>
+                          <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '4px' }}>
+                            Long-term position trades
+                          </div>
+                        </button>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+
+              {/* Confirmation message */}
+              {selectedTradeStyle && (
+                <div style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  background: 'rgba(255,68,68,0.1)',
+                  borderLeft: `3px solid ${C.red}`,
+                  marginBottom: '20px',
+                  fontSize: '12px',
+                  color: C.textSecondary,
+                }}>
+                  ⚠️ All selected positions will be closed at <strong>market price</strong> immediately. This cannot be undone.
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setShowSellModal(false)}
+                  disabled={sellAllLoading}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    border: `1px solid ${C.border}`,
+                    background: 'transparent',
+                    color: C.textSecondary,
+                    cursor: sellAllLoading ? 'wait' : 'pointer',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmSellAll}
+                  disabled={!selectedTradeStyle || sellAllLoading}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: selectedTradeStyle ? 'rgba(255,68,68,0.2)' : 'rgba(255,68,68,0.05)',
+                    color: selectedTradeStyle ? C.red : C.textMuted,
+                    cursor: selectedTradeStyle && !sellAllLoading ? 'pointer' : 'not-allowed',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {sellAllLoading ? 'Closing...' : 'CONFIRM CLOSE'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
