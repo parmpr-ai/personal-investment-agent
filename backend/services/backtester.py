@@ -227,6 +227,15 @@ def compute_signal_arrays(
                            np.where(rsi_arr < 30, rsi_arr - 30.0, 0.0))
     sma_gap = np.where(sma20 > 0, (closes - sma20) / sma20 * 100, 0.0)
 
+    # Rolling 10-day win rate (0-1): strongest single regime indicator
+    win_rate_10d = np.full(n, 0.5, dtype=np.float32)
+    for _i in range(10, n):
+        win_rate_10d[_i] = float(np.mean(chg[_i - 10:_i] > 0))
+
+    # Rolling 5-day mean return (signed, captures regime direction + magnitude)
+    ret_mean_5d = np.zeros(n, dtype=np.float32)
+    ret_mean_5d[5:] = np.array([float(np.mean(chg[_i - 5:_i])) for _i in range(5, n)])
+
     return {
         "sma20": sma20, "sma50": sma50,
         "above_sma20": closes > sma20,
@@ -265,6 +274,8 @@ def compute_signal_arrays(
         "vol_confirm": vol_confirm,
         "rsi_extreme": rsi_extreme,
         "sma_gap": sma_gap,
+        "win_rate_10d": win_rate_10d,
+        "ret_mean_5d": ret_mean_5d,
     }
 
 
@@ -329,6 +340,8 @@ def _bar_features(sigs: Dict[str, np.ndarray], idx: int, price: float) -> Dict:
         "vol_confirm": g("vol_confirm", 0),
         "rsi_extreme": g("rsi_extreme", 0),
         "sma_gap": g("sma_gap", 0),
+        "win_rate_10d": g("win_rate_10d", 0.5),
+        "ret_mean_5d": g("ret_mean_5d", 0),
     }
 
 
@@ -701,9 +714,9 @@ def _generate_mock_history(ticker: str, days: int = 504) -> Dict[str, Any]:
     # Transition matrix rows = [from BULL, from BEAR, from CHOPPY]
     # Columns = [to BULL, to BEAR, to CHOPPY]
     P = np.array([
-        [0.96, 0.01, 0.03],   # from BULL: sticky (avg ~25-day runs)
-        [0.02, 0.94, 0.04],   # from BEAR: sticky (avg ~17-day runs)
-        [0.06, 0.04, 0.90],   # from CHOPPY: sticky (avg ~10-day runs)
+        [0.992, 0.006, 0.002],  # from BULL: avg ~125-day runs, rare exit to CHOPPY
+        [0.007, 0.989, 0.004],  # from BEAR: avg ~91-day runs
+        [0.45,  0.45,  0.10],   # from CHOPPY: avg ~1.1-day runs — pure transition state
     ])
     regimes = ["BULL", "BEAR", "CHOPPY"]
     regime_idx = int(np_rng.integers(0, 3))  # random start per ticker
@@ -724,28 +737,28 @@ def _generate_mock_history(ticker: str, days: int = 504) -> Dict[str, Any]:
         reg = regime_seq[i]
         p_prev = prices_list[-1]
 
-        if reg == 0:  # BULL — strong upward drift, low noise, momentum persistence
-            drift = base_drift * 22
-            sigma_local = sigma_dt * 0.35
+        if reg == 0:  # BULL — very strong upward drift, low noise, momentum
+            drift = base_drift * 45
+            sigma_local = sigma_dt * 0.28
             if i >= 3 and prices_list[-3] > 0:
                 raw_mom = (prices_list[-1] / prices_list[-3] - 1)
-                mom = float(np.clip(raw_mom * 0.45, -0.05, 0.05))
+                mom = float(np.clip(raw_mom * 0.35, -0.04, 0.04))
             else:
                 mom = 0.0
-        elif reg == 1:  # BEAR — strong downward drift, moderate noise
-            drift = -base_drift * 18
-            sigma_local = sigma_dt * 0.40
+        elif reg == 1:  # BEAR — very strong downward drift, moderate noise
+            drift = -base_drift * 38
+            sigma_local = sigma_dt * 0.32
             if i >= 3 and prices_list[-3] > 0:
                 raw_mom = (prices_list[-1] / prices_list[-3] - 1)
-                mom = float(np.clip(raw_mom * 0.40, -0.05, 0.05))
+                mom = float(np.clip(raw_mom * 0.32, -0.04, 0.04))
             else:
                 mom = 0.0
-        else:  # CHOPPY — near-zero drift, moderate noise, mean-reversion
-            drift = base_drift * 0.05
-            sigma_local = sigma_dt * 0.65
+        else:  # CHOPPY — near-zero drift, low noise, mean-reversion
+            drift = base_drift * 0.03
+            sigma_local = sigma_dt * 0.55
             sma20 = float(np.mean(sma20_buf[-20:]))
             rev = (sma20 - p_prev) / p_prev if p_prev > 0 else 0.0
-            mom = float(np.clip(rev * 0.28, -0.04, 0.04))
+            mom = float(np.clip(rev * 0.32, -0.035, 0.035))
 
         z = float(np_rng.standard_normal())
         log_ret = np.clip(drift + mom + sigma_local * z, -0.15, 0.15)

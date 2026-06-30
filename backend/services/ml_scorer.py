@@ -111,7 +111,7 @@ FEATURE_NAMES = [
     "near_bb_lower", "near_bb_upper", "above_bb_upper",
     "zscore", "atr_pct",
     "near_52w_high", "near_52w_low", "pct_from_52w_high",
-    # Extended 17 (regime-aware momentum/mean-reversion features)
+    # Extended 19 (regime-aware momentum/mean-reversion features)
     "rsi7", "roc_3d", "roc_10d", "roc_20d",
     "bb_position", "bb_width_pct",
     "sma20_slope", "rsi_delta",
@@ -119,17 +119,18 @@ FEATURE_NAMES = [
     "price_accel", "streak",
     "rvol_trend", "atr_expand",
     "vol_confirm", "rsi_extreme", "sma_gap",
+    "win_rate_10d", "ret_mean_5d",
 ]
 
 # Per-strategy forward horizon and return target
 # Targets calibrated to match regime-switching synthetic data signal strength
 STRATEGY_CONFIG: Dict[str, Dict] = {
-    "momentum":        {"forward_days": 5, "target_pct": 1.0},
-    "mean_reversion":  {"forward_days": 3, "target_pct": 0.5},
-    "breakout":        {"forward_days": 5, "target_pct": 1.2},
-    "trend_follow":    {"forward_days": 5, "target_pct": 1.2},
-    "short_momentum":  {"forward_days": 3, "target_pct": 0.4},
-    "short_breakdown": {"forward_days": 3, "target_pct": 0.5},
+    "momentum":        {"forward_days": 5, "target_pct": 0.5},
+    "mean_reversion":  {"forward_days": 3, "target_pct": 0.3},
+    "breakout":        {"forward_days": 5, "target_pct": 0.6},
+    "trend_follow":    {"forward_days": 5, "target_pct": 0.5},
+    "short_momentum":  {"forward_days": 3, "target_pct": 0.3},
+    "short_breakdown": {"forward_days": 3, "target_pct": 0.3},
 }
 _DEFAULT_CFG = {"forward_days": 5, "target_pct": 1.0}
 
@@ -168,6 +169,8 @@ def extract_features(
     atr = _b("atr") or _b("atr_daily")
     atr_pct = atr / price * 100 if price > 0 and atr > 0 else 2.0
 
+    win10      = _b("win_rate_10d") if bar.get("win_rate_10d") is not None else 0.5
+    ret5       = _b("ret_mean_5d")
     rsi7       = _b("rsi7") or rsi
     roc_3d     = _b("roc_3d")
     roc_10d    = _b("roc_10d")
@@ -214,6 +217,7 @@ def extract_features(
             p_accel, streak,
             rv_trend, atr_exp,
             vol_conf, rsi_ext, sma_gap,
+            win10, ret5,
         ], dtype=np.float32)
     else:
         # Short-specific: invert directional features so the model sees
@@ -257,9 +261,11 @@ def extract_features(
             -p_accel,
             -streak,          # down streak = short signal
             rv_trend, atr_exp,
-            -vol_conf,        # high vol on down day = short confirmation
-            -rsi_ext,         # overbought = short signal
-            -sma_gap,         # price above SMA = potential short
+            -vol_conf,
+            -rsi_ext,
+            -sma_gap,
+            1.0 - win10,      # low win rate = short-friendly regime
+            -ret5,            # negative mean return = short signal
         ], dtype=np.float32)
 
     return features
