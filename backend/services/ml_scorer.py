@@ -846,7 +846,7 @@ async def walk_forward_validate(
         folds: List[Dict] = []
 
         # Use stratified K-fold with chronological order preserved (shuffle=False)
-        skf = StratifiedKFold(n_splits=n_splits, shuffle=False, random_state=42)
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=False)
         fold_k = 0
         for train_idx, test_idx in skf.split(X, y):
             # Respect chronological order: train on earlier, test on later
