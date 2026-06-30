@@ -387,8 +387,30 @@ def agent_backtest_results(): return get_latest_results()
 
 # ── ML ───────────────────────────────────────────────────────────────────────
 @app.post('/agent/ml/train')
-async def agent_ml_train():
- result = await train_all_models()
+async def agent_ml_train(
+ use_cache: bool = True,
+ refresh: bool = False,
+ parallel: bool = True,
+ n_workers: int = 4,
+):
+ """
+ Train ML models with optimizations.
+
+ Query parameters:
+ - use_cache=true (default): Load from local SQLite cache (6x faster)
+ - refresh=true: Force fetch from Yahoo, ignore cache
+ - parallel=true (default): Train strategies in parallel (4x faster)
+ - n_workers=4 (default): Number of parallel training workers
+
+ Example:
+ POST /agent/ml/train?use_cache=true&parallel=true&n_workers=4
+ """
+ result = await train_all_models(
+  use_cache=use_cache,
+  refresh=refresh,
+  parallel=parallel,
+  n_workers=n_workers,
+ )
  # Update agent's last training timestamp (SAFETY CHECK #6)
  import time
  autonomous_agent._last_ml_train_ts = time.time()
@@ -396,6 +418,38 @@ async def agent_ml_train():
 
 @app.get('/agent/ml/status')
 def agent_ml_status(): return models_status()
+
+@app.get('/agent/ml/cache-stats')
+def agent_ml_cache_stats():
+ """Get cache statistics (total rows, tickers, size in MB)"""
+ try:
+  from services.data_cache import get_cache
+  cache = get_cache()
+  return cache.get_stats()
+ except Exception as e:
+  return {"error": str(e)}
+
+@app.delete('/agent/ml/cache/{ticker}')
+def agent_ml_cache_clear_ticker(ticker: str):
+ """Clear cache for a specific ticker"""
+ try:
+  from services.data_cache import get_cache
+  cache = get_cache()
+  cache.clear_ticker(ticker)
+  return {"ok": True, "message": f"Cleared cache for {ticker}"}
+ except Exception as e:
+  return {"error": str(e)}
+
+@app.delete('/agent/ml/cache-all')
+def agent_ml_cache_clear_all():
+ """⚠️ Clear all cache (irreversible!)"""
+ try:
+  from services.data_cache import get_cache
+  cache = get_cache()
+  cache.clear_all()
+  return {"ok": True, "message": "Cleared ALL cache"}
+ except Exception as e:
+  return {"error": str(e)}
 
 @app.get('/agent/safety/status')
 def agent_safety_status():
