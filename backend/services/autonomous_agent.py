@@ -1012,6 +1012,8 @@ class AutonomousAgent:
         self._sector_max_pct: float = 25.0               # max sector concentration
         self._position_entry_highs: Dict[str, float] = {} # ticker → highest price since entry (for trailing)
         self._position_entry_lows: Dict[str, float] = {}  # ticker → lowest price since entry (for shorts)
+        self._last_ml_train_ts: float = 0.0  # unix timestamp of last model training (for 3-day refresh)
+        self._ml_refresh_days: int = 3  # retrain models every N days if accuracy drops
 
     def configure(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         self.config.update(updates)
@@ -1279,6 +1281,33 @@ class AutonomousAgent:
         # Position aging: exit positions held beyond max_hold_days for current trade style
         await self._check_aged_positions(open_longs, open_shorts, quotes, cycle_id)
 
+        # Regime change exit: close long positions on BULL->BEAR transition (NEW)
+        regime_name = macro.get("regime", "UNKNOWN")
+        if self._last_regime_name and regime_name != self._last_regime_name:
+            old_regime = self._last_regime_name
+            new_regime = regime_name
+            _log("info", f"[{cycle_id}] Regime change detected: {old_regime} -> {new_regime}")
+            # On BULL->BEAR transition, close all long positions
+            if "BULL" in old_regime and "BEAR" in new_regime:
+                for pos in open_longs:
+                    _ticker = pos["ticker"]
+                    _price = quotes.get(_ticker, {}).get("price", 0) or pos.get("avg_price", 0)
+                    if not _price: continue
+                    _reason = f"Regime exit: {old_regime} -> {new_regime}"
+                    _result = self._execute("SELL", _ticker, pos["qty"], _price, None, None, _reason, 85)
+                    _save_decision(cycle_id, {"ticker": _ticker, "action": "SELL", "qty": pos["qty"],
+                                              "price": _price, "confidence": 85, "reasoning": _reason,
+                                              "executed": _result.get("ok", False), "execution_result": _result})
+                    if _result.get("ok"):
+                        _log("info", f"[{cycle_id}] Regime exit SELL {_ticker} @${_price:.2f}")
+                        try: record_exit(_ticker, _price, pos["qty"], cycle_id)
+                        except Exception: pass
+                        asyncio.create_task(send_trade_alert(
+                            action="SELL", ticker=_ticker, qty=pos["qty"], price=_price,
+                            stop=0, target=0, reason=_reason, confidence=85,
+                        ))
+        self._last_regime_name = regime_name
+
         # Overnight filter: force-close all DAY_TRADE positions before market close
         if day_trade_eod:
             _all = get_open_longs() + get_open_shorts()
@@ -1443,6 +1472,19 @@ class AutonomousAgent:
                     _log("info", f"[{cycle_id}] Sector check blocked {ticker}: {sector_msg}")
                     continue
 
+            # ── Cross-asset correlation check: prevent correlated entries (NEW) ──
+            corr_entry_ok = True
+            corr_entry_msg = ""
+            if not is_close and self._returns_cache:
+                corr_entry_ok, corr_entry_msg = self._risk.cross_asset_correlation_check(
+                    ticker, action, paper.get("positions", []), self._returns_cache
+                )
+                if not corr_entry_ok:
+                    _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": corr_entry_msg})
+                    blocked += 1
+                    _log("info", f"[{cycle_id}] Cross-asset corr check blocked {ticker}: {corr_entry_msg}")
+                    continue
+
             # ── Dynamic Kelly-scaled position sizing (NEW: rolling window) ──
             if not is_close:
                 kelly_risk_pct = kelly_rolling(
@@ -1486,12 +1528,14 @@ class AutonomousAgent:
                 qty = risk["adjusted_qty"]
 
             # Compute stops/targets for new entries using trade-style-aware params
+            # VIX-adjusted stops: wider during high volatility to avoid whipsaws
+            vix_val = macro.get("vix") or 20.0
             if action == "BUY":
-                stop = self._risk.compute_stop_loss(price, "BUY", atr) if self.config.get("auto_stop_loss") else None
+                stop = self._risk.compute_stop_loss(price, "BUY", atr, vix_val) if self.config.get("auto_stop_loss") else None
                 _tp_pct = regime_cfg.get("take_profit_pct", self.config.get("take_profit_pct", 15))
                 target = round(price * (1 + _tp_pct / 100), 2) if self.config.get("auto_take_profit") else None
             elif action == "SHORT":
-                stop = self._risk.compute_stop_loss(price, "SELL", atr) if self.config.get("auto_stop_loss") else None
+                stop = self._risk.compute_stop_loss(price, "SELL", atr, vix_val) if self.config.get("auto_stop_loss") else None
                 _sp_pct = regime_cfg.get("short_profit_pct", self.config.get("short_profit_pct", 12))
                 target = round(price * (1 - _sp_pct / 100), 2) if self.config.get("auto_take_profit") else None
             else:
@@ -1560,13 +1604,28 @@ class AutonomousAgent:
         except Exception as _pe:
             _log("warning", f"[{cycle_id}] P&L snapshot failed: {_pe}")
 
-        # Auto-retrain ML models if rolling accuracy drops below 45% (every 10 cycles)
+        # Auto-retrain ML models: (1) every 10 cycles if accuracy drops, (2) periodically every 3 days
+        should_retrain = False
+        retrain_reason = ""
         if self._cycle_count % 10 == 0:
+            should_retrain = True
+            retrain_reason = "rolling accuracy check"
+        else:
+            import time as _time_module
+            now_ts = _time_module.time()
+            if self._last_ml_train_ts == 0 or (now_ts - self._last_ml_train_ts) > (self._ml_refresh_days * 86400):
+                should_retrain = True
+                retrain_reason = f"{self._ml_refresh_days}-day periodic refresh"
+
+        if should_retrain:
             try:
                 from services import ml_scorer as _mls
+                import time as _time_module
+                self._last_ml_train_ts = _time_module.time()
+                _log("info", f"[{cycle_id}] Triggering ML model refresh ({retrain_reason})")
                 asyncio.create_task(_mls.maybe_retrain_async())
-            except Exception:
-                pass
+            except Exception as _e:
+                _log("warning", f"[{cycle_id}] ML retrain task failed: {_e}")
 
         bullish_count = sum(1 for v in news.values() if isinstance(v, dict) and v.get("direction") == "BULLISH")
         bearish_count = sum(1 for v in news.values() if isinstance(v, dict) and v.get("direction") == "BEARISH")

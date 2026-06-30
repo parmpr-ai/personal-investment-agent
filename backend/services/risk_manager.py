@@ -200,12 +200,19 @@ class RiskManager:
 
         return {"approved": approved, "adjusted_qty": qty, "reasons": reasons}
 
-    def compute_stop_loss(self, price: float, action: str = "BUY", atr: Optional[float] = None) -> float:
-        """ATR-based stop (2× ATR) when available, else fixed % fallback."""
+    def compute_stop_loss(self, price: float, action: str = "BUY", atr: Optional[float] = None, vix: Optional[float] = None) -> float:
+        """ATR-based stop (2× ATR) when available, else fixed % fallback. VIX-adjusted for high volatility."""
         if atr and atr > 0:
             distance = atr * 2.0
         else:
             distance = price * self.limits["stop_loss_pct"] / 100
+
+        # VIX-adjustment: tighten stops during high volatility (avoid whipsaw), loosen during low volatility
+        if vix and vix > 0:
+            # VIX 20 → 1.0x, VIX 30 → 1.3x, VIX 40 → 1.6x (wider stops in high vol)
+            vix_mult = 1.0 + (max(0, vix - 20) / 50) * 0.6
+            distance = distance * vix_mult
+
         if action == "BUY":
             return round(price - distance, 2)
         return round(price + distance, 2)
@@ -355,6 +362,46 @@ class RiskManager:
         if max_corr >= 0.70:
             return 0.75, f"Moderate correlation {max_corr:.2f} with {max_corr_ticker} — size ×0.75"
         return 1.0, ""
+
+    def cross_asset_correlation_check(
+        self,
+        new_ticker: str,
+        new_action: str,
+        open_positions: List[Dict[str, Any]],
+        returns_cache: Dict[str, List[float]],
+    ) -> Tuple[bool, str]:
+        """
+        Prevent entering highly correlated assets in same direction (e.g., don't long both NVDA and MSFT if 0.8+ corr).
+        Returns (approved, reason).
+        """
+        new_rets = returns_cache.get(new_ticker.upper())
+        if not new_rets or len(new_rets) < 10:
+            return True, ""  # Can't check, allow entry
+
+        # Find correlated positions with same action
+        same_action_pos = [
+            p for p in open_positions
+            if (new_action == "BUY" and p.get("action") == "BUY") or
+               (new_action == "SHORT" and p.get("action") == "SHORT")
+        ]
+
+        for pos in same_action_pos:
+            pos_ticker = pos.get("ticker", "").upper()
+            pos_rets = returns_cache.get(pos_ticker)
+            if not pos_rets or len(pos_rets) < 10:
+                continue
+
+            # Calculate correlation
+            min_len = min(len(new_rets), len(pos_rets))
+            corr = np.corrcoef(new_rets[-min_len:], pos_rets[-min_len:])[0, 1]
+            if np.isnan(corr):
+                continue
+
+            # Block if correlation > 0.8 (too much overlap)
+            if corr > 0.80:
+                return False, f"Cross-asset corr {corr:.2f} with {pos_ticker} — skip entry to avoid double risk"
+
+        return True, ""
 
     def portfolio_cvar(
         self,
