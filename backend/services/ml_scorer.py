@@ -791,16 +791,26 @@ async def train_all_models(
             # Always save to cache (for next time) - regardless of use_cache flag
             if hist and "closes" in hist:
                 try:
+                    # Note: fetch_history returns arrays, not individual 'open' values
+                    closes = hist.get('closes', [])
+                    highs = hist.get('highs', [])
+                    lows = hist.get('lows', [])
+                    volumes = hist.get('volumes', [])
+                    dates = hist.get('dates', [])
+
+                    # fetch_history doesn't provide 'opens', so use close as proxy
+                    opens = closes  # or could use: [h * 0.99 for h in highs]
+
                     ohlcv_list = [
                         {
-                            'date': d,
-                            'open': hist['opens'][i],
-                            'high': hist['highs'][i],
-                            'low': hist['lows'][i],
-                            'close': hist['closes'][i],
-                            'volume': hist['volumes'][i],
+                            'date': dates[i],
+                            'open': float(opens[i]),
+                            'high': float(highs[i]),
+                            'low': float(lows[i]),
+                            'close': float(closes[i]),
+                            'volume': float(volumes[i]),
                         }
-                        for i, d in enumerate(hist.get('dates', []))
+                        for i in range(len(dates))
                     ]
                     cache.save_history(t, ohlcv_list)
                     logging.info(f"[ML] Saved {t} to cache ({len(ohlcv_list)} rows)")
