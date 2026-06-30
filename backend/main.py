@@ -281,10 +281,10 @@ def qa_checklist():
 def agent_status(): return autonomous_agent.status()
 
 @app.post('/agent/start')
-def agent_start(): return autonomous_agent.start()
+async def agent_start(): return autonomous_agent.start()
 
 @app.post('/agent/stop')
-def agent_stop(): return autonomous_agent.stop()
+async def agent_stop(): return autonomous_agent.stop()
 
 @app.post('/agent/config')
 def agent_config(req:AgentConfigRequest):

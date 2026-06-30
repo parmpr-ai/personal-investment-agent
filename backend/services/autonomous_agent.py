@@ -1024,14 +1024,19 @@ class AutonomousAgent:
             return {"ok": False, "message": "Agent already running"}
         self._running = True
         self._circuit_broken = False
-        self._task = asyncio.create_task(self._run_loop())
+        try:
+            loop = asyncio.get_running_loop()
+            self._task = loop.create_task(self._run_loop())
+            alert_task = loop.create_task(send_risk_alert("🟢 Agent STARTED | Mode={} | Cycle={}m | News={}".format(
+                self.config['mode'], self.config['cycle_minutes'],
+                "finnhub"  # simplified for now
+            )))
+        except RuntimeError:
+            self._task = asyncio.ensure_future(self._run_loop())
         from services.ai_news_scorer import get_active_provider_name
         from services.finnhub_sentiment import is_available as fh_ok
         news_provider = get_active_provider_name() or ("finnhub" if fh_ok() else "keyword-only")
         _log("info", f"Agent started. Mode={self.config['mode']}, Cycle={self.config['cycle_minutes']}m, NewsProvider={news_provider}, Strategies={self.config['strategies']}")
-        asyncio.create_task(send_risk_alert(
-            f"🟢 Agent STARTED | Mode={self.config['mode']} | Cycle={self.config['cycle_minutes']}m | News={news_provider}"
-        ))
         return {"ok": True, "message": "Agent started", "config": self.config, "news_provider": news_provider}
 
     def stop(self) -> Dict[str, Any]:
@@ -1040,7 +1045,11 @@ class AutonomousAgent:
             self._task.cancel()
             self._task = None
         _log("info", "Agent stopped.")
-        asyncio.create_task(send_risk_alert("🔴 Agent STOPPED"))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(send_risk_alert("🔴 Agent STOPPED"))
+        except RuntimeError:
+            pass
         return {"ok": True, "message": "Agent stopped"}
 
     def status(self) -> Dict[str, Any]:
