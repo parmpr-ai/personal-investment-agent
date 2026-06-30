@@ -70,37 +70,43 @@ DEFAULT_CONFIG = {
 
 TRADE_STYLE_PARAMS: Dict[str, Dict] = {
     "DAY_TRADE": {
-        "stop_loss_pct":    1.5,
-        "take_profit_pct":  2.5,
-        "cut_loss_pct":     1.5,
-        "short_stop_pct":   1.5,
-        "short_profit_pct": 2.5,
-        "max_hold_days":    1,
-        "min_confidence":   72,
-        "size_mult":        0.8,
-        "description":      "Intraday/same-day: tight stops, quick targets — bear/crisis environment",
+        "stop_loss_pct":        1.5,
+        "take_profit_pct":      2.5,
+        "cut_loss_pct":         1.5,
+        "short_stop_pct":       1.5,
+        "short_profit_pct":     2.5,
+        "max_hold_days":        1,
+        "min_confidence":       72,
+        "size_mult":            0.8,
+        "trailing_activation_pct": 1.0,  # activate trailing after 1% profit (tight)
+        "trailing_distance_pct": 2.0,   # exit if retraces 2% from peak (tight)
+        "description":          "Intraday/same-day: tight stops, quick targets — bear/crisis environment",
     },
     "SWING_TRADE": {
-        "stop_loss_pct":    6.0,
-        "take_profit_pct":  12.0,
-        "cut_loss_pct":     6.0,
-        "short_stop_pct":   7.0,
-        "short_profit_pct": 12.0,
-        "max_hold_days":    7,
-        "min_confidence":   65,
-        "size_mult":        1.0,
-        "description":      "3-7 day holds, standard risk/reward — trending or normal market",
+        "stop_loss_pct":        6.0,
+        "take_profit_pct":      12.0,
+        "cut_loss_pct":         6.0,
+        "short_stop_pct":       7.0,
+        "short_profit_pct":     12.0,
+        "max_hold_days":        7,
+        "min_confidence":       65,
+        "size_mult":            1.0,
+        "trailing_activation_pct": 3.0,  # activate trailing after 3% profit
+        "trailing_distance_pct": 5.0,   # exit if retraces 5% from peak
+        "description":          "3-7 day holds, standard risk/reward — trending or normal market",
     },
     "POSITION_TRADE": {
-        "stop_loss_pct":    10.0,
-        "take_profit_pct":  22.0,
-        "cut_loss_pct":     10.0,
-        "short_stop_pct":   10.0,
-        "short_profit_pct": 20.0,
-        "max_hold_days":    30,
-        "min_confidence":   70,
-        "size_mult":        1.1,
-        "description":      "2-4 week holds, wide stops — strong bull trend + aggressive risk mode",
+        "stop_loss_pct":        10.0,
+        "take_profit_pct":      22.0,
+        "cut_loss_pct":         10.0,
+        "short_stop_pct":       10.0,
+        "short_profit_pct":     20.0,
+        "max_hold_days":        30,
+        "min_confidence":       70,
+        "size_mult":            1.1,
+        "trailing_activation_pct": 5.0,  # activate trailing after 5% profit (loose)
+        "trailing_distance_pct": 8.0,   # exit if retraces 8% from peak (loose)
+        "description":          "2-4 week holds, wide stops — strong bull trend + aggressive risk mode",
     },
 }
 
@@ -1827,18 +1833,32 @@ class AutonomousAgent:
                     ))
                 continue
 
-            # ── Trailing stop: activate after 3% profit, trigger on 5% drop ──
+            # ── Dynamic trailing exit: profit-lock + ATR-adjusted trailing distance ──
             profit_pct = (trailing_high - avg) / avg * 100 if avg else 0
-            if profit_pct >= 3.0:
+
+            # Trade-style specific trailing: SWING_TRADE more aggressive, DAY_TRADE tighter
+            trailing_activation_pct = TRADE_STYLE_PARAMS.get(self._current_trade_style, {}).get("trailing_activation_pct", 3.0)
+            trailing_distance_pct = TRADE_STYLE_PARAMS.get(self._current_trade_style, {}).get("trailing_distance_pct", 5.0)
+
+            # ATR-adjusted trailing distance: wider in high volatility (avoid whipsaws)
+            atr = quotes.get(ticker, {}).get("atr", None)
+            if atr and avg > 0:
+                atr_pct = (atr / avg) * 100
+                # Higher ATR% → wider trailing (atr_pct=2% → 1.0x, atr_pct=4% → 1.5x)
+                atr_mult = 1.0 + (max(0, atr_pct - 1.5) / 2.5) * 0.5
+                trailing_distance_pct = trailing_distance_pct * min(atr_mult, 1.8)  # cap at 1.8x
+
+            if profit_pct >= trailing_activation_pct:
                 drop_pct = (trailing_high - price) / trailing_high * 100 if trailing_high else 0
-                if drop_pct >= 5.0:
-                    _log("warning", f"[{cycle_id}] TRAILING STOP: {ticker} @ ${price:.2f} ({drop_pct:.1f}% below peak ${trailing_high:.2f})")
-                    reason = f"Trailing stop: {drop_pct:.1f}% below peak ${trailing_high:.2f}"
-                    result = self._execute("SELL", ticker, pos["qty"], price, None, None, reason, 99)
+                if drop_pct >= trailing_distance_pct:
+                    _log("warning", f"[{cycle_id}] TRAILING EXIT: {ticker} @ ${price:.2f} ({drop_pct:.1f}% below peak ${trailing_high:.2f}, trail={trailing_distance_pct:.1f}%)")
+                    reason = f"Trailing exit: {drop_pct:.1f}% below peak ${trailing_high:.2f} (profit-lock after +{profit_pct:.1f}%)"
+                    result = self._execute("SELL", ticker, pos["qty"], price, None, None, reason, 95)
                     _save_decision(cycle_id, {"ticker": ticker, "action": "SELL", "qty": pos["qty"], "price": price,
-                                              "confidence": 99, "reasoning": reason,
+                                              "confidence": 95, "reasoning": reason,
                                               "executed": result.get("ok", False), "execution_result": result})
                     if result.get("ok"):
+                        _pnl = pnl_pct
                         self._trailing_stops.pop(ticker, None)
                         self._partial_exits.pop(ticker, None)
                         self._breakeven_stops.pop(ticker, None)
@@ -1848,7 +1868,7 @@ class AutonomousAgent:
                         _record_attribution(
                             ticker, self._position_strategies.get(ticker, "unknown"),
                             pos.get("entry_ts", ""), datetime.now(timezone.utc).isoformat(),
-                            pnl_pct, self._last_regime_name or "UNKNOWN",
+                            _pnl, self._last_regime_name or "UNKNOWN",
                             self._current_trade_style, reason,
                             self._entry_reasoning.get(ticker, ""),
                         )
@@ -1857,7 +1877,7 @@ class AutonomousAgent:
                             "SELL", ticker, pos["qty"], price, reason, avg_price=avg,
                         ))
 
-        # Short stop: cover if price rises above stop % — record stop-out for re-entry cooloff
+        # Short stops: fixed stop + trailing (profit-lock on winners)
         short_stop_pct = self.config.get("short_stop_pct", 8.0)
         for pos in open_shorts:
             ticker = pos["ticker"]
@@ -1866,6 +1886,8 @@ class AutonomousAgent:
                 continue
             avg = pos.get("avg_price", price)
             rise_pct = (price - avg) / avg * 100 if avg else 0
+
+            # ── Fixed short stop-loss ────────────────────────────────────────
             if rise_pct >= short_stop_pct:
                 _log("warning", f"[{cycle_id}] SHORT STOP: {ticker} @ ${price:.2f} rose +{rise_pct:.1f}% vs entry ${avg:.2f}")
                 reason = f"Auto short stop: price +{rise_pct:.1f}%"
@@ -1892,6 +1914,53 @@ class AutonomousAgent:
                         f"Short stop: price +{rise_pct:.1f}% above entry ${avg:.2f}",
                         avg_price=avg,
                     ))
+                continue
+
+            # ── Trailing exit for profitable shorts (profit-lock) ──────────────
+            # Track lowest price (for shorts, low is good)
+            trailing_low = self._position_entry_lows.get(ticker, avg)
+            if price < trailing_low:
+                self._position_entry_lows[ticker] = price
+                trailing_low = price
+
+            profit_pct = (avg - trailing_low) / avg * 100 if avg else 0  # for shorts: low = profit
+            trailing_activation_pct = TRADE_STYLE_PARAMS.get(self._current_trade_style, {}).get("trailing_activation_pct", 3.0)
+            trailing_distance_pct = TRADE_STYLE_PARAMS.get(self._current_trade_style, {}).get("trailing_distance_pct", 5.0)
+
+            # ATR-adjusted trailing
+            atr = quotes.get(ticker, {}).get("atr", None)
+            if atr and avg > 0:
+                atr_pct = (atr / avg) * 100
+                atr_mult = 1.0 + (max(0, atr_pct - 1.5) / 2.5) * 0.5
+                trailing_distance_pct = trailing_distance_pct * min(atr_mult, 1.8)
+
+            if profit_pct >= trailing_activation_pct:
+                rise_from_low = (price - trailing_low) / trailing_low * 100 if trailing_low else 0
+                if rise_from_low >= trailing_distance_pct:
+                    _log("warning", f"[{cycle_id}] SHORT TRAILING EXIT: {ticker} @ ${price:.2f} (+{rise_from_low:.1f}% above low ${trailing_low:.2f}, profit={profit_pct:.1f}%)")
+                    reason = f"Short trailing exit: +{rise_from_low:.1f}% above low ${trailing_low:.2f} (profit-lock after -{profit_pct:.1f}%)"
+                    result = self._execute("COVER", ticker, pos["qty"], price, None, None, reason, 95)
+                    _save_decision(cycle_id, {"ticker": ticker, "action": "COVER", "qty": pos["qty"], "price": price,
+                                              "confidence": 95, "reasoning": reason,
+                                              "executed": result.get("ok", False), "execution_result": result})
+                    if result.get("ok"):
+                        import time as _time2
+                        self._stop_out_times[ticker] = _time2.time()
+                        pnl_pct = profit_pct
+                        self._position_entry_lows.pop(ticker, None)
+                        try: record_exit(ticker, price, pos["qty"], cycle_id)
+                        except Exception: pass
+                        _record_attribution(
+                            ticker, self._position_strategies.get(ticker, "unknown"),
+                            pos.get("entry_ts", ""), datetime.now(timezone.utc).isoformat(),
+                            pnl_pct, self._last_regime_name or "UNKNOWN",
+                            self._current_trade_style, reason,
+                            self._entry_reasoning.get(ticker, ""),
+                        )
+                        self._entry_reasoning.pop(ticker, None)
+                        asyncio.create_task(send_stop_alert(
+                            "COVER", ticker, pos["qty"], price, reason, avg_price=avg,
+                        ))
 
 
 agent = AutonomousAgent()
