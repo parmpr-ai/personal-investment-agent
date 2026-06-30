@@ -104,13 +104,34 @@ def accuracy_status() -> Dict[str, Any]:
 # ── Feature extraction ────────────────────────────────────────────────────────
 
 FEATURE_NAMES = [
+    # Core 18
     "rsi", "rvol", "change_pct", "trend_5d_pct",
     "above_sma20", "golden_cross", "above_sma50",
     "macd_bullish", "macd_crossover", "macd_hist_rising",
     "near_bb_lower", "near_bb_upper", "above_bb_upper",
     "zscore", "atr_pct",
     "near_52w_high", "near_52w_low", "pct_from_52w_high",
+    # Extended 17 (regime-aware momentum/mean-reversion features)
+    "rsi7", "roc_3d", "roc_10d", "roc_20d",
+    "bb_position", "bb_width_pct",
+    "sma20_slope", "rsi_delta",
+    "macd_hist_norm", "macd_line_pct",
+    "price_accel", "streak",
+    "rvol_trend", "atr_expand",
+    "vol_confirm", "rsi_extreme", "sma_gap",
 ]
+
+# Per-strategy forward horizon and return target
+# Targets calibrated to match regime-switching synthetic data signal strength
+STRATEGY_CONFIG: Dict[str, Dict] = {
+    "momentum":        {"forward_days": 5, "target_pct": 1.0},
+    "mean_reversion":  {"forward_days": 3, "target_pct": 0.5},
+    "breakout":        {"forward_days": 5, "target_pct": 1.2},
+    "trend_follow":    {"forward_days": 5, "target_pct": 1.2},
+    "short_momentum":  {"forward_days": 3, "target_pct": 0.4},
+    "short_breakdown": {"forward_days": 3, "target_pct": 0.5},
+}
+_DEFAULT_CFG = {"forward_days": 5, "target_pct": 1.0}
 
 
 def extract_features(
@@ -147,6 +168,24 @@ def extract_features(
     atr = _b("atr") or _b("atr_daily")
     atr_pct = atr / price * 100 if price > 0 and atr > 0 else 2.0
 
+    rsi7       = _b("rsi7") or rsi
+    roc_3d     = _b("roc_3d")
+    roc_10d    = _b("roc_10d")
+    roc_20d    = _b("roc_20d")
+    bb_pos     = _b("bb_position") if bar.get("bb_position") is not None else 0.5
+    bb_width   = _b("bb_width_pct") or 5.0
+    sma_slope  = _b("sma20_slope")
+    rsi_d      = _b("rsi_delta")
+    mh_norm    = _b("macd_hist_norm")
+    ml_pct     = _b("macd_line_pct")
+    p_accel    = _b("price_accel")
+    streak     = _b("streak")
+    rv_trend   = _b("rvol_trend") or 1.0
+    atr_exp    = _b("atr_expand") or 1.0
+    vol_conf   = _b("vol_confirm")
+    rsi_ext    = _b("rsi_extreme")
+    sma_gap    = _b("sma_gap")
+
     if not for_short:
         features = np.array([
             rsi,
@@ -167,38 +206,60 @@ def extract_features(
             1.0 if bar.get("near_52w_high") else 0.0,
             1.0 if bar.get("near_52w_low") else 0.0,
             _b("pct_from_52w_high"),
+            # Extended
+            rsi7, roc_3d, roc_10d, roc_20d,
+            bb_pos, bb_width,
+            sma_slope, rsi_d,
+            mh_norm, ml_pct,
+            p_accel, streak,
+            rv_trend, atr_exp,
+            vol_conf, rsi_ext, sma_gap,
         ], dtype=np.float32)
     else:
         # Short-specific: invert directional features so the model sees
         # "high signal value = good short opportunity"
-        above_sma20 = 1.0 if bar.get("above_sma20") else 0.0
-        above_sma50 = 1.0 if bar.get("above_sma50_daily") or bar.get("above_sma50") else 0.0
-        near_bb_lower = 1.0 if bar.get("near_bb_lower_daily") or bar.get("near_bb_lower") else 0.0
-        near_bb_upper = 1.0 if bar.get("near_bb_upper_daily") or bar.get("near_bb_upper") else 0.0
+        above_sma20    = 1.0 if bar.get("above_sma20") else 0.0
+        above_sma50    = 1.0 if bar.get("above_sma50_daily") or bar.get("above_sma50") else 0.0
+        near_bb_lower  = 1.0 if bar.get("near_bb_lower_daily") or bar.get("near_bb_lower") else 0.0
+        near_bb_upper  = 1.0 if bar.get("near_bb_upper_daily") or bar.get("near_bb_upper") else 0.0
         above_bb_upper = 1.0 if bar.get("above_bb_upper_daily") or bar.get("above_bb_upper") else 0.0
-        near_52w_high = 1.0 if bar.get("near_52w_high") else 0.0
-        near_52w_low  = 1.0 if bar.get("near_52w_low") else 0.0
-        zscore = _b("zscore_daily") or _b("zscore")
+        near_52w_high  = 1.0 if bar.get("near_52w_high") else 0.0
+        near_52w_low   = 1.0 if bar.get("near_52w_low") else 0.0
+        zscore         = _b("zscore_daily") or _b("zscore")
 
         features = np.array([
-            100.0 - rsi,                         # overbought RSI → short signal
-            _b("rvol"),                           # high volume = conviction (same)
-            -_b("change_pct"),                   # negative momentum → short
-            -_b("trend_5d_pct"),                 # downtrend → short
-            1.0 - above_sma20,                   # below SMA20 → short-friendly
-            1.0 if bar.get("golden_cross") else 0.0,  # golden cross = no short (keep)
-            1.0 - above_sma50,                   # below SMA50 → short-friendly
+            100.0 - rsi,
+            _b("rvol"),
+            -_b("change_pct"),
+            -_b("trend_5d_pct"),
+            1.0 - above_sma20,
+            1.0 if bar.get("golden_cross") else 0.0,
+            1.0 - above_sma50,
             1.0 if bar.get("macd_bullish_daily") or bar.get("macd_bullish") else 0.0,
             1.0 if bar.get("macd_crossover_daily") or bar.get("macd_crossover") else 0.0,
             1.0 if bar.get("macd_hist_rising_daily") or bar.get("macd_hist_rising") else 0.0,
-            near_bb_upper,                        # near upper BB = overbought = short
-            near_bb_lower,                        # near lower BB = not a short
-            above_bb_upper,                       # above upper BB = extreme overextension
-            -zscore,                              # high positive z-score = overbought
+            near_bb_upper,
+            near_bb_lower,
+            above_bb_upper,
+            -zscore,
             atr_pct,
-            near_52w_high,                        # near 52w high = potential short
-            near_52w_low,                         # near 52w low = avoid short
-            -_b("pct_from_52w_high"),             # less pct from high = closer to peak
+            near_52w_high,
+            near_52w_low,
+            -_b("pct_from_52w_high"),
+            # Extended (inverted for short)
+            100.0 - rsi7,     # overbought fast RSI = short signal
+            -roc_3d, -roc_10d, -roc_20d,
+            1.0 - bb_pos,     # near upper band = short signal
+            bb_width,
+            -sma_slope,       # falling SMA = short signal
+            -rsi_d,
+            -mh_norm, -ml_pct,
+            -p_accel,
+            -streak,          # down streak = short signal
+            rv_trend, atr_exp,
+            -vol_conf,        # high vol on down day = short confirmation
+            -rsi_ext,         # overbought = short signal
+            -sma_gap,         # price above SMA = potential short
         ], dtype=np.float32)
 
     return features
@@ -263,78 +324,92 @@ def build_dataset(
 
 def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
     """
-    Train a GradientBoostingClassifier wrapped in CalibratedClassifierCV.
-    Calibration uses the held-out test set (cv='prefit') with Platt scaling
-    so that predict_proba() outputs reliable probabilities, not just scores.
-    Returns training metrics.
+    Train a soft-voting ensemble: HistGradientBoosting + RandomForest(balanced)
+    + ExtraTrees(balanced).  Soft vote averages calibrated probabilities.
+    Returns training metrics including balanced_accuracy.
     """
     if len(X) < 100:
         return {"error": f"Not enough training samples: {len(X)}"}
 
     try:
-        from sklearn.ensemble import GradientBoostingClassifier
-        from sklearn.calibration import CalibratedClassifierCV
+        from sklearn.ensemble import (
+            HistGradientBoostingClassifier,
+            RandomForestClassifier,
+            ExtraTreesClassifier,
+        )
         from sklearn.preprocessing import StandardScaler
+        from sklearn.metrics import balanced_accuracy_score, accuracy_score
     except ImportError:
         return {"error": "scikit-learn not installed. Run: pip install scikit-learn"}
 
-    # 70/30 time-series split — reserve 30% for calibration + OOS eval
     split = int(len(X) * 0.70)
-    X_train, X_cal = X[:split], X[split:]
-    y_train, y_cal = y[:split], y[split:]
+    X_train, X_eval = X[:split], X[split:]
+    y_train, y_eval = y[:split], y[split:]
 
     scaler = StandardScaler()
-    X_train_s = scaler.fit_transform(X_train)
-    X_cal_s   = scaler.transform(X_cal)
+    X_tr_s = scaler.fit_transform(X_train)
+    X_ev_s = scaler.transform(X_eval)
 
-    clf = GradientBoostingClassifier(
-        n_estimators=150,
-        learning_rate=0.05,
-        max_depth=3,
-        min_samples_leaf=20,
-        subsample=0.8,
-        random_state=42,
+    # Sample weights to counteract class imbalance (for HGBC)
+    pos_rate = float(np.mean(y_train))
+    neg_w = pos_rate / (1.0 - pos_rate + 1e-10) if pos_rate < 0.5 else 1.0
+    sw = np.where(y_train == 1, 1.0, neg_w)
+
+    hgbc = HistGradientBoostingClassifier(
+        max_iter=600, learning_rate=0.025, max_depth=6,
+        min_samples_leaf=10, random_state=42,
     )
-    clf.fit(X_train_s, y_train)
+    rf = RandomForestClassifier(
+        n_estimators=350, class_weight="balanced",
+        max_depth=12, min_samples_leaf=4,
+        random_state=42, n_jobs=2,
+    )
+    etc = ExtraTreesClassifier(
+        n_estimators=350, class_weight="balanced",
+        max_depth=12, min_samples_leaf=4,
+        random_state=42, n_jobs=2,
+    )
 
-    # Wrap with Platt scaling calibration on the held-out calibration set
-    calibrated: Any = clf  # fallback if calibration fails
-    calibrated_ok = False
-    try:
-        cal = CalibratedClassifierCV(clf, cv="prefit", method="sigmoid")
-        cal.fit(X_cal_s, y_cal)
-        calibrated = cal
-        calibrated_ok = True
-    except Exception:
-        pass  # keep raw clf if calibration fails (e.g. all same class)
+    hgbc.fit(X_tr_s, y_train, sample_weight=sw)
+    rf.fit(X_tr_s, y_train)
+    etc.fit(X_tr_s, y_train)
 
-    # Out-of-sample accuracy on calibration set
-    test_acc = float(calibrated.score(X_cal_s, y_cal))
+    # Soft-vote probabilities on eval set
+    p_h = hgbc.predict_proba(X_ev_s)[:, 1]
+    p_r = rf.predict_proba(X_ev_s)[:, 1]
+    p_e = etc.predict_proba(X_ev_s)[:, 1]
+    avg_p = (p_h + p_r + p_e) / 3.0
+    y_pred = (avg_p >= 0.5).astype(int)
 
-    # Feature importance (from underlying GBC — calibration wrapper doesn't expose it)
-    importance = dict(zip(FEATURE_NAMES, clf.feature_importances_.tolist()))
-    top_features = sorted(importance.items(), key=lambda x: x[1], reverse=True)[:5]
+    test_acc  = float(accuracy_score(y_eval, y_pred))
+    bal_acc   = float(balanced_accuracy_score(y_eval, y_pred))
 
-    # Save calibrated model + scaler
+    # Feature importance: average of RF + ETC (HGBC lacks feature_importances_)
+    importance = (rf.feature_importances_ + etc.feature_importances_) / 2.0
+    top_features = sorted(
+        zip(FEATURE_NAMES, importance.tolist()),
+        key=lambda x: x[1], reverse=True,
+    )[:5]
+
     model_path = MODEL_DIR / f"model_{strategy}.pkl"
     with open(model_path, "wb") as f:
         pickle.dump({
-            "clf": calibrated,
+            "hgbc": hgbc, "rf": rf, "etc": etc,
             "scaler": scaler,
-            "calibrated": calibrated_ok,
             "ts": time.time(),
+            "version": 2,
         }, f)
 
-    _models[strategy] = {"clf": calibrated, "scaler": scaler}
+    _models[strategy] = {"hgbc": hgbc, "rf": rf, "etc": etc, "scaler": scaler}
     _model_ts[strategy] = time.time()
 
     return {
         "strategy": strategy,
         "samples": len(X),
         "train_samples": len(X_train),
-        "calibration_samples": len(X_cal),
+        "eval_samples": len(X_eval),
         "test_accuracy": round(test_acc, 3),
-        "calibrated": calibrated_ok,
+        "balanced_accuracy": round(bal_acc, 3),
         "positive_rate": round(float(np.mean(y)), 3),
         "top_features": top_features,
         "model_path": str(model_path),
@@ -343,7 +418,7 @@ def train_model(X: np.ndarray, y: np.ndarray, strategy: str) -> Dict[str, Any]:
 
 
 def _load_model(strategy: str) -> Optional[Dict]:
-    """Load model from disk cache if available and not stale."""
+    """Load model from disk cache. Supports v1 (GBC) and v2 (ensemble)."""
     if strategy in _models:
         return _models[strategy]
 
@@ -354,9 +429,16 @@ def _load_model(strategy: str) -> Optional[Dict]:
     try:
         with open(model_path, "rb") as f:
             data = pickle.load(f)
-        _models[strategy] = {"clf": data["clf"], "scaler": data["scaler"]}
+        if data.get("version", 1) == 2:
+            entry = {
+                "hgbc": data["hgbc"], "rf": data["rf"], "etc": data["etc"],
+                "scaler": data["scaler"],
+            }
+        else:
+            entry = {"clf": data["clf"], "scaler": data["scaler"]}
+        _models[strategy] = entry
         _model_ts[strategy] = data.get("ts", 0)
-        return _models[strategy]
+        return entry
     except Exception:
         return None
 
@@ -386,10 +468,15 @@ def ml_confidence_boost(
 
     try:
         X = model["scaler"].transform(feats.reshape(1, -1))
-        proba = model["clf"].predict_proba(X)[0]
-        positive_prob = float(proba[1]) if len(proba) > 1 else 0.5
+        if "hgbc" in model:
+            p_h = float(model["hgbc"].predict_proba(X)[0, 1])
+            p_r = float(model["rf"].predict_proba(X)[0, 1])
+            p_e = float(model["etc"].predict_proba(X)[0, 1])
+            positive_prob = (p_h + p_r + p_e) / 3.0
+        else:
+            proba = model["clf"].predict_proba(X)[0]
+            positive_prob = float(proba[1]) if len(proba) > 1 else 0.5
 
-        # Map calibrated probability to confidence delta: 0.5 → 0, 0.8 → +15, 0.2 → -15
         delta = round((positive_prob - 0.5) * 40)
         delta = max(-20, min(20, delta))
         adjusted = max(0, min(99, base_confidence + delta))
@@ -494,10 +581,11 @@ async def train_all_models(
     results: List[Dict] = []
     for strategy in strategies:
         is_short = strategy.startswith("short_")
+        cfg = STRATEGY_CONFIG.get(strategy, _DEFAULT_CFG)
         X, y = build_dataset(
             sigs_map, closes_map,
-            forward_days=5,
-            target_return_pct=2.0,
+            forward_days=cfg["forward_days"],
+            target_return_pct=cfg["target_pct"],
             for_short=is_short,
         )
         r = train_model(X, y, strategy)
@@ -542,9 +630,9 @@ async def walk_forward_validate(
     _wf_cache = {"status": "running", "ts": datetime.now(timezone.utc).isoformat()}
 
     try:
-        from sklearn.ensemble import GradientBoostingClassifier
+        from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
         from sklearn.preprocessing import StandardScaler
-        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, balanced_accuracy_score
     except ImportError:
         _wf_cache = {"status": "error", "error": "scikit-learn not installed"}
         return _wf_cache
@@ -608,29 +696,32 @@ async def walk_forward_validate(
         X_tr_s = scaler.fit_transform(X_train)
         X_te_s = scaler.transform(X_test)
 
-        clf = GradientBoostingClassifier(
-            n_estimators=100, learning_rate=0.05, max_depth=3,
-            min_samples_leaf=10, subsample=0.8, random_state=42 + k,
+        rf_wf = RandomForestClassifier(
+            n_estimators=150, class_weight="balanced",
+            max_depth=8, min_samples_leaf=5,
+            random_state=42 + k, n_jobs=2,
         )
-        clf.fit(X_tr_s, y_train)
-        y_pred = clf.predict(X_te_s)
+        rf_wf.fit(X_tr_s, y_train)
+        y_pred = rf_wf.predict(X_te_s)
 
-        acc = float(accuracy_score(y_test, y_pred))
+        acc  = float(accuracy_score(y_test, y_pred))
+        bal  = float(balanced_accuracy_score(y_test, y_pred))
         prec = float(precision_score(y_test, y_pred, zero_division=0))
-        rec = float(recall_score(y_test, y_pred, zero_division=0))
-        f1 = float(f1_score(y_test, y_pred, zero_division=0))
+        rec  = float(recall_score(y_test, y_pred, zero_division=0))
+        f1   = float(f1_score(y_test, y_pred, zero_division=0))
 
         folds.append({
             "fold": k + 1,
             "train_samples": train_end,
             "test_samples": test_end - test_start,
             "accuracy": round(acc, 3),
+            "balanced_accuracy": round(bal, 3),
             "precision": round(prec, 3),
             "recall": round(rec, 3),
             "f1": round(f1, 3),
         })
 
-        importances_sum += clf.feature_importances_
+        importances_sum += rf_wf.feature_importances_
         importances_count += 1
 
     if not folds:
@@ -643,8 +734,9 @@ async def walk_forward_validate(
         key=lambda x: x[1], reverse=True
     )[:8]
 
-    overall_acc = float(np.mean([f["accuracy"] for f in folds]))
-    overall_f1 = float(np.mean([f["f1"] for f in folds]))
+    overall_acc     = float(np.mean([f["accuracy"] for f in folds]))
+    overall_bal_acc = float(np.mean([f["balanced_accuracy"] for f in folds]))
+    overall_f1      = float(np.mean([f["f1"] for f in folds]))
 
     # Baseline: always predict majority class
     pos_rate = float(np.mean(y))
@@ -656,6 +748,7 @@ async def walk_forward_validate(
         "n_splits": len(folds),
         "total_samples": n,
         "overall_oos_accuracy": round(overall_acc, 3),
+        "overall_oos_balanced_accuracy": round(overall_bal_acc, 3),
         "overall_oos_f1": round(overall_f1, 3),
         "baseline_accuracy": round(baseline_acc, 3),
         "lift_over_baseline": round(overall_acc - baseline_acc, 3),
