@@ -761,7 +761,8 @@ async def train_all_models(
     )
 
     # ── OPTIMIZATION 1: LOCAL CACHING ──
-    cache = get_cache() if use_cache else None
+    # Always initialize cache for saving (even if use_cache=False)
+    cache = get_cache()
 
     # Fetch all historical data (with optional caching)
     sem = asyncio.Semaphore(5)
@@ -770,8 +771,8 @@ async def train_all_models(
         async with sem:
             import logging
 
-            # Try cache first (if enabled and not stale)
-            if cache and not refresh and not cache.is_stale(t):
+            # Try cache first (only if use_cache=True and not stale)
+            if use_cache and not refresh and not cache.is_stale(t):
                 cached_data = cache.load_history(t, days)
                 if len(cached_data) >= days * 0.9:
                     logging.info(f"[ML] Cache hit: {t} ({len(cached_data)} rows)")
@@ -787,8 +788,8 @@ async def train_all_models(
             logging.info(f"[ML] Fetching {t} (cache miss or refresh={refresh})")
             hist = await fetch_history(t, days)
 
-            # Always save to cache (for next time)
-            if cache and hist and "closes" in hist:
+            # Always save to cache (for next time) - regardless of use_cache flag
+            if hist and "closes" in hist:
                 try:
                     ohlcv_list = [
                         {
