@@ -249,6 +249,65 @@ curl -X POST http://localhost:8000/agent/ml/walkforward
 
 ---
 
+## 6.5. 10 Critical Safety Features (v6.0)
+
+### Διαθέσιμο σε πραγματικό χρόνο
+
+```bash
+curl http://localhost:8000/agent/safety/status | python -m json.tool
+```
+
+Αυτό δείχνει τη κατάσταση όλων των 10 ενσωματωμένων ελέγχων ασφαλείας:
+
+### Περιγραφή κάθε ελέγχου
+
+| # | Ονομα | Τι κάνει | Πότε ενεργοποιείται |
+|---|-------|---------|-----------------|
+| 1 | **Volume Check** | Παράβλεψη entries αν όγκος < 1M μετοχές | Πριν από κάθε νέα θέση |
+| 2 | **Model Accuracy** | Αποκλεισμός αν ακρίβεια < 50% | Σε κάθε cycle ελέγχου |
+| 3 | **Drawdown Reduction** | Μείωση μεγέθους θέσης στα -2% DD | Κατά τον υπολογισμό μεγέθους |
+| 4 | **Regime Skip** | Αποκλεισμός entries σε BEAR_TREND/CRISIS | Πρώτα από τη δημιουργία απόφασης |
+| 5 | **Human Override** | Σημειώστε θέσεις > $1k για χειροκίνητη έγκριση | Μετά τον υπολογισμό μεγέθους |
+| 6 | **Daily Retrain** | Παρακολουθήστε αν χρειάζεται 24ώρο retraining ML | Στην αρχή κάθε κύκλου |
+| 7 | **Correlation** | Αποκλεισμός αν συσχέτιση > 0.80 | Πριν από τον έλεγχο κινδύνου |
+| 8 | **Slippage** | Μοντέλο 2.5% ρεαλιστικού κόστους | Στο backtest, όχι ζωντανές συναλλαγές |
+| 9 | **Stress Test** | Προ-υπολογισμένα σενάρια ακραίων περιστατικών | Διαθέσιμο για ανάλυση |
+| 10 | **Multi-Timeframe** | Απαιτούνται ημερήσιες + εβδομαδιαίες bullish | Διαθέσιμο για ολοκλήρωση σήματος |
+
+### Παράδειγμα ασφάλειας σε δράση
+
+Αν ο agent προσπαθήσει να ανοίξει θέση:
+1. ✅ Έλεγχος όγκου: `NVDA volume 45M > 1M` → ΠΕΡΑΣΜΑ
+2. ✅ Έλεγχος ακρίβειας: `momentum model 58% > 50%` → ΠΕΡΑΣΜΑ
+3. ✅ Έλεγχος regime: `regime BULL_TREND in [BULL, CHOPPY]` → ΠΕΡΑΣΜΑ
+4. ✅ Έλεγχος συσχέτισης: `corr with META 0.72 < 0.80` → ΠΕΡΑΣΜΑ
+5. ⚠️  Έλεγχος override: `$1,200 > $1,000 threshold` → **ΠΡΟΕΙΔΟΠΟΙΗΣΗ ΚΑΤΑΓΡΑΦΗΣ**
+6. ✅ Όλοι οι έλεγχοι ναι → Εκτέλεση
+
+Καταγραφή:
+```
+[c123_143022] ⚠️  MANUAL APPROVAL NEEDED: Position $1,200 exceeds $1,000 threshold (NVDA 10sh @ $120.00)
+[c123_143022] ✅ BUY 10sh NVDA @ $120.00
+```
+
+### Όταν ένας έλεγχος αποτυγχάνει
+
+Εάν ο έλεγχος ασφαλείας αποτυγχάνει, ο agent:
+1. Δεν ανοίγει τη θέση
+2. Καταγράφει το λόγο (π.χ., `❌ Regime: BEAR_TREND not in allowed list`)
+3. Στέλνει προαιρετικά προειδοποίηση Telegram
+
+Παράδειγμα:
+```
+Decision: BUY TSLA confidence=72
+Volume check: 12M > 1M ✓
+Model accuracy: 48% < 50% ✗
+→ BLOCKED: Model accuracy 48% < 50% threshold
+→ Logged: blocked_reason = "❌ Model: Model accuracy 48.0% < 50.0% threshold"
+```
+
+---
+
 ## 7. Monitoring & Alerts
 
 ### Telegram Alerts
@@ -372,18 +431,22 @@ pip install scikit-learn
 | URL | Τι κάνει |
 |-----|---------|
 | `GET /agent/status` | Πλήρης κατάσταση agent + portfolio |
+| `GET /agent/safety/status` | 10 safety features dashboard (ΝΕΟ v6.0) |
 | `POST /agent/start` | Εκκίνηση |
 | `POST /agent/stop` | Διακοπή |
+| `POST /agent/sell-all?trade_style=DAY_TRADE` | Έκτακτη έξοδος με φίλτρο (ΝΕΟ v6.0) |
 | `POST /agent/configure` | Αλλαγή config |
 | `POST /agent/reset` | Reset paper portfolio |
 | `GET /agent/decisions?limit=50` | Τελευταίες αποφάσεις |
 | `GET /agent/log?limit=100` | Agent log |
-| `POST /agent/ml/train` | Εκπαίδευση ML |
+| `POST /agent/ml/train` | Εκπαίδευση ML (v4 stacking) |
 | `GET /agent/ml/status` | Status μοντέλων |
 | `POST /agent/ml/walkforward` | Walk-forward validation |
 | `GET /agent/regime` | Τρέχον market regime |
+| `GET /agent/risk/report` | Risk metrics snapshot (ΝΕΟ) |
+| `GET /agent/trades` | Trade history with attribution (ΝΕΟ) |
 | `GET /portfolio` | Portfolio summary |
-| `GET /backtester/run` | Backtest |
+| `GET /backtester/run` | Backtest με slippage |
 
 ---
 

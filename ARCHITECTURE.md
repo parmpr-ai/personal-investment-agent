@@ -249,6 +249,7 @@ CRISIS           DAY          DAY        DAY            DAY
 
 ## 7. Risk Management Layers (in execution order)
 
+### Legacy Risk Checks
 1. **VIX pause** — VIX > 27: block new BUY entries
 2. **Circuit breaker** — daily P&L < −3%: no new entries until next day
 3. **Time filter** — avoid 9:00–9:30 ET open and 15:45–16:00 ET close
@@ -260,12 +261,67 @@ CRISIS           DAY          DAY        DAY            DAY
 9. **Max positions** — max 12 open positions
 10. **Position concentration** — max 20% per ticker
 11. **Single trade cap** — max 8% of portfolio per trade
-12. **Sector cap** — max 40% per GICS sector
+12. **Sector cap** — max 25% per GICS sector (enhanced)
 13. **Correlation penalty** — corr > 0.85 → ×0.5 · corr > 0.70 → ×0.75
 14. **Drawdown scalar** — 7.5% DD → ×0.44 · 20% DD → ×0.25
 15. **Regime size multiplier** — BULL ×1.2 · BEAR ×0.7 · CRISIS ×0.4
 16. **Trade style size mult** — DAY ×0.8 · SWING ×1.0 · POSITION ×1.1
-17. **Kelly criterion** — per-strategy win-rate-based position sizing
+17. **Kelly criterion (rolling)** — last 20 trades (adaptive: 0.7x if WR<45%, 1.1x if WR>65%)
+
+### 10 Critical Safety Features (v6.0 NEW)
+**File:** `services/safety_checks.py`
+
+1. **Volume Check** — Skip entries if volume < 1M shares
+   - Prevents illiquid positions that can't exit quickly
+   - Checked at decision time before risk sizing
+
+2. **Model Accuracy Monitor** — Block if rolling accuracy < 50%
+   - Detects ML model degradation
+   - Integrated with `models_status()` endpoint
+
+3. **Drawdown-Based Reduction** — Non-linear position sizing
+   - -2% DD → 0.5x size, -3% DD → 0.3x size, -5% DD → 0.1x size
+   - Applied after Kelly sizing but before risk check
+
+4. **Regime Skip** — Block NEW entries in BEAR_TREND/CRISIS
+   - Only allows BULL_TREND and CHOPPY_RANGE for new entries
+   - Prevents chasing falling knives
+   - Checked at decision point
+
+5. **Human Override Threshold** — Flag positions > $1k
+   - Prevents runaway position accumulation
+   - Logged as warning for trader visibility
+   - Allows execution with alert
+
+6. **Daily Retrain Check** — Monitor 24h ML refresh cadence
+   - At cycle start, check if retraining needed
+   - Integrates with `needs_daily_retrain()` function
+   - Auto-triggered via `POST /agent/ml/train`
+
+7. **Cross-Asset Correlation** — Prevent correlated entries (>0.8)
+   - Already integrated via `risk_manager.cross_asset_correlation_check()`
+   - Blocks or reduces to 0.5x size if correlation > 0.8
+   - Uses 30-day rolling returns cache
+
+8. **Slippage Modeling** — 2.5% realistic costs
+   - Applied in backtester only (not live trading)
+   - Entry: price × (1 + 2.5%)
+   - Exit: price × (1 - 2.5%)
+   - Ensures backtest P&L matches real execution
+
+9. **Stress Test Scenarios** — Pre-calculated tail events
+   - 2008 Crash: -50% market, VIX ×4.0, correlations → 1.0, slippage +5%
+   - 2020 COVID: -35% market, VIX ×3.5, correlations 0.85, slippage +3%
+   - Flash Crash: -10% intraday, VIX ×1.5, correlations 0.3, slippage +2%, 30min recovery
+   - VIX Spike: -8% market, VIX ×2.0, correlations 0.75, slippage +1.5%
+   - Available via `stress_test_scenario(scenario_name)` for analysis
+
+10. **Multi-Timeframe Confirmation** — Require daily + weekly bullish
+    - Prevents mean-reversion buys in downtrends
+    - Function available: `multi_timeframe_confirmation(daily_signal, weekly_signal)`
+    - Requires both daily AND weekly bullish for entry
+
+**Integration:** All 10 checks logged to `agent_log` table with reasons (❌ Volume, ⚠️ Manual Approval, etc.)
 
 ---
 
@@ -308,28 +364,90 @@ cycle start
 
 ---
 
-## 9. ML Pipeline
+## 9. ML Pipeline (v4 Ensemble Stacking)
 
 **Training data:** 2 years (504 trading days) of Yahoo Finance daily bars — **no live trading needed**.
 
+### Phase 1: Base Model Training (Level 0)
 ```
 POST /agent/ml/train
   → fetch_history(ticker, days=504) for each ticker in UNIVERSE
   → compute_signal_arrays(closes, volumes, highs, lows)
-  → build_dataset(): extract features + 5-day forward return label
-      y=1 if fwd_return > +2% (long) or < −2% (short)
-  → train_model():
-      70/30 time-series split
-      GradientBoostingClassifier(n_estimators=150, lr=0.05, depth=3)
-      CalibratedClassifierCV (Platt scaling)
-      save to ml_models/model_{strategy}.pkl
+  → build_dataset(): extract features + forward return labels
+      Label per STRATEGY_CONFIG: momentum (5d/0.5%), mean_reversion (3d/0.3%), etc.
+  → split: 70/30 time-series split (expanding window)
+  
+  → Train 5 base models on X_train/y_train:
+      1. HistGradientBoostingClassifier (100 estimators, lr=0.05, depth=3, sample_weight via Sharpe)
+      2. RandomForestClassifier (100 estimators, max_depth=10)
+      3. ExtraTreesClassifier (100 estimators, max_depth=10)
+      4. LightGBMClassifier (300 estimators, lr=0.05, num_leaves=31)
+      5. CatBoostClassifier (300 iterations, lr=0.05, depth=6)
+      
+  → All models: CalibratedClassifierCV (Platt scaling) on eval set
 ```
 
-**18 features:** RSI, RVOL, change_pct, trend_5d_pct, above_sma20/50, golden_cross,  
-MACD bullish/crossover/hist_rising, BB squeeze/upper/lower, Z-score, ATR%, 52w levels
+### Phase 2: Stacking Meta-Learner (Level 1)
+```
+  → Generate meta-features from eval set:
+      meta_X = [base1.predict_proba()[:,1], base2.predict_proba()[:,1], ..., base5.predict_proba()[:,1]]
+      (5 columns: one per base model)
+      
+  → Train LogisticRegression meta-learner:
+      meta_clf = LogisticRegression().fit(meta_X, y_eval)
+      (learns optimal weights for blending base models)
+      
+  → Predict: avg_prob = meta_clf.predict_proba(meta_X)[:,1]
+      (uses learned weights instead of simple 1/5 average)
+```
 
-**Auto-retrain:** every 10 cycles, if rolling accuracy < 45% on 10+ trades  
-**Stale threshold:** 7 days — models older than 7 days are flagged in `/agent/ml/status`
+### Phase 3: Optimal Threshold Calibration
+```
+  → For each strategy, find threshold that maximizes Sharpe on eval:
+      for thresh in [0.30, 0.35, ..., 0.70, 0.75]:
+          y_pred = (meta_proba >= thresh).astype(int)
+          sharpe = compute_sharpe(y_eval, y_pred, win_rate, avg_win, avg_loss)
+          if sharpe > best_sharpe: best_sharpe, best_thresh = sharpe, thresh
+      
+  → Save per-strategy decision_threshold (0.3–0.62 range typical)
+```
+
+### Phase 4: Model Persistence
+```
+  → Save pickle with v4 marker:
+      {
+        "hgbc": hgbc_model,
+        "rf": rf_model,
+        "etc": etc_model,
+        "lgb": lgb_model,
+        "cb": cb_model,
+        "calibrator": calibrator,
+        "meta_clf": meta_clf,
+        "decision_threshold": best_thresh,  # ← OPTIMAL per strategy
+        "scaler": scaler,
+        "version": 4,
+      }
+  → File: ml_models/model_{strategy}.pkl
+```
+
+**37 Features:** Core 18 + extended 19 regime-aware (RSI7, ROC, BB position, SMA slope, etc.)
+
+**Auto-retrain:** 
+- Daily check: `needs_daily_retrain()` — retrains if > 24h since last train
+- Accuracy trigger: `models_status()` — flags if rolling accuracy < 50%
+- Manual: `POST /agent/ml/train` updates `_last_ml_train_ts`
+
+**Inference (ml_confidence_boost):**
+```
+  1. Get base predictions: [p_hgbc, p_rf, p_etc, p_lgb, p_cb]
+  2. Stack: meta_X = column_stack([p_hgbc, p_rf, p_etc, p_lgb, p_cb])
+  3. Meta-predict: raw_prob = meta_clf.predict_proba(meta_X)[:,1]
+  4. Calibrate: positive_prob = calibrator.predict([raw_prob])[0]
+  5. Apply threshold: delta_pts = (positive_prob - decision_threshold) * 50
+  6. Return boosted confidence: confidence + delta_pts
+```
+
+**Stale threshold:** 7 days — models older than 7 days flagged in `/agent/ml/status`
 
 ---
 
@@ -374,21 +492,42 @@ MACD bullish/crossover/hist_rising, BB squeeze/upper/lower, Z-score, ATR%, 52w l
 
 ## 12. API Endpoints (FastAPI, port 8000)
 
+### Agent Control
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/agent/status` | Full agent status, portfolio, regime, risk_mode, trade_style |
 | POST | `/agent/start` | Start agent loop |
 | POST | `/agent/stop` | Stop agent loop |
+| POST | `/agent/sell-all?trade_style=X` | Emergency exit: X ∈ {ALL, DAY_TRADE, SWING_TRADE, POSITION_TRADE} |
 | POST | `/agent/configure` | Update config (JSON body) |
 | POST | `/agent/reset` | Reset paper trading book |
+
+### Monitoring
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/agent/safety/status` | 10 safety features dashboard (thresholds, status, description) |
 | GET | `/agent/decisions` | Last N cycle decisions |
 | GET | `/agent/log` | Agent log entries |
-| GET | `/portfolio` | Portfolio summary |
-| POST | `/agent/ml/train` | Train ML models (uses historical Yahoo data) |
-| GET | `/agent/ml/status` | Model ages, accuracy |
-| POST | `/agent/ml/walkforward` | Walk-forward validation |
+| GET | `/agent/portfolio` | Portfolio summary |
+| GET | `/agent/risk/report` | Risk metrics snapshot |
+| GET | `/agent/trades` | Trade history with attribution |
+
+### ML & Backtesting
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/agent/ml/train` | Train all models (updates `_last_ml_train_ts`) |
+| GET | `/agent/ml/status` | Model ages, accuracy, decision thresholds per strategy |
+| POST | `/agent/ml/walkforward` | Walk-forward validation (background task) |
+| GET | `/agent/ml/walkforward` | Walk-forward results |
+| POST | `/agent/backtest/portfolio` | Portfolio backtest (historical simulation) |
+| POST | `/agent/backtest/walkforward` | Walk-forward backtest validation |
+
+### Analysis
+| Method | Path | Description |
+|--------|------|-------------|
 | GET | `/agent/regime` | Current market regime details |
-| GET | `/backtester/run` | Run backtest on UNIVERSE |
+| GET | `/agent/kelly` | Kelly criterion diagnostics per strategy |
+| GET | `/agent/pairs/scan` | Pairs trading opportunities |
 
 ---
 
