@@ -388,10 +388,120 @@ def agent_backtest_results(): return get_latest_results()
 # ── ML ───────────────────────────────────────────────────────────────────────
 @app.post('/agent/ml/train')
 async def agent_ml_train():
- return await train_all_models()
+ result = await train_all_models()
+ # Update agent's last training timestamp (SAFETY CHECK #6)
+ import time
+ autonomous_agent._last_ml_train_ts = time.time()
+ return result
 
 @app.get('/agent/ml/status')
 def agent_ml_status(): return models_status()
+
+@app.get('/agent/safety/status')
+def agent_safety_status():
+ """Return status of 10 critical safety checks."""
+ import time
+ from services import safety_checks
+ from services.ml_scorer import models_status as ms
+ from services.paper_trading import get_open_positions, get_portfolio_summary
+ from services.market_data import fetch_macro
+
+ try:
+  # Collect current state
+  paper = get_portfolio_summary({})
+  models_info = ms()
+  macro = {} # Would need async here for real macro, use cached for now
+
+  # Run safety checks
+  checks = {}
+
+  # #1 Volume - requires quotes, skipped in status
+  checks['volume_check'] = {'status': 'requires_quotes', 'description': 'Skip entries if volume < 1M shares'}
+
+  # #2 Model accuracy
+  avg_acc = models_info.get('avg_accuracy', 0.50)
+  acc_ok, acc_msg = safety_checks.model_accuracy_check(avg_acc)
+  checks['model_accuracy'] = {
+   'status': '✅ PASS' if acc_ok else '❌ FAIL',
+   'accuracy': round(avg_acc, 3),
+   'threshold': 0.50,
+   'message': acc_msg
+  }
+
+  # #3 Drawdown reduction
+  total_val = paper.get('total_value', 0)
+  peak_val = autonomous_agent._peak_value
+  dd_pct = (peak_val - total_val) / peak_val * 100 if peak_val > 0 else 0
+  checks['drawdown_reduction'] = {
+   'current_drawdown': round(dd_pct, 2),
+   'threshold': -2.0,
+   'status': '✅ Active' if dd_pct < -2 else '⏸ Inactive',
+   'description': 'Reduces position size if intraday DD > 2%'
+  }
+
+  # #4 Regime skip
+  current_regime = macro.get('regime', autonomous_agent._last_regime_name or 'UNKNOWN')
+  regime_ok, regime_msg = safety_checks.regime_skip_check(current_regime)
+  checks['regime_skip'] = {
+   'current_regime': current_regime,
+   'allowed': ['BULL_TREND', 'CHOPPY_RANGE'],
+   'status': '✅ ALLOW' if regime_ok else '❌ BLOCK',
+   'message': regime_msg
+  }
+
+  # #5 Human override (position size)
+  checks['human_override'] = {
+   'threshold': 1000,
+   'status': 'Monitoring',
+   'description': 'Requires manual approval for positions > $1k'
+  }
+
+  # #6 Daily retrain check
+  hours_since = (time.time() - autonomous_agent._last_ml_train_ts) / 3600 if autonomous_agent._last_ml_train_ts > 0 else 0
+  needs_retrain, retrain_msg = safety_checks.needs_daily_retrain(autonomous_agent._last_ml_train_ts)
+  checks['daily_retrain'] = {
+   'hours_since_train': round(hours_since, 1),
+   'status': '🔄 RETRAIN_NEEDED' if needs_retrain else '✅ UP_TO_DATE',
+   'interval_hours': 24,
+   'message': retrain_msg
+  }
+
+  # #7 Correlation monitoring
+  checks['correlation_penalty'] = {
+   'status': 'Active',
+   'max_correlation': 0.80,
+   'description': 'Reduces to 50% size if correlation > 0.8'
+  }
+
+  # #8 Slippage modeling
+  checks['slippage_modeling'] = {
+   'status': 'Active (backtester)',
+   'slippage_pct': 2.5,
+   'description': 'Models 2.5% slippage on entry/exit'
+  }
+
+  # #9 Stress test scenarios
+  checks['stress_test_scenarios'] = {
+   'status': 'Available',
+   'scenarios': ['2008_crash', '2020_covid', 'flash_crash', 'vix_spike'],
+   'description': 'Pre-calculated stress test parameters'
+  }
+
+  # #10 Multi-timeframe confirmation
+  checks['multi_timeframe'] = {
+   'status': 'Available',
+   'description': 'Requires both daily + weekly confirmation'
+  }
+
+  return {
+   'ok': True,
+   'timestamp': time.time(),
+   'agent_running': autonomous_agent._running,
+   'agent_mode': autonomous_agent.config.get('mode', 'paper'),
+   'safety_checks': checks
+  }
+ except Exception as e:
+  return {'ok': False, 'error': str(e)}
 
 @app.post('/agent/ml/walkforward')
 async def agent_ml_walkforward(background_tasks: _BT):

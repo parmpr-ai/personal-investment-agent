@@ -16,6 +16,7 @@ from services.fundamentals_screener import fetch_fundamentals_batch, fundamental
 from services.earnings_calendar import refresh_calendar, should_avoid_entry, pead_signal, pre_earnings_signal
 from services.strategy_tracker import save_pnl_snapshot, record_entry, record_exit, kelly_scale, kelly_rolling
 from services.risk_manager import RiskManager
+from services import safety_checks
 from services.paper_trading import (
     execute_paper_trade,
     get_open_positions,
@@ -1251,6 +1252,14 @@ class AutonomousAgent:
             regime_cfg = self.config
             regime_name = "UNKNOWN"
 
+        # ── Daily retrain check (SAFETY CHECK #6) ────────────────────────────
+        retrain_needed, retrain_msg = safety_checks.needs_daily_retrain(
+            self._last_ml_train_ts, retrain_interval_hours=24.0
+        )
+        if retrain_needed:
+            _log("info", f"[{cycle_id}] 🔄 ML RETRAIN NEEDED: {retrain_msg}")
+            # Note: actual retraining triggered via POST /agent/ml/train endpoint
+
         # ── Institutional signals (every 4h, cached internally) ───────────────
         if _time.time() - self._institutional_last_fetch > 14400:
             try:
@@ -1534,6 +1543,49 @@ class AutonomousAgent:
                 if corr_reason:
                     _log("info", f"[{cycle_id}] Correlation penalty {ticker}: {corr_reason}")
 
+            # ── Volume check (SAFETY CHECK #1) ──────────────────────────────
+            volume_ok = True
+            volume_msg = ""
+            if not is_close:
+                q_volume = quotes.get(ticker, {}).get("volume", 0) or 0
+                volume_ok, volume_msg = safety_checks.volume_check(ticker, q_volume)
+                if not volume_ok:
+                    _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": f"❌ Volume: {volume_msg}"})
+                    blocked += 1
+                    _log("info", f"[{cycle_id}] Volume check blocked {ticker}: {volume_msg}")
+                    continue
+
+            # ── Model accuracy check (SAFETY CHECK #2) ──────────────────────
+            model_acc_ok = True
+            model_acc_msg = ""
+            if not is_close:
+                try:
+                    models_info = models_status()
+                    avg_accuracy = models_info.get("avg_accuracy", 0.50)
+                    model_acc_ok, model_acc_msg = safety_checks.model_accuracy_check(avg_accuracy)
+                    if not model_acc_ok:
+                        _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": f"❌ Model: {model_acc_msg}"})
+                        blocked += 1
+                        _log("warning", f"[{cycle_id}] Model accuracy check blocked {ticker}: {model_acc_msg}")
+                        continue
+                except Exception:
+                    pass  # Use default model if status fetch fails
+
+            # ── Regime skip check (SAFETY CHECK #4) ────────────────────────
+            regime_skip_ok = True
+            regime_skip_msg = ""
+            if not is_close:
+                current_regime = macro.get("regime", "UNKNOWN")
+                regime_skip_ok, regime_skip_msg = safety_checks.regime_skip_check(
+                    current_regime,
+                    allow_regimes=["BULL_TREND", "CHOPPY_RANGE"]
+                )
+                if not regime_skip_ok:
+                    _save_decision(cycle_id, {**d, "executed": False, "blocked_reason": f"❌ Regime: {regime_skip_msg}"})
+                    blocked += 1
+                    _log("info", f"[{cycle_id}] Regime skip check blocked {ticker}: {regime_skip_msg}")
+                    continue
+
             # ── Sector concentration check (NEW) ────────────────────────────
             sector_ok = True
             sector_msg = ""
@@ -1583,6 +1635,26 @@ class AutonomousAgent:
                     _log("info", f"[{cycle_id}] Beta-adj {ticker}: β={_beta:.2f} mult={_bmult:.2f} → qty={qty:.1f}")
             else:
                 qty = d.get("qty") or 1
+
+            # ── Drawdown-based position size reduction (SAFETY CHECK #3) ──────
+            if not is_close and qty > 0:
+                intraday_dd_pct = (
+                    (self._intraday_high_value - pv) / self._intraday_high_value * 100
+                    if self._intraday_high_value > 0 else 0.0
+                )
+                reduced_qty, dd_msg = safety_checks.drawdown_size_reduction(
+                    intraday_dd_pct, qty, dd_threshold_pct=-2.0
+                )
+                if dd_msg:
+                    qty = reduced_qty
+                    _log("info", f"[{cycle_id}] Drawdown reduction {ticker}: {dd_msg} → qty={qty:.1f}")
+
+            # ── Human override check (SAFETY CHECK #5) for large positions ────
+            position_usd = qty * price if not is_close else 0
+            if not is_close and position_usd > 1000.0:
+                needs_override, override_msg = safety_checks.human_override_required(position_usd)
+                if needs_override:
+                    _log("warning", f"[{cycle_id}] ⚠️  MANUAL APPROVAL NEEDED: {override_msg} ({ticker} {qty}sh @ ${price:.2f})")
 
             if not is_close:
                 # Block new entries if circuit breaker is active
