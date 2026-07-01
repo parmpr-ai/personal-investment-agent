@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parents[1]
 LOG_DB = BASE_DIR / "agent_decisions.sqlite3"
 
-UNIVERSE = ["AMD", "NVDA", "NBIS", "SOFI", "MELI", "META", "GOOGL", "CRWV", "MSFT", "AAPL", "TSLA", "AMZN", "QQQ", "SPY"]
+from services.ticker_universe import COMPREHENSIVE_UNIVERSE
+UNIVERSE = COMPREHENSIVE_UNIVERSE  # 1000+ stocks across 10 industries
 
 DEFAULT_CONFIG = {
     "enabled": False,
