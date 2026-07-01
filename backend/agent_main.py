@@ -24,6 +24,7 @@ from services.ml_scorer import train_all_models, models_status, walk_forward_val
 from services.settings_store import get_settings
 from services.autonomous_executor_v2 import async_executor_v2
 from services.autonomous_trades import entry_trade, exit_trade, get_open_trades, get_closed_trades, get_performance as get_trades_performance, reset_trades
+from services.executor_monitor import executor_monitor
 
 load_dotenv()
 
@@ -155,6 +156,15 @@ async def trades_exit(trade_id: str, req: ExitTradeRequest):
 
 @app.post('/trades/reset')
 def trades_reset(): return reset_trades()
+
+# ── Executor Monitor ───────────────────────────────────────────────────────────
+@app.get('/executor/monitor')
+def executor_summary(): return executor_monitor.get_summary()
+
+@app.get('/executor/dashboard')
+def executor_dashboard():
+ executor_monitor.print_dashboard()
+ return executor_monitor.get_summary()
 
 # ── IBKR paper ────────────────────────────────────────────────────────────────
 @app.get('/agent/ibkr-paper/status')
