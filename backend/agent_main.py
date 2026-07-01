@@ -31,6 +31,11 @@ from services.regime_classifier import regime_classifier
 from services.ensemble_rebalancer import ensemble_rebalancer
 from services.feature_selector import feature_selector
 from services.incremental_learner import incremental_learner
+from services.online_learner import online_learner
+from services.gpu_accelerator import gpu_accelerator
+from services.distributed_trainer import distributed_trainer
+from services.meta_learner import meta_learner
+from services.ab_tester import ab_tester
 
 load_dotenv()
 
@@ -240,6 +245,94 @@ def optimization_summary():
   'ensemble': ensemble_rebalancer.get_rebalancer_stats(),
   'features': feature_selector.get_feature_stats(),
   'incremental_learning': incremental_learner.get_update_efficiency(),
+ }
+
+# ── FRONTIER: Online Learning ──────────────────────────────────────────────────
+@app.get('/frontier/online-learning/stats')
+def online_learning_stats(): return online_learner.get_online_stats()
+
+@app.get('/frontier/online-learning/history')
+def online_learning_history(limit: int = 10): return online_learner.get_update_history(limit)
+
+# ── FRONTIER: GPU Acceleration ─────────────────────────────────────────────────
+@app.get('/frontier/gpu/stats')
+def gpu_stats(): return gpu_accelerator.get_accelerator_stats()
+
+@app.post('/frontier/gpu/reset-stats')
+def gpu_reset_stats():
+ gpu_accelerator.reset_stats()
+ return {'ok': True, 'message': 'GPU stats reset'}
+
+# ── FRONTIER: Distributed Training ────────────────────────────────────────────
+@app.get('/frontier/distributed/jobs')
+def distributed_jobs(): return distributed_trainer.get_all_jobs()
+
+@app.get('/frontier/distributed/job/{strategy}')
+def distributed_job_status(strategy: str): return distributed_trainer.get_job_status(strategy)
+
+@app.get('/frontier/distributed/stats')
+def distributed_stats(): return distributed_trainer.get_distributed_stats()
+
+# ── FRONTIER: Meta-Learning (Hyperparameter Optimization) ──────────────────────
+@app.get('/frontier/meta-learning/optimal-params')
+def meta_optimal_params(strategy: str, regime: str = 'TREND'):
+ return meta_learner.get_optimal_params(strategy, regime)
+
+@app.get('/frontier/meta-learning/recommended-config')
+def meta_recommended_config(strategy: str, regime: str = 'TREND'):
+ return meta_learner.get_recommended_config(strategy, regime)
+
+@app.get('/frontier/meta-learning/stats')
+def meta_learning_stats(): return meta_learner.get_meta_learning_stats()
+
+@app.get('/frontier/meta-learning/history')
+def meta_learning_history(limit: int = 20): return meta_learner.get_history(limit)
+
+@app.post('/frontier/meta-learning/save')
+def meta_learning_save(): return meta_learner.save_learned_config()
+
+@app.post('/frontier/meta-learning/load')
+def meta_learning_load(): return meta_learner.load_learned_config()
+
+# ── FRONTIER: A/B Testing ─────────────────────────────────────────────────────
+from pydantic import BaseModel as BM
+
+class ABTestCreateRequest(BM):
+ test_name: str
+ config_a: dict
+ config_b: dict
+
+@app.post('/frontier/ab-test/create')
+def ab_test_create(req: ABTestCreateRequest):
+ return ab_tester.create_test(req.test_name, req.config_a, req.config_b)
+
+@app.get('/frontier/ab-test/active')
+def ab_test_active(): return ab_tester.get_active_tests()
+
+@app.get('/frontier/ab-test/status/{test_id}')
+def ab_test_status(test_id: str): return ab_tester.get_test_status(test_id)
+
+@app.post('/frontier/ab-test/declare-winner/{test_id}')
+def ab_test_declare_winner(test_id: str): return ab_tester.declare_winner(test_id)
+
+@app.get('/frontier/ab-test/recommend/{test_id}')
+def ab_test_recommend(test_id: str): return ab_tester.recommend_action(test_id)
+
+@app.get('/frontier/ab-test/history')
+def ab_test_history(limit: int = 10): return ab_tester.get_test_history(limit)
+
+@app.get('/frontier/ab-test/stats')
+def ab_test_stats(): return ab_tester.get_ab_testing_stats()
+
+# ── FRONTIER: Comprehensive Frontier Summary ───────────────────────────────────
+@app.get('/frontier/summary')
+def frontier_summary():
+ return {
+  'online_learning': online_learner.get_online_stats(),
+  'gpu_acceleration': gpu_accelerator.get_accelerator_stats(),
+  'distributed_training': distributed_trainer.get_distributed_stats(),
+  'meta_learning': meta_learner.get_meta_learning_stats(),
+  'ab_testing': ab_tester.get_ab_testing_stats(),
  }
 
 # ── IBKR paper ────────────────────────────────────────────────────────────────
