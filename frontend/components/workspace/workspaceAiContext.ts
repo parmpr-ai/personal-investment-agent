@@ -16,7 +16,7 @@ const defaultContext: WorkspaceAiContext = {
   temperature: 0.7,
 }
 
-const WORKSPACE_AI_CONTEXTS: Record<WorkspaceId, WorkspaceAiContext> = {
+const workspaceContexts: Record<string, WorkspaceAiContext> = {
   home: defaultContext,
   portfolio: defaultContext,
   watchlist: defaultContext,
@@ -33,5 +33,5 @@ const WORKSPACE_AI_CONTEXTS: Record<WorkspaceId, WorkspaceAiContext> = {
 }
 
 export function getWorkspaceAiContext(workspaceId: WorkspaceId): WorkspaceAiContext {
-  return WORKSPACE_AI_CONTEXTS[workspaceId] || defaultContext
+  return workspaceContexts[workspaceId] || defaultContext
 }
