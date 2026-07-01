@@ -26,6 +26,11 @@ from services.autonomous_executor_v2 import async_executor_v2
 from services.autonomous_trades import entry_trade, exit_trade, get_open_trades, get_closed_trades, get_performance as get_trades_performance, reset_trades
 from services.executor_monitor import executor_monitor
 from services.adaptive_trainer import adaptive_trainer
+from services.batch_predictor import batch_predictor
+from services.regime_classifier import regime_classifier
+from services.ensemble_rebalancer import ensemble_rebalancer
+from services.feature_selector import feature_selector
+from services.incremental_learner import incremental_learner
 
 load_dotenv()
 
@@ -182,6 +187,60 @@ async def trainer_retrain_now():
  if not adaptive_trainer.can_train_now():
   return {'ok': False, 'error': 'Training already in progress'}
  return await adaptive_trainer.retrain_async()
+
+# ── Batch Predictor ────────────────────────────────────────────────────────────
+@app.get('/optimizer/batch-stats')
+def batch_stats(): return batch_predictor.get_batch_efficiency()
+
+@app.get('/optimizer/batch-history')
+def batch_history(limit: int = 10): return {'history': batch_predictor.get_recent_stats(limit)}
+
+# ── Regime Classifier ──────────────────────────────────────────────────────────
+@app.get('/optimizer/regime')
+def get_regime(): return regime_classifier.get_regime_stats()
+
+@app.get('/optimizer/regime-config')
+def get_regime_config():
+ regime = regime_classifier.current_regime or 'TREND'
+ config = regime_classifier.get_training_config_for_regime(regime)
+ return {'regime': regime, 'training_config': config}
+
+# ── Ensemble Rebalancer ────────────────────────────────────────────────────────
+@app.get('/optimizer/ensemble')
+def ensemble_stats(): return ensemble_rebalancer.get_rebalancer_stats()
+
+@app.post('/optimizer/ensemble-rebalance')
+def ensemble_rebalance():
+ weights = ensemble_rebalancer.calculate_optimal_weights()
+ return {'ok': True, 'new_weights': {k: round(v, 4) for k, v in weights.items()}}
+
+# ── Feature Selector ───────────────────────────────────────────────────────────
+@app.get('/optimizer/features')
+def feature_stats(): return feature_selector.get_feature_stats()
+
+@app.post('/optimizer/features-optimize')
+def features_optimize():
+ threshold = feature_selector.optimize_threshold()
+ selected = feature_selector.select_features(threshold)
+ return {'ok': True, 'threshold': threshold, 'selected_count': len(selected), 'selected': selected}
+
+@app.get('/optimizer/features-history')
+def features_history(limit: int = 5): return {'history': feature_selector.get_selection_history(limit)}
+
+# ── Incremental Learner ────────────────────────────────────────────────────────
+@app.get('/optimizer/incremental')
+def incremental_stats(): return incremental_learner.get_update_efficiency()
+
+# ── Comprehensive Optimization Summary ──────────────────────────────────────────
+@app.get('/optimizer/summary')
+def optimization_summary():
+ return {
+  'batch_prediction': batch_predictor.get_batch_efficiency(),
+  'regime': regime_classifier.get_regime_stats(),
+  'ensemble': ensemble_rebalancer.get_rebalancer_stats(),
+  'features': feature_selector.get_feature_stats(),
+  'incremental_learning': incremental_learner.get_update_efficiency(),
+ }
 
 # ── IBKR paper ────────────────────────────────────────────────────────────────
 @app.get('/agent/ibkr-paper/status')

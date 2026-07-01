@@ -13,12 +13,18 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 import httpx
+import numpy as np
 
 from .strategy_config import (
     STRATEGY_CONFIG, STRATEGY_TIERS, ALL_STRATEGIES,
     DAILY_LIMITS, POSITION_SIZING, get_forward_days, get_tier
 )
 from .adaptive_trainer import adaptive_trainer
+from .batch_predictor import batch_predictor
+from .regime_classifier import regime_classifier
+from .ensemble_rebalancer import ensemble_rebalancer
+from .feature_selector import feature_selector
+from .incremental_learner import incremental_learner
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 AGENT_DB = BASE_DIR / "agent_training.sqlite3"
@@ -145,40 +151,65 @@ class AutonomousExecutorV2:
             return False
 
     async def make_predictions_and_enter(self):
-        """Make predictions for all tiers and auto-enter high-confidence trades."""
+        """Make predictions for all tiers using batch processing and auto-enter trades."""
         try:
-            # Get predictions for each tier
-            tiers_entered = {
-                'day': 0,
-                'swing': 0,
-                'long': 0,
-            }
+            tickers = ["NVDA", "MSFT", "AAPL", "TSLA", "AMD", "GOOGL", "META", "AMZN"]
+            tiers_entered = {'day': 0, 'swing': 0, 'long': 0}
 
-            for tier_name, strategies in STRATEGY_TIERS.items():
-                for strategy in strategies:
-                    for ticker in ["NVDA", "MSFT", "AAPL", "TSLA", "AMD", "GOOGL", "META", "AMZN"]:
-                        prediction = await self.get_prediction(strategy, ticker)
+            # BATCH PREDICTION: Get all predictions in parallel
+            print("[Executor v2] 🚀 Batch predicting all strategy/ticker combinations...")
+            all_predictions = await batch_predictor.predict_all_strategies(
+                tickers, ALL_STRATEGIES, self.get_prediction
+            )
 
-                        if not prediction:
-                            continue
+            # Classify current market regime
+            regime, regime_data = regime_classifier.classify_regime(
+                np.array([0.001, 0.0005, -0.0002, 0.0008]),  # Placeholder returns
+                0.015,  # Placeholder volatility
+                self._get_recent_win_rate()
+            )
+            print(f"[Executor v2] 📊 Market Regime: {regime}")
 
-                        confidence = prediction.get("confidence", 0)
+            # Get regime-optimized training config
+            regime_config = regime_classifier.get_training_config_for_regime(regime)
 
-                        # Check if meets confidence threshold
-                        if abs(confidence) >= MIN_CONFIDENCE:
-                            # Check position limits
-                            tier = get_tier(strategy)
-                            if await self.can_enter(tier, strategy, ticker):
-                                # Auto-enter trade
-                                entered = await self.enter_trade_auto(strategy, ticker, prediction, tier)
-                                if entered:
-                                    tiers_entered[tier] += 1
+            # Process predictions with ensemble weighting
+            for pred_key, prediction in all_predictions.items():
+                if not prediction:
+                    continue
+
+                strategy, ticker = pred_key.split(":")
+                confidence = prediction.get("confidence", 0)
+                tier = get_tier(strategy)
+
+                # Check confidence threshold (adapted per regime)
+                threshold = MIN_CONFIDENCE if regime != "VOLATILE" else MIN_CONFIDENCE + 10
+                if abs(confidence) < threshold:
+                    continue
+
+                # Position limit check
+                if not await self.can_enter(tier, strategy, ticker):
+                    continue
+
+                # Enter trade
+                entered = await self.enter_trade_auto(strategy, ticker, prediction, tier)
+                if entered:
+                    tiers_entered[tier] += 1
+                    # Record for ensemble rebalancing
+                    ensemble_rebalancer.record_prediction_accuracy(
+                        strategy, True, confidence  # This gets updated when trade closes
+                    )
+
+            # Periodically rebalance ensemble weights
+            if self.trades_entered_this_session % 25 == 0:
+                ensemble_rebalancer.calculate_optimal_weights()
+                print(f"[Executor v2] ⚖️ Ensemble rebalanced: {ensemble_rebalancer.current_weights}")
 
             # Report summary
             total_entered = sum(tiers_entered.values())
             if total_entered > 0:
                 self.trades_entered_this_session += total_entered
-                print(f"\n[Executor v2] Entered {total_entered} trades:")
+                print(f"\n[Executor v2] ✅ Entered {total_entered} trades (Batch efficiency: {batch_predictor.get_batch_efficiency()['estimated_speedup_ratio']}x):")
                 if tiers_entered['day'] > 0:
                     print(f"  ⚡ Day: {tiers_entered['day']} trades (Session: {self.stats['day']['entered']})")
                 if tiers_entered['swing'] > 0:
@@ -307,6 +338,12 @@ class AutonomousExecutorV2:
         except Exception as e:
             print(f"[Executor v2] Error entering trade {strategy}:{ticker}: {e}")
             return False
+
+    def _get_recent_win_rate(self, window: int = 10) -> float:
+        """Get recent trade win rate for regime detection (placeholder for now)."""
+        # In real implementation, query closed trades from DB
+        # For now, return neutral value
+        return 0.75  # 75% win rate assumption
 
     async def get_stats(self) -> Dict[str, Any]:
         """Get current execution stats."""
