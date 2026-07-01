@@ -34,6 +34,7 @@ from pydantic import BaseModel
 
 from services.agent_training_service import training_service
 from services.agent_live_trading import live_trading_engine
+from services.paper_trading_manager import paper_trading_manager
 
 load_dotenv()
 
@@ -127,6 +128,25 @@ class IncrementalRetrainRequest(BaseModel):
 
     tickers: list[str] | None = None
     days: int = 100
+
+
+class TradeEntryRequest(BaseModel):
+    """Enter a paper trade based on prediction."""
+
+    strategy: str
+    ticker: str
+    entry_price: float
+    predicted_direction: str
+    quantity: int = 100
+    side: str = "long"
+
+
+class TradeExitRequest(BaseModel):
+    """Exit a paper trade and log outcome."""
+
+    trade_id: str
+    exit_price: float
+    actual_direction: str
 
 
 # ─── FastAPI App Setup ────────────────────────────────────────────────────────
@@ -489,6 +509,187 @@ async def log_decision_outcome(decision_id: int, request: DecisionOutcomeRequest
         raise HTTPException(status_code=400, detail="Failed to update decision")
 
     return {"success": True, "decision_id": decision_id}
+
+
+# ─── Paper Trading Endpoints ─────────────────────────────────────────────────
+
+
+@app.post("/trades/entry", response_model=dict)
+async def entry_trade(request: TradeEntryRequest):
+    """
+    Enter a paper trade based on prediction signal.
+
+    Returns trade_id for tracking and future exit.
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8001/trades/entry \
+      -H "Content-Type: application/json" \
+      -d '{
+        "strategy": "momentum",
+        "ticker": "NVDA",
+        "entry_price": 125.50,
+        "predicted_direction": "up",
+        "quantity": 100,
+        "side": "long"
+      }'
+    ```
+
+    **Response:**
+    ```json
+    {
+      "status": "trade_entered",
+      "trade_id": "momentum-NVDA-2024-01-15T10:30:00",
+      "strategy": "momentum",
+      "ticker": "NVDA",
+      "entry_price": 125.50,
+      "quantity": 100,
+      "predicted_direction": "up",
+      "exit_date": "2024-01-20",
+      "forward_days": 5
+    }
+    ```
+    """
+    result = paper_trading_manager.entry_trade(
+        strategy=request.strategy,
+        ticker=request.ticker,
+        entry_price=request.entry_price,
+        predicted_direction=request.predicted_direction,
+        quantity=request.quantity,
+        side=request.side,
+    )
+    return result
+
+
+@app.post("/trades/{trade_id}/exit", response_model=dict)
+async def exit_trade(trade_id: str, request: TradeExitRequest):
+    """
+    Exit a paper trade and log outcome (P&L, accuracy).
+
+    Call when trade reaches forward_days or you want to close manually.
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8001/trades/momentum-NVDA-2024-01-15T10:30:00/exit \
+      -H "Content-Type: application/json" \
+      -d '{
+        "exit_price": 128.75,
+        "actual_direction": "up"
+      }'
+    ```
+
+    **Response:**
+    ```json
+    {
+      "status": "trade_closed",
+      "trade_id": "momentum-NVDA-2024-01-15T10:30:00",
+      "strategy": "momentum",
+      "ticker": "NVDA",
+      "entry_price": 125.50,
+      "exit_price": 128.75,
+      "quantity": 100,
+      "pnl": 325.00,
+      "pnl_pct": 2.59,
+      "was_correct": true
+    }
+    ```
+    """
+    result = paper_trading_manager.exit_trade(
+        trade_id=trade_id,
+        exit_price=request.exit_price,
+        actual_direction=request.actual_direction,
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
+
+
+@app.get("/trades/open")
+async def get_open_trades():
+    """
+    List all open trades (awaiting exit).
+
+    Shows remaining days until auto-close date.
+
+    **Example:**
+    ```bash
+    curl http://localhost:8001/trades/open
+    ```
+
+    **Response:**
+    ```json
+    {
+      "open_trades": [
+        {
+          "trade_id": "momentum-NVDA-2024-01-15T10:30:00",
+          "strategy": "momentum",
+          "ticker": "NVDA",
+          "entry_price": 125.50,
+          "quantity": 100,
+          "exit_date": "2024-01-20",
+          "days_remaining": 5,
+          "status": "open"
+        }
+      ],
+      "count": 1
+    }
+    ```
+    """
+    trades = paper_trading_manager.get_open_trades()
+    return {"open_trades": trades, "count": len(trades)}
+
+
+@app.get("/trades/closed")
+async def get_closed_trades(limit: int = 20):
+    """
+    List recent closed trades with P&L results.
+
+    **Example:**
+    ```bash
+    curl "http://localhost:8001/trades/closed?limit=10"
+    ```
+    """
+    trades = paper_trading_manager.get_closed_trades(limit=limit)
+    return {"closed_trades": trades, "count": len(trades)}
+
+
+@app.get("/trades/performance")
+async def get_trading_performance():
+    """
+    Get overall paper trading performance stats.
+
+    **Example:**
+    ```bash
+    curl http://localhost:8001/trades/performance
+    ```
+
+    **Response:**
+    ```json
+    {
+      "total_closed_trades": 42,
+      "total_pnl": 5250.00,
+      "avg_pnl_pct": 3.2,
+      "win_rate": 71.4,
+      "winners": 30,
+      "losers": 12
+    }
+    ```
+    """
+    stats = paper_trading_manager.get_performance_stats()
+    return stats
+
+
+@app.get("/trades/{trade_id}")
+async def get_trade_status(trade_id: str):
+    """Get detailed status of a specific trade."""
+    trade = paper_trading_manager.get_trade_status(trade_id)
+
+    if not trade:
+        raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
+
+    return trade
 
 
 # ─── Main Entry Point ─────────────────────────────────────────────────────────
