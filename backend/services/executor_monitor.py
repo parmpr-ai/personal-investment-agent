@@ -37,15 +37,20 @@ class ExecutorMonitor:
             by_strategy[strat]["count"] += 1
             by_strategy[strat]["tickers"].append(trade.get("ticker"))
 
+        # Include TOTAL stats: closed + open trades for accurate reporting
+        total_trades = perf.get("total_trades", 0) + len(open_trades)
+
         return {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "uptime": f"{(datetime.now(timezone.utc) - self.start_time).total_seconds():.0f}s",
             "cycles": self.cycle_count,
             "performance": {
                 "total_pnl": perf.get("total_pnl", 0),
-                "total_trades": perf.get("total_trades", 0),
+                "total_trades_closed": perf.get("total_trades", 0),  # Closed only
+                "total_trades": total_trades,  # Closed + Open
                 "winning_trades": perf.get("winning_trades", 0),
-                "win_rate_pct": perf.get("win_rate_pct", 0),
+                "win_rate_pct_closed": perf.get("win_rate_pct", 0),  # Rate on closed only
+                "win_rate_pct": (perf.get("winning_trades", 0) / total_trades * 100) if total_trades > 0 else 0,  # Rate on ALL
             },
             "positions": {
                 "total_open": len(open_trades),
