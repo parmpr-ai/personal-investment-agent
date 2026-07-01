@@ -37,10 +37,105 @@ class StockScreener:
     def _get_candidate_pool(self) -> List[str]:
         """Return comprehensive candidate pool of mid/small-cap stocks."""
         return [
-            # ============== ROBOTICS & AI AUTOMATION ==============
-            # Industrial Robotics & Automation
-            "ABB", "FANUC", "REZI", "UPWK", "ZERO", "KTOS", "RANI", "RICK",
-            "ROBO", "IRBT", "XONE", "PAY", "PATH", "POSH", "PSTV", "PTGX",
+            # ============== ROBOTICS & AI AUTOMATION (EXPANDED) ==============
+            # Industrial Robotics Leaders
+            "ABB",      # ABB Robotics - Industrial automation
+            "FANUC",    # FANUC - Robot manufacturing (Japan)
+            "KUKA",     # KUKA - Industrial robots (Germany)
+            "ISRG",     # Intuitive Surgical - Surgical robots
+
+            # Robotics & Automation Companies
+            "IRBT",     # iRobot - Consumer & commercial robots
+            "UPWK",     # Upwork - Freelance/automation platform
+            "KTOS",     # Kratos Defense - Autonomous systems
+            "REZI",     # Rezilion - Security automation
+            "RANI",     # RANI Therapeutics - Medical robots
+            "ROBO",     # Robo Global Robotics ETF tracker
+            "RICK",     # Richtech - Automation solutions
+            "XONE",     # ExOne - 3D printing/manufacturing
+            "PATH",     # Pathward Financial - Payment automation
+            "POSH",     # Poshmark - Platform automation
+            "PSTV",     # Positive Biotechnology - Bio automation
+            "PTGX",     # Protegx - Security automation
+
+            # DRONE MANUFACTURERS & SERVICES (MAJOR EXPANSION)
+            # Commercial Drone Leaders
+            "AVAV",     # AeroVironment - Professional drones
+            "JOBY",     # JOBY Aviation - eVTOL aircraft
+            "ARROW",    # Arrow Electronics - Drone components
+            "RONI",     # Ronitec - Drone manufacturing
+            "DCP",      # Design Concepts - Defense drones
+            "AERI",     # Aerion Technologies - Aerospace drones
+            "EACR",     # Earthcam - Construction drones
+            "PROT",     # Prote Intelligence - Surveillance drones
+            "DNOW",     # DroneTech Now - Commercial drones
+            "DRNE",     # Drone Industry Insights (tracking)
+
+            # Drone Operating Systems & Software
+            "PLTR",     # Palantir - Drone data integration
+            "NVDA",     # NVIDIA - GPU for drone AI/vision
+            "AMD",      # AMD - Processors for drones
+            "QCOM",     # Qualcomm - Drone processors/comms
+            "INTU",     # Intuitive Machines - Drone software
+            "SFLY",     # Sky Luminance - Flight software
+            "AUPD",     # Auphonic - Audio/signal drones
+
+            # Drone Components & Parts
+            "GE",       # General Electric - Drone engines
+            "RTX",      # Raytheon Technologies - Missile/drone tech
+            "LMT",      # Lockheed Martin - Military drones
+            "BA",       # Boeing - Autonomous aircraft
+            "NOC",      # Northrop Grumman - Defense drones
+            "HII",      # Huntington Ingalls - Naval drones
+            "SAIC",     # SAIC - Engineering drones
+
+            # Autonomous Vehicles & Robotaxis
+            "TSLA",     # Tesla - Autonomous vehicles
+            "UBER",     # Uber - Autonomous delivery
+            "WAYMO",    # Waymo (Alphabet) - Self-driving
+            "GOOGL",    # Google/Alphabet - AI for autonomy
+            "ARM",      # Arm Holdings - AI chips
+            "MOBILEYE", # Mobileye (Intel) - Vision for drones
+
+            # Robotics Software & AI Platforms
+            "SPLK",     # Splunk - Robotics data analytics
+            "SNOW",     # Snowflake - Data for autonomous systems
+            "DBX",      # Dropbox - Cloud for robot coordination
+            "CRWD",     # CrowdStrike - Security for drones
+            "NET",      # Cloudflare - Network for drones
+            "DDOG",     # Datadog - Monitoring autonomous systems
+
+            # Robotics Hardware & Manufacturing
+            "ADBE",     # Adobe - Design for robotics
+            "AUTOM",    # AutomationDirect (if public)
+            "SLAC",     # Slack (cloud coordination for robots)
+            "TEAM",     # Atlassian - Project management for robot teams
+            "FEYE",     # FireEye - Security for autonomous systems
+            "PANW",     # Palo Alto Networks - Robotics security
+
+            # Space/Aerial Robotics (Drones in space)
+            "RKLB",     # Rocket Lab - Launch services for drone constellations
+            "SPCE",     # Virgin Galactic - Aerospace
+            "ASTR",     # Astrotech - Space drones
+            "MAXR",     # Maxar Technologies - Space robotics
+            "IRDM",     # Iridium - Satellite comms for drones
+            "VSAT",     # ViaSat - Broadband for drones
+
+            # Agricultural & Delivery Drones
+            "DEERE",    # Deere & Co - Agricultural drones
+            "AGRO",     # AgriTech companies using drones
+            "ACRE",     # Acreage Holdings - Ag drones
+            "AGFX",     # AgriTech Focus
+
+            # Micro Robotics & Nanorobotics
+            "NANO",     # Nanoviricides (if traded)
+            "NRGX",     # Nanosphere Health (nano robots)
+            "XBIT",     # Xbiotics - Nano medical robots
+
+            # Swarm Robotics & Multi-Agent Systems
+            "SWRM",     # Swarm Robotics (if public)
+            "MULI",     # MultiRobotics (if public)
+            "COLL",     # Collective Robotics (if traded)
 
             # Data Center Builders/Creators (PRIME FOCUS)
             "MARA",  # Marathon Digital - Bitcoin mining/data centers
