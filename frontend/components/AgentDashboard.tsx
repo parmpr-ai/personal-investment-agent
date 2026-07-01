@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import {
   AreaChart,
   Area,
@@ -16,6 +17,11 @@ import {
   Legend,
   Cell,
 } from 'recharts'
+
+const AgentPaperTradingWidget = dynamic(() => import('./widgets/AgentPaperTradingWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading Paper Trading Widget...</div>,
+  ssr: false,
+})
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
@@ -2710,6 +2716,11 @@ export default function AgentDashboard() {
 
         {/* L. Portfolio Risk Report */}
         <PortfolioRiskCard data={riskData} loading={riskLoading} />
+
+        {/* M. Paper Trading Control Widget */}
+        <div style={{ marginTop: '20px' }}>
+          <AgentPaperTradingWidget />
+        </div>
       </div>
     </div>
   )
