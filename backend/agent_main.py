@@ -36,6 +36,8 @@ from services.gpu_accelerator import gpu_accelerator
 from services.distributed_trainer import distributed_trainer
 from services.meta_learner import meta_learner
 from services.ab_tester import ab_tester
+from services.stock_screener import stock_screener, daily_screen
+from services.daily_universe_updater import universe_updater, run_daily_update
 
 load_dotenv()
 
@@ -578,3 +580,63 @@ async def predict_long():
    'target_pct': config.get('target_pct'),
   }
  return {'tier': 'long', 'count': len(strategies), 'predictions': predictions}
+
+# ── Daily Universe & Stock Screener ──────────────────────────────────────
+
+@app.post('/screener/scan')
+async def screener_scan(background_tasks: BackgroundTasks):
+    """Run stock screening scan — find 200 high-opportunity mid/small-cap stocks."""
+    background_tasks.add_task(daily_screen)
+    return {
+        "status": "screening",
+        "message": "Screening 200 mid/small-cap stocks for opportunities",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+@app.get('/screener/status')
+async def screener_status():
+    """Get current screener status."""
+    return stock_screener.get_screening_stats()
+
+@app.get('/screener/opportunities')
+async def screener_opportunities(limit: int = 20):
+    """Get top opportunity tickers from last screening."""
+    tickers = stock_screener.get_screened_tickers()[:limit]
+    return {
+        "count": len(tickers),
+        "top_opportunities": tickers,
+        "last_screened": stock_screener.last_screened.isoformat() if stock_screener.last_screened else None,
+    }
+
+@app.post('/universe/daily-update')
+async def universe_daily_update(background_tasks: BackgroundTasks):
+    """Manually trigger daily universe update (add 200 new tickers)."""
+    background_tasks.add_task(run_daily_update)
+    return {
+        "status": "updating",
+        "message": "Daily universe update started — screening for 200 new opportunities",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+@app.get('/universe/update-status')
+async def universe_update_status():
+    """Get universe update status."""
+    return universe_updater.get_update_status()
+
+@app.get('/universe/update-history')
+async def universe_update_history(days: int = 30):
+    """Get universe update history."""
+    return {
+        "period_days": days,
+        "updates": universe_updater.get_update_history(days),
+    }
+
+@app.get('/universe/current-size')
+async def universe_current_size():
+    """Get current universe size."""
+    from services.ticker_universe import COMPREHENSIVE_UNIVERSE, UNIVERSE_BY_INDUSTRY, STATS
+    return {
+        "total_stocks": len(COMPREHENSIVE_UNIVERSE),
+        "by_industry": STATS["by_industry"],
+        "stats": STATS,
+    }
