@@ -44,8 +44,14 @@ const AgentBacktestResultsWidget = dynamic(() => import('./widgets/AgentBacktest
   ssr: false,
 })
 
+const AgentPaperTradingWidget = dynamic(() => import('./widgets/AgentPaperTradingWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
 // ─── Constants ───────────────────────────────────────────────────────────────
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
+const PIA_API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
 
 const C = {
   bg: '#0a0a0a',
@@ -103,7 +109,15 @@ const fmtDatetime = (ts: string) => {
 }
 
 async function apiFetch(path: string, init?: RequestInit) {
-  const res = await fetch(`${API}${path}`, init)
+  const res = await fetch(`${AGENT_API}${path}`, init)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw body
+  return body
+}
+
+// Macros/portfolio live on the main PIA backend (port 8000), not the agent server
+async function piaFetch(path: string, init?: RequestInit) {
+  const res = await fetch(`${PIA_API}${path}`, init)
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw body
   return body
@@ -2739,7 +2753,7 @@ export default function AgentDashboard() {
     try {
       const [statusData, macrosData] = await Promise.allSettled([
         apiFetch('/agent/status'),
-        apiFetch('/macros'),
+        piaFetch('/macros'),
       ])
       const s = statusData.status === 'fulfilled' ? statusData.value : null
       const m = macrosData.status === 'fulfilled' ? macrosData.value : null
@@ -3049,6 +3063,11 @@ export default function AgentDashboard() {
           <AgentPerformanceWidget />
           <AgentDecisionsWidget />
           <AgentBacktestResultsWidget />
+        </div>
+
+        {/* Paper Trading Control */}
+        <div style={{ marginBottom: '20px' }}>
+          <AgentPaperTradingWidget />
         </div>
 
         {/* C. Activity Summary */}

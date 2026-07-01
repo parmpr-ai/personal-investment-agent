@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
+import { Button } from '../ui/button'
+import { Input } from '../ui/input'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { Badge } from '../ui/badge'
 import { ArrowUp, ArrowDown, TrendingUp, BarChart3, Plus, X } from 'lucide-react'
+
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
 
 interface Prediction {
   ticker: string
@@ -88,9 +90,9 @@ export function AgentPaperTradingWidget() {
     try {
       setLoading(true)
       const [openRes, closedRes, statsRes] = await Promise.all([
-        fetch('http://localhost:8001/trades/open'),
-        fetch('http://localhost:8001/trades/closed?limit=10'),
-        fetch('http://localhost:8001/trades/performance'),
+        fetch(`${AGENT_API}/trades/open`),
+        fetch(`${AGENT_API}/trades/closed?limit=10`),
+        fetch(`${AGENT_API}/trades/performance`),
       ])
 
       if (openRes.ok) {
@@ -114,7 +116,7 @@ export function AgentPaperTradingWidget() {
 
   const handleEntryTrade = async () => {
     try {
-      const response = await fetch('http://localhost:8001/trades/entry', {
+      const response = await fetch(`${AGENT_API}/trades/entry`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -145,7 +147,7 @@ export function AgentPaperTradingWidget() {
 
   const handleExitTrade = async (trade: OpenTrade) => {
     try {
-      const response = await fetch(`http://localhost:8001/trades/${trade.trade_id}/exit`, {
+      const response = await fetch(`${AGENT_API}/trades/${trade.trade_id}/exit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -486,3 +488,5 @@ export function AgentPaperTradingWidget() {
     </div>
   )
 }
+
+export default AgentPaperTradingWidget

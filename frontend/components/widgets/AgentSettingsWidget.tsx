@@ -1,106 +1,144 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Power, Settings as SettingsIcon, RefreshCw } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
+import { AlertCircle, Settings } from 'lucide-react'
+
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
 
 interface AgentStatus {
   running: boolean
-  mode: string
-  cycle_count: number
-  last_cycle: string | null
-  config: {
-    enabled: boolean
-    mode: string
-    cycle_minutes: number
-    risk_per_trade_pct: number
-    max_positions: number
-  }
+  risk_mode?: string
+  trade_style?: string
+  regime?: string
+  cycle_count?: number
+  max_positions?: number
+  universe_size?: number
 }
 
 export default function AgentSettingsWidget() {
   const [status, setStatus] = useState<AgentStatus | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    loadStatus()
-    const interval = setInterval(loadStatus, 30000)
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(`${AGENT_API}/agent/status`)
+        if (!res.ok) throw new Error('Failed to fetch agent status')
+        const data = await res.json()
+        setStatus(data)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchStatus()
+    const interval = setInterval(fetchStatus, 30000)
     return () => clearInterval(interval)
   }, [])
 
-  const loadStatus = async () => {
+  const handleToggleAgent = async () => {
     try {
-      setLoading(true)
-      const res = await fetch('http://localhost:8001/agent/status')
-      if (res.ok) {
-        const data = await res.json()
-        setStatus(data)
-      }
-    } catch (error) {
-      console.error('Failed to load agent status:', error)
-    } finally {
-      setLoading(false)
+      const method = status?.running ? 'stop' : 'start'
+      const res = await fetch(`${AGENT_API}/agent/${method}`, { method: 'POST' })
+      if (!res.ok) throw new Error(`Failed to ${method} agent`)
+      const data = await res.json()
+      setStatus(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
     }
   }
 
-  if (loading || !status) {
-    return <div className="p-4 text-gray-500">Loading...</div>
+  const getRiskColor = (mode?: string) => {
+    if (mode === 'AGGRESSIVE') return 'bg-red-500/20 text-red-400'
+    if (mode === 'NORMAL') return 'bg-green-500/20 text-green-400'
+    if (mode === 'CONSERVATIVE') return 'bg-yellow-500/20 text-yellow-400'
+    return 'bg-blue-500/20 text-blue-400'
   }
 
   return (
-    <Card className="w-full">
+    <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <SettingsIcon className="w-5 h-5" />
-              Agent Settings
-            </CardTitle>
-            <CardDescription>Current configuration and status</CardDescription>
-          </div>
-          <Badge variant={status.running ? 'default' : 'secondary'}>
-            <Power className="w-3 h-3 mr-1" />
-            {status.running ? 'Running' : 'Stopped'}
-          </Badge>
-        </div>
+        <CardTitle className="flex items-center gap-2">
+          <Settings className="h-5 w-5" />
+          Agent Settings
+        </CardTitle>
+        <CardDescription>Configuration and mode controls</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs text-gray-500">Mode</p>
-            <p className="text-sm font-semibold">{status.mode}</p>
+        {loading ? (
+          <div className="text-center py-8 text-gray-400">Loading...</div>
+        ) : error ? (
+          <div className="flex gap-2 text-red-400">
+            <AlertCircle className="h-5 w-5 flex-shrink-0" />
+            <span>{error}</span>
           </div>
-          <div>
-            <p className="text-xs text-gray-500">Cycle Interval</p>
-            <p className="text-sm font-semibold">{status.config.cycle_minutes} min</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Risk Per Trade</p>
-            <p className="text-sm font-semibold">{status.config.risk_per_trade_pct}%</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Max Positions</p>
-            <p className="text-sm font-semibold">{status.config.max_positions}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Total Cycles</p>
-            <p className="text-sm font-semibold">{status.cycle_count}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Last Cycle</p>
-            <p className="text-sm font-semibold text-gray-600">
-              {status.last_cycle ? new Date(status.last_cycle).toLocaleTimeString() : 'Never'}
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={loadStatus}
-          className="w-full mt-4 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center justify-center gap-2"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </button>
+        ) : status ? (
+          <>
+            <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg border border-slate-700/50">
+              <div>
+                <div className="text-sm font-medium text-white">Agent Status</div>
+                <div className="text-xs text-gray-400 mt-1">Paper trading mode</div>
+              </div>
+              <Button
+                onClick={handleToggleAgent}
+                variant={status.running ? 'destructive' : 'default'}
+                size="sm"
+              >
+                {status.running ? 'Stop' : 'Start'}
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {status.risk_mode && (
+                <div className="p-2 rounded bg-slate-900">
+                  <div className="text-xs text-gray-400 mb-1">Risk Mode</div>
+                  <Badge className={getRiskColor(status.risk_mode)}>{status.risk_mode}</Badge>
+                </div>
+              )}
+              {status.regime && (
+                <div className="p-2 rounded bg-slate-900">
+                  <div className="text-xs text-gray-400 mb-1">Market Regime</div>
+                  <Badge variant="outline" className="text-xs">
+                    {status.regime}
+                  </Badge>
+                </div>
+              )}
+              {status.cycle_count !== undefined && (
+                <div className="p-2 rounded bg-slate-900">
+                  <div className="text-xs text-gray-400">Cycles Run</div>
+                  <div className="text-lg font-bold text-white">{status.cycle_count}</div>
+                </div>
+              )}
+              {status.max_positions && (
+                <div className="p-2 rounded bg-slate-900">
+                  <div className="text-xs text-gray-400">Max Positions</div>
+                  <div className="text-lg font-bold text-white">{status.max_positions}</div>
+                </div>
+              )}
+            </div>
+
+            {status.trade_style && (
+              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
+                <div className="text-sm font-medium text-white mb-2">Trade Style</div>
+                <Badge variant="outline">{status.trade_style.replace(/_/g, ' ')}</Badge>
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-slate-700">
+              <div className="text-xs text-gray-400">
+                ℹ️ Agent runs in paper trading mode only. Real IBKR connectivity is disabled for safety.
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-8 text-gray-400">No data available</div>
+        )}
       </CardContent>
     </Card>
   )

@@ -1,25 +1,82 @@
-import { ReactNode } from 'react'
+'use client'
 
-export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
+import React, { ReactNode } from 'react'
+
+export function Card({ children, className = '', style }: { children: ReactNode; className?: string; style?: React.CSSProperties }) {
   return (
-    <div className={`rounded-lg border border-gray-200 bg-white shadow-sm ${className}`.trim()}>
+    <div
+      className={className}
+      style={{
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        ...style,
+      }}
+    >
       {children}
     </div>
   )
 }
 
-export function CardHeader({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`px-4 py-3 border-b border-gray-200 ${className}`.trim()}>{children}</div>
+export function CardHeader({ children, className = '', style }: { children: ReactNode; className?: string; style?: React.CSSProperties }) {
+  return (
+    <div
+      className={className}
+      style={{
+        padding: '20px',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  )
 }
 
-export function CardTitle({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <h3 className={`text-lg font-semibold text-gray-900 ${className}`.trim()}>{children}</h3>
+export function CardTitle({ children, className = '', style }: { children: ReactNode; className?: string; style?: React.CSSProperties }) {
+  return (
+    <h3
+      className={className}
+      style={{
+        fontSize: '18px',
+        fontWeight: 700,
+        color: '#ffffff',
+        margin: 0,
+        ...style,
+      }}
+    >
+      {children}
+    </h3>
+  )
 }
 
-export function CardDescription({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <p className={`text-sm text-gray-600 mt-1 ${className}`.trim()}>{children}</p>
+export function CardDescription({ children, className = '', style }: { children: ReactNode; className?: string; style?: React.CSSProperties }) {
+  return (
+    <p
+      className={className}
+      style={{
+        fontSize: '13px',
+        color: '#9ca3af',
+        margin: '8px 0 0',
+        ...style,
+      }}
+    >
+      {children}
+    </p>
+  )
 }
 
-export function CardContent({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`px-4 py-3 ${className}`.trim()}>{children}</div>
+export function CardContent({ children, className = '', style }: { children: ReactNode; className?: string; style?: React.CSSProperties }) {
+  return (
+    <div
+      className={className}
+      style={{
+        padding: '20px',
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  )
 }

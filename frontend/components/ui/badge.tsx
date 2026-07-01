@@ -1,23 +1,49 @@
-import { ReactNode } from 'react'
+'use client'
+
+import React, { ReactNode } from 'react'
 
 export function Badge({
   children,
-  variant = 'default',
   className = '',
+  style,
+  variant = 'default',
 }: {
   children: ReactNode
-  variant?: 'default' | 'secondary' | 'destructive' | 'outline'
   className?: string
+  style?: React.CSSProperties
+  variant?: 'default' | 'outline' | 'success' | 'destructive' | 'secondary'
 }) {
-  const variants = {
-    default: 'bg-blue-100 text-blue-800',
-    secondary: 'bg-gray-100 text-gray-800',
-    destructive: 'bg-red-100 text-red-800',
-    outline: 'border border-gray-300 text-gray-700 bg-white',
+  let bgColor = 'rgba(59,130,246,0.1)'
+  let textColor = '#3b82f6'
+
+  if (variant === 'success') {
+    bgColor = 'rgba(0,255,136,0.1)'
+    textColor = '#00ff88'
+  } else if (variant === 'destructive') {
+    bgColor = 'rgba(255,68,68,0.1)'
+    textColor = '#ff4444'
+  } else if (variant === 'secondary') {
+    bgColor = 'rgba(107,114,128,0.1)'
+    textColor = '#d1d5db'
   }
 
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${variants[variant]} ${className}`.trim()}>
+    <span
+      className={className}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '4px 12px',
+        borderRadius: '20px',
+        background: bgColor,
+        color: textColor,
+        fontSize: '12px',
+        fontWeight: 600,
+        border: `1px solid ${textColor}33`,
+        whiteSpace: 'nowrap',
+        ...style,
+      }}
+    >
       {children}
     </span>
   )

@@ -1,25 +1,14 @@
 'use client'
 
-import { ReactNode, createContext, useContext, useState } from 'react'
+import React, { createContext, useContext, useState, ReactNode } from 'react'
 
-interface TabsContextType {
+const TabsContext = createContext<{
   activeTab: string
   setActiveTab: (value: string) => void
-}
+} | null>(null)
 
-const TabsContext = createContext<TabsContextType | null>(null)
-
-export function Tabs({
-  children,
-  defaultValue,
-  className = '',
-}: {
-  children: ReactNode
-  defaultValue: string
-  className?: string
-}) {
+export function Tabs({ children, defaultValue = '', className }: { children: ReactNode; defaultValue?: string; className?: string }) {
   const [activeTab, setActiveTab] = useState(defaultValue)
-
   return (
     <TabsContext.Provider value={{ activeTab, setActiveTab }}>
       <div className={className}>{children}</div>
@@ -27,15 +16,14 @@ export function Tabs({
   )
 }
 
-export function TabsList({
-  children,
-  className = '',
-}: {
-  children: ReactNode
-  className?: string
-}) {
+export function TabsList({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`flex border-b border-gray-200 ${className}`.trim()}>
+    <div className={className} style={{
+      display: 'flex',
+      borderBottom: '1px solid rgba(255,255,255,0.1)',
+      marginBottom: '16px',
+      gap: '0'
+    }}>
       {children}
     </div>
   )
@@ -44,23 +32,32 @@ export function TabsList({
 export function TabsTrigger({
   value,
   children,
-  className = '',
+  className,
 }: {
   value: string
   children: ReactNode
   className?: string
 }) {
   const context = useContext(TabsContext)
-  const isActive = context?.activeTab === value
+  if (!context) throw new Error('TabsTrigger must be used within Tabs')
+
+  const { activeTab, setActiveTab } = context
+  const isActive = activeTab === value
 
   return (
     <button
-      onClick={() => context?.setActiveTab(value)}
-      className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-        isActive
-          ? 'border-blue-600 text-blue-600'
-          : 'border-transparent text-gray-600 hover:text-gray-900'
-      } ${className}`.trim()}
+      className={className}
+      onClick={() => setActiveTab(value)}
+      style={{
+        padding: '12px 16px',
+        background: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+        border: isActive ? '2px solid #00ff88' : 'none',
+        borderBottom: isActive ? '2px solid #00ff88' : '1px solid transparent',
+        color: isActive ? '#00ff88' : '#9ca3af',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: isActive ? 600 : 500,
+      }}
     >
       {children}
     </button>
@@ -70,16 +67,15 @@ export function TabsTrigger({
 export function TabsContent({
   value,
   children,
-  className = '',
+  className,
 }: {
   value: string
   children: ReactNode
   className?: string
 }) {
   const context = useContext(TabsContext)
-  const isActive = context?.activeTab === value
+  if (!context) throw new Error('TabsContent must be used within Tabs')
 
-  if (!isActive) return null
-
+  if (context.activeTab !== value) return null
   return <div className={className}>{children}</div>
 }

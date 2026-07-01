@@ -1,29 +1,53 @@
+'use client'
+
+import React from 'react'
+
 export function Input({
   type = 'text',
+  placeholder,
   value,
   onChange,
-  placeholder,
+  disabled,
   className = '',
-  disabled = false,
+  style,
   step,
+  min,
+  max,
+  ...props
 }: {
   type?: string
+  placeholder?: string
   value?: string | number
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void
-  placeholder?: string
-  className?: string
   disabled?: boolean
-  step?: string
+  className?: string
+  style?: React.CSSProperties
+  step?: string | number
+  min?: string | number
+  max?: string | number
+  [key: string]: any
 }) {
   return (
     <input
       type={type}
+      placeholder={placeholder}
       value={value}
       onChange={onChange}
-      placeholder={placeholder}
       disabled={disabled}
+      className={className}
       step={step}
-      className={`px-3 py-2 rounded-md border border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${className}`.trim()}
+      min={min}
+      max={max}
+      {...props}
+      style={{
+        padding: '8px 12px',
+        borderRadius: '6px',
+        border: '1px solid rgba(255,255,255,0.1)',
+        background: 'rgba(255,255,255,0.02)',
+        color: '#ffffff',
+        fontSize: '14px',
+        ...style
+      }}
     />
   )
 }

@@ -30,7 +30,8 @@ import {
 } from 'lucide-react'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
+const API       = process.env.NEXT_PUBLIC_API_URL       ?? 'http://127.0.0.1:8000'
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
 
 type RailItem = Record<string, any>
 type Tone = 'good' | 'bad' | 'neutral'
@@ -797,27 +798,24 @@ function useAgentData() {
   const [toggling, setToggling]         = useState(false)
 
   useEffect(() => {
-    const fetchStatus = () =>
-      fetch(`${API}/agent/status`).then(r => r.json()).then(setAgentStatus).catch(() => {})
-
     const fetchAll = () => {
-      fetchStatus()
-      fetch(`${API}/agent/decisions?limit=10`).then(r => r.json()).then(d => {
+      fetch(`${AGENT_API}/agent/status`).then(r => r.json()).then(setAgentStatus).catch(() => {})
+      fetch(`${AGENT_API}/agent/decisions?limit=10`).then(r => r.json()).then(d => {
         setDecisions(Array.isArray(d) ? d : [])
       }).catch(() => {})
-      fetch(`${API}/agent/paper/closed?limit=20`).then(r => r.json()).then(d => {
+      fetch(`${AGENT_API}/agent/paper/closed?limit=20`).then(r => r.json()).then(d => {
         setClosedTrades(Array.isArray(d) ? d : [])
       }).catch(() => {})
-      fetch(`${API}/agent/attribution?limit=200`).then(r => r.json()).then(d => {
+      fetch(`${AGENT_API}/agent/attribution?limit=200`).then(r => r.json()).then(d => {
         if (d && typeof d === 'object') setAttribution(d)
       }).catch(() => {})
-      fetch(`${API}/agent/analytics/pnl?hours=72`).then(r => r.json()).then(d => {
+      fetch(`${AGENT_API}/agent/analytics/pnl?hours=72`).then(r => r.json()).then(d => {
         setEquityCurve(Array.isArray(d) ? d : [])
       }).catch(() => {})
     }
 
     fetchAll()
-    fetch(`${API}/agent/backtest/status`).then(r => r.json()).then(d => {
+    fetch(`${AGENT_API}/agent/backtest/status`).then(r => r.json()).then(d => {
       if (d?.status === 'completed') setBacktest(d)
     }).catch(() => {})
 
@@ -830,9 +828,9 @@ function useAgentData() {
     setToggling(true)
     try {
       const running = !!agentStatus?.running
-      await fetch(`${API}${running ? '/agent/stop' : '/agent/start'}`, { method: 'POST' })
+      await fetch(`${AGENT_API}${running ? '/agent/stop' : '/agent/start'}`, { method: 'POST' })
       await new Promise(r => setTimeout(r, 900))
-      const fresh = await fetch(`${API}/agent/status`).then(r => r.json()).catch(() => null)
+      const fresh = await fetch(`${AGENT_API}/agent/status`).then(r => r.json()).catch(() => null)
       if (fresh) setAgentStatus(fresh)
     } finally {
       setToggling(false)
