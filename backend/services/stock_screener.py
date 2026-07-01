@@ -37,13 +37,46 @@ class StockScreener:
     def _get_candidate_pool(self) -> List[str]:
         """Return comprehensive candidate pool of mid/small-cap stocks."""
         return [
+            # ============== ROBOTICS & AI AUTOMATION ==============
+            # Industrial Robotics & Automation
+            "ABB", "FANUC", "REZI", "UPWK", "ZERO", "KTOS", "RANI", "RICK",
+            "ROBO", "IRBT", "XONE", "PAY", "PATH", "POSH", "PSTV", "PTGX",
+
+            # Data Center Builders/Creators (PRIME FOCUS)
+            "MARA",  # Marathon Digital - Bitcoin mining/data centers
+            "IREN",  # Iris Energy - Data center power
+            "NBIS",  # Nebius - Data center infrastructure (Russia-based, check status)
+            "KELL",  # Kelling Global - Data center solutions
+            "CLSK",  # Core Scientific - Crypto/data center
+            "CIFR",  # Cipher Mining - Data center operations
+            "RIOT",  # Riot Platforms - Data center/blockchain
+            "MSTR",  # MicroStrategy - Data centers + crypto
+            "BITF",  # Bitfarms - Data center farming
+            "HUT",   # Hut 8 - Data center bitcoin
+            "DLCI",  # Datalinks - Infrastructure
+            "XPDI",  # XP Digital - Data centers
+            "DXCM",  # Dexcom - No, wrong industry, remove
+
+            # Data Center Real Estate & Infrastructure
+            "DLR",   # Digital Realty - REIT
+            "EQIX",  # Equinix - Premium data centers
+            "CCI",   # Crown Castle - Infrastructure
+            "CUBE",  # CubeSmart - Specialized
+            "CTRE",  # CyberArk? No - Centerspace
+
+            # Power & Infrastructure for Data Centers
+            "NEE",   # NextEra Energy
+            "PLUG",  # Plug Power - Hydrogen
+            "FCEL",  # Fuel Cell Energy
+            "ENPH",  # Enphase Energy
+
             # Healthcare/Biotech (high momentum potential)
             "UPST", "DDOG", "CRWD", "NET", "ZS", "OKTA", "TEAM", "SNOW",
             "PSTG", "MDB", "NTNX", "BILL", "FTNT", "CYBR", "ALKY", "ALRM",
             "AMZN", "ARKF", "ARKW", "ARKQ", "ARKX",
 
             # FinTech & Finance
-            "COIN", "SOFI", "UPST", "PLYA", "MARA", "MSTR", "RIOT", "CLSK",
+            "COIN", "SOFI", "UPST", "PLYA", "MSTR", "RIOT", "CLSK",
             "AUPH", "AUKS", "AURI", "AUYY", "AUDB", "AULE", "AULT", "AUMF",
 
             # Clean Energy & EV
