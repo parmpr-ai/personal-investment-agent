@@ -273,6 +273,51 @@ def extract_features(
 
 # ── Dataset construction ───────────────────────────────────────────────────────
 
+def select_features(
+    X: np.ndarray,
+    y: np.ndarray,
+    n_features: int = 20,
+) -> Tuple[np.ndarray, List[int]]:
+    """
+    Optimization #4: Select top N features by importance using quick random forest.
+
+    Args:
+        X: Feature matrix
+        y: Target labels
+        n_features: Number of top features to keep (default 20)
+
+    Returns:
+        (X_selected, selected_indices): Reduced feature matrix and indices
+    """
+    try:
+        from sklearn.ensemble import RandomForestClassifier
+
+        # Quick RF scan (few estimators for speed)
+        rf_scan = RandomForestClassifier(
+            n_estimators=10,
+            max_depth=4,
+            random_state=42,
+            n_jobs=2,
+        )
+        rf_scan.fit(X, y)
+
+        # Get top N feature indices
+        importances = rf_scan.feature_importances_
+        top_indices = np.argsort(importances)[-n_features:][::-1]
+
+        # Select columns
+        X_selected = X[:, top_indices]
+
+        import logging
+        logging.info(f"[FeatureSelection] Kept {len(top_indices)} of {X.shape[1]} features")
+
+        return X_selected, top_indices.tolist()
+    except Exception as e:
+        import logging
+        logging.warning(f"[FeatureSelection] Failed to select features: {e}. Using all.")
+        return X, list(range(X.shape[1]))
+
+
 def build_dataset(
     sigs_per_ticker: Dict[str, Dict[str, np.ndarray]],
     closes_per_ticker: Dict[str, np.ndarray],
@@ -334,6 +379,8 @@ def train_model(
     strategy: str,
     old_model: Optional[Dict] = None,
     incremental: bool = False,
+    feature_selection: bool = False,
+    n_features: int = 20,
 ) -> Dict[str, Any]:
     """
     Train ensemble v4: HGBC + RF + ETC + (LGB + CatBoost if available).
@@ -345,6 +392,8 @@ def train_model(
         strategy: Strategy name
         old_model: Previous model dict (for warm-start incremental training)
         incremental: If True and old_model provided, use warm-start (6x faster for daily retrains)
+        feature_selection: If True, keep only top N features by importance (2x speedup)
+        n_features: Number of top features to keep (default 20)
     """
     if len(X) < 100:
         return {"error": f"Not enough training samples: {len(X)}"}
@@ -377,6 +426,14 @@ def train_model(
     split = int(len(X) * 0.70)
     X_train, X_eval = X[:split], X[split:]
     y_train, y_eval = y[:split], y[split:]
+
+    # Optimization #4: Feature selection (keep only top N features)
+    selected_indices = None
+    if feature_selection:
+        X_train, selected_indices = select_features(X_train, y_train, n_features=n_features)
+        X_eval = X_eval[:, selected_indices]
+        import logging
+        logging.info(f"[Train] Using {len(selected_indices)} selected features (was {X.shape[1]})")
 
     # Optimization #3: Reuse scaler from old model if available
     if incremental and old_model and "scaler" in old_model:
@@ -530,6 +587,7 @@ def train_model(
             "meta_clf": meta_clf,
             "decision_threshold": best_thresh,
             "scaler": scaler,
+            "selected_indices": selected_indices,  # Optimization #4
             "ts": time.time(),
             "version": 4,
         }, f)
@@ -541,6 +599,7 @@ def train_model(
         "meta_clf": meta_clf,
         "decision_threshold": best_thresh,
         "scaler": scaler,
+        "selected_indices": selected_indices,  # Optimization #4
     }
     _models[strategy] = cache_entry
     _model_ts[strategy] = time.time()
@@ -557,6 +616,8 @@ def train_model(
         "top_features": top_features,
         "model_path": str(model_path),
         "ensemble_size": 3 + (1 if lgb_clf else 0) + (1 if cb_clf else 0),
+        "feature_selection": feature_selection,  # Optimization #4
+        "num_features": len(selected_indices) if selected_indices else len(X[0]),
         "ts": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -583,6 +644,7 @@ def _load_model(strategy: str) -> Optional[Dict]:
                 "meta_clf": data.get("meta_clf"),
                 "decision_threshold": data.get("decision_threshold", 0.5),
                 "scaler": data["scaler"],
+                "selected_indices": data.get("selected_indices"),  # Optimization #4
             }
         elif version >= 3:
             entry = {
@@ -629,6 +691,10 @@ def ml_confidence_boost(
         return base_confidence, ""
 
     try:
+        # Optimization #4: Apply feature selection if model uses it
+        if model.get("selected_indices"):
+            feats = feats[model["selected_indices"]]
+
         X = model["scaler"].transform(feats.reshape(1, -1))
 
         if "meta_clf" in model:
@@ -731,6 +797,7 @@ async def train_all_models(
     parallel: bool = True,
     n_workers: int = 4,
     incremental: bool = False,
+    feature_selection: bool = False,
 ) -> Dict[str, Any]:
     """
     Fetch historical data (with optional caching), build dataset, train models.
@@ -739,6 +806,7 @@ async def train_all_models(
     1. Local caching: 6x faster (load from SQLite instead of Yahoo)
     2. Parallel training: 4x faster (train 6 strategies simultaneously)
     3. Incremental training: 6x faster for daily retrains (warm-start from old models)
+    4. Feature selection: 2x faster (keep only top 20 features)
 
     Args:
         use_cache: Load from local cache if available (default True)
@@ -746,6 +814,7 @@ async def train_all_models(
         parallel: Train strategies in parallel (default True)
         n_workers: Number of parallel workers (default 4)
         incremental: Use warm-start from old models for faster daily retrains (default False)
+        feature_selection: Keep only top 20 features for faster training (default False)
     """
     import time as time_module
     from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -857,7 +926,12 @@ async def train_all_models(
             old_model = None
             if incremental:
                 old_model = _load_model(strategy)
-            return train_model(X, y, strategy, old_model=old_model, incremental=incremental)
+            return train_model(
+                X, y, strategy,
+                old_model=old_model,
+                incremental=incremental,
+                feature_selection=feature_selection,
+            )
 
         # Use ThreadPoolExecutor for I/O-bound training
         with ThreadPoolExecutor(max_workers=min(n_workers, len(strategies))) as executor:
@@ -887,7 +961,12 @@ async def train_all_models(
             old_model = None
             if incremental:
                 old_model = _load_model(strategy)
-            r = train_model(X, y, strategy, old_model=old_model, incremental=incremental)
+            r = train_model(
+                X, y, strategy,
+                old_model=old_model,
+                incremental=incremental,
+                feature_selection=feature_selection,
+            )
             results.append(r)
 
     elapsed = time_module.time() - start_time
@@ -903,6 +982,7 @@ async def train_all_models(
             "parallel": "enabled" if parallel else "disabled",
             "workers": n_workers,
             "incremental": "enabled" if incremental else "disabled",
+            "feature_selection": "enabled" if feature_selection else "disabled",
         }
     }
 

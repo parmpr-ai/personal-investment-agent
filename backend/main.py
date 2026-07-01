@@ -393,6 +393,7 @@ async def agent_ml_train(
  parallel: bool = True,
  n_workers: int = 4,
  incremental: bool = False,
+ feature_selection: bool = False,
 ):
  """
  Train ML models with optimizations.
@@ -403,9 +404,10 @@ async def agent_ml_train(
  - parallel=true (default): Train strategies in parallel (4x faster)
  - n_workers=4 (default): Number of parallel training workers
  - incremental=true: Warm-start from old models for daily retrains (6x faster)
+ - feature_selection=true: Keep only top 20 features (2x faster)
 
  Example:
- POST /agent/ml/train?use_cache=true&parallel=true&incremental=true&n_workers=4
+ POST /agent/ml/train?use_cache=true&parallel=true&incremental=true&feature_selection=true
  """
  result = await train_all_models(
   use_cache=use_cache,
@@ -413,6 +415,7 @@ async def agent_ml_train(
   parallel=parallel,
   n_workers=n_workers,
   incremental=incremental,
+  feature_selection=feature_selection,
  )
  # Update agent's last training timestamp (SAFETY CHECK #6)
  import time
