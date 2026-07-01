@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import {
   AreaChart,
   Area,
@@ -16,6 +17,32 @@ import {
   Legend,
   Cell,
 } from 'recharts'
+
+// ─── Dynamic Widget Imports ──────────────────────────────────────────────────
+const AgentSettingsWidget = dynamic(() => import('./widgets/AgentSettingsWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
+const AgentTrainingStatusWidget = dynamic(() => import('./widgets/AgentTrainingStatusWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
+const AgentPerformanceWidget = dynamic(() => import('./widgets/AgentPerformanceWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
+const AgentDecisionsWidget = dynamic(() => import('./widgets/AgentDecisionsWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
+const AgentBacktestResultsWidget = dynamic(() => import('./widgets/AgentBacktestResultsWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
@@ -3014,6 +3041,15 @@ export default function AgentDashboard() {
 
         {/* Last Cycle Summary */}
         {status?.last_summary && <LastCycleSummary summary={status.last_summary} />}
+
+        {/* Agent Widget Suite */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+          <AgentSettingsWidget />
+          <AgentTrainingStatusWidget />
+          <AgentPerformanceWidget />
+          <AgentDecisionsWidget />
+          <AgentBacktestResultsWidget />
+        </div>
 
         {/* C. Activity Summary */}
         <ActivitySummary status={status} decisions={decisions} />
