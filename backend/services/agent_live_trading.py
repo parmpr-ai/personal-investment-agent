@@ -150,14 +150,36 @@ class LiveTradingEngine:
             hist["closes"], hist["volumes"], hist["highs"], hist["lows"]
         )
 
-        # Build feature vector (last bar)
+        # Build feature vector (last bar) - handle mixed types
+        def to_float(val):
+            """Convert various types to float for ML input."""
+            if isinstance(val, (np.bool_, bool)):
+                return float(int(val))
+            if isinstance(val, (np.str_, str)):
+                # Map common categorical strings
+                if val in ('UP', 'up', 'true', 'True'):
+                    return 1.0
+                elif val in ('DOWN', 'down', 'false', 'False'):
+                    return 0.0
+                else:
+                    return 0.5  # neutral
+            return float(val)
+
         feature_names = list(sigs.keys())
-        X = np.array([sigs[fname][-1] for fname in feature_names]).reshape(1, -1)
+        X = np.array([to_float(sigs[fname][-1]) for fname in feature_names]).reshape(1, -1)
 
         # Load model
         model = _load_model(strategy)
         if not model:
             return {"error": f"No model for {strategy}"}
+
+        # Apply feature selection if model was trained with it
+        if model.get("selected_indices"):
+            X = X[:, model["selected_indices"]]
+
+        # Scale features
+        if model.get("scaler"):
+            X = model["scaler"].transform(X)
 
         # Predict
         try:
