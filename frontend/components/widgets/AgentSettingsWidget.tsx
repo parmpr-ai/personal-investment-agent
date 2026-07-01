@@ -47,8 +47,9 @@ export default function AgentSettingsWidget() {
       const method = status?.running ? 'stop' : 'start'
       const res = await fetch(`${AGENT_API}/agent/${method}`, { method: 'POST' })
       if (!res.ok) throw new Error(`Failed to ${method} agent`)
-      const data = await res.json()
-      setStatus(data)
+      // start/stop returns {ok, message} — re-fetch the real status
+      const fresh = await fetch(`${AGENT_API}/agent/status`).then((r) => r.json()).catch(() => null)
+      if (fresh) setStatus(fresh)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     }

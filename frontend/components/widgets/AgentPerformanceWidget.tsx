@@ -14,11 +14,12 @@ interface PnLData {
 }
 
 interface Portfolio {
-  total_value: number
-  total_return_pct: number
-  daily_pnl_pct: number
-  cash: number
-  positions: number
+  total_value?: number
+  total_return_pct?: number
+  realized_pnl?: number
+  unrealized_pnl?: number
+  cash?: number
+  positions?: unknown[]
 }
 
 export default function AgentPerformanceWidget() {
@@ -54,9 +55,12 @@ export default function AgentPerformanceWidget() {
     return () => clearInterval(interval)
   }, [])
 
-  const fmt$ = (v: number) =>
-    v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
-  const fmtPct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
+  const fmt$ = (v?: number) =>
+    Number(v ?? 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+  const fmtPct = (v?: number) => {
+    const n = Number(v ?? 0)
+    return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+  }
 
   return (
     <Card>
@@ -82,16 +86,18 @@ export default function AgentPerformanceWidget() {
                 <div className="p-3 rounded-lg bg-slate-900">
                   <div className="text-xs text-gray-400 mb-1">Portfolio Value</div>
                   <div className="text-lg font-bold text-white">{fmt$(portfolio.total_value)}</div>
-                  <div className={`text-xs font-semibold mt-1 ${portfolio.total_return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <div className={`text-xs font-semibold mt-1 ${(portfolio.total_return_pct ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {fmtPct(portfolio.total_return_pct)} total
                   </div>
                 </div>
                 <div className="p-3 rounded-lg bg-slate-900">
-                  <div className="text-xs text-gray-400 mb-1">Daily Return</div>
-                  <div className={`text-lg font-bold ${portfolio.daily_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {fmtPct(portfolio.daily_pnl_pct)}
+                  <div className="text-xs text-gray-400 mb-1">Realized P&L</div>
+                  <div className={`text-lg font-bold ${(portfolio.realized_pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {fmt$(portfolio.realized_pnl)}
                   </div>
-                  <div className="text-xs text-gray-400 mt-1">{portfolio.positions} positions</div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    {Array.isArray(portfolio.positions) ? portfolio.positions.length : 0} positions
+                  </div>
                 </div>
               </div>
             )}

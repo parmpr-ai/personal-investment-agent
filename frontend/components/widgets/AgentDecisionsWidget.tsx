@@ -41,9 +41,10 @@ export default function AgentDecisionsWidget() {
     return () => clearInterval(interval)
   }, [])
 
-  const getActionColor = (action: string) => {
-    if (action.includes('BUY')) return 'bg-green-500/20 text-green-400'
-    if (action.includes('SELL')) return 'bg-red-500/20 text-red-400'
+  const getActionColor = (action?: string) => {
+    const a = (action || '').toUpperCase()
+    if (a.includes('BUY')) return 'bg-green-500/20 text-green-400'
+    if (a.includes('SELL')) return 'bg-red-500/20 text-red-400'
     return 'bg-yellow-500/20 text-yellow-400'
   }
 
@@ -78,8 +79,8 @@ export default function AgentDecisionsWidget() {
               <div key={i} className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-white">{d.ticker}</span>
-                    <Badge className={getActionColor(d.action)}>{d.action}</Badge>
+                    <span className="font-bold text-white">{d.ticker || '—'}</span>
+                    <Badge className={getActionColor(d.action)}>{d.action || '—'}</Badge>
                     <span className="text-xs text-gray-400">{d.strategy}</span>
                   </div>
                   <span className="text-xs text-gray-500">{formatTime(d.ts)}</span>

@@ -7,17 +7,15 @@ import { TrendingUp, AlertCircle } from 'lucide-react'
 
 const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
 
-interface TrainingStatus {
-  in_progress: boolean
-  last_trained?: string
-  accuracy?: number
-  sharpe?: number
-  model_version?: string
-  strategies?: string[]
+interface ModelStatus {
+  strategy: string
+  trained_at?: string
+  age_days?: number
+  stale?: boolean
 }
 
 export default function AgentTrainingStatusWidget() {
-  const [status, setStatus] = useState<TrainingStatus | null>(null)
+  const [models, setModels] = useState<ModelStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -27,7 +25,7 @@ export default function AgentTrainingStatusWidget() {
         const res = await fetch(`${AGENT_API}/agent/ml/status`)
         if (!res.ok) throw new Error('Failed to fetch training status')
         const data = await res.json()
-        setStatus(data)
+        setModels(Array.isArray(data) ? data : [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -40,6 +38,8 @@ export default function AgentTrainingStatusWidget() {
     return () => clearInterval(interval)
   }, [])
 
+  const fresh = models.filter((m) => !m.stale).length
+
   return (
     <Card>
       <CardHeader>
@@ -47,7 +47,7 @@ export default function AgentTrainingStatusWidget() {
           <TrendingUp className="h-5 w-5" />
           Model Training Status
         </CardTitle>
-        <CardDescription>ML ensemble training progress and metrics</CardDescription>
+        <CardDescription>ML ensemble freshness per strategy</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? (
@@ -57,52 +57,36 @@ export default function AgentTrainingStatusWidget() {
             <AlertCircle className="h-5 w-5 flex-shrink-0" />
             <span>{error}</span>
           </div>
-        ) : status ? (
+        ) : models.length > 0 ? (
           <>
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Status</span>
-              <Badge variant={status.in_progress ? 'default' : 'secondary'}>
-                {status.in_progress ? '🔄 Training' : '✓ Ready'}
+              <span className="text-sm font-medium">Models Fresh</span>
+              <Badge variant={fresh === models.length ? 'default' : 'secondary'}>
+                {fresh}/{models.length}
               </Badge>
             </div>
-            {status.accuracy && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Accuracy</span>
-                <span className="text-sm font-semibold text-green-400">{(status.accuracy * 100).toFixed(1)}%</span>
-              </div>
-            )}
-            {status.sharpe && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Sharpe Ratio</span>
-                <span className="text-sm font-semibold text-blue-400">{status.sharpe.toFixed(2)}</span>
-              </div>
-            )}
-            {status.model_version && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Model Version</span>
-                <span className="text-sm font-mono">{status.model_version}</span>
-              </div>
-            )}
-            {status.last_trained && (
-              <div className="text-xs text-gray-400 pt-2 border-t">
-                Last trained: {new Date(status.last_trained).toLocaleString()}
-              </div>
-            )}
-            {status.strategies && (
-              <div className="pt-2 border-t">
-                <div className="text-xs font-medium mb-2">Strategies:</div>
-                <div className="flex flex-wrap gap-1">
-                  {status.strategies.map((s) => (
-                    <Badge key={s} variant="outline" className="text-xs">
-                      {s}
-                    </Badge>
-                  ))}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {models.map((m) => (
+                <div
+                  key={m.strategy}
+                  className="flex items-center justify-between p-2 rounded bg-slate-900/50 border border-slate-700/50"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-white">{m.strategy?.replace(/_/g, ' ')}</div>
+                    <div className="text-xs text-gray-400">
+                      {m.trained_at ? new Date(m.trained_at).toLocaleString() : 'never trained'}
+                      {m.age_days != null && ` · ${Number(m.age_days).toFixed(1)}d old`}
+                    </div>
+                  </div>
+                  <Badge variant={m.stale ? 'destructive' : 'outline'}>
+                    {m.stale ? 'Stale' : 'Fresh'}
+                  </Badge>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
           </>
         ) : (
-          <div className="text-center py-8 text-gray-400">No data available</div>
+          <div className="text-center py-8 text-gray-400">No trained models yet</div>
         )}
       </CardContent>
     </Card>

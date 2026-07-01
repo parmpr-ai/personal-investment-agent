@@ -105,7 +105,17 @@ export function AgentPaperTradingWidget() {
       }
       if (statsRes.ok) {
         const data = await statsRes.json()
-        setStats(data)
+        // Normalize /trades/performance shape to the widget's PerformanceStats
+        const total = Number(data.total_trades ?? 0)
+        const winners = Number(data.winning_trades ?? 0)
+        setStats({
+          total_closed_trades: total,
+          total_pnl: Number(data.total_pnl ?? 0),
+          avg_pnl_pct: total > 0 ? Number(data.total_pnl ?? 0) / total : 0,
+          win_rate: Number(data.win_rate_pct ?? 0),
+          winners,
+          losers: Math.max(total - winners, 0),
+        })
       }
     } catch (error) {
       console.error('Failed to load trading data:', error)
