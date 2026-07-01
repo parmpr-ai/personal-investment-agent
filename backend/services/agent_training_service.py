@@ -142,7 +142,7 @@ class AgentTrainingJob:
 
             # Run backtest for validation
             backtest_result = await run_backtest(
-                tickers=self.tickers, days=504, save_results=True
+                tickers=self.tickers, days=504
             )
 
             self.progress_pct = 95

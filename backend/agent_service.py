@@ -85,10 +85,10 @@ class JobStatusResponse(BaseModel):
     progress_pct: int
     current_step: str
     created_at: str
-    started_at: str = None
-    completed_at: str = None
-    error: str = None
-    result: dict = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    error: str | None = None
+    result: dict | None = None
 
 
 # ─── FastAPI App Setup ────────────────────────────────────────────────────────
