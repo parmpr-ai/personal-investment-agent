@@ -16,6 +16,8 @@ from typing import Optional
 
 import httpx
 
+from services.autonomous_executor import async_executor
+
 # Configuration
 AGENT_SERVICE_URL = "http://localhost:8001"
 UNIVERSE = ["NVDA", "MSFT", "AAPL", "TSLA", "AMD", "GOOGL", "META", "AMZN"]
@@ -202,15 +204,18 @@ class ContinuousTradingLoop:
             print(f"❌ Full retrain failed: {e}")
 
     async def run_continuous_loop(self, num_cycles: int = 0):
-        """Run the continuous loop (0 = infinite)."""
+        """Run the continuous loop with autonomous executor (0 = infinite)."""
         cycle_num = 0
 
         try:
+            # Start autonomous executor in background
+            executor_task = asyncio.create_task(async_executor.start())
+
             while num_cycles == 0 or cycle_num < num_cycles:
                 self.total_cycles += 1
                 cycle_num += 1
 
-                # Phase 1: 2-hour trading
+                # Phase 1: 2-hour trading (predictions + auto-execution happen in parallel)
                 await self.run_predictions_for_duration(duration_hours=CYCLE_DURATION_HOURS)
 
                 # Phase 2: Incremental retrain (+ full retrain every Nth cycle)
@@ -222,6 +227,7 @@ class ContinuousTradingLoop:
                 # Report cycle stats
                 print(f"\n📊 Cycle {cycle_num} Summary:")
                 print(f"   Predictions: {self.predictions_this_cycle}")
+                print(f"   Auto-Executor: Active (auto-entry/exit running in background)")
 
                 if num_cycles > 0 and cycle_num < num_cycles:
                     print(f"\n⏳ Waiting before next cycle...")
