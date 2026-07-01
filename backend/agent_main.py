@@ -46,21 +46,7 @@ app.add_middleware(
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get('/health')
 def health():
- return {'ok': True, 'app': 'PIA Agent Server', 'version': 'v2.0', 'agent_running': autonomous_agent.status().get('running', False)}
-
-# ── Strategy Config ───────────────────────────────────────────────────────────
-@app.get('/strategies')
-def get_strategies():
- from services.strategy_config import STRATEGY_CONFIG, STRATEGY_TIERS, ALL_STRATEGIES
- return {
-  'total': len(ALL_STRATEGIES),
-  'tiers': {
-   'day': {'count': len(STRATEGY_TIERS['day']), 'strategies': STRATEGY_TIERS['day']},
-   'swing': {'count': len(STRATEGY_TIERS['swing']), 'strategies': STRATEGY_TIERS['swing']},
-   'long': {'count': len(STRATEGY_TIERS['long']), 'strategies': STRATEGY_TIERS['long']},
-  },
-  'config': STRATEGY_CONFIG,
- }
+ return {'ok': True, 'app': 'PIA Agent Server', 'version': 'v1.0', 'agent_running': autonomous_agent.status().get('running', False)}
 
 # ── Agent control ─────────────────────────────────────────────────────────────
 @app.get('/agent/status')
@@ -185,8 +171,8 @@ def agent_ml_walkforward_results(): return wf_results()
 @app.get('/agent/kelly')
 async def kelly_report():
  from services.strategy_tracker import kelly_diagnostics
- from services.strategy_config import ALL_STRATEGIES
- return {'ok': True, 'strategies': [kelly_diagnostics(s) for s in ALL_STRATEGIES]}
+ strategies = ['momentum', 'mean_reversion', 'breakout', 'trend_follow', 'short_momentum', 'short_breakdown']
+ return {'ok': True, 'strategies': [kelly_diagnostics(s) for s in strategies]}
 
 @app.get('/agent/pairs/scan')
 async def pairs_scan():
@@ -234,95 +220,3 @@ async def agent_risk_report():
   'worst_day_pct': cvar.get('worst_day_pct', 0), 'days_analyzed': cvar.get('days_analyzed', 0),
   'alerts': health.get('alerts', []), 'total_return_pct': portfolio.get('total_return_pct', 0),
  }
-
-# ── Trading Predictions (Day/Swing/Long) ───────────────────────────────────────
-@app.post('/predict')
-async def predict_trade():
- """Make predictions for all strategy tiers (day/swing/long)."""
- from services.strategy_config import STRATEGY_TIERS, STRATEGY_CONFIG
- import random
-
- predictions = {}
- for tier, strategies in STRATEGY_TIERS.items():
-  predictions[tier] = {}
-  for strategy in strategies:
-   config = STRATEGY_CONFIG.get(strategy, {})
-   confidence = random.randint(-100, 100)
-   direction = 'up' if confidence > 0 else 'down'
-   predictions[tier][strategy] = {
-    'strategy': strategy,
-    'direction': direction,
-    'confidence': confidence,
-    'probability': abs(confidence) / 100,
-    'forward_days': config.get('forward_days', 5),
-    'target_pct': config.get('target_pct', 1.0),
-    'tier': tier,
-    'timestamp': datetime.now(timezone.utc).isoformat(),
-   }
- return {'ok': True, 'predictions': predictions}
-
-@app.get('/predict/day')
-async def predict_day():
- """Intraday predictions (1-3 days)."""
- from services.strategy_config import STRATEGY_TIERS, STRATEGY_CONFIG
- import random
-
- strategies = STRATEGY_TIERS['day']
- predictions = {}
- for strategy in strategies:
-  config = STRATEGY_CONFIG.get(strategy, {})
-  confidence = random.randint(-100, 100)
-  direction = 'up' if confidence > 0 else 'down'
-  predictions[strategy] = {
-   'strategy': strategy,
-   'direction': direction,
-   'confidence': confidence,
-   'probability': abs(confidence) / 100,
-   'forward_days': config.get('forward_days'),
-   'target_pct': config.get('target_pct'),
-  }
- return {'tier': 'day', 'count': len(strategies), 'predictions': predictions}
-
-@app.get('/predict/swing')
-async def predict_swing():
- """Swing trade predictions (5-14 days)."""
- from services.strategy_config import STRATEGY_TIERS, STRATEGY_CONFIG
- import random
-
- strategies = STRATEGY_TIERS['swing']
- predictions = {}
- for strategy in strategies:
-  config = STRATEGY_CONFIG.get(strategy, {})
-  confidence = random.randint(-100, 100)
-  direction = 'up' if confidence > 0 else 'down'
-  predictions[strategy] = {
-   'strategy': strategy,
-   'direction': direction,
-   'confidence': confidence,
-   'probability': abs(confidence) / 100,
-   'forward_days': config.get('forward_days'),
-   'target_pct': config.get('target_pct'),
-  }
- return {'tier': 'swing', 'count': len(strategies), 'predictions': predictions}
-
-@app.get('/predict/long')
-async def predict_long():
- """Long-term predictions (20-60+ days)."""
- from services.strategy_config import STRATEGY_TIERS, STRATEGY_CONFIG
- import random
-
- strategies = STRATEGY_TIERS['long']
- predictions = {}
- for strategy in strategies:
-  config = STRATEGY_CONFIG.get(strategy, {})
-  confidence = random.randint(-100, 100)
-  direction = 'up' if confidence > 0 else 'down'
-  predictions[strategy] = {
-   'strategy': strategy,
-   'direction': direction,
-   'confidence': confidence,
-   'probability': abs(confidence) / 100,
-   'forward_days': config.get('forward_days'),
-   'target_pct': config.get('target_pct'),
-  }
- return {'tier': 'long', 'count': len(strategies), 'predictions': predictions}

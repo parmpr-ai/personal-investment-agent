@@ -18,4 +18,3 @@ mobile/.next/
 mobile/node_modules
 mobile/tsconfig.tsbuildinfo
 backend/ml_models/
-logs/
