@@ -86,8 +86,14 @@ export const WIDGET_MAP = Object.fromEntries(
 
 export const AGENT_WIDGETS = WIDGET_CATALOG.filter((w) => w.supportedWorkspaces.includes('agent'))
 
+export const WIDGET_CATALOG_MAP = WIDGET_MAP
+
 export function isWidgetId(id: string): id is WorkspaceWidgetId {
   return id in WIDGET_MAP
+}
+
+export function isKnownWorkspaceWidgetId(id: string): id is WorkspaceWidgetId {
+  return isWidgetId(id)
 }
 
 export function getWidget(id: WorkspaceWidgetId): WidgetCatalogItem {
