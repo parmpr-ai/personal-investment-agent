@@ -19,6 +19,7 @@ from .strategy_config import (
     STRATEGY_CONFIG, STRATEGY_TIERS, ALL_STRATEGIES,
     DAILY_LIMITS, POSITION_SIZING, get_forward_days, get_tier
 )
+from .autonomous_agent import UNIVERSE
 from .adaptive_trainer import adaptive_trainer
 from .batch_predictor import batch_predictor
 from .regime_classifier import regime_classifier
@@ -153,7 +154,7 @@ class AutonomousExecutorV2:
     async def make_predictions_and_enter(self):
         """Make predictions for all tiers using batch processing and auto-enter trades."""
         try:
-            tickers = ["NVDA", "MSFT", "AAPL", "TSLA", "AMD", "GOOGL", "META", "AMZN"]
+            tickers = UNIVERSE  # Use full universe instead of hardcoded subset
             tiers_entered = {'day': 0, 'swing': 0, 'long': 0}
 
             # BATCH PREDICTION: Get all predictions in parallel

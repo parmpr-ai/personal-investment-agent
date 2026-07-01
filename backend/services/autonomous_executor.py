@@ -16,6 +16,7 @@ import httpx
 
 from .agent_live_trading import live_trading_engine
 from .paper_trading_manager import paper_trading_manager, FORWARD_DAYS
+from .autonomous_agent import UNIVERSE
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 AGENT_DB = BASE_DIR / "agent_training.sqlite3"
@@ -122,7 +123,7 @@ class AutonomousExecutor:
                 "short_momentum",
                 "short_breakdown",
             ]
-            tickers = ["NVDA", "MSFT", "AAPL", "TSLA", "AMD", "GOOGL", "META", "AMZN"]
+            tickers = UNIVERSE  # Use full universe (14 stocks) instead of hardcoded subset
 
             entries_this_round = 0
 
