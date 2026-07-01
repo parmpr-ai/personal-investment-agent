@@ -26,12 +26,14 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from services.agent_training_service import training_service
+from services.agent_live_trading import live_trading_engine
 
 load_dotenv()
 
@@ -91,14 +93,79 @@ class JobStatusResponse(BaseModel):
     result: dict | None = None
 
 
+class PredictionRequest(BaseModel):
+    """Request for live prediction."""
+
+    strategy: str
+    ticker: str
+
+
+class PredictionResponse(BaseModel):
+    """Live prediction response."""
+
+    ticker: str
+    strategy: str
+    direction: str  # "up" or "down"
+    probability: float  # 0-1
+    confidence: int  # -100 to +100
+    timestamp: str
+    model_version: str
+    error: str | None = None
+
+
+class DecisionOutcomeRequest(BaseModel):
+    """Update decision with actual outcome."""
+
+    decision_id: int
+    actual_direction: str
+    actual_return: float
+    profit_loss: float
+
+
+class IncrementalRetrainRequest(BaseModel):
+    """Request incremental retrain."""
+
+    tickers: list[str] | None = None
+    days: int = 100
+
+
 # ─── FastAPI App Setup ────────────────────────────────────────────────────────
+
+
+scheduler = BackgroundScheduler()
+
+
+async def market_close_retrain():
+    """Market-close full retrain (4pm daily)."""
+    try:
+        print("[Scheduler] Starting market-close full retrain...")
+        result = await live_trading_engine.full_retrain_market_close()
+        print(f"[Scheduler] Market-close retrain complete: {result['duration_seconds']}s")
+    except Exception as e:
+        print(f"[Scheduler] Market-close retrain failed: {e}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan: startup and shutdown."""
     print(f"🤖 Agent Service starting on {AGENT_HOST}:{AGENT_PORT}...")
+
+    # Start scheduler for market-close retraining (4pm daily)
+    scheduler.add_job(
+        market_close_retrain,
+        "cron",
+        hour=16,
+        minute=0,
+        id="market_close_retrain",
+        name="Market Close Retrain (4pm)",
+    )
+    scheduler.start()
+    print("📅 Scheduler started: Market-close retrain at 4pm daily")
+
     yield
+
+    # Shutdown
+    scheduler.shutdown()
     print("🤖 Agent Service shutting down...")
 
 
@@ -294,6 +361,134 @@ async def get_latest_status():
         }
 
     return status
+
+
+# ─── Live Trading Endpoints ──────────────────────────────────────────────────
+
+
+@app.post("/predict", response_model=PredictionResponse)
+async def make_prediction(request: PredictionRequest):
+    """
+    Get next move prediction for a strategy+ticker combination.
+
+    Returns immediately with confidence, probability, direction.
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8001/predict \
+      -H "Content-Type: application/json" \
+      -d '{"strategy": "momentum", "ticker": "NVDA"}'
+    ```
+
+    **Response:**
+    ```json
+    {
+      "ticker": "NVDA",
+      "strategy": "momentum",
+      "direction": "up",
+      "probability": 0.78,
+      "confidence": 56,
+      "timestamp": "2024-01-15T10:30:00Z",
+      "model_version": "2024-01-15T10:00:00Z"
+    }
+    ```
+    """
+    result = await live_trading_engine.predict_next_move(
+        request.strategy, request.ticker
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return PredictionResponse(**result)
+
+
+@app.post("/retrain-incremental", response_model=dict)
+async def trigger_incremental_retrain(request: IncrementalRetrainRequest):
+    """
+    Trigger incremental retrain (warm-start with recent data only).
+
+    Much faster than full retrain (~10-20s vs ~60s).
+    Used when enough trades have accumulated (default 50).
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8001/retrain-incremental \
+      -H "Content-Type: application/json" \
+      -d '{"tickers": ["NVDA", "MSFT"], "days": 100}'
+    ```
+
+    **Response:**
+    ```json
+    {
+      "status": "incremental_retrain_complete",
+      "duration_seconds": 15.3,
+      "decisions_processed": 50
+    }
+    ```
+    """
+    result = await live_trading_engine.incremental_retrain(
+        tickers=request.tickers, days=request.days
+    )
+    return result
+
+
+@app.get("/decisions/stats")
+async def get_decision_stats(strategy: str | None = None, hours: int = 24):
+    """
+    Get accuracy stats for trading decisions in the last N hours.
+
+    **Example:**
+    ```bash
+    curl "http://localhost:8001/decisions/stats?strategy=momentum&hours=24"
+    ```
+
+    **Response:**
+    ```json
+    {
+      "momentum": {
+        "total_decisions": 50,
+        "correct": 42,
+        "accuracy": 0.84,
+        "avg_pnl": 150.50,
+        "total_pnl": 7525.00
+      }
+    }
+    ```
+    """
+    stats = live_trading_engine.get_decision_stats(strategy=strategy, hours=hours)
+    return stats
+
+
+@app.post("/decisions/{decision_id}/outcome")
+async def log_decision_outcome(decision_id: int, request: DecisionOutcomeRequest):
+    """
+    Update a decision with actual trade outcome.
+
+    Called after trade completion with real P&L.
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8001/decisions/123/outcome \
+      -H "Content-Type: application/json" \
+      -d '{
+        "actual_direction": "up",
+        "actual_return": 2.5,
+        "profit_loss": 250.00
+      }'
+    ```
+    """
+    success = await live_trading_engine.update_decision_outcome(
+        decision_id=request.decision_id,
+        actual_direction=request.actual_direction,
+        actual_return=request.actual_return,
+        profit_loss=request.profit_loss,
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to update decision")
+
+    return {"success": True, "decision_id": decision_id}
 
 
 # ─── Main Entry Point ─────────────────────────────────────────────────────────

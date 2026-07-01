@@ -68,6 +68,21 @@ def init_training_db():
             result_json TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trading_decisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            strategy TEXT NOT NULL,
+            ticker TEXT NOT NULL,
+            predicted_direction TEXT,
+            predicted_prob REAL,
+            actual_direction TEXT,
+            actual_return REAL,
+            profit_loss REAL,
+            was_correct INTEGER,
+            model_version TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
