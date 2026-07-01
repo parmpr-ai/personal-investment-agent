@@ -3,11 +3,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent, ReactNode } from 'react'
 import {
+  Activity,
   AlertTriangle,
   BarChart3,
   Bell,
-  BookOpen,
-  Brain,
+  Bot,
   BriefcaseBusiness,
   ChevronDown,
   ChevronLeft,
@@ -31,40 +31,14 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
-  Trash2,
+  TrendingUp,
   Wallet,
   X,
 } from 'lucide-react'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
-import SettingsPage from '../settings/SettingsWorkspace'
-import MobileReorderableSections from '../dashboard/MobileReorderableSections'
-import StockIntelligenceShell from '../intelligence/StockIntelligenceShell'
-import CompanyLogo from '../intelligence/CompanyLogo'
-import { preloadStockIntelligence } from '../intelligence/useStockIntelligence'
-import { dedupePortfolioPositions, portfolioSourceBadgeLabel, resolvePortfolioBadge, resolveAssetClass, resolvePositionKey, dotSourceLabel } from '../../lib/pia-api'
-import { useCurrency } from '../../lib/use-currency'
-import { useLiveDashboard } from '../../lib/use-live-dashboard'
-import ReorderList from './ReorderList'
-import {
-  WorkspaceShell,
-  getWorkspaceDefinition,
-  useWorkspaceConfig,
-} from '../workspace'
-import { workspaceIconMap } from '../workspace/WorkspaceSwitcher'
-import {
-  DEFAULT_MOBILE_HOME_ORDER,
-  MOBILE_HOME_LAYOUT_KEY,
-} from '../dashboard/widgetRegistry'
-import { usePersistedLayout } from '../dashboard/usePersistedLayout'
-import type { MobileHomeSectionId } from '../dashboard/types'
-import { fetchJson, mask, money, pct as formatPct, safeMessage } from '../../lib/pia-api'
-import { instrumentSearchErrorMessage, searchInstruments, type InstrumentMatch } from '../../lib/instrument-search'
-import {
-  buildWatchlistUniverse,
-  resolveWatchlistRows,
-  useCustomWatchlists,
-} from '../watchlists/customWatchlists'
-import { useDoubleTapToClose } from '../../hooks/useDoubleTapToClose'
+
+const API       = process.env.NEXT_PUBLIC_API_URL       ?? 'http://127.0.0.1:8000'
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
 
 type RailItem = Record<string, any>
 type Tone = 'good' | 'bad' | 'neutral'
@@ -179,8 +153,38 @@ const scannerFallback = [
   },
 ]
 
+const navItems = [
+  ['home', 'Home', Home],
+  ['portfolio', 'Portfolio', Wallet],
+  ['agent', 'Agent', Bot],
+  ['scanner', 'Scanner', Sparkles],
+  ['settings', 'Settings', Settings],
+] as const
+
 function useMobileDashboard() {
-  return useLiveDashboard('mobile')
+  const [dashboard, setDashboard] = useState<any>(null)
+
+  useEffect(() => {
+    fetch(`${API}/dashboard`)
+      .then((response) => response.json())
+      .then(setDashboard)
+      .catch(() => {})
+
+    let socket: WebSocket | undefined
+    try {
+      socket = new WebSocket(process.env.NEXT_PUBLIC_WS_URL ?? 'ws://127.0.0.1:8000/ws')
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data)
+          if (payload.type === 'dashboard_update') setDashboard(payload)
+        } catch {}
+      }
+    } catch {}
+
+    return () => socket?.close()
+  }, [])
+
+  return dashboard
 }
 
 function riskTone(value: number) {
@@ -395,47 +399,26 @@ function MomentumBar({ value }: { value: number }) {
   )
 }
 
-function riskLevel(value: number): { label: string; tone: string } {
-  if (value >= 70) return { label: 'High', tone: 'bad' }
-  if (value >= 50) return { label: 'Elevated', tone: 'elevated' }
-  if (value >= 30) return { label: 'Medium', tone: 'medium' }
-  return { label: 'Low', tone: 'low' }
-}
-
-function RiskBar({ value }: { value: number }) {
-  const bounded = Math.max(0, Math.min(100, value))
-  const { label, tone } = riskLevel(bounded)
-  return (
-    <div className="mobile-momentum">
-      <span>Risk</span>
-      <i>
-        <em className={`risk-${tone}`} style={{ width: `${bounded}%` }} />
-      </i>
-      <b className={`risk-label-${tone}`}>{label}</b>
-    </div>
-  )
-}
-
-function MobileBottomNav({
-  active,
-  setActive,
-  workspaces,
-  pinnedIds,
-}: {
-  active: string
-  setActive: (value: string) => void
-  workspaces: ReturnType<typeof useWorkspaceConfig>['workspaces']
-  pinnedIds: string[]
-}) {
-  const items = pinnedIds.map((id) => getWorkspaceDefinition(workspaces, id))
+function MobileBottomNav({ active, setActive, agentRunning }: { active: string; setActive: (value: string) => void; agentRunning?: boolean }) {
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile sections">
-      {items.map((workspace) => {
-        const Icon = workspaceIconMap[workspace.iconKey] || Home
-        return (
-        <button key={workspace.id} className={active === workspace.id ? 'active' : ''} onClick={() => setActive(workspace.id)}>
+      {navItems.map(([id, label, Icon]) => (
+        <button key={id} className={active === id ? 'active' : ''} onClick={() => setActive(id)}
+          style={{ position: 'relative' }}>
           <Icon size={20} />
-          <span>{workspace.title}</span>
+          <span>{label}</span>
+          {id === 'agent' && (
+            <span style={{
+              position: 'absolute',
+              top: '6px',
+              right: '18px',
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: agentRunning ? '#24d18c' : '#374151',
+              boxShadow: agentRunning ? '0 0 6px #24d18c' : 'none',
+            }} />
+          )}
         </button>
         )
       })}
@@ -1345,46 +1328,228 @@ function PositionCards({ rows, onSelect, hidden = false, fields, order, tf, grid
   )
 }
 
-const MemoPositionCards = memo(PositionCards, (prev, next) => {
-  if (prev.hidden !== next.hidden) return false
-  if (prev.fields !== next.fields) return false
-  if (prev.order !== next.order) return false
-  if (prev.tf !== next.tf) return false
-  if (prev.grid !== next.grid) return false
-  if (prev.rows.length !== next.rows.length) return false
-  for (let i = 0; i < prev.rows.length; i += 1) {
-    if (prev.rows[i] !== next.rows[i]) return false
-  }
-  return true
-})
+function ScenarioPill({ label, color, bg }: { label: string; color: string; bg: string }) {
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: '6px',
+      fontSize: '10px', fontWeight: 700, color, background: bg, border: `1px solid ${color}44`,
+    }}>{label}</span>
+  )
+}
 
-const WL_COL_DEFS: { key: string; label: string }[] = [
-  { key: 'instrument',  label: 'INSTRUMENT' },
-  { key: 'last',        label: 'LAST' },
-  { key: 'change',      label: 'CHNG' },
-  { key: 'changePercent', label: 'CHG%' },
-  { key: 'volume',      label: 'VLM' },
-  { key: 'marketCap',   label: 'MKT CAP' },
-  { key: 'pe',          label: 'P/E' },
-  { key: 'eps',         label: 'EPS' },
-  { key: 'beta',        label: 'BETA' },
-  { key: 'avgVolume',   label: 'AVG VOL' },
-  { key: 'high52w',     label: '52W HI' },
-  { key: 'low52w',      label: '52W LO' },
-  { key: 'sector',      label: 'SECTOR' },
-  { key: 'industry',    label: 'INDUSTRY' },
-]
-const WL_DATA_KEYS = WL_COL_DEFS.filter((c) => c.key !== 'instrument').map((c) => c.key)
-const WL_COL_ORDER_KEY = 'pia.watchlist.colOrder'
-function readWlColOrder(): string[] {
-  try {
-    const raw = localStorage.getItem(WL_COL_ORDER_KEY)
-    if (raw) {
-      const arr = (JSON.parse(raw) as string[]).filter((k) => WL_DATA_KEYS.includes(k))
-      if (arr.length) return ['instrument', ...arr, ...WL_DATA_KEYS.filter((k) => !arr.includes(k))]
-    }
-  } catch {}
-  return ['instrument', ...WL_DATA_KEYS]
+function AIIntelligenceWidget({ details, position }: { details: any; position: any }) {
+  const forecast = details?.forecast || {}
+  const watch    = details?.watch || {}
+  const thesis   = details?.thesis || []
+  const score    = Number(watch.score || position.momentum_score || 0)
+  const aiView   = details?.position?.ai_view || position.ai_view || ''
+  const whyMoving = details?.position?.why_moving || position.why_moving || ''
+
+  const scoreColor = score >= 70 ? '#24d18c' : score >= 50 ? '#fbbf24' : '#fb7185'
+  const scoreBg    = score >= 70 ? 'rgba(36,209,140,0.1)' : score >= 50 ? 'rgba(251,191,36,0.1)' : 'rgba(251,113,133,0.1)'
+  const action     = watch.action || position.action || 'MONITOR'
+  const actionColor = action === 'BUY' || action === 'SWING WATCH' ? '#24d18c' : action === 'SELL' ? '#fb7185' : '#fbbf24'
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+      {/* Signal row */}
+      {score > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px',
+          background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '10px 12px',
+        }}>
+          <div style={{
+            width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0,
+            background: scoreBg, border: `2px solid ${scoreColor}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '14px', fontWeight: 800, color: scoreColor,
+          }}>{score}</div>
+          <div>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '3px' }}>PIA Signal</div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: actionColor }}>{action}</div>
+            {watch.reason && <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>{watch.reason}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* AI View */}
+      {(aiView || thesis.length > 0) && (
+        <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px' }}>
+          <div style={{ fontSize: '11px', color: '#a78bfa', fontWeight: 600, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Sparkles size={12} /> AI THESIS
+          </div>
+          {thesis.length > 0 ? (
+            thesis.slice(0, 1).map((t: any) => (
+              <div key={t.title}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--fg)', marginBottom: '4px' }}>{t.title}</div>
+                <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>{t.summary || t.full_text}</p>
+              </div>
+            ))
+          ) : (
+            <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>{aiView}</p>
+          )}
+        </div>
+      )}
+
+      {/* Why Moving */}
+      {whyMoving && (
+        <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px' }}>
+          <div style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 600, marginBottom: '6px' }}>WHY MOVING</div>
+          <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>{whyMoving}</p>
+        </div>
+      )}
+
+      {/* Bull / Base / Bear */}
+      {(forecast.bull || forecast.base || forecast.bear) && (
+        <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 600, marginBottom: '10px' }}>SCENARIOS</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {forecast.bull && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <ScenarioPill label="BULL" color="#24d18c" bg="rgba(36,209,140,0.1)" />
+                <span style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.4, flex: 1 }}>{forecast.bull}</span>
+              </div>
+            )}
+            {forecast.base && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <ScenarioPill label="BASE" color="#fbbf24" bg="rgba(251,191,36,0.1)" />
+                <span style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.4, flex: 1 }}>{forecast.base}</span>
+              </div>
+            )}
+            {forecast.bear && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <ScenarioPill label="BEAR" color="#fb7185" bg="rgba(251,113,133,0.1)" />
+                <span style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.4, flex: 1 }}>{forecast.bear}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Entry / Target / Stop */}
+      {(position.entry || position.target || position.stop) && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+          {[
+            { label: 'Entry', value: position.entry, color: '#38bdf8' },
+            { label: 'Target', value: position.target, color: '#24d18c' },
+            { label: 'Stop', value: position.stop, color: '#fb7185' },
+          ].map(({ label, value, color }) => value && (
+            <div key={label} style={{
+              background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
+              padding: '8px 6px', textAlign: 'center',
+            }}>
+              <div style={{ fontSize: '11px', color }}>{label}</div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--fg)', marginTop: '2px' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!aiView && thesis.length === 0 && !forecast.base && (
+        <p style={{ fontSize: '12px', color: 'var(--muted)', textAlign: 'center', padding: '24px 0' }}>
+          PIA has no saved thesis yet. Treat this as a watch item until catalyst, valuation, and risk checks agree.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function MobileDetailView({ position, onClose }: { position: any; onClose: () => void }) {
+  const [tab, setTab] = useState('Intelligence')
+  const [details, setDetails] = useState<any>(null)
+  const ticker = position.symbol || position.ticker
+  const change = Number(position.day_change_pct || position.change_pct || position.change || 0)
+
+  useEffect(() => {
+    if (!ticker) return
+    fetch(`${API}/stock/${encodeURIComponent(ticker)}`)
+      .then((response) => response.json())
+      .then(setDetails)
+      .catch(() => {})
+  }, [ticker])
+
+  const tabs = ['Intelligence', 'News', 'Risk']
+
+  return (
+    <div className="mobile-detail" role="dialog" aria-modal="true" aria-label={`${ticker} details`}>
+      <button className="mobile-detail-close" onClick={onClose} aria-label="Close detail">
+        <X size={22} />
+      </button>
+      <header className="mobile-detail-hero">
+        <div>
+          <span>{position.name || 'Position detail'}</span>
+          <h1>{ticker}</h1>
+          <div className="mobile-detail-price">
+            <strong>{money(position.last || position.price || details?.watch?.price || 0)}</strong>
+            <small className={change >= 0 ? 'green' : 'red'}>{pct(change)}</small>
+          </div>
+        </div>
+        <Sparkline values={position.spark} tone={change >= 0 ? 'good' : 'bad'} />
+      </header>
+      <section className="mobile-detail-chart">
+        <Sparkline values={[31, 35, 33, 42, 45, 44, 52, 57, 54]} tone={change >= 0 ? 'good' : 'bad'} />
+        <div className="mobile-detail-chart-meta">
+          <span>Chart-first view</span>
+          <b>{change >= 0 ? 'Constructive tape' : 'Pressure zone'}</b>
+        </div>
+      </section>
+      <div className="mobile-detail-tabs">
+        {tabs.map((item) => (
+          <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>
+            {item}
+          </button>
+        ))}
+      </div>
+      <section className="mobile-detail-panel">
+        {tab === 'Intelligence' && (
+          <AIIntelligenceWidget details={details} position={position} />
+        )}
+        {tab === 'News' && (
+          <div className="mobile-news-list">
+            {(details?.news?.length ? details.news : [{ title: 'No fresh news loaded', impact: 'Neutral', action: 'Monitor only' }]).map(
+              (item: any) => (
+                <article key={item.title}>
+                  <strong>{item.title}</strong>
+                  <span>
+                    {item.impact} · {item.action}
+                  </span>
+                </article>
+              ),
+            )}
+          </div>
+        )}
+        {tab === 'Risk' && (
+          <div className="mobile-risk-grid">
+            <span>
+              Portfolio weight
+              <b>{pct(position.portfolio_pct)}</b>
+            </span>
+            <span>
+              Risk score
+              <b>{position.risk || 31}</b>
+            </span>
+            <span>
+              Macro sensitivity
+              <b>{position.macro_sensitivity || '—'}</b>
+            </span>
+            <span>
+              Momentum
+              <b>{position.momentum_score || position.momentum || 52}</b>
+            </span>
+            <span>
+              Stop discipline
+              <b>{position.stop || 'Required'}</b>
+            </span>
+            <span>
+              Entry zone
+              <b>{position.entry || '—'}</b>
+            </span>
+          </div>
+        )}
+      </section>
+    </div>
+  )
 }
 
 function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashboard: any; onSelect: (position: any) => void; hidden?: boolean }) {
@@ -1700,1558 +1865,430 @@ function MobileWatchlistManager({ dashboard, onSelect, hidden = false }: { dashb
   )
 }
 
-function MobileWatchlistTable({ rows, columns = { instrument: true, last: true, change: true, changePercent: true, volume: true }, colOrder = ['instrument', 'last', 'change', 'changePercent', 'volume'], onSelect, onRemove, onLongPress, hidden }: { rows: any[]; columns?: any; colOrder?: string[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void; onLongPress?: (row: any) => void; hidden: boolean }) {
-  // Split-layer frozen column (PIA-UAT-FIX-001D): the instrument column is a
-  // separate non-scrolling left layer outside the horizontal scroller, so
-  // scrolled cells can never bleed behind/left of it on iOS.
-  const WL_TH: Record<string, string> = {
-    last: 'LAST', change: 'CHNG', changePercent: 'CHG%', volume: 'VLM',
-    marketCap: 'MKT CAP', pe: 'P/E', eps: 'EPS', beta: 'BETA',
-    avgVolume: 'AVG VOL', high52w: '52W HI', low52w: '52W LO',
-    sector: 'SECTOR', industry: 'INDUSTRY',
-  }
-  const dataCols = colOrder.filter((k) => k !== 'instrument' && columns[k] !== false)
-  const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null)
-  function cycleSort(key: string) {
-    setSort((s) => (!s || s.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null))
-  }
-  function wlSortVal(row: any, key: string): number {
-    switch (key) {
-      case 'last':          return Number(row.last || row.price || 0)
-      case 'change':        return Number(row.day_pnl || 0)
-      case 'changePercent': return Number(row.day_change_pct || 0)
-      case 'volume':        return Number(row.volume || 0)
-      case 'marketCap':     return Number(row.market_cap || row.marketCap || 0)
-      case 'pe':            return Number(row.pe || row.pe_ratio || row.pe_ttm || 0)
-      case 'eps':           return Number(row.eps || row.eps_ttm || 0)
-      case 'beta':          return Number(row.beta || 0)
-      case 'avgVolume':     return Number(row.avg_volume || row.average_volume || 0)
-      case 'high52w':       return Number(row.week52_high || row['52w_high'] || row.high_52w || 0)
-      case 'low52w':        return Number(row.week52_low || row['52w_low'] || row.low_52w || 0)
-      default:              return 0
+// ─── Agent tab data ───────────────────────────────────────────────────────────
+
+function useAgentData() {
+  const [agentStatus, setAgentStatus] = useState<any>(null)
+  const [backtest, setBacktest] = useState<any>(null)
+
+  useEffect(() => {
+    const fetchAll = () => {
+      fetch(`${AGENT_API}/agent/status`).then(r => r.json()).then(setAgentStatus).catch(() => {})
     }
+    fetchAll()
+    fetch(`${AGENT_API}/agent/backtest/status`).then(r => r.json()).then(d => {
+      if (d?.status === 'completed') setBacktest(d)
+    }).catch(() => {})
+
+    const timer = setInterval(fetchAll, 30_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return { agentStatus, backtest }
+}
+
+function RegimePill({ regime }: { regime: string }) {
+  const colors: Record<string, [string, string]> = {
+    BULL_TREND:   ['#24d18c', 'rgba(36,209,140,0.14)'],
+    BEAR_TREND:   ['#fb7185', 'rgba(251,113,133,0.14)'],
+    CHOPPY_RANGE: ['#fbbf24', 'rgba(251,191,36,0.14)'],
+    CRISIS:       ['#ff6375', 'rgba(255,99,117,0.18)'],
   }
-  const wlCompactMoney = compactMoney
-  // Sorting cycles asc -> desc -> default. Both layers use the same sorted array
-  // so the frozen Instrument column stays row-aligned. Text keys use localeCompare.
-  const sortedRows = sort
-    ? [...rows].sort((a, b) => {
-        if (sort.key === 'symbol' || sort.key === 'sector' || sort.key === 'industry') {
-          const av = String(a[sort.key] || ''), bv = String(b[sort.key] || '')
-          return sort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
-        }
-        return sort.dir === 'asc' ? wlSortVal(a, sort.key) - wlSortVal(b, sort.key) : wlSortVal(b, sort.key) - wlSortVal(a, sort.key)
-      })
-    : rows
-  function wlCell(key: string, row: any) {
-    if (hidden) return <td key={key}>{mask}</td>
-    switch (key) {
-      case 'last':          return <td key={key}>{money(row.last || row.price)}</td>
-      case 'change':        return <td key={key} className={Number(row.day_pnl) >= 0 ? 'green' : 'red'}>{money(row.day_pnl)}</td>
-      case 'changePercent': return <td key={key} className={Number(row.day_change_pct) >= 0 ? 'green' : 'red'}>{pct(row.day_change_pct)}</td>
-      case 'volume':        return <td key={key}>{compactVolume(row.volume)}</td>
-      case 'marketCap': {   const v = wlCompactMoney(row.market_cap || row.marketCap); return <td key={key}>{v ?? '—'}</td> }
-      case 'pe': {          const v = row.pe ?? row.pe_ratio ?? row.pe_ttm; return <td key={key}>{v != null ? Number(v).toFixed(2) : '—'}</td> }
-      case 'eps': {         const v = row.eps ?? row.eps_ttm; return <td key={key}>{v != null ? money(v) : '—'}</td> }
-      case 'beta': {        const v = row.beta; return <td key={key}>{v != null ? Number(v).toFixed(2) : '—'}</td> }
-      case 'avgVolume': {   const v = row.avg_volume || row.average_volume; return <td key={key}>{v ? compactVolume(v) : '—'}</td> }
-      case 'high52w': {     const v = row.week52_high ?? row['52w_high'] ?? row.high_52w; return <td key={key}>{v != null ? money(v) : '—'}</td> }
-      case 'low52w': {      const v = row.week52_low ?? row['52w_low'] ?? row.low_52w; return <td key={key}>{v != null ? money(v) : '—'}</td> }
-      case 'sector':        return <td key={key} className="muted">{row.sector || '—'}</td>
-      case 'industry':      return <td key={key} className="muted">{row.industry || '—'}</td>
-      default:              return <td key={key}>—</td>
-    }
-  }
+  const [color, bg] = colors[regime] ?? ['#8fa2b5', 'rgba(148,163,184,0.12)']
   return (
-    <div className="mptbl-split">
-      {columns.instrument && (
-        <div className="mptbl-frozen pf-wl-frozen">
-          <div
-            className={`mptbl-fcell mptbl-fhead wl-th-sort${sort?.key === 'symbol' ? ' sorted' : ''}`}
-            role="button"
-            aria-sort={sort?.key === 'symbol' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-            onClick={() => cycleSort('symbol')}
-          >
-            INSTRMNT{sort?.key === 'symbol' ? <span className="wl-sort-arrow">{sort.dir === 'asc' ? ' ↑' : ' ↓'}</span> : null}
-          </div>
-          {sortedRows.map((row) => (
-            <button key={row.symbol} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(row)} onContextMenu={(e) => { e.preventDefault(); onLongPress?.(row) }}>
-              <div className="mtt-symbol">
-                <CompanyLogo source={row} symbol={row.symbol} hidden={hidden} className="mtt-logo" />
-                <span>
-                  <strong className="mtt-sym-label">{hidden ? mask : row.symbol}</strong>
-                  <small>{hidden ? 'Market' : row.exchange || 'NASDAQ'}</small>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '5px',
+      padding: '3px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+      color, background: bg, border: `1px solid ${color}44`,
+    }}>
+      <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: color, flexShrink: 0 }} />
+      {regime.replace(/_/g, ' ')}
+    </span>
+  )
+}
+
+function StatChip({ label, value, color }: { label: string; value: React.ReactNode; color: string }) {
+  return (
+    <div style={{
+      background: '#0b1119', border: '1px solid rgba(148,163,184,0.14)',
+      borderRadius: '14px', padding: '10px 6px', textAlign: 'center',
+    }}>
+      <div style={{ fontSize: '16px', fontWeight: 800, color, lineHeight: 1.15 }}>{value}</div>
+      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '3px', lineHeight: 1.3 }}>{label}</div>
+    </div>
+  )
+}
+
+function McStatBox({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{
+      flex: '1', textAlign: 'center', padding: '9px 4px',
+      background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
+    }}>
+      <div style={{ fontSize: '13px', fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>{label}</div>
+    </div>
+  )
+}
+
+function AgentQuickCard({ agentStatus, onTap }: { agentStatus: any; onTap: () => void }) {
+  const running     = !!agentStatus?.running
+  const port        = agentStatus?.paper_portfolio || {}
+  const totalValue  = Number(port.total_value || 0)
+  const totalRet    = Number(port.total_return_pct || 0)
+  const summary     = agentStatus?.last_summary || {}
+  const executed    = summary.executed ?? null
+  const decisions   = summary.decisions ?? null
+  const dailyPnl    = summary.daily_pnl_pct ?? null
+  const circuitBroken = summary.circuit_broken === true
+  const regime      = (agentStatus?.regime as string) || null
+  const lastCycle   = agentStatus?.last_cycle
+  const retColor    = totalRet >= 0 ? '#24d18c' : '#ff6375'
+
+  const colors: Record<string, [string, string]> = {
+    BULL_TREND:   ['#24d18c', 'rgba(36,209,140,0.14)'],
+    BEAR_TREND:   ['#fb7185', 'rgba(251,113,133,0.14)'],
+    CHOPPY_RANGE: ['#fbbf24', 'rgba(251,191,36,0.14)'],
+    CRISIS:       ['#ff6375', 'rgba(255,99,117,0.18)'],
+  }
+  const [regimeColor, regimeBg] = (regime && colors[regime]) ? colors[regime] : ['#8fa2b5', 'rgba(148,163,184,0.12)']
+
+  return (
+    <section className="mobile-section">
+      <div className="mobile-section-title">
+        <h2>AI Agent</h2>
+        <Bot size={18} />
+      </div>
+      <button
+        onClick={onTap}
+        style={{
+          width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+        }}
+      >
+        <article className="mobile-visual-card" style={{
+          border: circuitBroken
+            ? '1px solid rgba(255,99,117,0.45)'
+            : running
+            ? '1px solid rgba(36,209,140,0.22)'
+            : '1px solid rgba(148,163,184,0.14)',
+        }}>
+          {/* Top row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+            <div>
+              {totalValue > 0 ? (
+                <>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '3px' }}>Paper Portfolio</div>
+                  <div style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-0.5px' }}>
+                    {totalValue.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: retColor, marginTop: '2px' }}>
+                    {totalRet >= 0 ? '+' : ''}{totalRet.toFixed(2)}% total
+                    {dailyPnl !== null && (
+                      <span style={{ marginLeft: '8px', fontSize: '12px', color: Number(dailyPnl) >= 0 ? '#22c55e' : '#ef4444' }}>
+                        Day: {Number(dailyPnl) >= 0 ? '+' : ''}{Number(dailyPnl).toFixed(2)}%
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
+                  {agentStatus === null ? 'Connecting…' : 'No data yet'}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 700,
+                background: running ? 'rgba(36,209,140,0.14)' : 'rgba(148,163,184,0.1)',
+                border: `1px solid ${running ? 'rgba(36,209,140,0.4)' : 'rgba(148,163,184,0.25)'}`,
+                color: running ? '#24d18c' : '#8fa2b5',
+              }}>
+                <span style={{
+                  width: '6px', height: '6px', borderRadius: '50%',
+                  background: running ? '#24d18c' : '#8fa2b5',
+                  boxShadow: running ? '0 0 6px #24d18c' : 'none',
+                }} />
+                {running ? 'RUNNING' : 'STOPPED'}
+              </span>
+              {circuitBroken && (
+                <span style={{
+                  fontSize: '11px', fontWeight: 700, color: '#ff6375',
+                  background: 'rgba(255,99,117,0.12)', padding: '3px 8px', borderRadius: '999px',
+                  border: '1px solid rgba(255,99,117,0.3)',
+                }}>
+                  ⛔ Circuit Breaker
                 </span>
-              </div>
-            </button>
-          ))}
+              )}
+            </div>
+          </div>
+
+          {/* Stats row */}
+          {(executed !== null || decisions !== null || regime) && (
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {decisions !== null && (
+                <div style={{ textAlign: 'center', minWidth: '44px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#60a5fa' }}>{decisions}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--muted)' }}>Decisions</div>
+                </div>
+              )}
+              {executed !== null && (
+                <div style={{ textAlign: 'center', minWidth: '44px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#24d18c' }}>{executed}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--muted)' }}>Executed</div>
+                </div>
+              )}
+              {regime && (
+                <span style={{
+                  marginLeft: 'auto',
+                  display: 'inline-flex', alignItems: 'center', gap: '5px',
+                  padding: '3px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+                  color: regimeColor, background: regimeBg, border: `1px solid ${regimeColor}44`,
+                }}>
+                  {regime.replace(/_/g, ' ')}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Footer */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(148,163,184,0.1)' }}>
+            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+              {lastCycle
+                ? `Last cycle: ${(() => { try { return new Date(lastCycle).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) } catch { return lastCycle } })()}`
+                : 'No cycles yet'}
+            </span>
+            <span style={{ fontSize: '12px', color: '#60a5fa', fontWeight: 600 }}>View Agent →</span>
+          </div>
+        </article>
+      </button>
+    </section>
+  )
+}
+
+function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any }) {
+
+  const portfolio  = agentStatus?.paper_portfolio || {}
+  const running    = !!agentStatus?.running
+  const regime     = (agentStatus?.regime as string) || 'UNKNOWN'
+  const vix        = Number(agentStatus?.macros?.vix || 0)
+  const totalValue = Number(portfolio.total_value || 100_000)
+  const totalRet   = Number(portfolio.total_return_pct || 0)
+  const cash       = Number(portfolio.cash || 0)
+  const longs      = Array.isArray(portfolio.longs) ? portfolio.longs.length : 0
+  const shorts     = Array.isArray(portfolio.shorts) ? portfolio.shorts.length : 0
+  const positions  = (portfolio.positions || []).length
+
+  const mc          = backtest?.monte_carlo || {}
+  const bestStrat   = Array.isArray(backtest?.strategies) ? backtest.strategies[0] : null
+  const spyBm       = backtest?.spy_benchmark || {}
+
+  const retColor = (v: number) => (v >= 0 ? '#24d18c' : '#ff6375')
+  const fmtRet   = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`
+
+  return (
+    <>
+      {/* ── Hero status card ── */}
+      <article className="mobile-visual-card" style={{ marginBottom: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+          <div>
+            <span style={{ display: 'block', color: 'var(--muted)', fontSize: '12px', marginBottom: '4px' }}>
+              Autonomous Agent
+            </span>
+            <strong style={{ fontSize: '28px', fontWeight: 800, letterSpacing: '-0.5px' }}>
+              {totalValue.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+            </strong>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', paddingTop: '2px' }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+              background: running ? 'rgba(36,209,140,0.14)' : 'rgba(148,163,184,0.1)',
+              border: `1px solid ${running ? 'rgba(36,209,140,0.4)' : 'rgba(148,163,184,0.25)'}`,
+              color: running ? '#24d18c' : '#8fa2b5',
+            }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: running ? '#24d18c' : '#8fa2b5' }} />
+              {running ? 'RUNNING' : 'STOPPED'}
+            </span>
+            <RegimePill regime={regime} />
+          </div>
         </div>
-      )}
-      <div className="mptbl-scrollarea">
-        <table className="mobile-terminal-table mobile-watchlist-table">
-          <thead>
-            <tr>
-              {dataCols.map((key) => (
-                <th
-                  key={key}
-                  className={`wl-th-sort${sort?.key === key ? ' sorted' : ''}`}
-                  role="button"
-                  aria-sort={sort?.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                  onClick={() => cycleSort(key)}
-                >
-                  {WL_TH[key] || key}
-                  <span className="wl-sort-arrow" aria-hidden="true">{sort?.key === key ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : ''}</span>
-                </th>
-              ))}
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedRows.map((row) => (
-              <tr key={row.symbol} onClick={() => onSelect(row)} onContextMenu={(e) => { e.preventDefault(); onLongPress?.(row) }}>
-                {dataCols.map((key) => wlCell(key, row))}
-                <td>
-                  <div className="mobile-watchlist-actions">
-                    <button type="button" aria-label={`Open intelligence for ${row.symbol}`} onClick={(e) => { e.stopPropagation(); onSelect(row) }}>
-                      <Brain size={14} />
-                    </button>
-                    <button type="button" aria-label={`Remove ${row.symbol}`} onClick={(e) => { e.stopPropagation(); onRemove(row.symbol) }}>
-                      <Trash2 size={14} />
-                    </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+          <span style={{ fontSize: '22px', fontWeight: 700, color: retColor(totalRet) }}>
+            {fmtRet(totalRet)}
+          </span>
+          <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+            total return · VIX {vix.toFixed(1)}
+          </span>
+        </div>
+      </article>
+
+      {/* ── 6-chip stats grid ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '18px' }}>
+        <StatChip label="Open Longs"  value={longs}     color="#24d18c" />
+        <StatChip label="Positions"   value={positions} color="#a78bfa" />
+        <StatChip label="Open Shorts" value={shorts}    color="#ff6375" />
+        <StatChip label="Cash"        value={`$${(cash / 1000).toFixed(1)}k`}  color="#8fa2b5" />
+        <StatChip label="Mode"        value="paper"     color="#60a5fa" />
+        <StatChip label="Cycles"      value={agentStatus?.cycle_count ?? '—'} color="#fbbf24" />
+      </div>
+
+      {/* ── Backtest + Monte Carlo swipe rail ── */}
+      {bestStrat ? (
+        <SwipeRail
+          title="Backtest · 2-year"
+          icon={<TrendingUp size={18} />}
+          items={[
+            { _type: 'strategy' },
+            ...(mc.final_return_pct ? [{ _type: 'mc' }] : []),
+          ]}
+          render={(item: any) => {
+            if (item._type === 'mc') {
+              const ret = mc.final_return_pct as Record<string, number>
+              const dd  = mc.max_drawdown_pct  as Record<string, number>
+              return (
+                <article className="mobile-visual-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <span style={{ display: 'block', color: 'var(--muted)', fontSize: '12px' }}>Monte Carlo</span>
+                      <strong style={{ fontSize: '14px', fontWeight: 700 }}>1 000 bootstrap paths</strong>
+                    </div>
+                    <span style={{
+                      fontSize: '11px', fontWeight: 700,
+                      color: (mc.prob_loss_pct ?? 0) > 25 ? '#ff6375' : '#24d18c',
+                    }}>
+                      P(loss) {(mc.prob_loss_pct ?? 0).toFixed(1)}%
+                    </span>
                   </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
 
-function MobileWatchlistCards({
-  rows, onSelect, onLongPress, hidden, grid = '1x1', fields, order,
-}: {
-  rows: any[]; onSelect: (position: any) => void; onRemove: (symbol: string) => void
-  onLongPress?: (row: any) => void; hidden: boolean; grid?: PortfolioCardGrid
-  fields: Set<CardFieldKey>; order: CardFieldKey[]
-}) {
-  const gridClass = grid === '2x2' ? ' wl-grid-2' : grid === '3x3' ? ' wl-grid-3' : ''
-  return (
-    <div className={`mobile-watchlist-card-list${gridClass}`}>
-      {rows.map((row) => (
-        <PositionCard
-          key={row.symbol}
-          position={row}
-          fields={fields}
-          order={order}
-          tf="5D"
-          grid={grid}
-          hidden={hidden}
-          context="watchlist"
-          onSelect={onSelect}
-          onLongPress={onLongPress}
-        />
-      ))}
-    </div>
-  )
-}
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+                    <McStatBox label="Worst (P5)"  value={fmtRet(ret.p5)}  color="#ff6375" />
+                    <McStatBox label="Median (P50)" value={fmtRet(ret.p50)} color="#eef4fb" />
+                    <McStatBox label="Best (P95)"  value={fmtRet(ret.p95)} color="#24d18c" />
+                  </div>
 
-function MobileEditInstruments({
-  list,
-  rows,
-  hidden,
-  onClose,
-  onRemoveSelected,
-  onReorder,
-}: {
-  list: any
-  rows: any[]
-  hidden: boolean
-  onClose: () => void
-  onRemoveSelected: (symbols: string[]) => void
-  onReorder: (from: number, to: number) => void
-}) {
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
-  const selectedSymbols = Array.from(selected)
-  return (
-    <div className="mobile-edit-instruments">
-      <header>
-        <button type="button" className="mobile-icon-action" aria-label="Back to watchlists" onClick={onClose}>
-          <ChevronLeft size={18} />
-        </button>
-        <div>
-          <span>{hidden ? 'Workspace' : list.name}</span>
-          <strong>Edit Instruments</strong>
-        </div>
-      </header>
-      <div className="mobile-edit-toolbar">
-        <button type="button" disabled={!selectedSymbols.length} onClick={() => { onRemoveSelected(selectedSymbols); setSelected(new Set()) }}>
-          <Trash2 size={15} /> Remove Selected
-        </button>
-      </div>
-      <div className="mobile-edit-list">
-        {rows.map((row, index) => (
-          <div
-            key={row.symbol}
-            className="mobile-edit-row"
-            draggable
-            onDragStart={() => setDragIndex(index)}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={() => {
-              if (dragIndex !== null && dragIndex !== index) onReorder(dragIndex, index)
-              setDragIndex(null)
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={selected.has(row.symbol)}
-              onChange={(event) => setSelected((current) => {
-                const next = new Set(current)
-                event.target.checked ? next.add(row.symbol) : next.delete(row.symbol)
-                return next
-              })}
-              aria-label={`Select ${row.symbol}`}
-            />
-            <div className="mobile-edit-main">
-              <strong>{hidden ? mask : row.symbol}</strong>
-              <span>{hidden ? 'Market' : row.exchange || 'NASDAQ'}</span>
-              <small>{hidden ? mask : row.name}</small>
-            </div>
-            <GripVertical size={18} className="mobile-edit-grip" aria-hidden="true" />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
+                  <div style={{ display: 'flex', gap: '16px', marginTop: '10px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                      Worst DD:&nbsp;
+                      <span style={{ color: '#ff6375', fontWeight: 600 }}>{dd?.p5_worst?.toFixed(1)}%</span>
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                      Median DD:&nbsp;
+                      <span style={{ color: '#fbbf24', fontWeight: 600 }}>{dd?.median?.toFixed(1)}%</span>
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                      {mc.strategy}
+                    </span>
+                  </div>
+                </article>
+              )
+            }
 
-type PortfolioView = 'table' | 'cards-1x1' | 'cards-2x2' | 'cards-3x3'
-type PortfolioCardGrid = '1x1' | '2x2' | '3x3'
-const PORTFOLIO_VIEW_OPTIONS: { id: PortfolioView; label: string }[] = [
-  { id: 'table', label: 'Table' },
-  { id: 'cards-1x1', label: 'Cards 1x1' },
-  { id: 'cards-2x2', label: 'Cards 2x2' },
-  { id: 'cards-3x3', label: 'Cards 3x3' },
-]
-
-function normalizePortfolioView(value: string | null): PortfolioView | null {
-  if (value === 'cards') return 'cards-1x1'
-  return PORTFOLIO_VIEW_OPTIONS.some((option) => option.id === value) ? (value as PortfolioView) : null
-}
-
-function portfolioViewLabel(value: PortfolioView) {
-  return PORTFOLIO_VIEW_OPTIONS.find((option) => option.id === value)?.label || 'Table'
-}
-
-function portfolioGridFromView(value: PortfolioView): PortfolioCardGrid {
-  if (value === 'cards-2x2') return '2x2'
-  if (value === 'cards-3x3') return '3x3'
-  return '1x1'
-}
-type CuratedColKey =
-  | 'ticker' | 'company' | 'shares' | 'mktvalue' | 'last' | 'avgcost'
-  | 'daypnl' | 'daypnlpct' | 'unrealized' | 'unrealizedpct'
-  | 'risk' | 'momentum' | 'weight' | 'sparkline'
-// Advanced / IBKR fields are dynamic, keyed as `adv:<field>`, so ColKey/TableSortKey are strings.
-type ColKey = CuratedColKey | string
-type TableSortKey = string
-
-const COL_DEFS: { key: ColKey; label: string; sortKey?: TableSortKey; defaultOn: boolean; frozen?: boolean }[] = [
-  { key: 'ticker',        label: 'Ticker',       sortKey: 'symbol',        defaultOn: true, frozen: true },
-  { key: 'company',       label: 'Company',                                defaultOn: false },
-  { key: 'shares',        label: 'Shares',       sortKey: 'shares',        defaultOn: false },
-  { key: 'mktvalue',      label: 'Mkt Value',    sortKey: 'mktvalue',      defaultOn: true },
-  { key: 'last',          label: 'Last',         sortKey: 'last',          defaultOn: true },
-  { key: 'avgcost',       label: 'Avg Cost',     sortKey: 'avgcost',       defaultOn: false },
-  { key: 'daypnl',        label: 'Day P/L $',    sortKey: 'daypnl',        defaultOn: true },
-  { key: 'daypnlpct',     label: 'Day P/L %',    sortKey: 'daypnlpct',     defaultOn: true },
-  { key: 'unrealized',    label: 'Unrlzd $',     sortKey: 'unrealized',    defaultOn: true },
-  { key: 'unrealizedpct', label: 'Unrlzd %',     sortKey: 'unrealizedpct', defaultOn: false },
-  { key: 'risk',          label: 'Risk',         sortKey: 'risk',          defaultOn: true },
-  { key: 'momentum',      label: 'Momentum',     sortKey: 'momentum',      defaultOn: false },
-  { key: 'weight',        label: 'Portfolio %',  sortKey: 'weight',        defaultOn: true },
-  { key: 'sparkline',     label: 'Sparkline',                              defaultOn: false },
-]
-const COL_LS_KEY = 'pia.portfolioColumns.mobile.v2'
-
-const COL_ORDER_LS_KEY = 'pia.portfolioColOrder.mobile.v2'
-
-// Card field visibility (independent from table columns)
-type CardFieldKey =
-  | 'sparkline'
-  | 'shares' | 'mktvalue' | 'last' | 'avgcost' | 'daypnl' | 'unrealized'
-  | 'unrealizedpct' | 'daychange' | 'daypct' | 'volume' | 'marketcap'
-  | 'weight' | 'risk' | 'momentum' | 'macro' | 'ai' | 'news'
-const CARD_FIELD_DEFS: { key: CardFieldKey; label: string }[] = [
-  { key: 'sparkline',     label: 'Sparkline' },
-  { key: 'shares',        label: 'Shares' },
-  { key: 'mktvalue',      label: 'Market Value' },
-  { key: 'avgcost',       label: 'Avg Cost' },
-  { key: 'daypnl',        label: 'Today P&L' },
-  { key: 'unrealized',    label: 'Unrealized P&L' },
-  { key: 'unrealizedpct', label: 'Unrealized %' },
-  { key: 'daychange',     label: 'Daily $' },
-  { key: 'daypct',        label: 'Daily %' },
-  { key: 'volume',        label: 'Volume' },
-  { key: 'marketcap',     label: 'Market Cap' },
-  { key: 'last',          label: 'Last Price' },
-  { key: 'weight',        label: 'Portfolio %' },
-  { key: 'risk',          label: 'Risk' },
-  { key: 'momentum',      label: 'Momentum' },
-  { key: 'macro',         label: 'Macro β' },
-  { key: 'ai',            label: 'AI' },
-  { key: 'news',          label: 'News' },
-]
-// Stat-cell fields (rendered in the body, not the always-visible header)
-const CARD_STAT_KEYS: CardFieldKey[] = [
-  'shares', 'mktvalue', 'last', 'avgcost', 'daypnl', 'unrealized',
-  'unrealizedpct', 'daychange', 'daypct', 'volume', 'marketcap',
-]
-const CARD_INTEL_KEYS: CardFieldKey[] = ['risk', 'momentum', 'weight', 'news', 'macro', 'ai']
-// Fields that only make sense in a portfolio context (positions with cost basis / shares)
-const PORTFOLIO_ONLY_KEYS: CardFieldKey[] = ['shares', 'mktvalue', 'avgcost', 'daypnl', 'unrealized', 'unrealizedpct', 'daychange', 'weight']
-
-const CARD_PREFS_LS_KEY  = 'pia.cardPrefs.v1'
-const WL_CARD_PREFS_LS_KEY = 'pia.wlCardPrefs.v1'
-
-// Card templates (preset field sets)
-const CARD_TEMPLATES: { id: string; label: string; fields: CardFieldKey[] }[] = [
-  { id: 'compact',  label: 'Compact',  fields: ['sparkline'] },
-  { id: 'balanced', label: 'Balanced', fields: ['sparkline', 'risk', 'momentum'] },
-  { id: 'trader',   label: 'Trader',   fields: ['sparkline', 'daypct', 'volume', 'momentum'] },
-  { id: 'investor', label: 'Investor', fields: ['sparkline', 'mktvalue', 'avgcost', 'unrealizedpct', 'risk'] },
-]
-
-type CardModeConfig = { fields: Set<CardFieldKey>; order: CardFieldKey[] }
-type CardPrefs = Record<PortfolioCardGrid, CardModeConfig>
-
-function makeCardPrefs(by1x1: CardFieldKey[], by2x2: CardFieldKey[], by3x3: CardFieldKey[]): CardPrefs {
-  const all = CARD_FIELD_DEFS.map((c) => c.key)
-  const mk = (keys: CardFieldKey[]) => ({ fields: new Set(keys), order: [...keys, ...all.filter(k => !keys.includes(k as CardFieldKey))] })
-  return { '1x1': mk(by1x1), '2x2': mk(by2x2), '3x3': mk(by3x3) }
-}
-
-function defaultCardPrefs(): CardPrefs {
-  return makeCardPrefs(
-    ['sparkline', 'shares', 'mktvalue', 'avgcost', 'daypnl', 'unrealized', 'weight', 'risk', 'momentum', 'macro', 'ai', 'news'],
-    ['sparkline'],
-    ['sparkline'],
-  )
-}
-
-function defaultWlCardPrefs(): CardPrefs {
-  return makeCardPrefs(
-    ['sparkline', 'risk', 'momentum', 'news', 'macro', 'ai'],
-    ['sparkline'],
-    ['sparkline'],
-  )
-}
-
-type ManualInstrumentMatch = InstrumentMatch
-
-type ManualAssetType = 'Stock' | 'Option' | 'Crypto'
-
-const EMPTY_MANUAL_FORM = {
-  asset_type: 'Stock' as ManualAssetType,
-  ticker: '',
-  quantity: '',
-  avg_price: '',
-  underlying: '',
-  expiry: '',
-  strike: '',
-  call_put: 'C',
-  contracts: '1',
-  premium: '',
-}
-
-const emptyManualHoldingForm = EMPTY_MANUAL_FORM
-
-function validManualSearch(value: string) {
-  return /^[A-Z0-9][A-Z0-9 .,&'()\/\-=^]{0,79}$/i.test(value.trim())
-}
-
-function manualHoldingError(error: any, fallback: string) {
-  if (typeof error?.detail === 'string' && error.detail.trim()) return error.detail
-  if (typeof error?.message === 'string' && error.message.trim() && error.message !== 'Failed to fetch') return error.message
-  return fallback
-}
-
-// Short descriptions surfaced via the info icon in the Manage Display screen.
-const FIELD_INFO: Record<string, string> = {
-  // Default table + card fields
-  ticker: 'Instrument symbol. Stays fixed as the first column while you scroll.',
-  company: 'Full company / instrument name.',
-  shares: 'Number of shares (or contracts) you currently hold.',
-  mktvalue: 'Current value of the holding at the latest price.',
-  last: 'Most recent traded price.',
-  avgcost: 'Average purchase cost of your current position.',
-  daypnl: "Today's profit or loss in cash.",
-  daypnlpct: "Today's price change in percent.",
-  unrealized: 'Profit or loss if sold at the current market price.',
-  unrealizedpct: 'Open profit or loss as a percentage of cost.',
-  weight: 'Percentage of total portfolio value.',
-  risk: 'PIA risk score from 0 (low) to 100 (high).',
-  momentum: 'PIA momentum score from 0 (weak) to 100 (strong).',
-  sparkline: 'Mini price trend for the selected timeframe.',
-  daychange: "Today's price change in dollars.",
-  daypct: "Today's price change in percent.",
-  volume: 'Number of shares traded today.',
-  marketcap: 'Total market capitalisation of the instrument.',
-  macro: 'Macro sensitivity (beta) to broad market moves.',
-  ai: 'An AI view is available for this position.',
-  news: 'Recent news activity for this instrument.',
-  // Advanced / IBKR fields (keyed by backend field name)
-  currency: 'Currency the position is denominated in.',
-  account: 'Brokerage account holding this position.',
-  conid: 'IBKR contract identifier (conId).',
-  con_id: 'IBKR contract identifier (conId).',
-  contract_id: 'IBKR contract identifier (conId).',
-  sec_type: 'Asset class (e.g. stock, ETF, option).',
-  asset_class: 'Asset class (e.g. stock, ETF, option).',
-  exchange: 'Exchange where the instrument trades.',
-  primary_exchange: 'Primary listing exchange.',
-  multiplier: 'Contract multiplier (options/futures).',
-  cost_basis: 'Total amount paid to open the position.',
-  market_price: 'Current market price used for valuation.',
-  realized: 'Profit or loss already locked in from closed trades.',
-  realized_pnl: 'Profit or loss already locked in from closed trades.',
-  daily_pnl: "Today's profit or loss in cash.",
-  day_change: "Today's price change in cash.",
-  delta: 'Option delta (price sensitivity to the underlying).',
-  gamma: 'Option gamma (rate of change of delta).',
-  theta: 'Option theta (time decay per day).',
-  vega: 'Option vega (sensitivity to volatility).',
-  expiry: 'Option/contract expiration date.',
-  strike: 'Option strike price.',
-  right: 'Option right (Call or Put).',
-  sector: 'Market sector classification.',
-  industry: 'Industry classification.',
-  beta: 'Beta vs the broad market.',
-  news_score: 'Recent news activity score for this instrument.',
-}
-
-// Sparkline timeframe (shared across portfolio positions view)
-const SPARK_TF_OPTIONS = ['1H', '4H', '1D', '5D', '1M', '3M', '6M', '1Y'] as const
-type SparkTf = (typeof SPARK_TF_OPTIONS)[number]
-const DEFAULT_SPARK_TF: SparkTf = '5D'
-const SPARK_TF_LS_KEY = 'pia.portfolioSparkTf.mobile'
-
-// Resolve per-timeframe spark series when the backend provides it; otherwise
-// fall back to the existing normalized series. State contract is ready for
-// real timeframe data via position.sparks[tf] or position.spark_<tf>.
-function resolveSpark(position: any, tf: SparkTf): number[] | undefined {
-  const series = position?.sparks?.[tf] ?? position?.[`spark_${tf}`]
-  if (Array.isArray(series) && series.length) return series
-  return position?.spark
-}
-
-function saveCardPrefs(prefs: CardPrefs) { savePrefsToKey(CARD_PREFS_LS_KEY, prefs) }
-
-function loadCardPrefs(lsKey: string, defaultFn: () => CardPrefs): CardPrefs {
-  const defaults = defaultFn()
-  const all = CARD_FIELD_DEFS.map((c) => c.key)
-  try {
-    const raw = localStorage.getItem(lsKey)
-    if (raw) {
-      const saved = JSON.parse(raw) as Record<string, { fields: CardFieldKey[]; order: CardFieldKey[] }>
-      const parse = (grid: PortfolioCardGrid): CardModeConfig => {
-        const s = saved[grid]
-        if (!s) return defaults[grid]
-        const fields = Array.isArray(s.fields) ? new Set(s.fields.filter((k): k is CardFieldKey => all.includes(k as CardFieldKey))) : defaults[grid].fields
-        const order = Array.isArray(s.order) && s.order.length
-          ? [...s.order.filter((k): k is CardFieldKey => all.includes(k as CardFieldKey)), ...all.filter(k => !s.order.includes(k as CardFieldKey))]
-          : defaults[grid].order
-        return { fields, order }
-      }
-      return { '1x1': parse('1x1'), '2x2': parse('2x2'), '3x3': parse('3x3') }
-    }
-  } catch {}
-  return defaults
-}
-
-function savePrefsToKey(lsKey: string, prefs: CardPrefs) {
-  try {
-    const s = Object.fromEntries(Object.entries(prefs).map(([g, c]) => [g, { fields: [...(c.fields as Set<string>)], order: c.order }]))
-    localStorage.setItem(lsKey, JSON.stringify(s))
-  } catch {}
-}
-
-function readSavedCardPrefs() { return loadCardPrefs(CARD_PREFS_LS_KEY, defaultCardPrefs) }
-function readWlCardPrefs()     { return loadCardPrefs(WL_CARD_PREFS_LS_KEY, defaultWlCardPrefs) }
-
-function readSavedSparkTf(): SparkTf {
-  try {
-    const raw = localStorage.getItem(SPARK_TF_LS_KEY)
-    if (raw && (SPARK_TF_OPTIONS as readonly string[]).includes(raw)) return raw as SparkTf
-  } catch {}
-  return DEFAULT_SPARK_TF
-}
-
-// --- Advanced / IBKR position fields -------------------------------------
-// Discovered dynamically from the backend position payload so any delivered
-// field can be exposed as an optional column. No fake data is hardcoded.
-type FieldKind = 'money' | 'pct' | 'num' | 'text'
-type AdvancedColDef = { key: string; field: string; label: string; kind: FieldKind; sortKey: string; sensitive?: boolean }
-
-// Friendly labels + formatting for known IBKR / backend keys.
-const KNOWN_FIELD_META: Record<string, { label: string; kind: FieldKind; sensitive?: boolean }> = {
-  currency: { label: 'Currency', kind: 'text' },
-  account: { label: 'Account', kind: 'text', sensitive: true },
-  account_id: { label: 'Account', kind: 'text', sensitive: true },
-  conid: { label: 'Contract ID', kind: 'text' },
-  con_id: { label: 'Contract ID', kind: 'text' },
-  contract_id: { label: 'Contract ID', kind: 'text' },
-  sec_type: { label: 'Asset Class', kind: 'text' },
-  sectype: { label: 'Asset Class', kind: 'text' },
-  asset_class: { label: 'Asset Class', kind: 'text' },
-  asset_type: { label: 'Asset Class', kind: 'text' },
-  exchange: { label: 'Exchange', kind: 'text' },
-  listing_exchange: { label: 'Exchange', kind: 'text' },
-  primary_exchange: { label: 'Primary Exch', kind: 'text' },
-  multiplier: { label: 'Multiplier', kind: 'num' },
-  cost_basis: { label: 'Cost Basis', kind: 'money', sensitive: true },
-  market_price: { label: 'Market Price', kind: 'money' },
-  mkt_price: { label: 'Market Price', kind: 'money' },
-  realized: { label: 'Realized P&L', kind: 'money', sensitive: true },
-  realized_pnl: { label: 'Realized P&L', kind: 'money', sensitive: true },
-  realized_pl: { label: 'Realized P&L', kind: 'money', sensitive: true },
-  daily_pnl: { label: 'Daily P&L', kind: 'money', sensitive: true },
-  day_change: { label: 'Day Change $', kind: 'money' },
-  delta: { label: 'Delta', kind: 'num' },
-  gamma: { label: 'Gamma', kind: 'num' },
-  theta: { label: 'Theta', kind: 'num' },
-  vega: { label: 'Vega', kind: 'num' },
-  iv: { label: 'IV', kind: 'pct' },
-  implied_vol: { label: 'IV', kind: 'pct' },
-  expiry: { label: 'Expiry', kind: 'text' },
-  expiration: { label: 'Expiry', kind: 'text' },
-  strike: { label: 'Strike', kind: 'money' },
-  right: { label: 'Right', kind: 'text' },
-  sector: { label: 'Sector', kind: 'text' },
-  industry: { label: 'Industry', kind: 'text' },
-  macro_sensitivity: { label: 'Macro β', kind: 'num' },
-  beta: { label: 'Beta', kind: 'num' },
-}
-
-// Keys already represented by curated columns or used only for presentation /
-// internal rendering — excluded from advanced discovery.
-const EXCLUDED_ADV_FIELDS = new Set<string>([
-  'symbol', 'ticker', 'name', 'company', 'quantity', 'qty', 'shares',
-  'market_value', 'mktvalue', 'last', 'price', 'avg_price', 'avg_cost',
-  'day_pnl', 'day_change_pct', 'change_pct', 'unrealized', 'unrealized_pct',
-  'risk', 'momentum', 'momentum_score', 'portfolio_pct',
-  'spark', 'sparks', 'accent', 'brand', 'logo', 'ai_view', 'ai_score',
-  'news_count', 'news',
-])
-
-function humanizeFieldLabel(field: string): string {
-  return field
-    .replace(/^adv:/, '')
-    .replace(/[_\-.]+/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .replace(/\bPnl\b/i, 'P&L')
-    .replace(/\bId\b/, 'ID')
-    .trim()
-}
-
-// Build the advanced column list from whatever the backend actually delivers.
-function discoverAdvancedFields(positions: any[]): AdvancedColDef[] {
-  const seen = new Map<string, AdvancedColDef>()
-  for (const p of positions || []) {
-    if (!p || typeof p !== 'object') continue
-    for (const [field, value] of Object.entries(p)) {
-      if (EXCLUDED_ADV_FIELDS.has(field) || field.startsWith('spark_')) continue
-      // Only primitive, displayable values — never break the UI on objects/arrays.
-      if (value == null || typeof value === 'object') continue
-      if (seen.has(field)) continue
-      const meta = KNOWN_FIELD_META[field]
-      seen.set(field, {
-        key: `adv:${field}`,
-        field,
-        label: meta?.label || humanizeFieldLabel(field),
-        kind: meta?.kind || (typeof value === 'number' ? 'num' : 'text'),
-        sortKey: `adv:${field}`,
-        sensitive: meta?.sensitive,
-      })
-    }
-  }
-  return Array.from(seen.values())
-}
-
-function formatAdvancedValue(value: unknown, kind: FieldKind): string {
-  if (value == null || value === '') return '—'
-  switch (kind) {
-    case 'money': return money(value)
-    case 'pct': return `${Number(value).toFixed(2)}%`
-    case 'num': return typeof value === 'number' ? String(Number(value.toFixed(4))) : String(value)
-    default: return String(value)
-  }
-}
-
-function readSavedCols(): Set<ColKey> {
-  try {
-    const raw = localStorage.getItem(COL_LS_KEY)
-    if (raw) {
-      const arr = JSON.parse(raw) as ColKey[]
-      if (Array.isArray(arr) && arr.length) return new Set(arr)
-    }
-  } catch {}
-  return new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key))
-}
-
-function readSavedOrder(): ColKey[] {
-  try {
-    const raw = localStorage.getItem(COL_ORDER_LS_KEY)
-    if (raw) {
-      const arr = JSON.parse(raw) as ColKey[]
-      if (Array.isArray(arr) && arr.length) return arr
-    }
-  } catch {}
-  return COL_DEFS.map((c) => c.key)
-}
-
-
-function PortfolioChart({ data, hidden }: { data: number[] | null; hidden: boolean }) {
-  if (hidden) return <div className="pf-chart-hidden" />
-  if (!data || data.length < 2) {
-    return (
-      <div className="pf-chart-empty">
-        <span>Portfolio history unavailable</span>
-      </div>
-    )
-  }
-  const vals = data
-  const min = Math.min(...vals)
-  const max = Math.max(...vals)
-  const range = max - min || 1
-  const W = 260, H = 46
-  const pts = vals.map((v, i) => `${((i / (vals.length - 1)) * W).toFixed(1)},${(H - ((v - min) / range) * (H - 6) - 3).toFixed(1)}`).join(' ')
-  const isUp = vals[vals.length - 1] >= vals[0]
-  return (
-    <svg className="pf-evolution-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
-      <polyline points={pts} fill="none" stroke={isUp ? '#24d18c' : '#ff6375'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <line x1="0" x2={W} y1={H - 1} y2={H - 1} stroke="rgba(148,163,184,.12)" />
-    </svg>
-  )
-}
-
-function sourceBadgeClass(source: unknown, mode?: unknown, opts?: { pricesLive?: boolean; fallbackActive?: boolean }): string {
-  const badge = resolvePortfolioBadge(source, mode, opts)
-  if (badge.variant === 'ibkr') return 'badge badge--live'
-  if (badge.variant === 'warning') return 'badge badge--hybrid'
-  if (badge.label === 'LAST UPDATE') return 'badge badge--lastupdate'
-  return 'badge badge--mock'
-}
-
-const TF_OPTIONS = ['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'] as const
-type TfKey = (typeof TF_OPTIONS)[number]
-
-function PortfolioHeader({ portfolio, positions, hidden, expanded, onToggle }: {
-  portfolio: any; positions: any[]; hidden: boolean; expanded: boolean; onToggle: () => void
-}) {
-  const [selectedTf, setSelectedTf] = useState<TfKey>('1M')
-  const { currency, toggle: toggleCurrency, fmt } = useCurrency(Number(portfolio.fxRate || 0.87), portfolio.baseCurrency || 'USD')
-
-  const total = portfolio.total_value || positions.reduce((s: number, p: any) => s + Number(p.market_value || 0), 0)
-  const dayPnl = portfolio.daily_pnl || positions.reduce((s: number, p: any) => s + Number(p.day_pnl || 0), 0)
-  const dayPnlPct = Number(portfolio.daily_pnl_pct || (total ? (dayPnl / total) * 100 : 0))
-  const unreal = portfolio.unrealized || positions.reduce((s: number, p: any) => s + Number(p.unrealized || 0), 0)
-  const realized = Number(portfolio.realized_pnl || 0)
-  const cash = Number(portfolio.cash || 0)
-  const bp = Number(portfolio.buying_power || 0)
-
-  const excessLiq = Number(portfolio.excess_liquidity) || Math.round(bp * 0.85)
-  const sma = Math.round(total * 0.92)
-  const theta = -(Math.round(total * 0.00012 * 100) / 100)
-  const vega = Math.round(total * 0.0026)
-  const maintMgn = Number(portfolio.maint_margin_req) || Math.round(total * 0.22)
-  const initMgn = Number(portfolio.init_margin_req) || Math.round(total * 0.15)
-  const spxDelta = (total / 260000).toFixed(2)
-  const netDelta = (total / 87500).toFixed(2)
-
-  const [rawHistory, setRawHistory] = useState<{ ts: number; value: number }[] | null>(null)
-  useEffect(() => {
-    fetchJson('/api/portfolio/history?limit=365')
-      .then((res: any) => {
-        const items: any[] = Array.isArray(res?.items) ? res.items : []
-        const parsed = items
-          .map((item) => {
-            const raw = item.timestamp || item.snapshot_timestamp || ''
-            const num = Number(raw)
-            const ts = Number.isFinite(num) ? (num < 10_000_000_000 ? num * 1000 : num) : new Date(raw).getTime()
-            const value = Number(item.net_liquidation || item.total_value || 0)
-            return { ts, value }
-          })
-          .filter((r) => r.ts > 0 && r.value > 0)
-          .sort((a, b) => a.ts - b.ts)
-        setRawHistory(parsed.length >= 2 ? parsed : null)
-      })
-      .catch(() => setRawHistory(null))
-  }, [])
-
-  const TF_CUTOFF_MS: Record<string, number> = {
-    '1D': 86400000,
-    '1W': 7 * 86400000,
-    '1M': 30 * 86400000,
-    '3M': 90 * 86400000,
-    '1Y': 365 * 86400000,
-  }
-
-  const history: number[] | null = useMemo(() => {
-    if (!rawHistory) return null
-    const now = Date.now()
-    let filtered = rawHistory
-    if (selectedTf === 'YTD') {
-      const ytd = new Date(new Date().getFullYear(), 0, 1).getTime()
-      filtered = rawHistory.filter((r) => r.ts >= ytd)
-    } else if (selectedTf !== 'ALL' && TF_CUTOFF_MS[selectedTf]) {
-      const cutoff = now - TF_CUTOFF_MS[selectedTf]
-      filtered = rawHistory.filter((r) => r.ts >= cutoff)
-    }
-    const vals = filtered.map((r) => r.value)
-    return vals.length >= 2 ? vals : null
-  }, [rawHistory, selectedTf])
-
-  const sym = currency === 'EUR' ? '€' : '$'
-  const fullMetrics = [
-    { label: 'Mkt Value', value: fmt(total) },
-    { label: 'Excess Liq', value: fmt(excessLiq) },
-    { label: 'SMA', value: fmt(sma) },
-    { label: 'Theta', value: `${sym}${theta.toFixed(2)}` },
-    { label: 'Vega', value: `${sym}${vega}` },
-    { label: 'Buy Power', value: fmt(bp) },
-    { label: 'Maint. Mgn', value: fmt(maintMgn) },
-    { label: 'Init. Mgn', value: fmt(initMgn) },
-    { label: 'SPX Δ', value: spxDelta },
-    { label: 'Net Δ', value: netDelta },
-    { label: 'Day Trades', value: '3' },
-    { label: 'Cash', value: fmt(cash) },
-  ]
-
-  return (
-    <div className={`pf-header${expanded ? ' expanded' : ' collapsed'}`} role="region" aria-label="Portfolio overview">
-      <div className="pf-header-main" role="button" tabIndex={0} onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()}>
-        <div className="pf-header-nlv">
-          <span className="pf-header-label">Portfolio</span>
-          <div className="pf-header-source-row">
-            <span className="pf-source-dot">{hidden ? '' : dotSourceLabel(portfolio.source, portfolio.mode)}</span>
-            <div className="cur-seg" role="group" aria-label="Currency">
-              <button type="button" className={`cur-seg-btn${currency === 'USD' ? ' active' : ''}`} onClick={(e) => { e.stopPropagation(); if (currency !== 'USD') toggleCurrency() }}>$</button>
-              <button type="button" className={`cur-seg-btn${currency === 'EUR' ? ' active' : ''}`} onClick={(e) => { e.stopPropagation(); if (currency !== 'EUR') toggleCurrency() }}>€</button>
-            </div>
-          </div>
-          <div className="pf-header-hero">{hidden ? mask : fmt(total)}</div>
-          <div className="pf-header-pnl-row">
-            <span className={`pf-header-day-pnl ${dayPnl >= 0 ? 'green' : 'red'}`}>
-              {hidden ? mask : `${dayPnl >= 0 ? '+' : ''}${fmt(dayPnl)}`}
-            </span>
-            <span className={`pf-header-day-pct ${dayPnl >= 0 ? 'green' : 'red'}`}>
-              {hidden ? mask : `${dayPnlPct >= 0 ? '+' : ''}${Math.abs(dayPnlPct).toFixed(2)}%`}
-            </span>
-          </div>
-        </div>
-        <ChevronDown size={17} className={`pf-collapse-arrow${expanded ? ' open' : ''}`} />
-      </div>
-
-      {expanded && (
-        <div className="pf-header-detail">
-          <div className="pf-header-secondary">
-            <div className="pf-header-sec-item">
-              <span>Unrealized P/L</span>
-              <b className={unreal >= 0 ? 'green' : 'red'}>{hidden ? mask : `${unreal >= 0 ? '+' : ''}${fmt(unreal)}`}</b>
-            </div>
-            <div className="pf-header-sec-item">
-              <span>Realized P/L</span>
-              <b className={realized >= 0 ? 'green' : 'red'}>{hidden ? mask : `${realized >= 0 ? '+' : ''}${fmt(realized)}`}</b>
-            </div>
-          </div>
-
-          <PortfolioChart data={history} hidden={hidden} />
-
-          <div className="pf-tf-rail" role="tablist" aria-label="Chart time range">
-            {TF_OPTIONS.map((tf) => (
-              <button
-                key={tf}
-                type="button"
-                role="tab"
-                aria-selected={selectedTf === tf}
-                className={`pf-tf-chip${selectedTf === tf ? ' active' : ''}`}
-                onClick={(e) => { e.stopPropagation(); setSelectedTf(tf) }}
-              >
-                {tf}
-              </button>
-            ))}
-          </div>
-
-          <div className="pf-metrics-full">
-            {fullMetrics.map((m) => (
-              <div key={m.label} className="pf-metric-chip">
-                <span>{m.label}</span>
-                <b>{hidden ? mask : m.value}</b>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function SparkTfRail({ value, onChange }: { value: SparkTf; onChange: (tf: SparkTf) => void }) {
-  return (
-    <div className="pf-display-tf">
-      <span className="pf-display-tf-label">Sparkline timeframe</span>
-      <div className="pf-tf-rail" role="group" aria-label="Sparkline timeframe">
-        {SPARK_TF_OPTIONS.map((tf) => (
-          <button
-            key={tf}
-            type="button"
-            className={`pf-tf-chip${value === tf ? ' active' : ''}`}
-            aria-pressed={value === tf}
-            onClick={() => onChange(tf)}
-          >
-            {tf}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-type ManageItem = { key: string; label: string; info?: string; locked?: boolean }
-
-// IBKR-style "Manage Display" screen used for both Table columns and Card
-// fields: enabled list (checkmark + name + info + reorder + grip), an
-// "+ Add" catalog of available/IBKR fields, and the sparkline timeframe.
-function MobileManageDisplay({
-  title, addLabel, order, visible, allKeys, defsByKey, sparkTf, onSparkTf, onToggle, onReorder, onReset, onClose, templates, onApplyTemplate, showSparkTf = true,
-}: {
-  title: string
-  addLabel: string
-  order: string[]
-  visible: Set<string>
-  allKeys: string[]
-  defsByKey: (key: string) => ManageItem | undefined
-  sparkTf: SparkTf
-  onSparkTf: (tf: SparkTf) => void
-  onToggle: (key: string) => void
-  onReorder: (nextOrder: string[]) => void
-  onReset: () => void
-  onClose: () => void
-  templates?: { id: string; label: string; fields: CardFieldKey[] }[]
-  onApplyTemplate?: (keys: CardFieldKey[]) => void
-  showSparkTf?: boolean
-}) {
-  const [addOpen, setAddOpen] = useState(false)
-  const [info, setInfo] = useState<{ label: string; text: string } | null>(null)
-  const [dragKey, setDragKey] = useState<string | null>(null)
-  const dragKeyRef = useRef<string | null>(null)
-  const listRef = useRef<HTMLUListElement>(null)
-
-  // All fields stay in the main list regardless of visible state (PORT-002).
-  // "Add Columns" only surfaces keys not yet placed in the order at all.
-  const enabled = order.map(defsByKey).filter((d): d is ManageItem => !!d)
-  const seen = new Set<string>(order)
-  const available = allKeys
-    .filter((k) => !seen.has(k))
-    .map(defsByKey)
-    .filter((d): d is ManageItem => !!d)
-
-  // Drag-to-reorder from the right-side grip. Reorders all fields in order
-  // (both visible and hidden keep their relative positions).
-  function reorderTo(key: string, targetKey: string) {
-    if (key === targetKey) return
-    const from = order.indexOf(key)
-    const to = order.indexOf(targetKey)
-    if (from < 0 || to < 0) return
-    const next = [...order]
-    next.splice(from, 1)
-    next.splice(to, 0, key)
-    onReorder(next)
-  }
-  function onListPointerDown(e: PointerEvent<HTMLUListElement>) {
-    const target = e.target as HTMLElement
-    if (!target.closest('[data-grip]')) return
-    const li = target.closest('[data-key]') as HTMLElement | null
-    if (!li?.dataset.key) return
-    dragKeyRef.current = li.dataset.key
-    setDragKey(li.dataset.key)
-    listRef.current?.setPointerCapture(e.pointerId)
-  }
-  function onListPointerMove(e: PointerEvent<HTMLUListElement>) {
-    if (!dragKeyRef.current || !listRef.current) return
-    const rows = Array.from(listRef.current.querySelectorAll('[data-key]')) as HTMLElement[]
-    for (const el of rows) {
-      const r = el.getBoundingClientRect()
-      if (e.clientY >= r.top && e.clientY < r.bottom) {
-        const tk = el.dataset.key
-        if (tk && tk !== dragKeyRef.current) reorderTo(dragKeyRef.current, tk)
-        break
-      }
-    }
-  }
-  function onListPointerEnd(e: PointerEvent<HTMLUListElement>) {
-    if (!dragKeyRef.current) return
-    dragKeyRef.current = null
-    setDragKey(null)
-    listRef.current?.releasePointerCapture?.(e.pointerId)
-  }
-
-  return (
-    <div className="pf-manage" role="dialog" aria-modal="true" aria-label={title}>
-      <header className="pf-manage-head">
-        <button type="button" className="pf-manage-back" aria-label="Done" onClick={onClose}><ChevronLeft size={20} /></button>
-        <h2>{title}</h2>
-        <button type="button" className="pf-manage-reset" onClick={onReset}>Reset</button>
-      </header>
-      <div className="pf-manage-body">
-        {templates && onApplyTemplate && (
-          <div className="card-template-row">
-            {templates.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`card-template-btn${[...visible].sort().join(',') === [...new Set(t.fields)].sort().join(',') ? ' active' : ''}`}
-                onClick={() => onApplyTemplate(t.fields)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-        <ul
-          className={`pf-manage-list${dragKey ? ' is-dragging' : ''}`}
-          ref={listRef}
-          onPointerDown={onListPointerDown}
-          onPointerMove={onListPointerMove}
-          onPointerUp={onListPointerEnd}
-          onPointerCancel={onListPointerEnd}
-        >
-          {enabled.map((item) => {
-            const on = visible.has(item.key)
+            // Best strategy card
+            const s = bestStrat
+            const alpha = (s.total_return || 0) - (spyBm?.total_return_pct || 0)
+            const beating = alpha > 0
             return (
-              <li className={`pf-manage-row${dragKey === item.key ? ' dragging' : ''}`} key={item.key} data-key={item.key}>
-                <span className="pf-manage-name">{item.label}</span>
-                <button type="button" className="pf-manage-info" aria-label={`About ${item.label}`} onClick={() => setInfo({ label: item.label, text: item.info || 'No description available.' })}><Info size={15} /></button>
-                <button
-                  type="button"
-                  className={`pf-manage-check${on ? ' on' : ''}`}
-                  aria-label={on ? `Hide ${item.label}` : `Show ${item.label}`}
-                  disabled={item.locked}
-                  onClick={() => !item.locked && onToggle(item.key)}
-                >
-                  {on ? '✓' : ''}
-                </button>
-                <span className="pf-manage-grip" data-grip role="button" tabIndex={0} aria-label={`Drag to reorder ${item.label}`}><GripVertical size={18} /></span>
-              </li>
-            )
-          })}
-        </ul>
-        <button type="button" className="pf-manage-add" aria-expanded={addOpen} onClick={() => setAddOpen((o) => !o)}>
-          <Plus size={16} /> {addLabel}
-        </button>
-        {addOpen && (
-          <ul className="pf-manage-list pf-manage-available">
-            {available.length ? available.map((item) => (
-              <li className="pf-manage-row" key={item.key}>
-                <button type="button" className="pf-manage-check" aria-label={`Add ${item.label}`} onClick={() => onToggle(item.key)} />
-                <span className="pf-manage-name">{item.label}</span>
-                <button type="button" className="pf-manage-info" aria-label={`About ${item.label}`} onClick={() => setInfo({ label: item.label, text: item.info || 'No description available.' })}><Info size={15} /></button>
-                <button type="button" className="pf-manage-addbtn" aria-label={`Add ${item.label}`} onClick={() => onToggle(item.key)}><Plus size={15} /></button>
-              </li>
-            )) : <li className="pf-manage-empty">All fields are shown.</li>}
-          </ul>
-        )}
-        {showSparkTf !== false && <SparkTfRail value={sparkTf} onChange={onSparkTf} />}
-      </div>
-      {info && (
-        <div className="pf-info-pop-root" role="presentation">
-          <button type="button" className="pf-info-pop-overlay" aria-label="Close" onClick={() => setInfo(null)} />
-          <div className="pf-info-pop" role="dialog" aria-modal="true" aria-label={`${info.label} info`}>
-            <strong>{info.label}</strong>
-            <p>{info.text}</p>
-            <button type="button" className="pf-info-pop-close" onClick={() => setInfo(null)}>Got it</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function AddManualHoldingSheet({
-  onClose,
-  onSaved,
-}: {
-  onClose: () => void
-  onSaved: () => Promise<unknown>
-}) {
-  const [form, setForm] = useState(EMPTY_MANUAL_FORM)
-  const [matches, setMatches] = useState<ManualInstrumentMatch[]>([])
-  const [selected, setSelected] = useState<ManualInstrumentMatch | null>(null)
-  const [lookupLoading, setLookupLoading] = useState(false)
-  const [lookupMessage, setLookupMessage] = useState('')
-  const [status, setStatus] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  const assetType = form.asset_type
-  const isOptionMode = assetType === 'Option'
-  const searchText = isOptionMode ? '' : form.ticker.trim()
-  const selectedTicker = selected?.symbol || ''
-  const selectedMatchesSearch = !isOptionMode && Boolean(selectedTicker && selectedTicker === searchText.toUpperCase())
-
-  useEffect(() => {
-    if (isOptionMode || !searchText) {
-      setMatches([])
-      setLookupMessage('')
-      setLookupLoading(false)
-      return
-    }
-    if (!validManualSearch(searchText)) {
-      setMatches([])
-      setLookupMessage('Enter a ticker or company name.')
-      setLookupLoading(false)
-      return
-    }
-    if (selectedMatchesSearch) {
-      setMatches([])
-      setLookupMessage(`${selectedTicker} selected.`)
-      setLookupLoading(false)
-      return
-    }
-    let active = true
-    setLookupLoading(true)
-    setLookupMessage('')
-    const timer = window.setTimeout(async () => {
-      const result = await searchInstruments(searchText).catch((error) => {
-        if (active) {
-          setMatches([])
-          setLookupMessage(instrumentSearchErrorMessage(error, 'Instrument search is unavailable right now.'))
-        }
-        return null
-      })
-      if (!active) return
-      if (!result) { setLookupLoading(false); return }
-      const nextMatches = result.matches
-      setMatches(nextMatches)
-      setLookupMessage(nextMatches.length ? 'Select the matching instrument before saving.' : 'No matching instruments found.')
-      setLookupLoading(false)
-    }, 300)
-    return () => { active = false; window.clearTimeout(timer) }
-  }, [searchText, selectedMatchesSearch, selectedTicker, isOptionMode])
-
-  function updateField(key: string, value: string) {
-    if (key === 'ticker') {
-      const nextTicker = value.trim().toUpperCase()
-      setSelected((current) => (current?.symbol === nextTicker ? current : null))
-      setStatus('')
-    }
-    setForm((current) => ({ ...current, [key]: value }))
-  }
-
-  function changeAssetType(next: ManualAssetType) {
-    setForm({ ...EMPTY_MANUAL_FORM, asset_type: next })
-    setSelected(null)
-    setMatches([])
-    setLookupMessage('')
-    setStatus('')
-  }
-
-  function selectInstrument(match: ManualInstrumentMatch) {
-    setSelected(match)
-    setMatches([])
-    setLookupMessage(`${match.symbol} selected.`)
-    setStatus('')
-    setForm((current) => ({ ...current, ticker: match.symbol }))
-  }
-
-  async function save(event: React.FormEvent) {
-    event.preventDefault()
-    setStatus('')
-    if (saving) return
-    setSaving(true)
-    let payload: Record<string, unknown>
-    if (isOptionMode) {
-      const underlying = form.underlying.trim().toUpperCase()
-      const strike = Number(form.strike)
-      const contracts = Number(form.contracts)
-      const premium = Number(form.premium)
-      if (!underlying) { setStatus('Enter the underlying ticker (e.g. SOFI).'); setSaving(false); return }
-      if (!form.expiry) { setStatus('Enter the expiry date.'); setSaving(false); return }
-      if (!Number.isFinite(strike) || strike <= 0) { setStatus('Enter a valid strike price.'); setSaving(false); return }
-      if (!Number.isFinite(contracts) || contracts <= 0) { setStatus('Enter the number of contracts.'); setSaving(false); return }
-      if (!Number.isFinite(premium) || premium < 0) { setStatus('Enter a valid premium.'); setSaving(false); return }
-      payload = {
-        ticker: underlying,
-        name: `${underlying} ${strike}${form.call_put} ${form.expiry}`,
-        asset_type: 'Option',
-        broker: 'Manual',
-        underlying,
-        expiry: form.expiry,
-        strike,
-        callPut: form.call_put,
-        quantity: contracts,
-        avg_price: premium,
-        currency: 'USD',
-        notes: `Manual option: ${underlying} ${strike}${form.call_put} exp ${form.expiry}`,
-      }
-    } else {
-      if (!searchText || !validManualSearch(searchText)) { setStatus('Enter a ticker or company name.'); setSaving(false); return }
-      if (lookupLoading) { setStatus('Finish the instrument search before saving.'); setSaving(false); return }
-      if (!selectedMatchesSearch) { setStatus('Select a matching instrument from the search results before saving.'); setSaving(false); return }
-      const sel = selected
-      if (!sel) { setStatus('Select a matching instrument from the search results before saving.'); setSaving(false); return }
-      const quantity = Number(form.quantity)
-      const avgPrice = Number(form.avg_price)
-      if (!Number.isFinite(quantity) || quantity <= 0) { setStatus('Enter a quantity greater than zero.'); setSaving(false); return }
-      if (!Number.isFinite(avgPrice) || avgPrice < 0) { setStatus('Enter a valid average cost.'); setSaving(false); return }
-      payload = {
-        ticker: sel.symbol,
-        name: sel.name || sel.symbol,
-        asset_type: assetType,
-        broker: 'Manual',
-        quantity,
-        avg_price: avgPrice,
-        currency: sel.currency || 'USD',
-        notes: `Added from Portfolio menu${sel.exchange ? ` (${sel.exchange})` : ''}.`,
-      }
-    }
-    const result = await fetch('/api/manual-holdings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).then(async (response) => {
-      const body = await response.json().catch(() => ({}))
-      if (!response.ok) throw body
-      return body
-    }).catch((error) => {
-      setStatus(manualHoldingError(error, 'Unable to save. The backend rejected the holding or is unavailable.'))
-      return null
-    })
-    if (!result) { setSaving(false); return }
-    await onSaved().catch(() => {})
-    setSaving(false)
-    onClose()
-  }
-
-  const canSubmit = isOptionMode
-    ? Boolean(form.underlying.trim() && form.expiry && Number(form.strike) > 0 && Number(form.contracts) > 0)
-    : selectedMatchesSearch
-
-  return (
-    <MobileSheet title="Add Manual Holding" onClose={onClose} closeOnOverlay={!saving}>
-      <form className="manual-form manual-sheet-form" onSubmit={save}>
-        {/* Asset type selector */}
-        <div className="mf-asset-type-row">
-          {(['Stock', 'Option', 'Crypto'] as ManualAssetType[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={`mf-asset-type-btn${assetType === t ? ' active' : ''}`}
-              onClick={() => changeAssetType(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-
-        {isOptionMode ? (
-          /* Option form */
-          <>
-            <label className="field">
-              <span>Underlying (ticker)</span>
-              <input
-                value={form.underlying}
-                autoComplete="off"
-                placeholder="e.g. SOFI"
-                onChange={(e) => updateField('underlying', e.target.value.toUpperCase())}
-              />
-            </label>
-            <div className="mf-option-row2">
-              <label className="field">
-                <span>Expiry date</span>
-                <input
-                  type="date"
-                  value={form.expiry}
-                  onChange={(e) => updateField('expiry', e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Strike</span>
-                <input
-                  value={form.strike}
-                  inputMode="decimal"
-                  placeholder="22.00"
-                  onChange={(e) => updateField('strike', e.target.value)}
-                />
-              </label>
-            </div>
-            <div className="mf-option-row2">
-              <div className="field">
-                <span>Type</span>
-                <div className="mf-callput-row">
-                  <button
-                    type="button"
-                    className={`mf-callput-btn${form.call_put === 'C' ? ' active' : ''}`}
-                    onClick={() => updateField('call_put', 'C')}
-                  >
-                    Call
-                  </button>
-                  <button
-                    type="button"
-                    className={`mf-callput-btn${form.call_put === 'P' ? ' active' : ''}`}
-                    onClick={() => updateField('call_put', 'P')}
-                  >
-                    Put
-                  </button>
-                </div>
-              </div>
-              <label className="field">
-                <span>Contracts</span>
-                <input
-                  value={form.contracts}
-                  inputMode="numeric"
-                  placeholder="1"
-                  onChange={(e) => updateField('contracts', e.target.value)}
-                />
-              </label>
-            </div>
-            <label className="field">
-              <span>Premium per share ($)</span>
-              <input
-                value={form.premium}
-                inputMode="decimal"
-                placeholder="1.25"
-                onChange={(e) => updateField('premium', e.target.value)}
-              />
-            </label>
-          </>
-        ) : (
-          /* Stock / Crypto form */
-          <>
-            <label className="field">
-              <span>{assetType === 'Crypto' ? 'Symbol (e.g. BTC)' : 'Ticker or company'}</span>
-              <input
-                value={form.ticker}
-                autoComplete="off"
-                placeholder={assetType === 'Crypto' ? 'BTC or Bitcoin' : 'AMD or Apple'}
-                onChange={(event) => updateField('ticker', event.target.value)}
-              />
-            </label>
-            <div className="field wide manual-lookup">
-              <span>Instrument match</span>
-              {lookupLoading && <div className="manual-lookup-status">Searching instruments...</div>}
-              {!lookupLoading && selectedMatchesSearch && selected && (() => {
-                const s = selected
-                return (
-                  <div className="manual-selected">
-                    <b>{s.symbol}</b>
-                    <span>{s.name || 'Selected instrument'}</span>
-                    <small>{[s.exchange, s.asset_type, s.currency].filter(Boolean).join(' / ')}</small>
+              <article className="mobile-visual-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <span style={{ display: 'block', color: 'var(--muted)', fontSize: '12px' }}>Best Strategy</span>
+                    <strong style={{ fontSize: '16px', fontWeight: 800 }}>{s.name}</strong>
                   </div>
-                )
-              })()}
-              {!lookupLoading && lookupMessage && !selectedMatchesSearch && (
-                <div className="manual-lookup-status">{lookupMessage}</div>
-              )}
-              {!lookupLoading && matches.length > 0 && (
-                <div className="manual-lookup-results">
-                  {matches.map((match) => (
-                    <button type="button" key={`${match.symbol}-${match.exchange || match.name}`} onClick={() => selectInstrument(match)}>
-                      <b>{match.symbol}</b>
-                      <span>{match.name || match.symbol}</span>
-                      <small>{[match.exchange, match.asset_type, match.currency].filter(Boolean).join(' / ')}</small>
-                    </button>
-                  ))}
+                  <IntelligenceBadge
+                    label={fmtRet(s.total_return || 0)}
+                    tone={(s.total_return || 0) >= 0 ? 'good' : 'bad'}
+                  />
                 </div>
-              )}
-            </div>
-            <label className="field">
-              <span>Quantity</span>
-              <input
-                value={form.quantity}
-                inputMode="decimal"
-                disabled={!selectedMatchesSearch}
-                onChange={(event) => updateField('quantity', event.target.value)}
-              />
-            </label>
-            <label className="field">
-              <span>Average Cost</span>
-              <input
-                value={form.avg_price}
-                inputMode="decimal"
-                disabled={!selectedMatchesSearch}
-                onChange={(event) => updateField('avg_price', event.target.value)}
-              />
-            </label>
-          </>
-        )}
 
-        <div className="manual-actions">
-          <button className="tab active" type="submit" disabled={saving || !canSubmit}>
-            <Plus size={15} /> {saving ? 'Saving...' : 'Add holding'}
-          </button>
-        </div>
-      </form>
-      {status && <p className="muted mobile-control-status">{status}</p>}
-    </MobileSheet>
-  )
-}
+                <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+                  <McStatBox label="Sharpe"   value={(s.sharpe || 0).toFixed(2)} color={(s.sharpe || 0) >= 1 ? '#24d18c' : '#fbbf24'} />
+                  <McStatBox label="Win Rate" value={`${(s.win_rate || 0).toFixed(0)}%`} color={(s.win_rate || 0) >= 50 ? '#24d18c' : '#ff6375'} />
+                  <McStatBox label="Max DD"   value={`${(s.max_dd || 0).toFixed(1)}%`} color="#ff6375" />
+                </div>
 
-
-function MobilePortfolioTable({ rows, onSelect, hidden, visibleCols, colOrder, sparkTf, advancedDefs }: { rows: any[]; onSelect: (p: any) => void; hidden: boolean; visibleCols: Set<ColKey>; colOrder: ColKey[]; sparkTf: SparkTf; advancedDefs: AdvancedColDef[] }) {
-  const [sort, setSort] = useState<TableSortKey>('weight')
-  const [dir, setDir] = useState<'desc' | 'asc'>('desc')
-  useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') {
-      console.debug('[PIA] MobilePortfolioTable mounted')
-      return () => console.debug('[PIA] MobilePortfolioTable unmounted')
-    }
-    return undefined
-  }, [])
-
-  function toggleSort(col: TableSortKey) {
-    if (sort === col) setDir((d) => (d === 'desc' ? 'asc' : 'desc'))
-    else { setSort(col); setDir('desc') }
-  }
-
-  const sorted = useMemo(() => {
-    const key = (p: any): string | number => {
-      const shares = Number(p.quantity ?? p.qty ?? 0)
-      const last = Number(p.last || p.price || 0)
-      if (sort.startsWith('adv:')) {
-        const v = p[sort.slice(4)]
-        return typeof v === 'number' ? v : String(v ?? '')
-      }
-      switch (sort) {
-        case 'symbol':        return String(p.symbol || '')
-        case 'shares':        return shares
-        case 'mktvalue':      return Number(p.market_value ?? last * shares)
-        case 'last':          return last
-        case 'avgcost':       return Number(p.avg_price || p.avg_cost || 0)
-        case 'daypnl': {
-          if (p.day_pnl != null) return Number(p.day_pnl)
-          if (p.daily_pnl != null) return Number(p.daily_pnl)
-          const dc = p.day_change != null ? Number(p.day_change) : null
-          const qty = Number(p.quantity ?? p.qty ?? 0)
-          return dc != null && qty > 0 ? dc * qty : 0
-        }
-        case 'daypnlpct':     return Number(p.day_change_pct || 0)
-        case 'unrealized':    return Number(p.unrealized || 0)
-        case 'unrealizedpct': return Number(p.unrealized_pct || 0)
-        case 'risk':          return p.risk == null ? Number.NEGATIVE_INFINITY : Number(p.risk)
-        case 'momentum':      return p.momentum_score == null && p.momentum == null ? Number.NEGATIVE_INFINITY : Number(p.momentum_score ?? p.momentum)
-        case 'weight':        return Number(p.portfolio_pct || 0)
-        default:              return 0
-      }
-    }
-    return [...rows].sort((a, b) => {
-      const av = key(a), bv = key(b)
-      if (typeof av === 'string') return dir === 'asc' ? av.localeCompare(bv as string) : (bv as string).localeCompare(av)
-      return dir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
-    })
-  }, [rows, sort, dir])
-
-  function renderCell(col: ColKey, position: any) {
-    const shares = Number(position.quantity ?? position.qty ?? 0)
-    const lastRaw = position.last ?? position.price
-    const last = lastRaw != null ? Number(lastRaw) : null
-    // market_value from backend; fall back to last × shares only when both are known
-    const marketValueRaw = position.market_value != null
-      ? Number(position.market_value)
-      : last != null && shares > 0 ? last * shares : null
-    // avg_cost / avg_price — show — not $0.00 when missing
-    const avgCost = position.avg_price ?? position.avg_cost
-    // day_change is per-share price change; day_pnl is total position P/L.
-    // Backend doesn't send day_pnl per-position, so compute it.
-    const dayChangePx = position.day_change != null ? Number(position.day_change) : null
-    const dayPnlRaw = position.day_pnl ?? position.daily_pnl
-    const dayPnl = dayPnlRaw != null
-      ? Number(dayPnlRaw)
-      : dayChangePx != null && shares > 0 ? dayChangePx * shares : null
-    const change = Number(position.day_change_pct || 0)
-    const unreal = position.unrealized != null ? Number(position.unrealized) : null
-    const unrealPct = position.unrealized_pct != null ? Number(position.unrealized_pct) : null
-    const risk = Number(position.risk || 0)
-    if (hidden) return <td key={col}>{mask}</td>
-    if (col.startsWith('adv:')) {
-      const def = advancedDefs.find((d) => d.key === col)
-      const raw = def ? position[def.field] : undefined
-      return <td key={col} className={def && def.kind === 'text' ? 'muted' : undefined}>{def ? formatAdvancedValue(raw, def.kind) : '—'}</td>
-    }
-    switch (col) {
-      case 'company':
-        return <td key={col} className="muted mtt-company">{position.name || '—'}</td>
-      case 'shares':
-        return <td key={col}>{shares > 0 ? shares.toLocaleString('en-US') : '—'}</td>
-      case 'mktvalue':
-        return <td key={col}>{money(marketValueRaw)}</td>
-      case 'last':
-        return <td key={col}>{money(last)}</td>
-      case 'avgcost':
-        return <td key={col}>{money(avgCost)}</td>
-      case 'daypnl': {
-        if (dayPnl == null) return <td key={col}>—</td>
-        return <td key={col} className={dayPnl >= 0 ? 'green' : 'red'}>{`${dayPnl >= 0 ? '+' : ''}${money(dayPnl)}`}</td>
-      }
-      case 'daypnlpct':
-        return <td key={col} className={change >= 0 ? 'green' : 'red'}>{`${change >= 0 ? '+' : ''}${change.toFixed(2)}%`}</td>
-      case 'unrealized': {
-        if (unreal == null) return <td key={col}>—</td>
-        return <td key={col} className={unreal >= 0 ? 'green' : 'red'}>{`${unreal >= 0 ? '+' : ''}${money(unreal)}`}</td>
-      }
-      case 'unrealizedpct': {
-        if (unrealPct == null) return <td key={col}>—</td>
-        return <td key={col} className={unrealPct >= 0 ? 'green' : 'red'}>{`${unrealPct >= 0 ? '+' : ''}${unrealPct.toFixed(1)}%`}</td>
-      }
-      case 'risk':
-        return (
-          <td key={col}>
-            <span className={`mtt-risk ${risk >= 70 ? 'bad' : risk >= 45 ? 'warn' : 'good'}`}>{risk}</span>
-          </td>
-        )
-      case 'momentum':
-        return <td key={col}>{Number(position.momentum_score || position.momentum || 0)}</td>
-      case 'weight':
-        return <td key={col}>{Number(position.portfolio_pct || 0).toFixed(1)}%</td>
-      case 'sparkline':
-        return <td key={col} className="mtt-spark-cell"><Sparkline values={resolveSpark(position, sparkTf)} tone={change >= 0 ? 'good' : 'bad'} /></td>
-      default:
-        return <td key={col}>—</td>
-    }
-  }
-
-  const showTicker = visibleCols.has('ticker')
-  const advByKey = new Map(advancedDefs.map((d) => [d.key, d]))
-  const defByKey = (k: string): { key: string; label: string; sortKey?: string } | undefined =>
-    COL_DEFS.find((c) => c.key === k) || advByKey.get(k)
-  // Columns in saved order (curated + any added advanced/IBKR fields), then any
-  // newly-discovered advanced field that's enabled but not yet in the order.
-  const inOrder = new Set(colOrder)
-  const orderedCols: { key: string; label: string; sortKey?: string }[] = colOrder
-    .map(defByKey)
-    .filter((c): c is { key: string; label: string; sortKey?: string } => !!c && c.key !== 'ticker' && visibleCols.has(c.key))
-    .concat(advancedDefs.filter((d) => visibleCols.has(d.key) && !inOrder.has(d.key)))
-
-  const sortArrow = <span className="sort-arrow">{dir === 'desc' ? '↓' : '↑'}</span>
-
-  function rowKey(position: any, i: number): string {
-    return resolvePositionKey(position, i)
-  }
-
-  function renderTickerCell(position: any): ReactNode {
-    const sym = String(position.symbol || '')
-    const isOpt = resolveAssetClass(position) === 'option'
-    if (isOpt) {
-      const base = String(position.underlying || sym.split(' ')[0] || sym)
-      const strike = position.strike ? String(position.strike) : ''
-      const rawPc = position.call_put || position.callPut || position.put_call || ''
-      const pc = rawPc ? String(rawPc).charAt(0).toUpperCase() : ''
-      const meta = strike && pc ? `${strike}${pc}` : pc || strike
-      const expRaw = position.expiry || position.last_trade_date || ''
-      let expStr = ''
-      if (expRaw) {
-        const d = new Date(expRaw)
-        if (!isNaN(d.getTime())) {
-          const mo = d.toLocaleString('en-US', { month: 'short' }).toUpperCase().slice(0, 3)
-          expStr = ` ${mo}${String(d.getFullYear()).slice(2)}`
-        }
-      }
-      const label = hidden ? mask : `${base} ${meta}${expStr}`.trim()
-      return (
-        <div className="mtt-symbol">
-          <CompanyLogo source={{ ...position, symbol: base }} symbol={base} hidden={hidden} className="mtt-logo real-logo" />
-          <div className="mtt-logo" style={{ background: position.accent || '#a78bfa' }}>
-            {hidden ? '●' : base.slice(0, 2)}
+                <div style={{ marginTop: '10px', fontSize: '11px', color: 'var(--muted)' }}>
+                  {s.trades} trades&nbsp;·&nbsp;vs SPY&nbsp;
+                  <span style={{ color: beating ? '#24d18c' : '#ff6375', fontWeight: 700 }}>
+                    {beating ? `+${alpha.toFixed(1)}% alpha` : `${alpha.toFixed(1)}% vs SPY`}
+                  </span>
+                  &nbsp;·&nbsp;Calmar {(s.calmar || 0).toFixed(2)}
+                </div>
+              </article>
+            )
+          }}
+        />
+      ) : (
+        <section className="mobile-section">
+          <div className="mobile-section-title">
+            <h2>Backtest</h2>
+            <TrendingUp size={18} />
           </div>
-          <strong className="mtt-sym-label mtt-sym-option">{label}</strong>
-        </div>
-      )
-    }
-    return (
-      <div className="mtt-symbol">
-        <CompanyLogo source={position} symbol={sym} hidden={hidden} className="mtt-logo real-logo" />
-        <div className="mtt-logo" style={{ background: position.accent || '#60a5fa' }}>
-          {hidden ? '●' : (position.logo || sym.slice(0, 2))}
-        </div>
-        <strong className="mtt-sym-label">{hidden ? mask : sym}</strong>
-      </div>
-    )
-  }
-
-  // Split-layer structure: the frozen ticker column is a separate non-scrolling
-  // sibling OUTSIDE the horizontal scroll container, so scrolled cells can never
-  // pass behind or to the left of it on iOS. Row heights are fixed on both layers
-  // so rows stay aligned without JS measurement.
-  return (
-    <div className="mptbl-split">
-      {showTicker && (
-        <div className="mptbl-frozen">
-          <div className="mptbl-fcell mptbl-fhead" role="button" onClick={() => toggleSort('symbol')}>
-            {sort === 'symbol' ? sortArrow : null}Ticker
+          <div style={{ border: '1px dashed rgba(148,163,184,0.22)', borderRadius: '18px', padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
+            No backtest data — run backtest from the desktop Agent tab.
           </div>
-          {sorted.map((position, i) => (
-            <button key={rowKey(position, i)} type="button" className="mptbl-fcell mptbl-frow" onClick={() => onSelect(position)}>
-              {renderTickerCell(position)}
-            </button>
-          ))}
-        </div>
+        </section>
       )}
-      <div className="mptbl-scrollarea">
-        <table className="mobile-terminal-table">
-          <thead>
-            <tr>
-              {orderedCols.map((col) => {
-                const active = col.sortKey && sort === col.sortKey
-                return (
-                  <th key={col.key} className={active ? 'col-sorted' : ''} onClick={() => col.sortKey && toggleSort(col.sortKey)}>
-                    {col.label}{active ? sortArrow : null}
-                  </th>
-                )
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((position, i) => (
-              <tr key={rowKey(position, i)} onClick={() => onSelect(position)}>
-                {orderedCols.map((col) => renderCell(col.key, position))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+
+      {/* ── Open positions mini list ── */}
+      {(portfolio.positions || []).length > 0 && (
+        <section className="mobile-section">
+          <div className="mobile-section-title">
+            <h2>Open Positions</h2>
+            <Activity size={18} />
+          </div>
+          <div style={{ display: 'grid', gap: '8px' }}>
+            {(portfolio.positions as any[]).slice(0, 5).map((p: any, i: number) => {
+              const pnl = Number(p.unrealized_pnl || 0)
+              const pct2 = Number(p.pnl_pct || 0)
+              const isLong = (p.side || '').toUpperCase() === 'LONG'
+              return (
+                <div key={`${p.ticker}-${i}`} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 12px', background: '#0b1119',
+                  border: '1px solid rgba(148,163,184,0.14)', borderRadius: '14px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{
+                      width: '36px', height: '36px', borderRadius: '10px',
+                      background: isLong ? 'rgba(36,209,140,0.12)' : 'rgba(255,99,117,0.12)',
+                      border: `1px solid ${isLong ? 'rgba(36,209,140,0.3)' : 'rgba(255,99,117,0.3)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '11px', fontWeight: 700,
+                      color: isLong ? '#24d18c' : '#ff6375', flexShrink: 0,
+                    }}>
+                      {(p.ticker || '?').slice(0, 4)}
+                    </span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '14px' }}>{p.ticker}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                        {p.qty} · {isLong ? 'LONG' : 'SHORT'} · entry ${(p.avg_price || 0).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontWeight: 700, fontSize: '14px', color: retColor(pnl) }}>
+                      {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(0)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: retColor(pct2) }}>
+                      {fmtRet(pct2)}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+    </>
   )
-}
-
-const MemoMobilePortfolioTable = memo(MobilePortfolioTable, (prev, next) => {
-  if (prev.hidden !== next.hidden) return false
-  if (prev.visibleCols !== next.visibleCols) return false
-  if (prev.colOrder !== next.colOrder) return false
-  if (prev.sparkTf !== next.sparkTf) return false
-  if (prev.advancedDefs !== next.advancedDefs) return false
-  if (prev.rows.length !== next.rows.length) return false
-  for (let i = 0; i < prev.rows.length; i += 1) {
-    if (prev.rows[i] !== next.rows[i]) return false
-  }
-  return true
-})
-
-// Contextual header titles keyed by active workspace/view. Short, mobile-first
-// labels per PIA-UX-018; falls back to the workspace registry title otherwise.
-const HEADER_TITLE_OVERRIDES: Record<string, string> = {
-  home: 'Home',
-  'my-portfolio': 'Portfolio',
-  watchlists: 'Watchlists',
-  'markets-macro': 'Markets',
-  settings: 'Settings',
-  about: 'About',
 }
 
 export default function MobileExperience() {
-  const { dashboard, refresh: refreshDashboard, backendStatus } = useMobileDashboard()
-  const workspaceConfig = useWorkspaceConfig()
+  const dashboard = useMobileDashboard()
+  const { agentStatus, backtest } = useAgentData()
   const [active, setActive] = useState('home')
   const [selected, setSelected] = useState<any>(null)
   const [mounted, setMounted] = useState(false)
@@ -3351,156 +2388,17 @@ export default function MobileExperience() {
   }, [positions, positionFilter])
   const advancedFieldDefs = useMemo(() => discoverAdvancedFields(positions), [positions])
   const scanner = dashboard?.scanner || scannerFallback
-  const privacyHidden = mounted && hidden
-  const homeSections = useMemo(() => ({
-    'market-pulse': <MarketPulse items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />,
-    'portfolio-insights': <PortfolioInsights portfolio={portfolio} positions={positions} hidden={privacyHidden} />,
-    'urgent-alerts': <UrgentAlerts portfolio={portfolio} />,
-    'daily-brief': <DailyBrief portfolio={portfolio} />,
-    'scanner-setups': <ScannerSetups scanner={scanner} onSelect={setSelected} hidden={privacyHidden} />,
-    'watchlist-movers': <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} hidden={privacyHidden} />,
-  }), [dashboard?.macros?.market_strip, portfolio, positions, privacyHidden, scanner])
-  const searchUniverse = useMemo(() => {
-    const watchlist = dashboard?.watchlist || []
-    const bySymbol = new Map<string, any>()
-    const add = (raw: any, source: string) => {
-      const symbol = String(raw.symbol || raw.ticker || '').split(' ')[0].toUpperCase()
-      if (!symbol || bySymbol.has(symbol)) return
-      bySymbol.set(symbol, {
-        symbol,
-        name: raw.name || '',
-        last: raw.last ?? raw.price ?? null,
-        change: raw.day_change_pct ?? raw.change_pct ?? null,
-        accent: raw.accent,
-        source,
-      })
-    }
-    positions.forEach((p: any) => add(p, 'Portfolio'))
-    watchlist.forEach((w: any) => add(w, 'Watchlist'))
-    MOCK_SEARCH_TICKERS.forEach((m) => add(m, 'Mock'))
-    return Array.from(bySymbol.values())
-  }, [positions, dashboard?.watchlist])
-  const notificationCount = buildNotificationItems(portfolio).length
-  const headerTitle =
-    HEADER_TITLE_OVERRIDES[active] || getWorkspaceDefinition(workspaceConfig.workspaces, active).title
-  const {
-    order: homeSectionOrder,
-    moveUp: moveHomeSectionUp,
-    moveDown: moveHomeSectionDown,
-    reset: resetHomeSections,
-  } = usePersistedLayout<MobileHomeSectionId>(MOBILE_HOME_LAYOUT_KEY, DEFAULT_MOBILE_HOME_ORDER)
-
-  useEffect(() => {
-    setMounted(true)
-    try {
-      setHidden(localStorage.getItem('pia.hideAmounts') === 'true')
-      const savedView = normalizePortfolioView(localStorage.getItem('pia.portfolioView.mobile'))
-      if (savedView) setPortfolioView(savedView)
-      if (localStorage.getItem('pia.portfolioHeader.expanded') === 'false') setHeaderExpanded(false)
-      setVisibleCols(readSavedCols())
-      setColOrder(readSavedOrder())
-      setCardPrefs(readSavedCardPrefs())
-      setSparkTf(readSavedSparkTf())
-    } catch {}
-    fetchJson('/source-health')
-      .then((data) => {
-        if (Array.isArray(data)) setSourceHealth(data)
-      })
-      .catch(() => {})
-  }, [])
-
-  function updatePortfolioView(next: PortfolioView) {
-    setPortfolioView(next)
-    try { localStorage.setItem('pia.portfolioView.mobile', next) } catch {}
-    setPortfolioMenuOpen(false)
-  }
-
-  function toggleVisibleCol(key: ColKey) {
-    const next = new Set(visibleCols)
-    if (next.has(key) && next.size > 2) next.delete(key)
-    else next.add(key)
-    setVisibleCols(next)
-    // Ensure advanced/IBKR keys join the order when first enabled.
-    if (next.has(key) && !colOrder.includes(key)) {
-      const nextOrder = [...colOrder, key]
-      setColOrder(nextOrder)
-      try { localStorage.setItem(COL_ORDER_LS_KEY, JSON.stringify(nextOrder)) } catch {}
-    }
-    try { localStorage.setItem(COL_LS_KEY, JSON.stringify([...next])) } catch {}
-  }
-
-  function resetVisibleCols() {
-    const def = new Set(COL_DEFS.filter((c) => c.defaultOn).map((c) => c.key))
-    setVisibleCols(def)
-    const defOrder = COL_DEFS.map((c) => c.key)
-    setColOrder(defOrder)
-    try {
-      localStorage.setItem(COL_LS_KEY, JSON.stringify([...def]))
-      localStorage.setItem(COL_ORDER_LS_KEY, JSON.stringify(defOrder))
-    } catch {}
-  }
-
-  function toggleCardField(key: CardFieldKey) {
-    const grid = portfolioGridFromView(portfolioView)
-    const current = cardPrefs[grid]
-    const next = new Set(current.fields)
-    if (next.has(key)) next.delete(key)
-    else next.add(key)
-    const updated = { ...cardPrefs, [grid]: { ...current, fields: next } }
-    setCardPrefs(updated)
-    saveCardPrefs(updated)
-  }
-
-  function resetCardFields() {
-    const grid = portfolioGridFromView(portfolioView)
-    const fresh = defaultCardPrefs()
-    const updated = { ...cardPrefs, [grid]: fresh[grid] }
-    setCardPrefs(updated)
-    saveCardPrefs(updated)
-  }
-
-  function updateSparkTf(next: SparkTf) {
-    setSparkTf(next)
-    try { localStorage.setItem(SPARK_TF_LS_KEY, next) } catch {}
-  }
-
-  function toggleHeader() {
-    const next = !headerExpanded
-    setHeaderExpanded(next)
-    try { localStorage.setItem('pia.portfolioHeader.expanded', String(next)) } catch {}
-  }
-
-  function updateHidden(next: boolean) {
-    setHidden(next)
-    try {
-      localStorage.setItem('pia.hideAmounts', String(next))
-    } catch {}
-  }
-
-  async function rescan() {
-    if (rescanning) return
-    setRescanning(true)
-    setRescanStatus('')
-    try {
-      const result = await fetchJson('/scanner/rescan', { method: 'POST' })
-      setRescanStatus(safeMessage(result.message, 'Rescan complete'))
-    } catch (error: any) {
-      setRescanStatus(safeMessage(error?.detail, 'Scanner is offline. Try again when the backend is available.'))
-    } finally {
-      setRescanning(false)
-    }
-  }
+  const agentRunning = agentStatus?.running === true
 
   return (
     <main className="mobile-shell">
       <header className="mobile-top">
-        <button
-          type="button"
-          className="mobile-icon-action"
-          aria-label="Open settings"
-          onClick={() => setActive('settings')}
-        >
-          <Menu size={18} />
+        <div>
+          <span>PIA</span>
+          <h1>Mobile Command</h1>
+        </div>
+        <button aria-label="Notifications">
+          <Bell size={19} />
         </button>
         <div className="mobile-top-brand">{headerTitle}</div>
         <div className="mobile-top-actions">
@@ -3542,223 +2440,24 @@ export default function MobileExperience() {
       )}
 
       {active === 'home' && (
-        <MobileReorderableSections
-          order={homeSectionOrder}
-          onMoveUp={moveHomeSectionUp}
-          onMoveDown={moveHomeSectionDown}
-          onReset={resetHomeSections}
-          sections={homeSections}
-        />
-      )}
-
-      {active === 'my-portfolio' && (
         <>
-          {portfolioMenuOpen && (
-            <MobileSheet title="Portfolio Options" onClose={() => setPortfolioMenuOpen(false)}>
-              <div className="mobile-watchlist-sheet-menu mobile-portfolio-view-options">
-                <span>View</span>
-                {PORTFOLIO_VIEW_OPTIONS.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className={portfolioView === option.id ? 'active' : ''}
-                    onClick={() => updatePortfolioView(option.id)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              <div className="mobile-controls-list">
-                <button
-                  type="button"
-                  className="mobile-control-row"
-                  onClick={() => {
-                    setPortfolioMenuOpen(false)
-                    setColMenuOpen(true)
-                  }}
-                >
-                  <SlidersHorizontal size={18} />
-                  <div>
-                    <strong>{portfolioView === 'table' ? 'Manage Table Columns' : 'Manage Card Fields'}</strong>
-                    <span>{portfolioView === 'table' ? 'Choose, reorder, and time-scale portfolio table fields' : 'Choose and reorder portfolio card fields'}</span>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  className="mobile-control-row"
-                  onClick={() => {
-                    setPortfolioMenuOpen(false)
-                    setManualHoldingOpen(true)
-                  }}
-                >
-                  <Plus size={18} />
-                  <div>
-                    <strong>Add Manual Holding</strong>
-                    <span>Search an instrument, select the match, then enter quantity and cost</span>
-                  </div>
-                </button>
-              </div>
-            </MobileSheet>
-          )}
-          {manualHoldingOpen && (
-            <AddManualHoldingSheet
-              onClose={() => setManualHoldingOpen(false)}
-              onSaved={refreshDashboard}
-            />
-          )}
-          {colMenuOpen && (portfolioView === 'table' ? (
-            <MobileManageDisplay
-              title="Manage Table Columns"
-              addLabel="Add Columns"
-              order={colOrder}
-              visible={visibleCols}
-              allKeys={[...COL_DEFS.map((c) => c.key), ...advancedFieldDefs.map((d) => d.key)]}
-              defsByKey={(k) => {
-                const c = COL_DEFS.find((d) => d.key === k)
-                if (c) return { key: c.key, label: c.label, info: FIELD_INFO[c.key], locked: c.key === 'ticker' }
-                const a = advancedFieldDefs.find((d) => d.key === k)
-                if (a) return { key: a.key, label: a.label, info: FIELD_INFO[a.field] || 'Additional IBKR / backend field.' }
-                return undefined
-              }}
-              sparkTf={sparkTf}
-              onSparkTf={updateSparkTf}
-              onToggle={toggleVisibleCol}
-              onReorder={(next) => { setColOrder(next); try { localStorage.setItem(COL_ORDER_LS_KEY, JSON.stringify(next)) } catch {} }}
-              onReset={resetVisibleCols}
-              onClose={() => setColMenuOpen(false)}
-            />
-          ) : (
-            <MobileManageDisplay
-              title={`Manage ${currentGrid.toUpperCase()} Card Fields`}
-              addLabel="Add Fields"
-              order={cardOrder}
-              visible={cardFields}
-              allKeys={CARD_FIELD_DEFS.map((c) => c.key)}
-              defsByKey={(k) => {
-                const c = CARD_FIELD_DEFS.find((d) => d.key === k)
-                return c ? { key: c.key, label: c.label, info: FIELD_INFO[c.key] } : undefined
-              }}
-              sparkTf={sparkTf}
-              onSparkTf={updateSparkTf}
-              onToggle={(k) => toggleCardField(k as CardFieldKey)}
-              onReorder={(next) => {
-                const grid = portfolioGridFromView(portfolioView)
-                const updated = { ...cardPrefs, [grid]: { ...cardPrefs[grid], order: next as CardFieldKey[] } }
-                setCardPrefs(updated)
-                saveCardPrefs(updated)
-              }}
-              onReset={resetCardFields}
-              templates={CARD_TEMPLATES}
-              onApplyTemplate={(keys) => {
-                const grid = portfolioGridFromView(portfolioView)
-                const updated = { ...cardPrefs, [grid]: makeCardPrefs(keys, keys, keys)[grid] }
-                setCardPrefs(updated)
-                saveCardPrefs(updated)
-              }}
-              onClose={() => setColMenuOpen(false)}
-            />
-          ))}
-          <div className="mobile-portfolio-section">
-            <PortfolioHeader
-              portfolio={portfolio}
-              positions={positions}
-              hidden={privacyHidden}
-              expanded={headerExpanded}
-              onToggle={toggleHeader}
-            />
-            <div className="mobile-portfolio-header">
-              <span className="mobile-portfolio-count">
-                Positions
-                {portfolio.source && (() => { const b = resolvePortfolioBadge(portfolio.source, portfolio.mode, { pricesLive: portfolio.pricesLive, fallbackActive: portfolio.fallback_active }); return <span className={`${sourceBadgeClass(portfolio.source, portfolio.mode, { pricesLive: portfolio.pricesLive, fallbackActive: portfolio.fallback_active })} pf-count-badge`}>{b.label}</span> })()}
-              </span>
-              <div className="pf-header-actions">
-                <div className="pf-pos-filter" role="group" aria-label="Position type filter">
-                  {(['all', 'stocks', 'options', 'crypto'] as const).map((f) => (
-                    <button key={f} className={positionFilter === f ? 'active' : ''} onClick={() => setPositionFilter(f)}>
-                      {f === 'all' ? 'All' : f === 'stocks' ? 'Stocks' : f === 'options' ? 'Options' : 'Crypto'}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className="pf-options-btn"
-                  aria-label="Portfolio options"
-                  aria-expanded={portfolioMenuOpen || colMenuOpen || manualHoldingOpen}
-                  onClick={() => setPortfolioMenuOpen(true)}
-                >
-                  <MoreVertical size={18} />
-                </button>
-              </div>
-
-            </div>
-            {portfolioView === 'table'
-              ? <MemoMobilePortfolioTable rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} visibleCols={visibleCols} colOrder={colOrder} sparkTf={sparkTf} advancedDefs={advancedFieldDefs} />
-              : <MemoPositionCards rows={filteredPositions} onSelect={setSelected} hidden={privacyHidden} fields={cardFields} order={cardOrder} tf={sparkTf} grid={portfolioGridFromView(portfolioView)} />
-            }
-          </div>
+          <MarketPulse items={dashboard?.macros?.market_strip || []} />
+          <AgentQuickCard agentStatus={agentStatus} onTap={() => setActive('agent')} />
+          <PortfolioInsights portfolio={portfolio} positions={positions} />
+          <UrgentAlerts portfolio={portfolio} />
+          <DailyBrief portfolio={portfolio} />
+          <ScannerSetups scanner={scanner} onSelect={setSelected} />
+          <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} />
         </>
       )}
-      {active === 'watchlists' && <MobileWatchlistManager dashboard={dashboard} onSelect={setSelected} hidden={privacyHidden} />}
-      {active === 'scanner' && <ScannerSetups scanner={scanner} onSelect={setSelected} hidden={privacyHidden} />}
-      {active === 'markets-macro' && (
-        <>
-          <MarketPulse items={dashboard?.macros?.market_strip || []} hidden={privacyHidden} />
-          <WatchlistMovers scanner={scanner} positions={positions} onSelect={setSelected} hidden={privacyHidden} />
-        </>
-      )}
-      {!['home', 'my-portfolio', 'watchlists', 'scanner', 'markets-macro', 'settings', 'about'].includes(active) && (
-        <WorkspaceShell workspaceId={active} workspace={getWorkspaceDefinition(workspaceConfig.workspaces, active)} hidden={privacyHidden} />
-      )}
-      {active === 'settings' && (
-        <MobileSheet title="Settings" onClose={() => setActive('home')}>
-          <section className="mobile-section mobile-settings-section">
-            <MobileStatusDock health={sourceHealth} hidden={privacyHidden} portfolioSource={dashboard?.portfolio?.source} portfolio={dashboard?.portfolio} />
-            <SettingsPage
-              hidden={privacyHidden}
-              variant="mobile"
-              workspaceConfig={workspaceConfig}
-              onSelectWorkspace={(workspaceId) => setActive(workspaceId)}
-              onModeChange={() => refreshDashboard()}
-              portfolioSource={dashboard?.portfolio?.source}
-            />
-          </section>
-        </MobileSheet>
-      )}
-      {active === 'about' && <MobileAboutSection hidden={privacyHidden} />}
 
-      <MobileBottomNav active={active} setActive={setActive} workspaces={workspaceConfig.workspaces} pinnedIds={workspaceConfig.pinnedMobile} />
-      {selected && (
-        <StockIntelligenceShell
-          variant="mobile"
-          ticker={selected.symbol || selected.ticker}
-          position={selected}
-          dashboard={dashboard}
-          hidden={privacyHidden}
-          onHiddenChange={updateHidden}
-          onClose={() => setSelected(null)}
-          onOpenSearch={() => setGlobalSearchOpen(true)}
-          onOpenNotifications={() => setNotificationsOpen(true)}
-        />
-      )}
-      <MobileQuickControls
-        open={quickOpen}
-        onClose={() => setQuickOpen(false)}
-        hidden={privacyHidden}
-        onHiddenChange={updateHidden}
-        onRescan={rescan}
-        rescanning={rescanning}
-        rescanStatus={rescanStatus}
-        onOpenSettings={() => setActive('settings')}
-      />
-      <MobileNotificationCenter open={notificationsOpen} onClose={() => setNotificationsOpen(false)} portfolio={portfolio} />
-      {globalSearchOpen && (
-        <GlobalStockSearch
-          universe={searchUniverse}
-          hidden={privacyHidden}
-          onSelect={(symbol) => { setSelected({ symbol }); setGlobalSearchOpen(false) }}
-          onClose={() => setGlobalSearchOpen(false)}
-        />
-      )}
+      {active === 'portfolio' && <PositionCards rows={positions} onSelect={setSelected} />}
+      {active === 'agent'     && <AgentView agentStatus={agentStatus} backtest={backtest} />}
+      {active === 'scanner'   && <ScannerSetups scanner={scanner} onSelect={setSelected} />}
+      {active === 'settings'  && <PlaceholderPanel title="Settings" />}
+
+      <MobileBottomNav active={active} setActive={setActive} agentRunning={agentRunning} />
+      {selected && <MobileDetailView position={selected} onClose={() => setSelected(null)} />}
     </main>
   )
 }

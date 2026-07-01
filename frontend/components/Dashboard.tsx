@@ -6,6 +6,7 @@ import {
   Activity,
   BarChart3,
   BookOpen,
+  Bot,
   Brain,
   ChevronLeft,
   ChevronRight,
@@ -31,6 +32,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
+import AgentDashboard from './AgentDashboard'
 import GlowCard from './ui/GlowCard'
 import SectionHeader from './ui/SectionHeader'
 import IntelligenceBadge from './ui/IntelligenceBadge'
@@ -61,7 +63,10 @@ import {
   type WorkspaceId,
 } from './workspace'
 
-const mask = 'â€¢â€¢â€¢â€¢â€¢â€¢'
+const API       = process.env.NEXT_PUBLIC_API_URL       ?? 'http://127.0.0.1:8000'
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
+const WS        = process.env.NEXT_PUBLIC_WS_URL        ?? 'ws://127.0.0.1:8000/ws'
+const mask = '••••••'
 const assetTypes = ['Stock', 'ETF', 'Crypto', 'Option', 'Other']
 const brokers = ['IBKR', 'Freedom24', 'Revolut', 'Manual']
 const emptyHolding = {
@@ -89,6 +94,7 @@ const nav = [
   ['trades', 'Trade Radar', Target],
   ['risk', 'Risk', Shield],
   ['tax', 'Tax Center', FileText],
+  ['agent', 'Agent', Bot],
   ['about', 'About', BookOpen],
   ['settings', 'Settings', Settings],
 ] as any[]
@@ -99,6 +105,7 @@ const privateNavLabels: Record<string, string> = {
   trades: 'Activity',
   risk: 'Controls',
   tax: 'Documents',
+  agent: 'Workspace',
   about: 'Info',
   settings: 'Settings',
 }
@@ -317,13 +324,28 @@ function useSourceHealthDock() {
   return health
 }
 
+function useAgentStatus() {
+  const [agentStatus, setAgentStatus] = useState<any>(null)
+
+  useEffect(() => {
+    let active = true
+    const fetch_ = () =>
+      fetch(`${AGENT_API}/agent/status`).then(r => r.json())
+        .then((d) => { if (active) setAgentStatus(d) })
+        .catch(() => {})
+    fetch_()
+    const id = setInterval(fetch_, 30_000)
+    return () => { active = false; clearInterval(id) }
+  }, [])
+
+  return agentStatus
+}
+
 export default function Dashboard() {
   const dashboard = useDash()
-  const newsIntel = useNewsIntelligence()
-  const sourceHealth = useSourceHealthDock()
-  const workspaceConfig = useWorkspaceConfig()
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<WorkspaceId>(DEFAULT_WORKSPACE_ID)
-  const [activeTool, setActiveTool] = useState<'workspace' | 'tax' | 'about' | 'settings'>('workspace')
+  const newsIntelligence = useNewsIntelligence()
+  const agentStatus = useAgentStatus()
+  const [active, setActive] = useState('dashboard')
   const [mounted, setMounted] = useState(false)
   const [hidden, setHidden] = useState(false)
   const [selected, setSelected] = useState<any>(null)
@@ -423,16 +445,7 @@ export default function Dashboard() {
 
   return (
     <div className="app">
-      <Sidebar
-        activeWorkspaceId={activeWorkspaceId}
-        activeTool={activeTool}
-        selectWorkspace={selectWorkspace}
-        setActive={selectLegacyDestination}
-        sidebarWorkspaces={sidebarWorkspaces}
-        hidden={privacyHidden}
-        amountHidden={hidden}
-        setHidden={updateHidden}
-      />
+      <Sidebar active={active} setActive={setActive} hidden={privacyHidden} amountHidden={hidden} setHidden={updateHidden} agentStatus={agentStatus} />
       <main className="main">
         <Top
           workspace={activeWorkspace}
@@ -453,16 +466,8 @@ export default function Dashboard() {
             hidden={privacyHidden}
             setActive={selectLegacyDestination}
             setSelected={setSelected}
-            newsIntel={newsIntel}
-            mask={mask}
-            components={{
-              PortfolioSnapshot,
-              PositionsTable,
-              RiskList,
-              NewsIntelligencePanel,
-              Exposure,
-              TradeList,
-            }}
+            newsIntelligence={newsIntelligence}
+            agentStatus={agentStatus}
           />
         )}
         {activeTool === 'workspace' && activeWorkspaceId === 'my-portfolio' && (
@@ -500,6 +505,13 @@ export default function Dashboard() {
             portfolioSource={dashboard?.portfolio?.source}
           />
         )}
+        {active === 'watchlist' && <WatchlistPage d={dashboard} hidden={privacyHidden} setSelected={setSelected} />}
+        {active === 'trades' && <TradeRadar d={dashboard} hidden={privacyHidden} />}
+        {active === 'risk' && <RiskPage d={dashboard} hidden={privacyHidden} />}
+        {active === 'tax' && <TaxPage hidden={privacyHidden} />}
+        {active === 'agent' && <AgentDashboard />}
+        {active === 'about' && <AboutPage hidden={privacyHidden} />}
+        {active === 'settings' && <SettingsPage hidden={privacyHidden} />}
       </main>
       {selected && (
         <StockIntelligenceShell
@@ -517,55 +529,8 @@ export default function Dashboard() {
   )
 }
 
-function statusLabel(status: any) {
-  if (!status) return 'Standby'
-  if (status.status === 'healthy' || status.data_received) return 'Live'
-  if (status.status === 'connected_no_data' || status.ok) return 'Ready'
-  if (status.status === 'failed') return 'Degraded'
-  return 'Standby'
-}
-
-function statusTone(label: string) {
-  if (label === 'Live') return 'good'
-  if (label === 'Ready') return 'warn'
-  if (label === 'Degraded') return 'bad'
-  return 'neutral'
-}
-
-function IntegrationStatusDock({ health = [], hidden = false, portfolioSource }: { health?: any[]; hidden?: boolean; portfolioSource?: string }) {
-  const bySource = (name: string) => health.find((item: any) => item.source === name)
-  const ibkrStatus = portfolioSource === 'IBKR_LIVE'
-    ? { status: 'healthy', data_received: true }
-    : bySource('IBKR')
-  const items = [
-    { name: 'IBKR', icon: Wallet, status: ibkrStatus },
-    { name: 'Yahoo', icon: Globe2, status: bySource('Yahoo Finance') },
-    { name: 'Feeds', icon: Database, status: bySource('RSS') },
-  ]
-
-  return (
-    <aside className="integration-status-dock" aria-label="Connection status">
-      <div className="integration-status-head">
-        <Activity size={15} />
-        <span>{hidden ? 'Status' : 'Status Dock'}</span>
-      </div>
-      <div className="integration-status-list">
-        {items.map(({ name, icon: Icon, status }) => {
-          const label = hidden ? 'Status' : statusLabel(status)
-          return (
-            <div className="integration-status-item" key={name}>
-              <Icon size={15} />
-              <span>{hidden ? 'Source' : name}</span>
-              <b className={statusTone(label)}>{label}</b>
-            </div>
-          )
-        })}
-      </div>
-    </aside>
-  )
-}
-
-function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, sidebarWorkspaces, hidden, amountHidden, setHidden }: any) {
+function Sidebar({ active, setActive, hidden, amountHidden, setHidden, agentStatus }: any) {
+  const agentRunning = agentStatus?.running === true
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -576,18 +541,28 @@ function Sidebar({ activeWorkspaceId, activeTool, selectWorkspace, setActive, si
           <span>{hidden ? 'Workspace' : 'Decision Platform'}</span>
         </div>
       </div>
-      <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onSelect={selectWorkspace} workspaces={sidebarWorkspaces} />
-      <div className="side-card">
-        <span className="muted">{hidden ? 'Controls' : 'System'}</span>
-        <nav>
-          {toolNav.map(([id, label, Icon]: any) => (
-            <button key={id} onClick={() => setActive(id)} className={activeTool === id ? 'active' : ''}>
-              <Icon size={18} />
-              <span>{privateNavLabel(hidden, id, label)}</span>
-            </button>
-          ))}
-        </nav>
-      </div>
+      <nav>
+        {nav.map(([id, label, Icon]: any) => (
+          <button key={id} onClick={() => setActive(id)} className={active === id ? 'active' : ''}>
+            <Icon size={18} />
+            <span>{privateNavLabel(hidden, id, label)}</span>
+            {id === 'agent' && (
+              <span
+                style={{
+                  marginLeft: 'auto',
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: agentRunning ? '#00ff88' : '#4b5563',
+                  boxShadow: agentRunning ? '0 0 6px #00ff88' : 'none',
+                  animation: agentRunning ? 'pulse 2s infinite' : 'none',
+                  flexShrink: 0,
+                }}
+              />
+            )}
+          </button>
+        ))}
+      </nav>
       <button className="privacy" aria-pressed={amountHidden} onClick={() => setHidden(!amountHidden)}>
         {hidden ? <Eye size={16} /> : <EyeOff size={16} />} {hidden ? 'Show amounts' : 'Hide amounts'}
       </button>
@@ -730,10 +705,202 @@ function MetricBar({ label, value, tone = 'blue', hidden = false }: any) {
   )
 }
 
-function toneForBias(bias: string, sentiment?: string) {
-  const value = String(bias || sentiment || '').toLowerCase()
-  if (value.includes('bull') || value === 'positive') return 'good'
-  if (value.includes('bear') || value === 'negative') return 'bad'
+function AgentMiniPanel({ agentStatus, setActive, hidden }: any) {
+  const running = agentStatus?.running === true
+  const port = agentStatus?.paper_portfolio || {}
+  const totalValue = port.total_value ?? null
+  const totalReturn = port.total_return_pct ?? null
+  const summary = agentStatus?.last_summary || {}
+  const executed = summary.executed ?? null
+  const decisions = summary.decisions ?? null
+  const circuitBroken = summary.circuit_broken === true
+  const dailyPnl = summary.daily_pnl_pct ?? null
+  const regime = agentStatus?.regime || null
+  const lastCycle = agentStatus?.last_cycle
+  const cycleCount = agentStatus?.cycle_count ?? null
+
+  const dotColor = running ? '#00ff88' : '#4b5563'
+  const cardBorder = circuitBroken
+    ? 'rgba(255,68,68,0.35)'
+    : running
+    ? 'rgba(0,255,136,0.2)'
+    : 'rgba(255,255,255,0.08)'
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+      }}
+    >
+      {/* Status row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <span
+          style={{
+            width: '9px',
+            height: '9px',
+            borderRadius: '50%',
+            background: dotColor,
+            boxShadow: running ? `0 0 8px ${dotColor}` : 'none',
+            animation: running ? 'pulse 2s infinite' : 'none',
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ fontWeight: 700, fontSize: '13px', color: running ? '#00ff88' : '#6b7280' }}>
+          {hidden ? 'Workspace' : running ? 'RUNNING' : 'STOPPED'}
+        </span>
+        {circuitBroken && !hidden && (
+          <span style={{ fontSize: '11px', color: '#ff4444', fontWeight: 700, background: 'rgba(255,68,68,0.12)', padding: '2px 8px', borderRadius: '20px', border: '1px solid rgba(255,68,68,0.3)' }}>
+            ⛔ Circuit Breaker
+          </span>
+        )}
+        {agentStatus?.mode && !hidden && (
+          <span style={{ fontSize: '11px', color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '20px', marginLeft: 'auto' }}>
+            {agentStatus.mode}
+          </span>
+        )}
+      </div>
+
+      {/* Paper portfolio value */}
+      {totalValue !== null && (
+        <div>
+          <div style={{ fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
+            {hidden ? 'Overview' : 'Paper Portfolio'}
+          </div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#ffffff', lineHeight: 1 }}>
+            {hidden ? mask : Number(totalValue).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </div>
+          {totalReturn !== null && (
+            <div style={{ fontSize: '12px', marginTop: '3px', color: Number(totalReturn) >= 0 ? '#00ff88' : '#ff4444', fontWeight: 600 }}>
+              {hidden ? mask : `${Number(totalReturn) >= 0 ? '+' : ''}${Number(totalReturn).toFixed(2)}% total return`}
+            </div>
+          )}
+          {dailyPnl !== null && !hidden && (
+            <div style={{ fontSize: '12px', color: Number(dailyPnl) >= 0 ? '#22c55e' : '#ef4444' }}>
+              Day: {Number(dailyPnl) >= 0 ? '+' : ''}{Number(dailyPnl).toFixed(2)}%
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Today's stats */}
+      {(executed !== null || decisions !== null) && (
+        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+          {decisions !== null && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#3b82f6' }}>{hidden ? '—' : decisions}</div>
+              <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Decisions</div>
+            </div>
+          )}
+          {executed !== null && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#00ff88' }}>{hidden ? '—' : executed}</div>
+              <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Executed</div>
+            </div>
+          )}
+          {cycleCount !== null && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#a855f7' }}>{hidden ? '—' : cycleCount}</div>
+              <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Cycles</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Regime + last cycle */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+        {regime && !hidden && (
+          <span style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            padding: '3px 10px',
+            borderRadius: '20px',
+            background: regime === 'BULL_TREND' ? 'rgba(0,255,136,0.1)' : regime === 'CRISIS' || regime === 'BEAR_TREND' ? 'rgba(255,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+            color: regime === 'BULL_TREND' ? '#00ff88' : regime === 'CRISIS' || regime === 'BEAR_TREND' ? '#ff4444' : '#f59e0b',
+            border: `1px solid ${regime === 'BULL_TREND' ? 'rgba(0,255,136,0.25)' : regime === 'CRISIS' || regime === 'BEAR_TREND' ? 'rgba(255,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`,
+          }}>
+            {regime.replace(/_/g, ' ')}
+          </span>
+        )}
+        {lastCycle && !hidden && (
+          <span style={{ fontSize: '11px', color: '#6b7280' }}>
+            Last: {(() => { try { return new Date(lastCycle).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) } catch { return lastCycle } })()}
+          </span>
+        )}
+      </div>
+
+      {/* CTA */}
+      <button
+        className="tab"
+        onClick={() => setActive('agent')}
+        style={{ marginTop: '4px', width: '100%', justifyContent: 'center' }}
+      >
+        <Bot size={14} style={{ marginRight: '6px' }} />
+        {hidden ? 'Open workspace' : 'Open AI Agent →'}
+      </button>
+
+      {/* No data fallback */}
+      {agentStatus === null && (
+        <p className="muted" style={{ fontSize: '12px', textAlign: 'center' }}>
+          Connecting to agent…
+        </p>
+      )}
+    </div>
+  )
+}
+
+function DashboardHome({ d, hidden, setActive, setSelected, newsIntelligence, agentStatus }: any) {
+  const p = d?.portfolio || {}
+  return (
+    <div className="grid">
+      <Panel title="Portfolio Snapshot" privateTitle="Overview" span="span-8" hidden={hidden}>
+        <PortfolioSnapshot p={p} hidden={hidden} />
+      </Panel>
+      <Panel title="AI Agent" privateTitle="Workspace" span="span-4" hidden={hidden} icon={<Bot size={16} />}>
+        <AgentMiniPanel agentStatus={agentStatus} setActive={setActive} hidden={hidden} />
+      </Panel>
+      <Panel title="Today's Decision Brief" privateTitle="Workspace" span="span-4" hidden={hidden}>
+        <div className="actions">
+          {(p.today_actions || []).map((a: any) => (
+            <div className="action" key={a.title}>
+              <Brain size={18} className="green" />
+              <div>
+                <b>{hidden ? 'Workspace item' : a.title}</b>
+                <div className="muted">{hidden ? mask : a.text}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="My Positions" privateTitle="Overview" span="span-8" hidden={hidden}>
+        <PositionsTable rows={(p.positions || []).slice(0, 6)} hidden={hidden} setSelected={setSelected} />
+        <button className="tab" onClick={() => setActive('portfolio')}>
+          {hidden ? 'Open overview' : 'Open full portfolio'}
+        </button>
+      </Panel>
+      <Panel title="Risk Controls" privateTitle="Controls" span="span-4" hidden={hidden}>
+        <RiskList items={p.guardrails || []} hidden={hidden} />
+      </Panel>
+      <Panel title="News Intelligence" privateTitle="Workspace" span="span-12" hidden={hidden} icon={<Newspaper size={16} />}>
+        <NewsIntelligencePanel items={newsIntelligence || []} hidden={hidden} />
+      </Panel>
+      <Panel title="Exposure Map" privateTitle="Overview" span="span-6" hidden={hidden}>
+        <Exposure rows={p.exposures?.rows || []} hidden={hidden} />
+      </Panel>
+      <Panel title="Trade Radar" privateTitle="Activity" span="span-6" hidden={hidden}>
+        <TradeList items={(d?.scanner || []).slice(0, 3)} hidden={hidden} />
+        <button className="tab" onClick={() => setActive('trades')}>
+          {hidden ? 'Open activity' : 'Open Trade Radar'}
+        </button>
+      </Panel>
+    </div>
+  )
+}
+
+function toneForSentiment(sentiment: string) {
+  if (sentiment === 'positive') return 'good'
+  if (sentiment === 'negative') return 'bad'
   return 'warn'
 }
 

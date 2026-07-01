@@ -52,6 +52,7 @@ class ManualHoldingRequest(BaseModel):
  assetClass: Optional[str]=None
  multiplier: Optional[float]=None
 
+
 THESIS_STORE={}
 TRANSACTIONS=[]
 FRONTEND_CONTRACT_SCHEMA_VERSION='ARTEMIS-AI-007.0'

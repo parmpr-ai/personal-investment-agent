@@ -39,6 +39,8 @@ backend/Lib/
 backend/Scripts/
 backend/Include/
 backend/pyvenv.cfg
-
-# IBKR raw response files — must never be committed (contain account IDs)
-data/ibkr-live/*.raw.json
+backend/*.sqlite3
+mobile/.next/
+mobile/node_modules
+mobile/tsconfig.tsbuildinfo
+backend/ml_models/
