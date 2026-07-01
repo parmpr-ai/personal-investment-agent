@@ -14,6 +14,7 @@ export type WorkspaceWidgetId =
   | 'agent-performance'
   | 'agent-settings'
   | 'agent-decisions'
+  | 'agent-paper-trading'
 
 export type WidgetSize = 'full'
 
@@ -65,6 +66,14 @@ export const WIDGET_CATALOG: readonly WidgetCatalogItem[] = [
     id: 'agent-decisions',
     title: 'Trading Decisions',
     description: 'Recent entries, exits, and decision logs.',
+    size: 'full',
+    supportedWorkspaces: ['agent'],
+    status: 'active',
+  },
+  {
+    id: 'agent-paper-trading',
+    title: 'Paper Trading Control',
+    description: 'Manual trade entry/exit with live predictions and performance tracking.',
     size: 'full',
     supportedWorkspaces: ['agent'],
     status: 'active',
