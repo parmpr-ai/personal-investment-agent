@@ -18,6 +18,7 @@ from .strategy_config import (
     STRATEGY_CONFIG, STRATEGY_TIERS, ALL_STRATEGIES,
     DAILY_LIMITS, POSITION_SIZING, get_forward_days, get_tier
 )
+from .adaptive_trainer import adaptive_trainer
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 AGENT_DB = BASE_DIR / "agent_training.sqlite3"
@@ -52,6 +53,9 @@ class AutonomousExecutorV2:
                 # Phase 1: Check and exit trades by tier
                 await self.check_and_exit_trades()
 
+                # Phase 1.5: Check if retraining is needed
+                await self.check_and_retrain()
+
                 # Phase 2: Make predictions and enter new trades
                 await self.make_predictions_and_enter()
 
@@ -80,6 +84,18 @@ class AutonomousExecutorV2:
 
         except Exception as e:
             print(f"[Executor v2] Error checking exits: {e}")
+
+    async def check_and_retrain(self):
+        """Check if adaptive retraining is needed and trigger if conditions met."""
+        try:
+            should_train, reason = adaptive_trainer.should_retrain()
+            if should_train and adaptive_trainer.can_train_now():
+                print(f"[Executor v2] 🔄 Retraining triggered: {reason}")
+                result = await adaptive_trainer.retrain_async()
+                if result.get("ok"):
+                    print(f"[Executor v2] ✅ Retrain complete in {result.get('elapsed_seconds', 0):.2f}s")
+        except Exception as e:
+            print(f"[Executor v2] Error during retrain check: {e}")
 
     async def exit_trade_auto(self, trade: Dict[str, Any]) -> bool:
         """Automatically exit a trade when forward_days expires."""

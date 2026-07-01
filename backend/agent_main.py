@@ -25,6 +25,7 @@ from services.settings_store import get_settings
 from services.autonomous_executor_v2 import async_executor_v2
 from services.autonomous_trades import entry_trade, exit_trade, get_open_trades, get_closed_trades, get_performance as get_trades_performance, reset_trades
 from services.executor_monitor import executor_monitor
+from services.adaptive_trainer import adaptive_trainer
 
 load_dotenv()
 
@@ -165,6 +166,22 @@ def executor_summary(): return executor_monitor.get_summary()
 def executor_dashboard():
  executor_monitor.print_dashboard()
  return executor_monitor.get_summary()
+
+# ── Adaptive Trainer ───────────────────────────────────────────────────────────
+@app.get('/trainer/status')
+def trainer_status(): return adaptive_trainer.get_status()
+
+@app.get('/trainer/history')
+def trainer_history(limit: int = 10): return {'history': adaptive_trainer.get_training_history(limit)}
+
+@app.post('/trainer/retrain-now')
+async def trainer_retrain_now():
+ should_train, reason = adaptive_trainer.should_retrain()
+ if not should_train:
+  return {'ok': False, 'error': f'No retrain needed: {reason}'}
+ if not adaptive_trainer.can_train_now():
+  return {'ok': False, 'error': 'Training already in progress'}
+ return await adaptive_trainer.retrain_async()
 
 # ── IBKR paper ────────────────────────────────────────────────────────────────
 @app.get('/agent/ibkr-paper/status')
