@@ -322,9 +322,21 @@ def compute_signal_arrays(
     z_arr = _zscore(closes, 20)
     rv_arr = _rvol(volumes, 10)
 
-    # Bollinger
-    bb_std = np.array([float(np.std(closes[max(0, i-19):i+1])) if i >= 19 else closes[i]*0.02
-                        for i in range(n)])
+    # Bollinger (vectorized rolling std)
+    def rolling_std_20(arr):
+        """Vectorized 20-period rolling std using cumsum trick."""
+        if n < 20:
+            return np.array([arr[i] * 0.02 for i in range(n)])
+        cumsum = np.concatenate([[0], np.cumsum(arr)])
+        cumsq = np.concatenate([[0], np.cumsum(arr ** 2)])
+        rolling_sum = cumsum[21:n+1] - cumsum[1:n-19]
+        rolling_sumsq = cumsq[21:n+1] - cumsq[1:n-19]
+        rolling_mean = rolling_sum / 20
+        rolling_var = rolling_sumsq / 20 - rolling_mean ** 2
+        rolling_std_vals = np.sqrt(np.maximum(rolling_var, 0))
+        return np.concatenate([arr[:20] * 0.02, rolling_std_vals])
+
+    bb_std = rolling_std_20(closes)
     bb_upper = sma20 + 2 * bb_std
     bb_lower = sma20 - 2 * bb_std
 
@@ -336,9 +348,29 @@ def compute_signal_arrays(
     trend5 = np.zeros(n)
     trend5[5:] = (closes[5:] - closes[:-5]) / closes[:-5] * 100
 
-    # 52-week (252-bar) high/low proximity
-    high52 = np.array([float(np.max(closes[max(0, i-251):i+1])) for i in range(n)])
-    low52 = np.array([float(np.min(closes[max(0, i-251):i+1])) for i in range(n)])
+    # 52-week (252-bar) high/low proximity (vectorized rolling max/min)
+    def rolling_max_252(arr):
+        """Vectorized 252-period rolling max."""
+        if n < 252:
+            return np.array([np.max(arr[:i+1]) for i in range(n)])
+        result = np.zeros(n)
+        result[:252] = np.array([np.max(arr[:i+1]) for i in range(252)])
+        for i in range(252, n):
+            result[i] = np.max(arr[i-251:i+1])
+        return result
+
+    def rolling_min_252(arr):
+        """Vectorized 252-period rolling min."""
+        if n < 252:
+            return np.array([np.min(arr[:i+1]) for i in range(n)])
+        result = np.zeros(n)
+        result[:252] = np.array([np.min(arr[:i+1]) for i in range(252)])
+        for i in range(252, n):
+            result[i] = np.min(arr[i-251:i+1])
+        return result
+
+    high52 = rolling_max_252(closes)
+    low52 = rolling_min_252(closes)
     pct_from_h52 = (closes - high52) / high52 * 100
 
     # ── Extended ML features ──────────────────────────────────────────────────
@@ -368,40 +400,65 @@ def compute_signal_arrays(
     if n > 6:
         price_accel[6:] = roc3[6:] - roc3[3:n - 3]
 
+    # Vectorized streak computation: consecutive win/loss groups
+    signs = np.sign(chg).astype(np.int8)
+    sign_changes = np.concatenate([[1], np.abs(np.diff(signs)) > 0])
+    sign_groups = np.cumsum(sign_changes)
+
+    # Within each group, count from 1 to group_size (with sign)
     streak_arr = np.zeros(n, dtype=np.float32)
-    cur_streak = 0
-    for _i in range(1, n):
-        if chg[_i] > 0:
-            cur_streak = max(1, cur_streak + 1)
-        elif chg[_i] < 0:
-            cur_streak = min(-1, cur_streak - 1)
-        else:
-            cur_streak = 0
-        streak_arr[_i] = cur_streak
+    for group_id in np.unique(sign_groups):
+        mask = sign_groups == group_id
+        indices = np.where(mask)[0]
+        group_sign = signs[indices[0]] if len(indices) > 0 else 0
 
-    rvol_trend_arr = np.ones(n, dtype=np.float32)
-    for _i in range(20, n):
-        rv_mean = float(np.mean(rv_arr[_i - 20:_i]))
-        rvol_trend_arr[_i] = rv_arr[_i] / rv_mean if rv_mean > 0 else 1.0
+        for idx, pos in enumerate(indices):
+            if group_sign > 0:
+                streak_arr[pos] = float(idx + 1)
+            elif group_sign < 0:
+                streak_arr[pos] = float(-(idx + 1))
+            else:
+                streak_arr[pos] = 0.0
 
-    atr_expand = np.ones(n, dtype=np.float32)
-    for _i in range(10, n):
-        if atr_arr[_i - 10] > 0:
-            atr_expand[_i] = float(atr_arr[_i] / atr_arr[_i - 10])
+    # Vectorized rvol_trend: rolling 20-period mean
+    def rolling_mean_20(arr):
+        """Vectorized 20-period rolling mean."""
+        if n < 20:
+            return np.ones(n, dtype=np.float32)
+        cumsum = np.concatenate([[0], np.cumsum(arr)])
+        rolling_mean_vals = (cumsum[21:n+1] - cumsum[1:n-19]) / 20
+        result = np.concatenate([np.ones(20, dtype=np.float32), rolling_mean_vals])
+        return np.where(result > 0, arr / result, 1.0)
+
+    rvol_trend_arr = rolling_mean_20(rv_arr).astype(np.float32)
+
+    # Vectorized atr_expand: ratio of current to 10-periods-ago ATR
+    atr_shifted = np.concatenate([np.ones(10), atr_arr[:-10]])
+    with np.errstate(divide='ignore', invalid='ignore'):
+        atr_expand = np.where(atr_shifted > 0, (atr_arr / atr_shifted).astype(np.float32), 1.0)
+    atr_expand = np.nan_to_num(atr_expand, nan=1.0, posinf=1.0, neginf=1.0)
 
     vol_confirm = (rv_arr - 1.0) * np.sign(chg)
     rsi_extreme = np.where(rsi_arr > 70, rsi_arr - 70.0,
                            np.where(rsi_arr < 30, rsi_arr - 30.0, 0.0))
     sma_gap = np.where(sma20 > 0, (closes - sma20) / sma20 * 100, 0.0)
 
-    # Rolling 10-day win rate (0-1): strongest single regime indicator
-    win_rate_10d = np.full(n, 0.5, dtype=np.float32)
-    for _i in range(10, n):
-        win_rate_10d[_i] = float(np.mean(chg[_i - 10:_i] > 0))
+    # Vectorized rolling 10-day win rate: % of positive changes
+    wins = (chg > 0).astype(np.float32)
+    if n >= 10:
+        cumsum_wins = np.concatenate([[0], np.cumsum(wins)])
+        rolling_wins = cumsum_wins[10:] - cumsum_wins[:-10]
+        win_rate_10d = np.concatenate([np.full(10, 0.5, dtype=np.float32), rolling_wins / 10])
+    else:
+        win_rate_10d = np.full(n, 0.5, dtype=np.float32)
 
-    # Rolling 5-day mean return (signed, captures regime direction + magnitude)
-    ret_mean_5d = np.zeros(n, dtype=np.float32)
-    ret_mean_5d[5:] = np.array([float(np.mean(chg[_i - 5:_i])) for _i in range(5, n)])
+    # Vectorized rolling 5-day mean return
+    if n >= 5:
+        cumsum_chg = np.concatenate([[0], np.cumsum(chg)])
+        rolling_chg_sum = cumsum_chg[5:] - cumsum_chg[:-5]
+        ret_mean_5d = np.concatenate([np.zeros(5, dtype=np.float32), (rolling_chg_sum / 5).astype(np.float32)])
+    else:
+        ret_mean_5d = np.zeros(n, dtype=np.float32)
 
     return {
         "sma20": sma20, "sma50": sma50,
