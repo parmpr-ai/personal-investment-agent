@@ -7,6 +7,7 @@ import asyncio
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import sqlite3
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -23,16 +24,8 @@ class StockScreener:
 
     def get_sp500_midcaps(self) -> List[str]:
         """Get S&P 500 stocks, focus on mid/small-cap range ($2B-$20B market cap)."""
-        try:
-            # Use yfinance to get S&P 500 data
-            sp500_data = yf.download("^GSPC", period="1d", progress=False)
-
-            # Get list of S&P 500 tickers (simplified - would use official list in production)
-            # For now, return a curated list of mid-cap candidates
-            return self._get_candidate_pool()
-        except Exception as e:
-            print(f"[Screener] Error getting S&P 500: {e}")
-            return self._get_candidate_pool()
+        # Return curated candidate pool (avoids network calls)
+        return self._get_candidate_pool()
 
     def _get_candidate_pool(self) -> List[str]:
         """Return comprehensive candidate pool of mid/small-cap stocks."""
@@ -258,10 +251,32 @@ class StockScreener:
             return []
 
     async def _score_opportunity(self, ticker: str) -> Optional[Dict[str, Any]]:
-        """Score a stock for trading opportunity (0-100)."""
+        """Score a stock for trading opportunity (0-100). Uses cached data only (network-friendly)."""
         try:
-            # Fetch recent data
-            data = yf.download(ticker, period="60d", progress=False, interval="1d")
+            # Use cached data only (avoids network restrictions)
+            cache_db = self.cache_dir.parent / "ml_data_cache.sqlite3"
+            if not cache_db.exists():
+                return None
+
+            try:
+                conn = sqlite3.connect(str(cache_db))
+                cache_df = pd.read_sql(
+                    f"SELECT date, open, high, low, close, volume FROM ohlcv WHERE ticker='{ticker}' ORDER BY date DESC LIMIT 60",
+                    conn
+                )
+                conn.close()
+
+                if cache_df.empty or len(cache_df) < 20:
+                    return None
+
+                # Convert to time series format
+                cache_df['date'] = pd.to_datetime(cache_df['date'])
+                cache_df = cache_df.sort_values('date')
+                data = cache_df[['open', 'high', 'low', 'close', 'volume']].copy()
+                data.index = cache_df['date']
+                data.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+            except:
+                return None
 
             if data.empty or len(data) < 20:
                 return None
