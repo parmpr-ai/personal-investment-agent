@@ -200,12 +200,19 @@ class RiskManager:
 
         return {"approved": approved, "adjusted_qty": qty, "reasons": reasons}
 
-    def compute_stop_loss(self, price: float, action: str = "BUY", atr: Optional[float] = None) -> float:
-        """ATR-based stop (2× ATR) when available, else fixed % fallback."""
+    def compute_stop_loss(self, price: float, action: str = "BUY", atr: Optional[float] = None, vix: Optional[float] = None) -> float:
+        """ATR-based stop (2× ATR) when available, else fixed % fallback. VIX-adjusted for high volatility."""
         if atr and atr > 0:
             distance = atr * 2.0
         else:
             distance = price * self.limits["stop_loss_pct"] / 100
+
+        # VIX-adjustment: tighten stops during high volatility (avoid whipsaw), loosen during low volatility
+        if vix and vix > 0:
+            # VIX 20 → 1.0x, VIX 30 → 1.3x, VIX 40 → 1.6x (wider stops in high vol)
+            vix_mult = 1.0 + (max(0, vix - 20) / 50) * 0.6
+            distance = distance * vix_mult
+
         if action == "BUY":
             return round(price - distance, 2)
         return round(price + distance, 2)
@@ -356,6 +363,46 @@ class RiskManager:
             return 0.75, f"Moderate correlation {max_corr:.2f} with {max_corr_ticker} — size ×0.75"
         return 1.0, ""
 
+    def cross_asset_correlation_check(
+        self,
+        new_ticker: str,
+        new_action: str,
+        open_positions: List[Dict[str, Any]],
+        returns_cache: Dict[str, List[float]],
+    ) -> Tuple[bool, str]:
+        """
+        Prevent entering highly correlated assets in same direction (e.g., don't long both NVDA and MSFT if 0.8+ corr).
+        Returns (approved, reason).
+        """
+        new_rets = returns_cache.get(new_ticker.upper())
+        if not new_rets or len(new_rets) < 10:
+            return True, ""  # Can't check, allow entry
+
+        # Find correlated positions with same action
+        same_action_pos = [
+            p for p in open_positions
+            if (new_action == "BUY" and p.get("action") == "BUY") or
+               (new_action == "SHORT" and p.get("action") == "SHORT")
+        ]
+
+        for pos in same_action_pos:
+            pos_ticker = pos.get("ticker", "").upper()
+            pos_rets = returns_cache.get(pos_ticker)
+            if not pos_rets or len(pos_rets) < 10:
+                continue
+
+            # Calculate correlation
+            min_len = min(len(new_rets), len(pos_rets))
+            corr = np.corrcoef(new_rets[-min_len:], pos_rets[-min_len:])[0, 1]
+            if np.isnan(corr):
+                continue
+
+            # Block if correlation > 0.8 (too much overlap)
+            if corr > 0.80:
+                return False, f"Cross-asset corr {corr:.2f} with {pos_ticker} — skip entry to avoid double risk"
+
+        return True, ""
+
     def portfolio_cvar(
         self,
         open_positions: List[Dict[str, Any]],
@@ -442,6 +489,92 @@ class RiskManager:
             marginal[t] = round(full_cvar - without_cvar, 2)
 
         return marginal
+
+    def sector_exposure_check(
+        self,
+        new_ticker: str,
+        open_positions: List[Dict[str, Any]],
+        max_sector_pct: float = 25.0,
+        portfolio_value: float = 100000.0,
+    ) -> Tuple[bool, str]:
+        """
+        Check if adding new_ticker would exceed sector concentration limit.
+        Returns (approved, reason).
+        """
+        from backtester import SECTOR_MAP
+
+        new_sector = SECTOR_MAP.get(new_ticker.upper(), "Other")
+        if new_sector == "Unknown":
+            return True, ""
+
+        # Calculate current sector exposure
+        sector_value = 0.0
+        for pos in open_positions:
+            t = pos.get("ticker", "").upper()
+            s = SECTOR_MAP.get(t, "Unknown")
+            if s == new_sector:
+                sector_value += abs(float(pos.get("market_value", 0)))
+
+        # Add proposed position (rough estimate: assume 2% position = 2,000 on 100k portfolio)
+        sector_value += portfolio_value * 0.02
+
+        sector_pct = sector_value / portfolio_value * 100 if portfolio_value > 0 else 0
+        if sector_pct > max_sector_pct:
+            return False, f"{new_sector} at {sector_pct:.1f}% (limit {max_sector_pct}%)"
+        return True, ""
+
+    def trailing_stop_update(
+        self,
+        position: Dict[str, Any],
+        current_price: float,
+        trail_pct: float = 3.0,
+    ) -> Optional[float]:
+        """
+        Calculate trailing stop for a long position.
+        For shorts, invert logic (track lowest price, stop above it).
+        Returns new stop loss price, or None if unchanged.
+        """
+        entry_price = float(position.get("entry_price", 0))
+        qty = float(position.get("qty", 0))
+        is_long = qty > 0
+
+        if not entry_price or entry_price <= 0:
+            return None
+
+        # For longs: stop trails from the high
+        if is_long:
+            high_since_entry = float(position.get("high_since_entry", current_price))
+            if current_price > high_since_entry:
+                high_since_entry = current_price
+            trail_stop = high_since_entry * (1 - trail_pct / 100)
+            return trail_stop if trail_stop > entry_price * 0.9 else None
+
+        # For shorts: stop trails from the low
+        else:
+            low_since_entry = float(position.get("low_since_entry", current_price))
+            if current_price < low_since_entry:
+                low_since_entry = current_price
+            trail_stop = low_since_entry * (1 + trail_pct / 100)
+            return trail_stop if trail_stop < entry_price * 1.1 else None
+
+    def intraday_drawdown_check(
+        self,
+        portfolio: Dict[str, Any],
+        intraday_high_value: float,
+        intraday_dd_limit_pct: float = 2.0,
+    ) -> Tuple[bool, str]:
+        """
+        Check if intraday drawdown from session high exceeds limit.
+        Prevents over-trading on bad days.
+        """
+        current_value = float(portfolio.get("total_value", 0))
+        if intraday_high_value <= 0:
+            return True, ""
+
+        intraday_dd = (intraday_high_value - current_value) / intraday_high_value * 100
+        if intraday_dd > intraday_dd_limit_pct:
+            return False, f"Intraday DD {intraday_dd:.1f}% > limit {intraday_dd_limit_pct}%"
+        return True, ""
 
     def portfolio_health(self, portfolio: Dict[str, Any], macro: Dict[str, Any]) -> Dict[str, Any]:
         total = float(portfolio.get("total_value", 1))

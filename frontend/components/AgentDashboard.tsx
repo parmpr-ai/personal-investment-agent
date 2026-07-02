@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import {
   AreaChart,
   Area,
@@ -17,8 +18,40 @@ import {
   Cell,
 } from 'recharts'
 
+// ─── Dynamic Widget Imports ──────────────────────────────────────────────────
+const AgentSettingsWidget = dynamic(() => import('./widgets/AgentSettingsWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
+const AgentTrainingStatusWidget = dynamic(() => import('./widgets/AgentTrainingStatusWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
+const AgentPerformanceWidget = dynamic(() => import('./widgets/AgentPerformanceWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
+const AgentDecisionsWidget = dynamic(() => import('./widgets/AgentDecisionsWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
+const AgentBacktestResultsWidget = dynamic(() => import('./widgets/AgentBacktestResultsWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
+const AgentPaperTradingWidget = dynamic(() => import('./widgets/AgentPaperTradingWidget'), {
+  loading: () => <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>Loading...</div>,
+  ssr: false,
+})
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 const AGENT_API = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'http://127.0.0.1:8001'
+const PIA_API = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'
 
 const C = {
   bg: '#0a0a0a',
@@ -77,6 +110,14 @@ const fmtDatetime = (ts: string) => {
 
 async function apiFetch(path: string, init?: RequestInit) {
   const res = await fetch(`${AGENT_API}${path}`, init)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw body
+  return body
+}
+
+// Macros/portfolio live on the main PIA backend (port 8000), not the agent server
+async function piaFetch(path: string, init?: RequestInit) {
+  const res = await fetch(`${PIA_API}${path}`, init)
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw body
   return body
@@ -228,11 +269,12 @@ function Spinner() {
 
 // ─── Section A: Live Status Bar ───────────────────────────────────────────────
 
-function LiveStatusBar({ status, onToggle, toggling, regimeData }: { status: any; onToggle: () => void; toggling: boolean; regimeData: any }) {
+function LiveStatusBar({ status, onToggle, onOpenSellModal, toggling, sellAllLoading, regimeData }: { status: any; onToggle: () => void; onOpenSellModal: () => void; toggling: boolean; sellAllLoading: boolean; regimeData: any }) {
   const running = status?.running
   const portfolio = status?.paper_portfolio || {}
   const totalReturn = portfolio.total_return_pct ?? 0
   const totalValue = portfolio.total_value ?? 0
+  const openPositions = (portfolio?.positions || []).length
 
   return (
     <Card
@@ -278,6 +320,31 @@ function LiveStatusBar({ status, onToggle, toggling, regimeData }: { status: any
         {toggling ? 'Working...' : running ? 'STOP AGENT' : 'START AGENT'}
       </button>
 
+      {/* Emergency Sell-All Button */}
+      {openPositions > 0 && (
+        <button
+          onClick={onOpenSellModal}
+          disabled={sellAllLoading}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 16px',
+            borderRadius: '8px',
+            border: 'none',
+            background: 'rgba(255,68,68,0.2)',
+            color: C.red,
+            fontWeight: 700,
+            fontSize: '13px',
+            cursor: sellAllLoading ? 'wait' : 'pointer',
+            transition: 'all 0.2s',
+            flexShrink: 0,
+          }}
+        >
+          🚨 SELL ALL ({openPositions})
+        </button>
+      )}
+
       {/* Divider */}
       <div style={{ width: '1px', height: '32px', background: C.border }} />
 
@@ -299,6 +366,19 @@ function LiveStatusBar({ status, onToggle, toggling, regimeData }: { status: any
             News: {status.config.news_provider}
           </Badge>
         )}
+
+        {status?.risk_mode && status.risk_mode !== 'AUTO' && (() => {
+          const rm = status.risk_mode as string
+          const rmColor = rm === 'AGGRESSIVE' ? C.red : rm === 'DEFENSIVE' ? C.purple : rm === 'CONSERVATIVE' ? C.yellow : C.green
+          const rmBg = rm === 'AGGRESSIVE' ? 'rgba(255,68,68,0.1)' : rm === 'DEFENSIVE' ? 'rgba(168,85,247,0.1)' : rm === 'CONSERVATIVE' ? 'rgba(245,158,11,0.1)' : 'rgba(0,255,136,0.08)'
+          return <Badge color={rmColor} bg={rmBg}>{rm}</Badge>
+        })()}
+
+        {status?.trade_style && status.trade_style !== 'AUTO' && (() => {
+          const ts = status.trade_style as string
+          const tsColor = ts === 'DAY_TRADE' ? C.blue : ts === 'POSITION_TRADE' ? C.purple : C.textSecondary
+          return <Badge color={tsColor} bg={`${tsColor}15`}>{ts.replace(/_/g, ' ')}</Badge>
+        })()}
 
         {status?.cycle_count != null && (
           <Badge>Cycle #{status.cycle_count}</Badge>
@@ -584,20 +664,20 @@ function OpenPositionsTable({ portfolio, loading }: { portfolio: any; loading: b
         <EmptyState message="No open positions" />
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead>
               <tr>
-                {['Ticker', 'Side', 'Qty', 'Entry', 'Current', 'P&L $', 'P&L %', 'Stop', 'Target'].map((h) => (
+                {['Ticker', 'Style', 'Side', 'Qty', 'Entry', 'Current', 'P&L $', 'P&L %', 'Hold', 'Stop', 'Target'].map((h) => (
                   <th
                     key={h}
                     style={{
                       color: C.textMuted,
-                      fontSize: '11px',
+                      fontSize: '10px',
                       fontWeight: 600,
                       textTransform: 'uppercase',
                       letterSpacing: '0.08em',
-                      textAlign: h === 'Ticker' ? 'left' : 'right',
-                      padding: '8px 10px',
+                      textAlign: h === 'Ticker' || h === 'Style' ? 'left' : 'right',
+                      padding: '7px 8px',
                       borderBottom: `1px solid ${C.border}`,
                     }}
                   >
@@ -609,9 +689,17 @@ function OpenPositionsTable({ portfolio, loading }: { portfolio: any; loading: b
             <tbody>
               {positions.map((p: any, i: number) => {
                 const pnl = p.unrealized_pnl ?? 0
-                const pnlPct = p.pnl_pct ?? 0
+                const pnlPct = p.unrealized_pct ?? p.pnl_pct ?? 0
                 const isProfit = pnl >= 0
                 const isLong = (p.side || '').toUpperCase() === 'LONG'
+                const style = (p.trade_style || '') as string
+                const styleColor = style === 'DAY_TRADE' ? C.blue : style === 'POSITION_TRADE' ? C.purple : style === 'SWING_TRADE' ? C.yellow : C.textMuted
+                const holdHours = p.entry_ts ? (() => {
+                  try {
+                    const h = (Date.now() - new Date(p.entry_ts).getTime()) / 3600000
+                    return h < 24 ? `${h.toFixed(0)}h` : `${(h / 24).toFixed(1)}d`
+                  } catch { return '—' }
+                })() : '—'
 
                 return (
                   <tr
@@ -623,27 +711,37 @@ function OpenPositionsTable({ portfolio, loading }: { portfolio: any; loading: b
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)')}
                   >
-                    <td style={{ padding: '10px 10px', fontWeight: 700, color: C.textPrimary }}>{p.ticker}</td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right' }}>
+                    <td style={{ padding: '8px 8px', fontWeight: 700, color: C.textPrimary }}>{p.ticker}</td>
+                    <td style={{ padding: '8px 8px' }}>
+                      {style ? (
+                        <Badge color={styleColor} bg={`${styleColor}15`} >
+                          {style === 'DAY_TRADE' ? 'DAY' : style === 'SWING_TRADE' ? 'SWING' : style === 'POSITION_TRADE' ? 'POS' : style}
+                        </Badge>
+                      ) : <span style={{ color: C.textMuted }}>—</span>}
+                    </td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>
                       <Badge color={isLong ? C.green : C.red} bg={isLong ? 'rgba(0,255,136,0.1)' : 'rgba(255,68,68,0.1)'}>
                         {p.side || '—'}
                       </Badge>
                     </td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: C.textSecondary }}>{p.qty ?? '—'}</td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: C.textSecondary }}>{fmt$(p.avg_price)}</td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: C.textPrimary, fontWeight: 600 }}>
-                      {fmt$(p.market_value / (p.qty || 1))}
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.textSecondary }}>{p.qty ?? '—'}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.textSecondary }}>{fmt$(p.avg_price)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.textPrimary, fontWeight: 600 }}>
+                      {p.current_price ? fmt$(p.current_price) : fmt$(p.market_value / (p.qty || 1))}
                     </td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: isProfit ? C.green : C.red, fontWeight: 600 }}>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: isProfit ? C.green : C.red, fontWeight: 600 }}>
                       {fmt$(pnl)}
                     </td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: isProfit ? C.green : C.red }}>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: isProfit ? C.green : C.red }}>
                       {fmtPct(pnlPct)}
                     </td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: C.red }}>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.textMuted, fontSize: '11px' }}>
+                      {holdHours}
+                    </td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.red }}>
                       {p.stop_loss ? fmt$(p.stop_loss) : '—'}
                     </td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: C.green }}>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.green }}>
                       {p.target ? fmt$(p.target) : '—'}
                     </td>
                   </tr>
@@ -805,13 +903,24 @@ const ACTION_COLORS: Record<string, string> = {
 }
 
 function DecisionLog({ decisions, loading }: { decisions: any[]; loading: boolean }) {
-  const [tooltip, setTooltip] = useState<{ idx: number; text: string } | null>(null)
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+
+  const toggleExpand = (i: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
+  }
 
   return (
     <Card style={{ marginBottom: '20px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <SectionTitle style={{ margin: 0 }}>Live Decision Log</SectionTitle>
-        <Badge color={C.blue}>Refreshes every 15s</Badge>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span style={{ color: C.textMuted, fontSize: '11px' }}>Click reasoning to expand</span>
+          <Badge color={C.blue}>Refreshes every 15s</Badge>
+        </div>
       </div>
 
       {loading ? (
@@ -823,7 +932,7 @@ function DecisionLog({ decisions, loading }: { decisions: any[]; loading: boolea
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead>
               <tr>
-                {['Time', 'Ticker', 'Action', 'Confidence', 'Reasoning', 'Result'].map((h) => (
+                {['Time', 'Ticker', 'Action', 'Style', 'Confidence', 'Reasoning', 'Result'].map((h) => (
                   <th
                     key={h}
                     style={{
@@ -832,7 +941,7 @@ function DecisionLog({ decisions, loading }: { decisions: any[]; loading: boolea
                       fontWeight: 600,
                       textTransform: 'uppercase',
                       letterSpacing: '0.08em',
-                      textAlign: h === 'Reasoning' ? 'left' : h === 'Time' || h === 'Ticker' ? 'left' : 'center',
+                      textAlign: h === 'Reasoning' || h === 'Time' || h === 'Ticker' ? 'left' : 'center',
                       padding: '6px 10px',
                       borderBottom: `1px solid ${C.border}`,
                     }}
@@ -847,76 +956,72 @@ function DecisionLog({ decisions, loading }: { decisions: any[]; loading: boolea
                 const actionKey = (d.action || '').toUpperCase()
                 const actionColor = ACTION_COLORS[actionKey] || C.textSecondary
                 const reasoning = d.reasoning || ''
-                const truncated = reasoning.length > 60 ? reasoning.slice(0, 60) + '…' : reasoning
+                const isExpanded = expanded.has(i)
+                const preview = reasoning.length > 80 ? reasoning.slice(0, 80) + '…' : reasoning
                 const isBlocked = !!d.blocked_reason
                 const result = isBlocked ? 'BLOCKED' : d.executed ? 'EXECUTED' : 'SKIPPED'
                 const resultColor = isBlocked ? C.yellow : d.executed ? C.green : C.textMuted
+                const tradeStyle = d.trade_style as string | undefined
+                const tsColor = tradeStyle === 'DAY_TRADE' ? C.blue : tradeStyle === 'POSITION_TRADE' ? C.purple : C.textMuted
 
                 return (
-                  <tr
-                    key={d.id || i}
-                    style={{
-                      borderBottom: `1px solid ${C.border}22`,
-                      background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
-                    }}
-                  >
-                    <td style={{ padding: '8px 10px', color: C.textMuted, whiteSpace: 'nowrap' }}>
-                      {fmtDatetime(d.ts)}
-                    </td>
-                    <td style={{ padding: '8px 10px', fontWeight: 700, color: C.textPrimary }}>{d.ticker || '—'}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                      <Badge color={actionColor} bg={`${actionColor}15`}>
-                        {d.action || '—'}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                      {d.confidence != null ? (
-                        <span
-                          style={{
-                            color: d.confidence >= 0.7 ? C.green : d.confidence >= 0.4 ? C.yellow : C.red,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {(d.confidence * 100).toFixed(0)}%
-                        </span>
-                      ) : (
-                        <span style={{ color: C.textMuted }}>—</span>
-                      )}
-                    </td>
-                    <td
-                      style={{ padding: '8px 10px', color: C.textSecondary, position: 'relative' }}
-                      onMouseEnter={() => reasoning.length > 60 && setTooltip({ idx: i, text: reasoning })}
-                      onMouseLeave={() => setTooltip(null)}
+                  <React.Fragment key={d.id || i}>
+                    <tr
+                      style={{
+                        borderBottom: isExpanded ? 'none' : `1px solid ${C.border}22`,
+                        background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
+                      }}
                     >
-                      {truncated}
-                      {tooltip?.idx === i && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '100%',
-                            left: 0,
-                            zIndex: 100,
-                            background: '#1f1f1f',
-                            border: `1px solid ${C.border}`,
-                            borderRadius: '8px',
-                            padding: '10px 14px',
-                            fontSize: '12px',
-                            color: C.textPrimary,
-                            maxWidth: '360px',
-                            lineHeight: 1.5,
-                            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                          }}
-                        >
-                          {tooltip.text}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                      <Badge color={resultColor} bg={`${resultColor}10`}>
-                        {result}
-                      </Badge>
-                    </td>
-                  </tr>
+                      <td style={{ padding: '8px 10px', color: C.textMuted, whiteSpace: 'nowrap', fontSize: '11px' }}>
+                        {fmtDatetime(d.ts)}
+                      </td>
+                      <td style={{ padding: '8px 10px', fontWeight: 700, color: C.textPrimary }}>{d.ticker || '—'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                        <Badge color={actionColor} bg={`${actionColor}15`}>
+                          {d.action || '—'}
+                        </Badge>
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                        {tradeStyle ? (
+                          <Badge color={tsColor} bg={`${tsColor}15`}>
+                            {tradeStyle === 'DAY_TRADE' ? 'DAY' : tradeStyle === 'SWING_TRADE' ? 'SWING' : tradeStyle === 'POSITION_TRADE' ? 'POS' : tradeStyle}
+                          </Badge>
+                        ) : <span style={{ color: C.textMuted }}>—</span>}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                        {d.confidence != null ? (
+                          <span style={{ color: d.confidence >= 0.7 ? C.green : d.confidence >= 0.4 ? C.yellow : C.red, fontWeight: 600 }}>
+                            {(d.confidence * 100).toFixed(0)}%
+                          </span>
+                        ) : <span style={{ color: C.textMuted }}>—</span>}
+                      </td>
+                      <td
+                        style={{ padding: '8px 10px', color: C.textSecondary, cursor: reasoning.length > 80 ? 'pointer' : 'default', maxWidth: '300px' }}
+                        onClick={() => reasoning.length > 80 && toggleExpand(i)}
+                      >
+                        <span style={{ color: reasoning.length > 80 ? (isExpanded ? C.blue : C.textSecondary) : C.textSecondary }}>
+                          {isExpanded ? reasoning : preview}
+                        </span>
+                        {reasoning.length > 80 && (
+                          <span style={{ color: C.blue, marginLeft: '6px', fontSize: '10px', fontWeight: 600 }}>
+                            {isExpanded ? '▲ less' : '▼ more'}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                        <Badge color={resultColor} bg={`${resultColor}10`}>
+                          {result}
+                        </Badge>
+                      </td>
+                    </tr>
+                    {isExpanded && d.blocked_reason && (
+                      <tr style={{ background: 'rgba(245,158,11,0.04)' }}>
+                        <td colSpan={7} style={{ padding: '6px 10px 10px 10px', color: C.yellow, fontSize: '11px' }}>
+                          Blocked: {d.blocked_reason}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 )
               })}
             </tbody>
@@ -2377,6 +2482,223 @@ function PortfolioRiskCard({ data, loading }: { data: any; loading: boolean }) {
   )
 }
 
+// ─── Section M: Closed Trades Panel ──────────────────────────────────────────
+
+function ClosedTradesPanel({ data, loading }: { data: any[]; loading: boolean }) {
+  const totalPnl = data.reduce((s, t) => s + (t.pnl ?? 0), 0)
+  const wins = data.filter((t) => (t.pnl ?? 0) > 0)
+  const winRate = data.length > 0 ? (wins.length / data.length) * 100 : 0
+  const avgHoldHours = data.length > 0 ? data.reduce((s, t) => s + (t.hold_hours ?? 0), 0) / data.length : 0
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+        <SectionTitle style={{ margin: 0 }}>Closed Trades History</SectionTitle>
+        {data.length > 0 && (
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', color: C.textMuted }}>
+              Total P&amp;L: <b style={{ color: totalPnl >= 0 ? C.green : C.red }}>{fmt$(totalPnl)}</b>
+            </span>
+            <span style={{ fontSize: '12px', color: C.textMuted }}>
+              Win rate: <b style={{ color: winRate >= 50 ? C.green : C.red }}>{winRate.toFixed(0)}%</b>
+            </span>
+            <span style={{ fontSize: '12px', color: C.textMuted }}>
+              Avg hold: <b style={{ color: C.textSecondary }}>{avgHoldHours < 24 ? `${avgHoldHours.toFixed(0)}h` : `${(avgHoldHours / 24).toFixed(1)}d`}</b>
+            </span>
+            <Badge color={C.textMuted}>{data.length} trades</Badge>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <Spinner />
+      ) : data.length === 0 ? (
+        <EmptyState message="No closed trades yet — paper trades will appear here after exiting a position" />
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <thead>
+              <tr>
+                {['Ticker', 'Side', 'Style', 'Entry Price', 'Exit Price', 'Qty', 'P&L $', 'P&L %', 'Hold', 'Exit Reason', 'Closed At'].map((h) => (
+                  <th key={h} style={{
+                    color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase',
+                    letterSpacing: '0.07em', textAlign: h === 'Ticker' || h === 'Exit Reason' ? 'left' : 'right',
+                    padding: '6px 8px', borderBottom: `1px solid ${C.border}`,
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((t: any, i: number) => {
+                const pnl = t.pnl ?? 0
+                const pnlPct = t.pnl_pct ?? 0
+                const isWin = pnl > 0
+                const style = (t.trade_style || '') as string
+                const styleColor = style === 'DAY_TRADE' ? C.blue : style === 'POSITION_TRADE' ? C.purple : style === 'SWING_TRADE' ? C.yellow : C.textMuted
+                const holdDisplay = t.hold_hours != null
+                  ? t.hold_hours < 24 ? `${t.hold_hours.toFixed(0)}h` : `${t.hold_days?.toFixed(1)}d`
+                  : '—'
+                return (
+                  <tr key={i} style={{ borderBottom: `1px solid ${C.border}22`, background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)')}
+                  >
+                    <td style={{ padding: '8px 8px', fontWeight: 700, color: C.textPrimary }}>{t.ticker}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>
+                      <Badge color={t.side === 'LONG' ? C.green : C.red} bg={t.side === 'LONG' ? 'rgba(0,255,136,0.1)' : 'rgba(255,68,68,0.1)'}>
+                        {t.side}
+                      </Badge>
+                    </td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>
+                      {style ? <Badge color={styleColor} bg={`${styleColor}15`}>{style === 'DAY_TRADE' ? 'DAY' : style === 'SWING_TRADE' ? 'SWING' : style === 'POSITION_TRADE' ? 'POS' : style}</Badge>
+                        : <span style={{ color: C.textMuted }}>—</span>}
+                    </td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.textSecondary }}>{t.entry_price ? fmt$(t.entry_price) : '—'}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.textSecondary }}>{t.close_price ? fmt$(t.close_price) : '—'}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.textMuted }}>{t.qty ?? '—'}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: isWin ? C.green : C.red, fontWeight: 700 }}>{fmt$(pnl)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: isWin ? C.green : C.red }}>
+                      {pnlPct != null ? `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%` : '—'}
+                    </td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.textMuted, fontSize: '11px' }}>{holdDisplay}</td>
+                    <td style={{ padding: '8px 8px', color: C.textSecondary, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {t.reason || '—'}
+                    </td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: C.textMuted, fontSize: '11px', whiteSpace: 'nowrap' }}>
+                      {t.close_ts ? fmtDatetime(t.close_ts) : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Section N: Attribution Panel ────────────────────────────────────────────
+
+function AttributionPanel({ data, loading }: { data: any; loading: boolean }) {
+  const byTag: Record<string, any> = data?.by_tag ?? {}
+  const byStrategy: Record<string, any> = data?.by_strategy ?? {}
+  const records: any[] = data?.records ?? []
+
+  const tagRows = Object.entries(byTag)
+    .sort((a, b) => (b[1].count ?? 0) - (a[1].count ?? 0))
+    .slice(0, 15)
+
+  const stratRows = Object.entries(byStrategy)
+    .sort((a, b) => (b[1].count ?? 0) - (a[1].count ?? 0))
+
+  const hasData = records.length > 0
+
+  return (
+    <Card style={{ marginBottom: '20px' }}>
+      <SectionTitle>Performance Attribution</SectionTitle>
+
+      {loading ? (
+        <Spinner />
+      ) : !hasData ? (
+        <EmptyState message="No attribution data yet — the agent records win rates by indicator and strategy as trades close" />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+          {/* By Indicator Tag */}
+          <div>
+            <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+              Win Rate by Indicator Signal
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr>
+                  {['Signal', 'Trades', 'Win Rate', 'Avg P&L %'].map((h) => (
+                    <th key={h} style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', textAlign: h === 'Signal' ? 'left' : 'right', padding: '4px 8px', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tagRows.map(([tag, s]: [string, any]) => {
+                  const wr = (s.win_rate ?? 0) * 100
+                  return (
+                    <tr key={tag} style={{ borderBottom: `1px solid ${C.border}22` }}>
+                      <td style={{ padding: '6px 8px', fontWeight: 600, color: C.textSecondary }}>
+                        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '2px', background: wr >= 55 ? C.green : wr >= 45 ? C.yellow : C.red, marginRight: '6px' }} />
+                        {tag}
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: C.textMuted }}>{s.count ?? 0}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: wr >= 55 ? C.green : wr >= 45 ? C.yellow : C.red, fontWeight: 700 }}>
+                        {wr.toFixed(0)}%
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: (s.avg_pnl ?? 0) >= 0 ? C.green : C.red }}>
+                        {(s.avg_pnl ?? 0) >= 0 ? '+' : ''}{(s.avg_pnl ?? 0).toFixed(2)}%
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* By Strategy */}
+          <div>
+            <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+              Win Rate by Strategy
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr>
+                  {['Strategy', 'W', 'L', 'Win Rate', 'Avg P&L %'].map((h) => (
+                    <th key={h} style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', textAlign: h === 'Strategy' ? 'left' : 'right', padding: '4px 8px', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {stratRows.map(([strat, s]: [string, any]) => {
+                  const wr = (s.win_rate ?? 0) * 100
+                  return (
+                    <tr key={strat} style={{ borderBottom: `1px solid ${C.border}22` }}>
+                      <td style={{ padding: '6px 8px', fontWeight: 600, color: C.textSecondary }}>{strat}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: C.green }}>{s.wins ?? 0}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: C.red }}>{s.losses ?? 0}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: wr >= 55 ? C.green : wr >= 45 ? C.yellow : C.red, fontWeight: 700 }}>
+                        {wr.toFixed(0)}%
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: (s.avg_pnl ?? 0) >= 0 ? C.green : C.red }}>
+                        {(s.avg_pnl ?? 0) >= 0 ? '+' : ''}{(s.avg_pnl ?? 0).toFixed(2)}%
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+
+            {/* Recent trades minilist */}
+            {records.length > 0 && (
+              <div style={{ marginTop: '16px' }}>
+                <div style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>
+                  Recent Attributed Trades
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {records.slice(0, 6).map((r: any, i: number) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', borderRadius: '6px', background: 'rgba(255,255,255,0.03)' }}>
+                      <span style={{ fontWeight: 700, color: C.textPrimary, minWidth: '60px' }}>{r.ticker}</span>
+                      <span style={{ color: C.textMuted, fontSize: '11px', flex: 1, marginLeft: '8px' }}>{r.strategy || '—'} · {r.trade_style || '—'}</span>
+                      <span style={{ color: (r.pnl_pct ?? 0) >= 0 ? C.green : C.red, fontWeight: 700, fontSize: '12px' }}>
+                        {(r.pnl_pct ?? 0) >= 0 ? '+' : ''}{(r.pnl_pct ?? 0).toFixed(2)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 // ─── Main AgentDashboard Component ───────────────────────────────────────────
 
 export default function AgentDashboard() {
@@ -2413,15 +2735,25 @@ export default function AgentDashboard() {
   const [riskData, setRiskData] = useState<any>(null)
   const [riskLoading, setRiskLoading] = useState(true)
 
+  const [closedTrades, setClosedTrades] = useState<any[]>([])
+  const [closedLoading, setClosedLoading] = useState(true)
+
+  const [attributionData, setAttributionData] = useState<any>(null)
+  const [attributionLoading, setAttributionLoading] = useState(true)
+
   const [toggling, setToggling] = useState(false)
   const [toggleMsg, setToggleMsg] = useState('')
+
+  const [sellAllLoading, setSellAllLoading] = useState(false)
+  const [showSellModal, setShowSellModal] = useState(false)
+  const [selectedTradeStyle, setSelectedTradeStyle] = useState<string | null>(null)
 
   // Fetch functions
   const fetchStatus = useCallback(async () => {
     try {
       const [statusData, macrosData] = await Promise.allSettled([
         apiFetch('/agent/status'),
-        apiFetch('/macros'),
+        piaFetch('/macros'),
       ])
       const s = statusData.status === 'fulfilled' ? statusData.value : null
       const m = macrosData.status === 'fulfilled' ? macrosData.value : null
@@ -2533,6 +2865,28 @@ export default function AgentDashboard() {
     }
   }, [])
 
+  const fetchClosedTrades = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/paper/closed?limit=100')
+      setClosedTrades(Array.isArray(data) ? data : [])
+    } catch {
+      setClosedTrades([])
+    } finally {
+      setClosedLoading(false)
+    }
+  }, [])
+
+  const fetchAttribution = useCallback(async () => {
+    try {
+      const data = await apiFetch('/agent/attribution?limit=200')
+      setAttributionData(data || null)
+    } catch {
+      setAttributionData(null)
+    } finally {
+      setAttributionLoading(false)
+    }
+  }, [])
+
   // Initial load
   useEffect(() => {
     fetchStatus()
@@ -2545,6 +2899,8 @@ export default function AgentDashboard() {
     fetchRegime()
     fetchInstitutional()
     fetchRisk()
+    fetchClosedTrades()
+    fetchAttribution()
   }, [])
 
   // Auto-refresh intervals
@@ -2558,6 +2914,8 @@ export default function AgentDashboard() {
   useInterval(fetchRegime, 30000)
   useInterval(fetchInstitutional, 60000)
   useInterval(fetchRisk, 30000)
+  useInterval(fetchClosedTrades, 30000)
+  useInterval(fetchAttribution, 60000)
 
   async function handleToggle() {
     if (!status) return
@@ -2573,6 +2931,39 @@ export default function AgentDashboard() {
     } finally {
       setToggling(false)
     }
+  }
+
+  async function handleSellAll(tradeStyle?: string | null) {
+    setSellAllLoading(true)
+    try {
+      const params = tradeStyle ? `?trade_style=${tradeStyle}` : ''
+      const res = await apiFetch(`/agent/sell-all${params}`, { method: 'POST' })
+      setToggleMsg(res?.message || 'Sell-all executed')
+      setShowSellModal(false)
+      setSelectedTradeStyle(null)
+      setTimeout(() => {
+        fetchStatus()
+        fetchPortfolio()
+      }, 500)
+    } catch (err: any) {
+      setToggleMsg(err?.detail || err?.message || 'Sell-all failed')
+      setShowSellModal(false)
+    } finally {
+      setSellAllLoading(false)
+    }
+  }
+
+  function openSellModal() {
+    setShowSellModal(true)
+    setSelectedTradeStyle(null)
+  }
+
+  function confirmSellAll() {
+    if (selectedTradeStyle === null) {
+      alert('Please select an option')
+      return
+    }
+    handleSellAll(selectedTradeStyle === 'ALL' ? null : selectedTradeStyle)
   }
 
   async function handleSaveConfig(updates: any) {
@@ -2659,11 +3050,25 @@ export default function AgentDashboard() {
             </div>
           </Card>
         ) : (
-          <LiveStatusBar status={status} onToggle={handleToggle} toggling={toggling} regimeData={regimeData} />
+          <LiveStatusBar status={status} onToggle={handleToggle} onOpenSellModal={openSellModal} toggling={toggling} sellAllLoading={sellAllLoading} regimeData={regimeData} />
         )}
 
         {/* Last Cycle Summary */}
         {status?.last_summary && <LastCycleSummary summary={status.last_summary} />}
+
+        {/* Agent Widget Suite */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+          <AgentSettingsWidget />
+          <AgentTrainingStatusWidget />
+          <AgentPerformanceWidget />
+          <AgentDecisionsWidget />
+          <AgentBacktestResultsWidget />
+        </div>
+
+        {/* Paper Trading Control */}
+        <div style={{ marginBottom: '20px' }}>
+          <AgentPaperTradingWidget />
+        </div>
 
         {/* C. Activity Summary */}
         <ActivitySummary status={status} decisions={decisions} />
@@ -2710,6 +3115,210 @@ export default function AgentDashboard() {
 
         {/* L. Portfolio Risk Report */}
         <PortfolioRiskCard data={riskData} loading={riskLoading} />
+
+        {/* M. Closed Trades History */}
+        <ClosedTradesPanel data={closedTrades} loading={closedLoading} />
+
+        {/* N. Performance Attribution */}
+        <AttributionPanel data={attributionData} loading={attributionLoading} />
+
+        {/* Sell-All Modal */}
+        {showSellModal && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+            }}
+            onClick={() => !sellAllLoading && setShowSellModal(false)}
+          >
+            <div
+              style={{
+                maxWidth: '500px',
+                width: '90%',
+                padding: '24px',
+                borderRadius: C.radius,
+                border: `1px solid ${C.border}`,
+                background: C.card,
+                color: C.textPrimary,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: C.red }}>
+                  🚨 Emergency Sell-All
+                </h3>
+                <p style={{ margin: 0, fontSize: '13px', color: C.textMuted }}>
+                  Choose which positions to close immediately at market price
+                </p>
+              </div>
+
+              {/* Options */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+                {(() => {
+                  const positions = status?.paper_portfolio?.positions || []
+                  const dayTradeCount = positions.filter((p: any) => p.trade_style === 'DAY_TRADE').length
+                  const swingTradeCount = positions.filter((p: any) => p.trade_style === 'SWING_TRADE').length
+                  const positionTradeCount = positions.filter((p: any) => p.trade_style === 'POSITION_TRADE').length
+                  const totalCount = positions.length
+
+                  return (
+                    <>
+                      {totalCount > 0 && (
+                        <button
+                          onClick={() => setSelectedTradeStyle('ALL')}
+                          style={{
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            border: selectedTradeStyle === 'ALL' ? `2px solid ${C.red}` : `1px solid ${C.border}`,
+                            background: selectedTradeStyle === 'ALL' ? 'rgba(255,68,68,0.15)' : 'transparent',
+                            color: C.textPrimary,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontWeight: selectedTradeStyle === 'ALL' ? 700 : 500,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: 700 }}>Close ALL ({totalCount})</div>
+                          <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '4px' }}>
+                            All open positions regardless of type
+                          </div>
+                        </button>
+                      )}
+
+                      {dayTradeCount > 0 && (
+                        <button
+                          onClick={() => setSelectedTradeStyle('DAY_TRADE')}
+                          style={{
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            border: selectedTradeStyle === 'DAY_TRADE' ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
+                            background: selectedTradeStyle === 'DAY_TRADE' ? 'rgba(59,130,246,0.15)' : 'transparent',
+                            color: C.textPrimary,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontWeight: selectedTradeStyle === 'DAY_TRADE' ? 700 : 500,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: 700 }}>Close DAY_TRADE ({dayTradeCount})</div>
+                          <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '4px' }}>
+                            Intraday positions only
+                          </div>
+                        </button>
+                      )}
+
+                      {swingTradeCount > 0 && (
+                        <button
+                          onClick={() => setSelectedTradeStyle('SWING_TRADE')}
+                          style={{
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            border: selectedTradeStyle === 'SWING_TRADE' ? `2px solid ${C.yellow}` : `1px solid ${C.border}`,
+                            background: selectedTradeStyle === 'SWING_TRADE' ? 'rgba(245,158,11,0.15)' : 'transparent',
+                            color: C.textPrimary,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontWeight: selectedTradeStyle === 'SWING_TRADE' ? 700 : 500,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: 700 }}>Close SWING_TRADE ({swingTradeCount})</div>
+                          <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '4px' }}>
+                            Multi-day swing positions
+                          </div>
+                        </button>
+                      )}
+
+                      {positionTradeCount > 0 && (
+                        <button
+                          onClick={() => setSelectedTradeStyle('POSITION_TRADE')}
+                          style={{
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            border: selectedTradeStyle === 'POSITION_TRADE' ? `2px solid ${C.purple}` : `1px solid ${C.border}`,
+                            background: selectedTradeStyle === 'POSITION_TRADE' ? 'rgba(168,85,247,0.15)' : 'transparent',
+                            color: C.textPrimary,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontWeight: selectedTradeStyle === 'POSITION_TRADE' ? 700 : 500,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: 700 }}>Close POSITION_TRADE ({positionTradeCount})</div>
+                          <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '4px' }}>
+                            Long-term position trades
+                          </div>
+                        </button>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+
+              {/* Confirmation message */}
+              {selectedTradeStyle && (
+                <div style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  background: 'rgba(255,68,68,0.1)',
+                  borderLeft: `3px solid ${C.red}`,
+                  marginBottom: '20px',
+                  fontSize: '12px',
+                  color: C.textSecondary,
+                }}>
+                  ⚠️ All selected positions will be closed at <strong>market price</strong> immediately. This cannot be undone.
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setShowSellModal(false)}
+                  disabled={sellAllLoading}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    border: `1px solid ${C.border}`,
+                    background: 'transparent',
+                    color: C.textSecondary,
+                    cursor: sellAllLoading ? 'wait' : 'pointer',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmSellAll}
+                  disabled={!selectedTradeStyle || sellAllLoading}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: selectedTradeStyle ? 'rgba(255,68,68,0.2)' : 'rgba(255,68,68,0.05)',
+                    color: selectedTradeStyle ? C.red : C.textMuted,
+                    cursor: selectedTradeStyle && !sellAllLoading ? 'pointer' : 'not-allowed',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {sellAllLoading ? 'Closing...' : 'CONFIRM CLOSE'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

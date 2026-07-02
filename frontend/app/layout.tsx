@@ -1,3 +1,4 @@
 import './globals.css'
-export const metadata={title:'Workspace',description:'Private workspace'}
+export const metadata={title:'PIA',description:'Personal Investment Agent'}
+export const viewport={width:'device-width',initialScale:1,maximumScale:1,userScalable:false}
 export default function RootLayout({children}:{children:React.ReactNode}){return <html lang="en"><body>{children}</body></html>}

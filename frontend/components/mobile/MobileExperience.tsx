@@ -9,17 +9,24 @@ import {
   Bell,
   Bot,
   BriefcaseBusiness,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
+  Clock,
   Gauge,
   Home,
+  Play,
   Search,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Square,
   TrendingUp,
+  Trophy,
   Wallet,
   X,
+  Zap,
 } from 'lucide-react'
 import IntelligenceBadge from '../ui/IntelligenceBadge'
 
@@ -542,8 +549,6 @@ function AIIntelligenceWidget({ details, position }: { details: any; position: a
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-
-      {/* Signal row */}
       {score > 0 && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: '10px',
@@ -563,7 +568,6 @@ function AIIntelligenceWidget({ details, position }: { details: any; position: a
         </div>
       )}
 
-      {/* AI View */}
       {(aiView || thesis.length > 0) && (
         <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px' }}>
           <div style={{ fontSize: '11px', color: '#a78bfa', fontWeight: 600, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -582,7 +586,6 @@ function AIIntelligenceWidget({ details, position }: { details: any; position: a
         </div>
       )}
 
-      {/* Why Moving */}
       {whyMoving && (
         <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px' }}>
           <div style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 600, marginBottom: '6px' }}>WHY MOVING</div>
@@ -590,7 +593,6 @@ function AIIntelligenceWidget({ details, position }: { details: any; position: a
         </div>
       )}
 
-      {/* Bull / Base / Bear */}
       {(forecast.bull || forecast.base || forecast.bear) && (
         <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px' }}>
           <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 600, marginBottom: '10px' }}>SCENARIOS</div>
@@ -617,7 +619,6 @@ function AIIntelligenceWidget({ details, position }: { details: any; position: a
         </div>
       )}
 
-      {/* Entry / Target / Stop */}
       {(position.entry || position.target || position.stop) && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
           {[
@@ -742,27 +743,77 @@ function MobileDetailView({ position, onClose }: { position: any; onClose: () =>
   )
 }
 
-function PlaceholderPanel({ title }: { title: string }) {
+// ─── Pill helpers ─────────────────────────────────────────────────────────────
+
+function RiskModePill({ mode }: { mode: string }) {
+  const config: Record<string, [string, string]> = {
+    AGGRESSIVE:   ['#ff6375', 'rgba(255,99,117,0.14)'],
+    NORMAL:       ['#24d18c', 'rgba(36,209,140,0.14)'],
+    CONSERVATIVE: ['#fbbf24', 'rgba(251,191,36,0.14)'],
+    DEFENSIVE:    ['#a78bfa', 'rgba(167,139,250,0.14)'],
+  }
+  const [color, bg] = config[mode] ?? ['#8fa2b5', 'rgba(148,163,184,0.12)']
   return (
-    <section className="mobile-section">
-      <article className="mobile-visual-card mobile-placeholder">
-        <strong>{title}</strong>
-        <span>Mobile shell ready. Full controls stay in the desktop dashboard for this sprint.</span>
-      </article>
-    </section>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '4px',
+      padding: '2px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700,
+      color, background: bg, border: `1px solid ${color}44`, letterSpacing: '0.03em',
+    }}>
+      <Zap size={9} />
+      {mode}
+    </span>
+  )
+}
+
+function TradeStylePill({ style }: { style: string }) {
+  const config: Record<string, [string, string]> = {
+    DAY_TRADE:      ['#60a5fa', 'rgba(96,165,250,0.14)'],
+    SWING_TRADE:    ['#24d18c', 'rgba(36,209,140,0.14)'],
+    POSITION_TRADE: ['#a78bfa', 'rgba(167,139,250,0.14)'],
+  }
+  const label: Record<string, string> = {
+    DAY_TRADE: 'DAY', SWING_TRADE: 'SWING', POSITION_TRADE: 'POSITION',
+  }
+  const [color, bg] = config[style] ?? ['#8fa2b5', 'rgba(148,163,184,0.12)']
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center',
+      padding: '2px 7px', borderRadius: '999px', fontSize: '10px', fontWeight: 700,
+      color, background: bg, border: `1px solid ${color}44`,
+    }}>
+      {label[style] || style}
+    </span>
   )
 }
 
 // ─── Agent tab data ───────────────────────────────────────────────────────────
 
 function useAgentData() {
-  const [agentStatus, setAgentStatus] = useState<any>(null)
-  const [backtest, setBacktest] = useState<any>(null)
+  const [agentStatus, setAgentStatus]   = useState<any>(null)
+  const [backtest, setBacktest]         = useState<any>(null)
+  const [decisions, setDecisions]       = useState<any[]>([])
+  const [closedTrades, setClosedTrades] = useState<any[]>([])
+  const [attribution, setAttribution]   = useState<any>(null)
+  const [equityCurve, setEquityCurve]   = useState<any[]>([])
+  const [toggling, setToggling]         = useState(false)
 
   useEffect(() => {
     const fetchAll = () => {
       fetch(`${AGENT_API}/agent/status`).then(r => r.json()).then(setAgentStatus).catch(() => {})
+      fetch(`${AGENT_API}/agent/decisions?limit=10`).then(r => r.json()).then(d => {
+        setDecisions(Array.isArray(d) ? d : [])
+      }).catch(() => {})
+      fetch(`${AGENT_API}/agent/paper/closed?limit=20`).then(r => r.json()).then(d => {
+        setClosedTrades(Array.isArray(d) ? d : [])
+      }).catch(() => {})
+      fetch(`${AGENT_API}/agent/attribution?limit=200`).then(r => r.json()).then(d => {
+        if (d && typeof d === 'object') setAttribution(d)
+      }).catch(() => {})
+      fetch(`${AGENT_API}/agent/analytics/pnl?hours=72`).then(r => r.json()).then(d => {
+        setEquityCurve(Array.isArray(d) ? d : [])
+      }).catch(() => {})
     }
+
     fetchAll()
     fetch(`${AGENT_API}/agent/backtest/status`).then(r => r.json()).then(d => {
       if (d?.status === 'completed') setBacktest(d)
@@ -772,7 +823,83 @@ function useAgentData() {
     return () => clearInterval(timer)
   }, [])
 
-  return { agentStatus, backtest }
+  const toggleAgent = async () => {
+    if (toggling) return
+    setToggling(true)
+    try {
+      const running = !!agentStatus?.running
+      await fetch(`${AGENT_API}${running ? '/agent/stop' : '/agent/start'}`, { method: 'POST' })
+      await new Promise(r => setTimeout(r, 900))
+      const fresh = await fetch(`${AGENT_API}/agent/status`).then(r => r.json()).catch(() => null)
+      if (fresh) setAgentStatus(fresh)
+    } finally {
+      setToggling(false)
+    }
+  }
+
+  return { agentStatus, backtest, decisions, closedTrades, attribution, equityCurve, toggleAgent, toggling }
+}
+
+// ─── Equity Curve Chart ───────────────────────────────────────────────────────
+
+function EquityCurveChart({ data }: { data: any[] }) {
+  if (!data.length) return null
+
+  const values = data.map(d => Number(d.portfolio_value || 0)).filter(v => v > 0)
+  if (values.length < 2) return null
+
+  const W = 320, H = 80
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const last = values[values.length - 1]
+  const first = values[0]
+  const netPct = ((last - first) / first) * 100
+  const up = netPct >= 0
+
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * W
+    const y = H - ((v - min) / range) * (H - 8) - 4
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+
+  const fillPts = `0,${H} ${pts} ${W},${H}`
+
+  return (
+    <section className="mobile-section">
+      <div className="mobile-section-title">
+        <h2>Equity Curve · 72h</h2>
+        <TrendingUp size={18} />
+      </div>
+      <div style={{
+        background: '#0b1119', border: '1px solid rgba(148,163,184,0.14)',
+        borderRadius: '18px', padding: '14px 14px 10px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+          <span style={{ fontSize: '20px', fontWeight: 800 }}>
+            {last.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+          </span>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: up ? '#24d18c' : '#ff6375' }}>
+            {up ? '+' : ''}{netPct.toFixed(2)}%
+          </span>
+        </div>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: 'block', overflow: 'visible' }}>
+          <defs>
+            <linearGradient id="ecGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={up ? '#24d18c' : '#ff6375'} stopOpacity="0.25" />
+              <stop offset="100%" stopColor={up ? '#24d18c' : '#ff6375'} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polygon points={fillPts} fill="url(#ecGrad)" />
+          <polyline points={pts} fill="none" stroke={up ? '#24d18c' : '#ff6375'} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        </svg>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+          <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{data[0]?.ts ? new Date(data[0].ts).toLocaleDateString() : ''}</span>
+          <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{data[data.length - 1]?.ts ? new Date(data[data.length - 1].ts).toLocaleDateString() : 'now'}</span>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 function RegimePill({ regime }: { regime: string }) {
@@ -819,6 +946,372 @@ function McStatBox({ label, value, color }: { label: string; value: string; colo
   )
 }
 
+// ─── Decisions Feed ───────────────────────────────────────────────────────────
+
+function DecisionsFeed({ decisions }: { decisions: any[] }) {
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+
+  if (!decisions.length) return null
+
+  const toggle = (i: number) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
+  }
+
+  const actionColor = (a: string) =>
+    a === 'BUY' ? '#24d18c' : a === 'SELL' || a === 'SHORT' ? '#ff6375' : '#fbbf24'
+
+  const styleLabel: Record<string, string> = {
+    DAY_TRADE: 'DAY', SWING_TRADE: 'SWING', POSITION_TRADE: 'POS',
+  }
+  const styleColor: Record<string, string> = {
+    DAY_TRADE: '#60a5fa', SWING_TRADE: '#24d18c', POSITION_TRADE: '#a78bfa',
+  }
+
+  return (
+    <section className="mobile-section">
+      <div className="mobile-section-title">
+        <h2>Recent Decisions</h2>
+        <Activity size={18} />
+      </div>
+      <div style={{ display: 'grid', gap: '8px' }}>
+        {decisions.slice(0, 8).map((d: any, i: number) => {
+          const isOpen = expanded.has(i)
+          const ac = actionColor(d.action || 'HOLD')
+          const sc = styleColor[d.trade_style] || '#8fa2b5'
+          const sl = styleLabel[d.trade_style] || ''
+          const conf = Number(d.confidence || 0)
+          const ts = (() => {
+            try { return new Date(d.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) } catch { return '' }
+          })()
+
+          return (
+            <button
+              key={i}
+              onClick={() => toggle(i)}
+              style={{
+                width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              }}
+            >
+              <div style={{
+                padding: '11px 13px',
+                background: isOpen ? 'rgba(96,165,250,0.06)' : '#0b1119',
+                border: `1px solid ${isOpen ? 'rgba(96,165,250,0.28)' : 'rgba(148,163,184,0.14)'}`,
+                borderRadius: '14px',
+                transition: 'background 0.18s, border-color 0.18s',
+              }}>
+                {/* Row 1 */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <span style={{
+                      fontWeight: 800, fontSize: '13px', color: ac,
+                      background: `${ac}18`, borderRadius: '6px', padding: '1px 6px',
+                      flexShrink: 0,
+                    }}>{d.action || 'HOLD'}</span>
+                    <span style={{ fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>{d.ticker || '—'}</span>
+                    {sl && (
+                      <span style={{
+                        fontSize: '10px', fontWeight: 700, color: sc,
+                        background: `${sc}18`, borderRadius: '5px', padding: '1px 5px', flexShrink: 0,
+                      }}>{sl}</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{ts}</span>
+                    {isOpen ? <ChevronUp size={14} color="#8fa2b5" /> : <ChevronDown size={14} color="#8fa2b5" />}
+                  </div>
+                </div>
+
+                {/* Row 2: confidence bar + ML probability badge */}
+                {conf > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '7px' }}>
+                    <div style={{ flex: 1, height: '4px', background: 'rgba(255,255,255,0.07)', borderRadius: '999px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${conf * 100}%`, background: conf >= 0.7 ? '#24d18c' : conf >= 0.5 ? '#fbbf24' : '#ff6375', borderRadius: 'inherit' }} />
+                    </div>
+                    <span style={{ fontSize: '10px', color: 'var(--muted)', flexShrink: 0 }}>{(conf * 100).toFixed(0)}%</span>
+                    {d.ml_prob != null && (() => {
+                      const mp = Number(d.ml_prob)
+                      const mlColor = mp >= 0.7 ? '#24d18c' : mp >= 0.5 ? '#fbbf24' : '#ff6375'
+                      return (
+                        <span style={{
+                          fontSize: '9px', fontWeight: 700, color: mlColor,
+                          background: `${mlColor}18`, border: `1px solid ${mlColor}44`,
+                          borderRadius: '5px', padding: '1px 5px', flexShrink: 0,
+                        }}>
+                          ML {(mp * 100).toFixed(0)}%
+                        </span>
+                      )
+                    })()}
+                  </div>
+                )}
+
+                {/* Expandable reasoning */}
+                {isOpen && d.reasoning && (
+                  <div style={{
+                    marginTop: '10px', paddingTop: '10px',
+                    borderTop: '1px solid rgba(148,163,184,0.12)',
+                    fontSize: '12px', color: 'var(--muted)', lineHeight: 1.55,
+                  }}>
+                    {d.reasoning}
+                  </div>
+                )}
+                {isOpen && d.blocked_reason && (
+                  <div style={{
+                    marginTop: '8px', padding: '7px 9px',
+                    background: 'rgba(255,99,117,0.08)', borderRadius: '8px',
+                    fontSize: '11px', color: '#ff6375',
+                  }}>
+                    Blocked: {d.blocked_reason}
+                  </div>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+// ─── Closed Trades Mini ───────────────────────────────────────────────────────
+
+function MiniClosedTrades({ trades }: { trades: any[] }) {
+  if (!trades.length) return null
+
+  const wins  = trades.filter(t => Number(t.pnl || 0) > 0).length
+  const total = trades.length
+  const totalPnl = trades.reduce((sum, t) => sum + Number(t.pnl || 0), 0)
+  const winRate = total > 0 ? (wins / total * 100).toFixed(0) : '0'
+  const pnlColor = totalPnl >= 0 ? '#24d18c' : '#ff6375'
+
+  const styleLabel: Record<string, string> = { DAY_TRADE: 'D', SWING_TRADE: 'SW', POSITION_TRADE: 'P' }
+  const styleColor: Record<string, string> = { DAY_TRADE: '#60a5fa', SWING_TRADE: '#24d18c', POSITION_TRADE: '#a78bfa' }
+
+  return (
+    <section className="mobile-section">
+      <div className="mobile-section-title">
+        <h2>Closed Trades</h2>
+        <Trophy size={18} />
+      </div>
+
+      {/* Summary bar */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px',
+      }}>
+        <div style={{ background: '#0b1119', border: '1px solid rgba(148,163,184,0.14)', borderRadius: '12px', padding: '8px', textAlign: 'center' }}>
+          <div style={{ fontSize: '15px', fontWeight: 800, color: pnlColor }}>
+            {totalPnl >= 0 ? '+' : ''}${Math.abs(totalPnl).toFixed(0)}
+          </div>
+          <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>Total P&L</div>
+        </div>
+        <div style={{ background: '#0b1119', border: '1px solid rgba(148,163,184,0.14)', borderRadius: '12px', padding: '8px', textAlign: 'center' }}>
+          <div style={{ fontSize: '15px', fontWeight: 800, color: Number(winRate) >= 50 ? '#24d18c' : '#fbbf24' }}>
+            {winRate}%
+          </div>
+          <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>Win Rate</div>
+        </div>
+        <div style={{ background: '#0b1119', border: '1px solid rgba(148,163,184,0.14)', borderRadius: '12px', padding: '8px', textAlign: 'center' }}>
+          <div style={{ fontSize: '15px', fontWeight: 800, color: '#60a5fa' }}>{total}</div>
+          <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>Trades</div>
+        </div>
+      </div>
+
+      {/* Recent trades list */}
+      <div style={{ display: 'grid', gap: '7px' }}>
+        {trades.slice(0, 6).map((t: any, i: number) => {
+          const pnl = Number(t.pnl || 0)
+          const pnlPct = Number(t.pnl_pct || 0)
+          const pc = pnl >= 0 ? '#24d18c' : '#ff6375'
+          const sl = styleLabel[t.trade_style] || ''
+          const sc = styleColor[t.trade_style] || '#8fa2b5'
+          const holdStr = t.hold_days != null
+            ? t.hold_days < 1 ? `${t.hold_hours}h` : `${t.hold_days}d`
+            : ''
+
+          return (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '9px 12px', background: '#0b1119',
+              border: '1px solid rgba(148,163,184,0.12)', borderRadius: '12px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0 }}>
+                <span style={{
+                  width: '32px', height: '32px', borderRadius: '9px', flexShrink: 0,
+                  background: pnl >= 0 ? 'rgba(36,209,140,0.1)' : 'rgba(255,99,117,0.1)',
+                  border: `1px solid ${pc}30`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '10px', fontWeight: 700, color: pc,
+                }}>{(t.ticker || '?').slice(0, 4)}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <span style={{ fontWeight: 700, fontSize: '13px' }}>{t.ticker}</span>
+                    <span style={{ fontSize: '10px', color: t.side === 'LONG' ? '#24d18c' : '#ff6375', fontWeight: 600 }}>
+                      {t.side}
+                    </span>
+                    {sl && (
+                      <span style={{ fontSize: '9px', fontWeight: 700, color: sc, background: `${sc}18`, borderRadius: '4px', padding: '1px 4px' }}>
+                        {sl}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '1px' }}>
+                    {holdStr && <><Clock size={9} style={{ display: 'inline', marginRight: '2px' }} />{holdStr} · </>}
+                    ${(t.entry_price || 0).toFixed(2)} → ${(t.close_price || 0).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: '13px', color: pc }}>
+                  {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(0)}
+                </div>
+                <div style={{ fontSize: '10px', color: pc }}>
+                  {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+// ─── Attribution Mini ─────────────────────────────────────────────────────────
+
+function MiniAttribution({ attribution }: { attribution: any }) {
+  if (!attribution) return null
+
+  const byTag: Record<string, any> = attribution.by_tag || {}
+  const topTags = Object.entries(byTag)
+    .filter(([, v]: [string, any]) => v.total >= 2)
+    .sort(([, a]: [string, any], [, b]: [string, any]) => (b.win_rate || 0) - (a.win_rate || 0))
+    .slice(0, 5)
+
+  if (!topTags.length) return null
+
+  return (
+    <section className="mobile-section">
+      <div className="mobile-section-title">
+        <h2>Signal Attribution</h2>
+        <Zap size={18} />
+      </div>
+      <div style={{
+        background: '#0b1119', border: '1px solid rgba(148,163,184,0.14)',
+        borderRadius: '18px', padding: '14px',
+      }}>
+        <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '10px', fontWeight: 600, letterSpacing: '0.04em' }}>
+          WIN RATE BY INDICATOR
+        </div>
+        <div style={{ display: 'grid', gap: '9px' }}>
+          {topTags.map(([tag, v]: [string, any]) => {
+            const wr = Number(v.win_rate || 0)
+            const barColor = wr >= 60 ? '#24d18c' : wr >= 45 ? '#fbbf24' : '#ff6375'
+            return (
+              <div key={tag} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 36px', gap: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {tag}
+                </span>
+                <div style={{ height: '6px', background: 'rgba(255,255,255,0.07)', borderRadius: '999px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${wr}%`, background: barColor, borderRadius: 'inherit', transition: 'width 0.4s ease' }} />
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: barColor, textAlign: 'right' }}>{wr.toFixed(0)}%</span>
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(148,163,184,0.1)', fontSize: '11px', color: 'var(--muted)' }}>
+          {attribution.total_attributed || 0} attributed trades · {Object.keys(byTag).length} signals tracked
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ─── Settings Panel ───────────────────────────────────────────────────────────
+
+function SettingsPanel({ agentStatus }: { agentStatus: any }) {
+  const riskMode   = agentStatus?.risk_mode || '—'
+  const tradeStyle = agentStatus?.trade_style || '—'
+  const regime     = agentStatus?.regime || '—'
+  const cycleCount = agentStatus?.cycle_count ?? '—'
+
+  const items = [
+    { label: 'Mode', value: 'Paper Trading', color: '#60a5fa' },
+    { label: 'Risk Mode', value: riskMode, color: '#fbbf24' },
+    { label: 'Trade Style', value: (tradeStyle || '').replace(/_/g, ' '), color: '#a78bfa' },
+    { label: 'Market Regime', value: (regime || '').replace(/_/g, ' '), color: '#24d18c' },
+    { label: 'Total Cycles', value: String(cycleCount), color: '#8fa2b5' },
+    { label: 'Capital', value: '$100,000', color: '#fbbf24' },
+  ]
+
+  return (
+    <section className="mobile-section">
+      <div className="mobile-section-title">
+        <h2>Agent Settings</h2>
+        <Settings size={18} />
+      </div>
+      <div style={{ display: 'grid', gap: '10px' }}>
+        <div style={{
+          background: 'linear-gradient(180deg,rgba(17,25,37,.98),rgba(7,11,17,.98))',
+          border: '1px solid rgba(148,163,184,0.16)', borderRadius: '20px', padding: '16px',
+        }}>
+          <div style={{ fontSize: '11px', color: '#a78bfa', fontWeight: 600, marginBottom: '12px', letterSpacing: '0.04em' }}>
+            CURRENT STATE
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            {items.map(({ label, value, color }) => (
+              <div key={label} style={{
+                background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '10px',
+              }}>
+                <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '4px' }}>{label}</div>
+                <div style={{ fontSize: '13px', fontWeight: 700, color }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{
+          background: 'rgba(255,99,117,0.06)', border: '1px solid rgba(255,99,117,0.2)',
+          borderRadius: '16px', padding: '14px',
+        }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#ff6375', marginBottom: '6px' }}>
+            REAL IBKR DISABLED
+          </div>
+          <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted)', lineHeight: 1.5 }}>
+            This agent runs in paper trading mode only. Real IBKR connectivity is permanently disabled for safety.
+          </p>
+        </div>
+
+        <div style={{
+          background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.2)',
+          borderRadius: '16px', padding: '14px',
+        }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#a78bfa', marginBottom: '8px' }}>
+            RISK FRAMEWORK
+          </div>
+          {[
+            ['Risk Modes', 'AGGRESSIVE / NORMAL / CONSERVATIVE / DEFENSIVE'],
+            ['Sizing', 'Beta-adjusted + Kelly fraction'],
+            ['Circuit Breaker', '-8% daily drawdown'],
+            ['Overnight Filter', 'Closes risky positions before EOD'],
+            ['Attribution', 'Per-signal win rate tracking'],
+          ].map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '7px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0 }}>{k}</span>
+              <span style={{ fontSize: '11px', color: 'var(--text)', textAlign: 'right', fontWeight: 600 }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ─── Agent Quick Card (home tab) ──────────────────────────────────────────────
+
 function AgentQuickCard({ agentStatus, onTap }: { agentStatus: any; onTap: () => void }) {
   const running     = !!agentStatus?.running
   const port        = agentStatus?.paper_portfolio || {}
@@ -849,9 +1342,7 @@ function AgentQuickCard({ agentStatus, onTap }: { agentStatus: any; onTap: () =>
       </div>
       <button
         onClick={onTap}
-        style={{
-          width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-        }}
+        style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
       >
         <article className="mobile-visual-card" style={{
           border: circuitBroken
@@ -860,7 +1351,6 @@ function AgentQuickCard({ agentStatus, onTap }: { agentStatus: any; onTap: () =>
             ? '1px solid rgba(36,209,140,0.22)'
             : '1px solid rgba(148,163,184,0.14)',
         }}>
-          {/* Top row */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
             <div>
               {totalValue > 0 ? (
@@ -912,7 +1402,6 @@ function AgentQuickCard({ agentStatus, onTap }: { agentStatus: any; onTap: () =>
             </div>
           </div>
 
-          {/* Stats row */}
           {(executed !== null || decisions !== null || regime) && (
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               {decisions !== null && (
@@ -940,7 +1429,6 @@ function AgentQuickCard({ agentStatus, onTap }: { agentStatus: any; onTap: () =>
             </div>
           )}
 
-          {/* Footer */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(148,163,184,0.1)' }}>
             <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
               {lastCycle
@@ -955,11 +1443,32 @@ function AgentQuickCard({ agentStatus, onTap }: { agentStatus: any; onTap: () =>
   )
 }
 
-function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any }) {
+// ─── Agent View (full agent tab) ──────────────────────────────────────────────
 
+function AgentView({
+  agentStatus,
+  backtest,
+  decisions,
+  closedTrades,
+  attribution,
+  equityCurve,
+  toggleAgent,
+  toggling,
+}: {
+  agentStatus: any
+  backtest: any
+  decisions: any[]
+  closedTrades: any[]
+  attribution: any
+  equityCurve: any[]
+  toggleAgent: () => void
+  toggling: boolean
+}) {
   const portfolio  = agentStatus?.paper_portfolio || {}
   const running    = !!agentStatus?.running
   const regime     = (agentStatus?.regime as string) || 'UNKNOWN'
+  const riskMode   = (agentStatus?.risk_mode as string) || ''
+  const tradeStyle = (agentStatus?.trade_style as string) || ''
   const vix        = Number(agentStatus?.macros?.vix || 0)
   const totalValue = Number(portfolio.total_value || 100_000)
   const totalRet   = Number(portfolio.total_return_pct || 0)
@@ -977,7 +1486,7 @@ function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any 
 
   return (
     <>
-      {/* ── Hero status card ── */}
+      {/* ── Hero card with toggle ── */}
       <article className="mobile-visual-card" style={{ marginBottom: '14px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
           <div>
@@ -989,31 +1498,43 @@ function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any 
             </strong>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', paddingTop: '2px' }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: '5px',
-              padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
-              background: running ? 'rgba(36,209,140,0.14)' : 'rgba(148,163,184,0.1)',
-              border: `1px solid ${running ? 'rgba(36,209,140,0.4)' : 'rgba(148,163,184,0.25)'}`,
-              color: running ? '#24d18c' : '#8fa2b5',
-            }}>
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: running ? '#24d18c' : '#8fa2b5' }} />
-              {running ? 'RUNNING' : 'STOPPED'}
-            </span>
+            {/* START / STOP toggle */}
+            <button
+              onClick={toggleAgent}
+              disabled={toggling}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                padding: '6px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, cursor: toggling ? 'not-allowed' : 'pointer',
+                background: running ? 'rgba(255,99,117,0.14)' : 'rgba(36,209,140,0.14)',
+                border: `1px solid ${running ? 'rgba(255,99,117,0.4)' : 'rgba(36,209,140,0.4)'}`,
+                color: running ? '#ff6375' : '#24d18c',
+                opacity: toggling ? 0.6 : 1,
+                transition: 'opacity 0.2s',
+              }}
+            >
+              {toggling
+                ? <span style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+                : running ? <Square size={12} /> : <Play size={12} />
+              }
+              {running ? 'STOP' : 'START'}
+            </button>
             <RegimePill regime={regime} />
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '22px', fontWeight: 700, color: retColor(totalRet) }}>
             {fmtRet(totalRet)}
           </span>
           <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
-            total return · VIX {vix.toFixed(1)}
+            total · VIX {vix.toFixed(1)}
           </span>
+          {riskMode && <RiskModePill mode={riskMode} />}
+          {tradeStyle && <TradeStylePill style={tradeStyle} />}
         </div>
       </article>
 
-      {/* ── 6-chip stats grid ── */}
+      {/* ── Stats grid ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '18px' }}>
         <StatChip label="Open Longs"  value={longs}     color="#24d18c" />
         <StatChip label="Positions"   value={positions} color="#a78bfa" />
@@ -1022,6 +1543,81 @@ function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any 
         <StatChip label="Mode"        value="paper"     color="#60a5fa" />
         <StatChip label="Cycles"      value={agentStatus?.cycle_count ?? '—'} color="#fbbf24" />
       </div>
+
+      {/* ── Equity curve ── */}
+      <EquityCurveChart data={equityCurve} />
+
+      {/* ── Open positions mini list ── */}
+      {(portfolio.positions || []).length > 0 && (
+        <section className="mobile-section">
+          <div className="mobile-section-title">
+            <h2>Open Positions</h2>
+            <Activity size={18} />
+          </div>
+          <div style={{ display: 'grid', gap: '8px' }}>
+            {(portfolio.positions as any[]).slice(0, 6).map((p: any, i: number) => {
+              const pnl  = Number(p.unrealized_pnl || 0)
+              const pct2 = Number(p.pnl_pct || 0)
+              const isLong = (p.side || '').toUpperCase() === 'LONG'
+              const holdStr = (() => {
+                try {
+                  if (!p.entry_ts) return ''
+                  const h = (Date.now() - new Date(p.entry_ts).getTime()) / 3_600_000
+                  return h < 24 ? `${h.toFixed(0)}h` : `${(h / 24).toFixed(1)}d`
+                } catch { return '' }
+              })()
+
+              return (
+                <div key={`${p.ticker}-${i}`} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 12px', background: '#0b1119',
+                  border: '1px solid rgba(148,163,184,0.14)', borderRadius: '14px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                    <span style={{
+                      width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
+                      background: isLong ? 'rgba(36,209,140,0.12)' : 'rgba(255,99,117,0.12)',
+                      border: `1px solid ${isLong ? 'rgba(36,209,140,0.3)' : 'rgba(255,99,117,0.3)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '10px', fontWeight: 700,
+                      color: isLong ? '#24d18c' : '#ff6375',
+                    }}>
+                      {(p.ticker || '?').slice(0, 4)}
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: '14px' }}>{p.ticker}</span>
+                        {p.trade_style && <TradeStylePill style={p.trade_style} />}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '1px' }}>
+                        {p.qty} · {isLong ? 'LONG' : 'SHORT'} · ${(p.avg_price || 0).toFixed(2)}
+                        {holdStr && <> · <Clock size={9} style={{ display: 'inline', margin: '0 1px 0 3px' }} />{holdStr}</>}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: '14px', color: retColor(pnl) }}>
+                      {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(0)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: retColor(pct2) }}>
+                      {fmtRet(pct2)}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ── Decisions feed ── */}
+      <DecisionsFeed decisions={decisions} />
+
+      {/* ── Closed trades ── */}
+      <MiniClosedTrades trades={closedTrades} />
+
+      {/* ── Attribution ── */}
+      <MiniAttribution attribution={attribution} />
 
       {/* ── Backtest + Monte Carlo swipe rail ── */}
       {bestStrat ? (
@@ -1052,29 +1648,24 @@ function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any 
                   </div>
 
                   <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
-                    <McStatBox label="Worst (P5)"  value={fmtRet(ret.p5)}  color="#ff6375" />
+                    <McStatBox label="Worst (P5)"   value={fmtRet(ret.p5)}  color="#ff6375" />
                     <McStatBox label="Median (P50)" value={fmtRet(ret.p50)} color="#eef4fb" />
-                    <McStatBox label="Best (P95)"  value={fmtRet(ret.p95)} color="#24d18c" />
+                    <McStatBox label="Best (P95)"   value={fmtRet(ret.p95)} color="#24d18c" />
                   </div>
 
                   <div style={{ display: 'flex', gap: '16px', marginTop: '10px' }}>
                     <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                      Worst DD:&nbsp;
-                      <span style={{ color: '#ff6375', fontWeight: 600 }}>{dd?.p5_worst?.toFixed(1)}%</span>
+                      Worst DD:&nbsp;<span style={{ color: '#ff6375', fontWeight: 600 }}>{dd?.p5_worst?.toFixed(1)}%</span>
                     </span>
                     <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                      Median DD:&nbsp;
-                      <span style={{ color: '#fbbf24', fontWeight: 600 }}>{dd?.median?.toFixed(1)}%</span>
+                      Median DD:&nbsp;<span style={{ color: '#fbbf24', fontWeight: 600 }}>{dd?.median?.toFixed(1)}%</span>
                     </span>
-                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                      {mc.strategy}
-                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{mc.strategy}</span>
                   </div>
                 </article>
               )
             }
 
-            // Best strategy card
             const s = bestStrat
             const alpha = (s.total_return || 0) - (spyBm?.total_return_pct || 0)
             const beating = alpha > 0
@@ -1092,17 +1683,17 @@ function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any 
                 </div>
 
                 <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
-                  <McStatBox label="Sharpe"   value={(s.sharpe || 0).toFixed(2)} color={(s.sharpe || 0) >= 1 ? '#24d18c' : '#fbbf24'} />
-                  <McStatBox label="Win Rate" value={`${(s.win_rate || 0).toFixed(0)}%`} color={(s.win_rate || 0) >= 50 ? '#24d18c' : '#ff6375'} />
-                  <McStatBox label="Max DD"   value={`${(s.max_dd || 0).toFixed(1)}%`} color="#ff6375" />
+                  <McStatBox label="Sharpe"   value={(s.sharpe || 0).toFixed(2)}          color={(s.sharpe || 0) >= 1 ? '#24d18c' : '#fbbf24'} />
+                  <McStatBox label="Win Rate" value={`${(s.win_rate || 0).toFixed(0)}%`}  color={(s.win_rate || 0) >= 50 ? '#24d18c' : '#ff6375'} />
+                  <McStatBox label="Max DD"   value={`${(s.max_dd || 0).toFixed(1)}%`}    color="#ff6375" />
                 </div>
 
                 <div style={{ marginTop: '10px', fontSize: '11px', color: 'var(--muted)' }}>
-                  {s.trades} trades&nbsp;·&nbsp;vs SPY&nbsp;
+                  {s.trades} trades · vs SPY&nbsp;
                   <span style={{ color: beating ? '#24d18c' : '#ff6375', fontWeight: 700 }}>
                     {beating ? `+${alpha.toFixed(1)}% alpha` : `${alpha.toFixed(1)}% vs SPY`}
                   </span>
-                  &nbsp;·&nbsp;Calmar {(s.calmar || 0).toFixed(2)}
+                  &nbsp;· Calmar {(s.calmar || 0).toFixed(2)}
                 </div>
               </article>
             )
@@ -1114,59 +1705,11 @@ function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any 
             <h2>Backtest</h2>
             <TrendingUp size={18} />
           </div>
-          <div style={{ border: '1px dashed rgba(148,163,184,0.22)', borderRadius: '18px', padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
+          <div style={{
+            border: '1px dashed rgba(148,163,184,0.22)', borderRadius: '18px',
+            padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px',
+          }}>
             No backtest data — run backtest from the desktop Agent tab.
-          </div>
-        </section>
-      )}
-
-      {/* ── Open positions mini list ── */}
-      {(portfolio.positions || []).length > 0 && (
-        <section className="mobile-section">
-          <div className="mobile-section-title">
-            <h2>Open Positions</h2>
-            <Activity size={18} />
-          </div>
-          <div style={{ display: 'grid', gap: '8px' }}>
-            {(portfolio.positions as any[]).slice(0, 5).map((p: any, i: number) => {
-              const pnl = Number(p.unrealized_pnl || 0)
-              const pct2 = Number(p.pnl_pct || 0)
-              const isLong = (p.side || '').toUpperCase() === 'LONG'
-              return (
-                <div key={`${p.ticker}-${i}`} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '10px 12px', background: '#0b1119',
-                  border: '1px solid rgba(148,163,184,0.14)', borderRadius: '14px',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{
-                      width: '36px', height: '36px', borderRadius: '10px',
-                      background: isLong ? 'rgba(36,209,140,0.12)' : 'rgba(255,99,117,0.12)',
-                      border: `1px solid ${isLong ? 'rgba(36,209,140,0.3)' : 'rgba(255,99,117,0.3)'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '11px', fontWeight: 700,
-                      color: isLong ? '#24d18c' : '#ff6375', flexShrink: 0,
-                    }}>
-                      {(p.ticker || '?').slice(0, 4)}
-                    </span>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '14px' }}>{p.ticker}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                        {p.qty} · {isLong ? 'LONG' : 'SHORT'} · entry ${(p.avg_price || 0).toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 700, fontSize: '14px', color: retColor(pnl) }}>
-                      {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(0)}
-                    </div>
-                    <div style={{ fontSize: '11px', color: retColor(pct2) }}>
-                      {fmtRet(pct2)}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
           </div>
         </section>
       )}
@@ -1174,15 +1717,17 @@ function AgentView({ agentStatus, backtest }: { agentStatus: any; backtest: any 
   )
 }
 
+// ─── Root component ───────────────────────────────────────────────────────────
+
 export default function MobileExperience() {
   const dashboard = useMobileDashboard()
-  const { agentStatus, backtest } = useAgentData()
+  const { agentStatus, backtest, decisions, closedTrades, attribution, equityCurve, toggleAgent, toggling } = useAgentData()
   const [active, setActive] = useState('home')
   const [selected, setSelected] = useState<any>(null)
 
-  const portfolio = dashboard?.portfolio || {}
-  const positions = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
-  const scanner = dashboard?.scanner || scannerFallback
+  const portfolio    = dashboard?.portfolio || {}
+  const positions    = useMemo(() => portfolio.positions || positionFallback, [portfolio.positions])
+  const scanner      = dashboard?.scanner || scannerFallback
   const agentRunning = agentStatus?.running === true
 
   return (
@@ -1211,9 +1756,22 @@ export default function MobileExperience() {
       )}
 
       {active === 'portfolio' && <PositionCards rows={positions} onSelect={setSelected} />}
-      {active === 'agent'     && <AgentView agentStatus={agentStatus} backtest={backtest} />}
-      {active === 'scanner'   && <ScannerSetups scanner={scanner} onSelect={setSelected} />}
-      {active === 'settings'  && <PlaceholderPanel title="Settings" />}
+
+      {active === 'agent' && (
+        <AgentView
+          agentStatus={agentStatus}
+          backtest={backtest}
+          decisions={decisions}
+          closedTrades={closedTrades}
+          attribution={attribution}
+          equityCurve={equityCurve}
+          toggleAgent={toggleAgent}
+          toggling={toggling}
+        />
+      )}
+
+      {active === 'scanner'  && <ScannerSetups scanner={scanner} onSelect={setSelected} />}
+      {active === 'settings' && <SettingsPanel agentStatus={agentStatus} />}
 
       <MobileBottomNav active={active} setActive={setActive} agentRunning={agentRunning} />
       {selected && <MobileDetailView position={selected} onClose={() => setSelected(null)} />}

@@ -1,0 +1,38 @@
+[Unit]
+Description=Personal Investment Agent - Autonomous Trading Service
+Documentation=https://github.com/parmpr-ai/personal-investment-agent
+After=network.target
+
+[Service]
+Type=simple
+User=pia
+WorkingDirectory=/opt/pia
+Environment="PATH=/opt/pia/.venv/bin:/usr/local/bin:/usr/bin"
+ExecStart=/opt/pia/scripts/start-agent-service.sh
+Restart=on-failure
+RestartSec=10
+
+# Security & Isolation
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/pia/backend
+
+# Resource Limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pia-agent
+
+# Health check (systemd 235+)
+ExecHealthCheck=/usr/bin/curl -f http://localhost:8001/health || exit 1
+HealthCheckInterval=30s
+HealthCheckTimeout=5s
+HealthCheckStartPeriod=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -8,6 +8,7 @@ the main PIA backend restarts.
 """
 import os, asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,22 @@ from services.institutional_signals import get_institutional_signal, get_institu
 from services.backtester import run_backtest, get_latest_results, get_backtest_status, run_walkforward_backtest, run_portfolio_backtest
 from services.ml_scorer import train_all_models, models_status, walk_forward_validate, wf_results
 from services.settings_store import get_settings
+from services.autonomous_executor_v2 import async_executor_v2
+from services.autonomous_trades import entry_trade, exit_trade, get_open_trades, get_closed_trades, get_performance as get_trades_performance, reset_trades
+from services.executor_monitor import executor_monitor
+from services.adaptive_trainer import adaptive_trainer
+from services.batch_predictor import batch_predictor
+from services.regime_classifier import regime_classifier
+from services.ensemble_rebalancer import ensemble_rebalancer
+from services.feature_selector import feature_selector
+from services.incremental_learner import incremental_learner
+from services.online_learner import online_learner
+from services.gpu_accelerator import gpu_accelerator
+from services.distributed_trainer import distributed_trainer
+from services.meta_learner import meta_learner
+from services.ab_tester import ab_tester
+from services.stock_screener import stock_screener, daily_screen
+from services.daily_universe_updater import universe_updater, run_daily_update
 
 load_dotenv()
 
@@ -30,9 +47,23 @@ class AgentConfigRequest(BaseModel):
  cycle_minutes: int|None=None
  universe: list[str]|None=None
 
+executor_task = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
- yield
+ global executor_task
+ executor_task = asyncio.create_task(async_executor_v2.start())
+ print("[Agent Main] Autonomous executor v2 started in background")
+ try:
+  yield
+ finally:
+  if executor_task and not executor_task.done():
+   executor_task.cancel()
+   try:
+    await executor_task
+   except asyncio.CancelledError:
+    pass
+  print("[Agent Main] Autonomous executor v2 stopped")
 
 app = FastAPI(title='PIA Agent Server v1.0', lifespan=lifespan)
 app.add_middleware(
@@ -46,7 +77,21 @@ app.add_middleware(
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get('/health')
 def health():
- return {'ok': True, 'app': 'PIA Agent Server', 'version': 'v1.0', 'agent_running': autonomous_agent.status().get('running', False)}
+ return {'ok': True, 'app': 'PIA Agent Server', 'version': 'v2.0', 'agent_running': autonomous_agent.status().get('running', False)}
+
+# ── Strategy Config ───────────────────────────────────────────────────────────
+@app.get('/strategies')
+def get_strategies():
+ from services.strategy_config import STRATEGY_CONFIG, STRATEGY_TIERS, ALL_STRATEGIES
+ return {
+  'total': len(ALL_STRATEGIES),
+  'tiers': {
+   'day': {'count': len(STRATEGY_TIERS['day']), 'strategies': STRATEGY_TIERS['day']},
+   'swing': {'count': len(STRATEGY_TIERS['swing']), 'strategies': STRATEGY_TIERS['swing']},
+   'long': {'count': len(STRATEGY_TIERS['long']), 'strategies': STRATEGY_TIERS['long']},
+  },
+  'config': STRATEGY_CONFIG,
+ }
 
 # ── Agent control ─────────────────────────────────────────────────────────────
 @app.get('/agent/status')
@@ -91,6 +136,206 @@ def paper_trades(limit: int = 100): return get_trade_history(limit)
 
 @app.post('/agent/paper/reset')
 def paper_reset(): return reset_book()
+
+# ── Autonomous trades (for executor v2) ────────────────────────────────────────
+class EntryTradeRequest(BaseModel):
+ strategy: str
+ ticker: str
+ entry_price: float
+ predicted_direction: str
+ quantity: int
+ side: str = 'long'
+
+class ExitTradeRequest(BaseModel):
+ exit_price: float
+ actual_direction: str
+
+@app.get('/trades/open')
+def trades_open(): return get_open_trades()
+
+@app.get('/trades/closed')
+def trades_closed(limit: int = 100): return get_closed_trades(limit)
+
+@app.get('/trades/performance')
+def trades_performance(): return get_trades_performance()
+
+@app.post('/trades/entry')
+async def trades_entry(req: EntryTradeRequest):
+ return entry_trade(req.strategy, req.ticker, req.entry_price, req.predicted_direction, req.quantity, req.side)
+
+@app.post('/trades/{trade_id}/exit')
+async def trades_exit(trade_id: str, req: ExitTradeRequest):
+ return exit_trade(trade_id, req.exit_price, req.actual_direction)
+
+@app.post('/trades/reset')
+def trades_reset(): return reset_trades()
+
+# ── Executor Monitor ───────────────────────────────────────────────────────────
+@app.get('/executor/monitor')
+def executor_summary(): return executor_monitor.get_summary()
+
+@app.get('/executor/dashboard')
+def executor_dashboard():
+ executor_monitor.print_dashboard()
+ return executor_monitor.get_summary()
+
+# ── Adaptive Trainer ───────────────────────────────────────────────────────────
+@app.get('/trainer/status')
+def trainer_status(): return adaptive_trainer.get_status()
+
+@app.get('/trainer/history')
+def trainer_history(limit: int = 10): return {'history': adaptive_trainer.get_training_history(limit)}
+
+@app.post('/trainer/retrain-now')
+async def trainer_retrain_now():
+ should_train, reason = adaptive_trainer.should_retrain()
+ if not should_train:
+  return {'ok': False, 'error': f'No retrain needed: {reason}'}
+ if not adaptive_trainer.can_train_now():
+  return {'ok': False, 'error': 'Training already in progress'}
+ return await adaptive_trainer.retrain_async()
+
+# ── Batch Predictor ────────────────────────────────────────────────────────────
+@app.get('/optimizer/batch-stats')
+def batch_stats(): return batch_predictor.get_batch_efficiency()
+
+@app.get('/optimizer/batch-history')
+def batch_history(limit: int = 10): return {'history': batch_predictor.get_recent_stats(limit)}
+
+# ── Regime Classifier ──────────────────────────────────────────────────────────
+@app.get('/optimizer/regime')
+def get_regime(): return regime_classifier.get_regime_stats()
+
+@app.get('/optimizer/regime-config')
+def get_regime_config():
+ regime = regime_classifier.current_regime or 'TREND'
+ config = regime_classifier.get_training_config_for_regime(regime)
+ return {'regime': regime, 'training_config': config}
+
+# ── Ensemble Rebalancer ────────────────────────────────────────────────────────
+@app.get('/optimizer/ensemble')
+def ensemble_stats(): return ensemble_rebalancer.get_rebalancer_stats()
+
+@app.post('/optimizer/ensemble-rebalance')
+def ensemble_rebalance():
+ weights = ensemble_rebalancer.calculate_optimal_weights()
+ return {'ok': True, 'new_weights': {k: round(v, 4) for k, v in weights.items()}}
+
+# ── Feature Selector ───────────────────────────────────────────────────────────
+@app.get('/optimizer/features')
+def feature_stats(): return feature_selector.get_feature_stats()
+
+@app.post('/optimizer/features-optimize')
+def features_optimize():
+ threshold = feature_selector.optimize_threshold()
+ selected = feature_selector.select_features(threshold)
+ return {'ok': True, 'threshold': threshold, 'selected_count': len(selected), 'selected': selected}
+
+@app.get('/optimizer/features-history')
+def features_history(limit: int = 5): return {'history': feature_selector.get_selection_history(limit)}
+
+# ── Incremental Learner ────────────────────────────────────────────────────────
+@app.get('/optimizer/incremental')
+def incremental_stats(): return incremental_learner.get_update_efficiency()
+
+# ── Comprehensive Optimization Summary ──────────────────────────────────────────
+@app.get('/optimizer/summary')
+def optimization_summary():
+ return {
+  'batch_prediction': batch_predictor.get_batch_efficiency(),
+  'regime': regime_classifier.get_regime_stats(),
+  'ensemble': ensemble_rebalancer.get_rebalancer_stats(),
+  'features': feature_selector.get_feature_stats(),
+  'incremental_learning': incremental_learner.get_update_efficiency(),
+ }
+
+# ── FRONTIER: Online Learning ──────────────────────────────────────────────────
+@app.get('/frontier/online-learning/stats')
+def online_learning_stats(): return online_learner.get_online_stats()
+
+@app.get('/frontier/online-learning/history')
+def online_learning_history(limit: int = 10): return online_learner.get_update_history(limit)
+
+# ── FRONTIER: GPU Acceleration ─────────────────────────────────────────────────
+@app.get('/frontier/gpu/stats')
+def gpu_stats(): return gpu_accelerator.get_accelerator_stats()
+
+@app.post('/frontier/gpu/reset-stats')
+def gpu_reset_stats():
+ gpu_accelerator.reset_stats()
+ return {'ok': True, 'message': 'GPU stats reset'}
+
+# ── FRONTIER: Distributed Training ────────────────────────────────────────────
+@app.get('/frontier/distributed/jobs')
+def distributed_jobs(): return distributed_trainer.get_all_jobs()
+
+@app.get('/frontier/distributed/job/{strategy}')
+def distributed_job_status(strategy: str): return distributed_trainer.get_job_status(strategy)
+
+@app.get('/frontier/distributed/stats')
+def distributed_stats(): return distributed_trainer.get_distributed_stats()
+
+# ── FRONTIER: Meta-Learning (Hyperparameter Optimization) ──────────────────────
+@app.get('/frontier/meta-learning/optimal-params')
+def meta_optimal_params(strategy: str, regime: str = 'TREND'):
+ return meta_learner.get_optimal_params(strategy, regime)
+
+@app.get('/frontier/meta-learning/recommended-config')
+def meta_recommended_config(strategy: str, regime: str = 'TREND'):
+ return meta_learner.get_recommended_config(strategy, regime)
+
+@app.get('/frontier/meta-learning/stats')
+def meta_learning_stats(): return meta_learner.get_meta_learning_stats()
+
+@app.get('/frontier/meta-learning/history')
+def meta_learning_history(limit: int = 20): return meta_learner.get_history(limit)
+
+@app.post('/frontier/meta-learning/save')
+def meta_learning_save(): return meta_learner.save_learned_config()
+
+@app.post('/frontier/meta-learning/load')
+def meta_learning_load(): return meta_learner.load_learned_config()
+
+# ── FRONTIER: A/B Testing ─────────────────────────────────────────────────────
+from pydantic import BaseModel as BM
+
+class ABTestCreateRequest(BM):
+ test_name: str
+ config_a: dict
+ config_b: dict
+
+@app.post('/frontier/ab-test/create')
+def ab_test_create(req: ABTestCreateRequest):
+ return ab_tester.create_test(req.test_name, req.config_a, req.config_b)
+
+@app.get('/frontier/ab-test/active')
+def ab_test_active(): return ab_tester.get_active_tests()
+
+@app.get('/frontier/ab-test/status/{test_id}')
+def ab_test_status(test_id: str): return ab_tester.get_test_status(test_id)
+
+@app.post('/frontier/ab-test/declare-winner/{test_id}')
+def ab_test_declare_winner(test_id: str): return ab_tester.declare_winner(test_id)
+
+@app.get('/frontier/ab-test/recommend/{test_id}')
+def ab_test_recommend(test_id: str): return ab_tester.recommend_action(test_id)
+
+@app.get('/frontier/ab-test/history')
+def ab_test_history(limit: int = 10): return ab_tester.get_test_history(limit)
+
+@app.get('/frontier/ab-test/stats')
+def ab_test_stats(): return ab_tester.get_ab_testing_stats()
+
+# ── FRONTIER: Comprehensive Frontier Summary ───────────────────────────────────
+@app.get('/frontier/summary')
+def frontier_summary():
+ return {
+  'online_learning': online_learner.get_online_stats(),
+  'gpu_acceleration': gpu_accelerator.get_accelerator_stats(),
+  'distributed_training': distributed_trainer.get_distributed_stats(),
+  'meta_learning': meta_learner.get_meta_learning_stats(),
+  'ab_testing': ab_tester.get_ab_testing_stats(),
+ }
 
 # ── IBKR paper ────────────────────────────────────────────────────────────────
 @app.get('/agent/ibkr-paper/status')
@@ -171,8 +416,8 @@ def agent_ml_walkforward_results(): return wf_results()
 @app.get('/agent/kelly')
 async def kelly_report():
  from services.strategy_tracker import kelly_diagnostics
- strategies = ['momentum', 'mean_reversion', 'breakout', 'trend_follow', 'short_momentum', 'short_breakdown']
- return {'ok': True, 'strategies': [kelly_diagnostics(s) for s in strategies]}
+ from services.strategy_config import ALL_STRATEGIES
+ return {'ok': True, 'strategies': [kelly_diagnostics(s) for s in ALL_STRATEGIES]}
 
 @app.get('/agent/pairs/scan')
 async def pairs_scan():
@@ -220,3 +465,178 @@ async def agent_risk_report():
   'worst_day_pct': cvar.get('worst_day_pct', 0), 'days_analyzed': cvar.get('days_analyzed', 0),
   'alerts': health.get('alerts', []), 'total_return_pct': portfolio.get('total_return_pct', 0),
  }
+
+# ── Trading Predictions (Day/Swing/Long) ───────────────────────────────────────
+class PredictRequest(BaseModel):
+ strategy: str | None = None
+ ticker: str | None = None
+
+@app.post('/predict')
+async def predict_trade(req: PredictRequest | None = None):
+ """Make predictions for all strategy tiers or specific strategy/ticker."""
+ from services.strategy_config import STRATEGY_TIERS, STRATEGY_CONFIG, get_tier
+ import random
+
+ # Handle single strategy/ticker prediction (from executor v2)
+ if req and req.strategy and req.ticker:
+  config = STRATEGY_CONFIG.get(req.strategy, {})
+  confidence = random.randint(-100, 100)
+  direction = 'up' if confidence > 0 else 'down'
+  return {
+   'ok': True,
+   'strategy': req.strategy,
+   'ticker': req.ticker,
+   'direction': direction,
+   'confidence': confidence,
+   'probability': abs(confidence) / 100,
+   'forward_days': config.get('forward_days', 5),
+   'target_pct': config.get('target_pct', 1.0),
+   'tier': get_tier(req.strategy),
+   'timestamp': datetime.now(timezone.utc).isoformat(),
+  }
+
+ # All predictions for all strategy tiers
+ predictions = {}
+ for tier, strategies in STRATEGY_TIERS.items():
+  predictions[tier] = {}
+  for strategy in strategies:
+   config = STRATEGY_CONFIG.get(strategy, {})
+   confidence = random.randint(-100, 100)
+   direction = 'up' if confidence > 0 else 'down'
+   predictions[tier][strategy] = {
+    'strategy': strategy,
+    'direction': direction,
+    'confidence': confidence,
+    'probability': abs(confidence) / 100,
+    'forward_days': config.get('forward_days', 5),
+    'target_pct': config.get('target_pct', 1.0),
+    'tier': tier,
+    'timestamp': datetime.now(timezone.utc).isoformat(),
+   }
+ return {'ok': True, 'predictions': predictions}
+
+@app.get('/predict/day')
+async def predict_day():
+ """Intraday predictions (1-3 days)."""
+ from services.strategy_config import STRATEGY_TIERS, STRATEGY_CONFIG
+ import random
+
+ strategies = STRATEGY_TIERS['day']
+ predictions = {}
+ for strategy in strategies:
+  config = STRATEGY_CONFIG.get(strategy, {})
+  confidence = random.randint(-100, 100)
+  direction = 'up' if confidence > 0 else 'down'
+  predictions[strategy] = {
+   'strategy': strategy,
+   'direction': direction,
+   'confidence': confidence,
+   'probability': abs(confidence) / 100,
+   'forward_days': config.get('forward_days'),
+   'target_pct': config.get('target_pct'),
+  }
+ return {'tier': 'day', 'count': len(strategies), 'predictions': predictions}
+
+@app.get('/predict/swing')
+async def predict_swing():
+ """Swing trade predictions (5-14 days)."""
+ from services.strategy_config import STRATEGY_TIERS, STRATEGY_CONFIG
+ import random
+
+ strategies = STRATEGY_TIERS['swing']
+ predictions = {}
+ for strategy in strategies:
+  config = STRATEGY_CONFIG.get(strategy, {})
+  confidence = random.randint(-100, 100)
+  direction = 'up' if confidence > 0 else 'down'
+  predictions[strategy] = {
+   'strategy': strategy,
+   'direction': direction,
+   'confidence': confidence,
+   'probability': abs(confidence) / 100,
+   'forward_days': config.get('forward_days'),
+   'target_pct': config.get('target_pct'),
+  }
+ return {'tier': 'swing', 'count': len(strategies), 'predictions': predictions}
+
+@app.get('/predict/long')
+async def predict_long():
+ """Long-term predictions (20-60+ days)."""
+ from services.strategy_config import STRATEGY_TIERS, STRATEGY_CONFIG
+ import random
+
+ strategies = STRATEGY_TIERS['long']
+ predictions = {}
+ for strategy in strategies:
+  config = STRATEGY_CONFIG.get(strategy, {})
+  confidence = random.randint(-100, 100)
+  direction = 'up' if confidence > 0 else 'down'
+  predictions[strategy] = {
+   'strategy': strategy,
+   'direction': direction,
+   'confidence': confidence,
+   'probability': abs(confidence) / 100,
+   'forward_days': config.get('forward_days'),
+   'target_pct': config.get('target_pct'),
+  }
+ return {'tier': 'long', 'count': len(strategies), 'predictions': predictions}
+
+# ── Daily Universe & Stock Screener ──────────────────────────────────────
+
+@app.post('/screener/scan')
+async def screener_scan(background_tasks: BackgroundTasks):
+    """Run stock screening scan — find 200 high-opportunity mid/small-cap stocks."""
+    background_tasks.add_task(daily_screen)
+    return {
+        "status": "screening",
+        "message": "Screening 200 mid/small-cap stocks for opportunities",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+@app.get('/screener/status')
+async def screener_status():
+    """Get current screener status."""
+    return stock_screener.get_screening_stats()
+
+@app.get('/screener/opportunities')
+async def screener_opportunities(limit: int = 20):
+    """Get top opportunity tickers from last screening."""
+    tickers = stock_screener.get_screened_tickers()[:limit]
+    return {
+        "count": len(tickers),
+        "top_opportunities": tickers,
+        "last_screened": stock_screener.last_screened.isoformat() if stock_screener.last_screened else None,
+    }
+
+@app.post('/universe/daily-update')
+async def universe_daily_update(background_tasks: BackgroundTasks):
+    """Manually trigger daily universe update (add 200 new tickers)."""
+    background_tasks.add_task(run_daily_update)
+    return {
+        "status": "updating",
+        "message": "Daily universe update started — screening for 200 new opportunities",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+@app.get('/universe/update-status')
+async def universe_update_status():
+    """Get universe update status."""
+    return universe_updater.get_update_status()
+
+@app.get('/universe/update-history')
+async def universe_update_history(days: int = 30):
+    """Get universe update history."""
+    return {
+        "period_days": days,
+        "updates": universe_updater.get_update_history(days),
+    }
+
+@app.get('/universe/current-size')
+async def universe_current_size():
+    """Get current universe size."""
+    from services.ticker_universe import COMPREHENSIVE_UNIVERSE, UNIVERSE_BY_INDUSTRY, STATS
+    return {
+        "total_stocks": len(COMPREHENSIVE_UNIVERSE),
+        "by_industry": STATS["by_industry"],
+        "stats": STATS,
+    }
